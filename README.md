@@ -76,7 +76,7 @@ import { renderExperience, watch } from "@loom-ui/renderer-terminal";
 const stop = watch(blueprint, store, (frame) => process.stdout.write(`\x1Bc${frame}`));
 ```
 
-`TimeSeries` and `BarChart` are Lit-only on the web (`LIT_ONLY_KINDS`): a React consumer gets loom's `[No renderer for …]` placeholder for them. Value shapes per kind are declared once in `@loom-ui/core` (`kindValueContracts`); a mismatch renders as a visible error state on every surface.
+`TimeSeries` and `BarChart` are Lit-only on the web (`LIT_ONLY_KINDS`): a React consumer gets loom's `[No renderer for …]` placeholder for them. Value shapes per kind are declared once in `@loom-ui/core` (`kindValueContracts`); a mismatch renders as a visible error state on the Lit and terminal surfaces (loom's React renderer validates nothing — it duck-types the value it is given). Two further React↔Lit asymmetries are sanctioned rather than defects: React receives no hydration status, so it shows a value without saying whether it is pending, stale or failed, and `props.span` is honoured by Lit's DOM adapter and ignored by React (ADR 0096 D4).
 
 `@loom-ui/renderer-lit` is browser code: `node -e "import('@loom-ui/renderer-lit/dom')"` fails outside
 a bundler, on two counts. No other package here declares it as a dependency, so pnpm never links it
