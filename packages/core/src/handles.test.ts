@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
 import { experienceHandles } from "./handles";
-import type { ContainerNode, SemanticNode } from "./node";
+import type { ContainerNode, ExperienceNode, SemanticNode } from "./node";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
 const sem = (
@@ -18,7 +18,7 @@ const sem = (
   props: {},
   ...(handle !== undefined && { binding: { handle, priority } }),
 });
-const exp = (children: SemanticNode[] | ContainerNode[]) => {
+const exp = (children: ExperienceNode[]) => {
   const g = genesis({ experienceId: "e", intent: { objective: "x", source: "user" }, meta });
   return { ...g, root: { ...g.root, children } };
 };
