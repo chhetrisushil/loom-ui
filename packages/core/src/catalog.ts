@@ -1,5 +1,5 @@
 import type { Experience, Finding, VocabularyFloor } from "./experience";
-import { type SemanticNode, walk } from "./node";
+import { MAX_TREE_DEPTH, type SemanticNode, treeDepth, walk } from "./node";
 
 // ── The semantic catalogue ────────────────────────────────────────────────────
 // An entry is what a planner may NAME. It declares the props it accepts (an allow-list — `[]` is
@@ -163,6 +163,21 @@ export function validateExperience(
   surface: Surface
 ): ExperienceValidation {
   const findings: Finding[] = [];
+  // `walk` is recursive; a tree past the cap would throw a `RangeError` out of a function whose
+  // whole contract is that a defect is a finding. Probe iteratively first and refuse.
+  const depth = treeDepth(exp.root);
+  if (depth > MAX_TREE_DEPTH)
+    return {
+      ok: false,
+      findings: [
+        finding(
+          "tree-too-deep",
+          `the experience tree nests ${depth} levels, over the ${MAX_TREE_DEPTH} limit`,
+          exp.root.id
+        ),
+      ],
+      nodes: 0,
+    };
   const ids = new Set<string>();
   let nodes = 0;
   walk(exp.root, (n) => {

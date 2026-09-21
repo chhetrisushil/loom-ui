@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ContainerNode, ExperienceNode, normalize } from "./node";
+import { type ContainerNode, ExperienceNode, MAX_TREE_DEPTH, normalize, treeDepth } from "./node";
 
 // ── The artifact ──────────────────────────────────────────────────────────────
 // `experienceId` names a LINEAGE; `versionHash` names one ARTIFACT — the sha256 of everything
@@ -81,8 +81,22 @@ export interface GenesisInput {
   vocabularyFloor?: VocabularyFloor;
 }
 
-/** A new lineage: unpersisted, parentless, with an empty column root unless one is supplied. */
+/**
+ * A new lineage: unpersisted, parentless, with an empty column root unless one is supplied.
+ *
+ * THROWS if a supplied `root` nests past {@link MAX_TREE_DEPTH}. Unlike `apply`/`compile`, which
+ * receive trees from the outside and refuse them with a finding, `genesis` is handed a tree the
+ * caller just built: a tree that deep is a programmer error at the point it is constructed, and
+ * admitting it here would seed a lineage every later entry point has to refuse.
+ */
 export function genesis(input: GenesisInput): Experience {
+  if (input.root !== undefined) {
+    const depth = treeDepth(input.root);
+    if (depth > MAX_TREE_DEPTH)
+      throw new Error(
+        `genesis: the supplied root nests ${depth} levels, over the ${MAX_TREE_DEPTH} limit`
+      );
+  }
   return {
     experienceId: input.experienceId,
     versionHash: "",

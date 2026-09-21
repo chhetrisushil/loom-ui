@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
-import type { SemanticNode } from "./node";
+import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 import { Operation, apply, replay } from "./operations";
 
 const meta = { author: "alice", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
@@ -14,6 +14,28 @@ const node = (id: string, order = "V"): SemanticNode => ({
   span: 4,
   props: {},
 });
+/** A left spine `levels` containers deep, built ITERATIVELY — the recursive helpers cannot. */
+const chain = (levels: number, idPrefix = "n"): ContainerNode => {
+  let out: ContainerNode = {
+    id: `${idPrefix}0`,
+    order: "V",
+    kind: "container",
+    direction: "column",
+    span: 12,
+    children: [],
+  };
+  for (let i = 1; i < levels; i++)
+    out = {
+      id: `${idPrefix}${i}`,
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [out],
+    };
+  return out;
+};
+
 const spec = {
   handle: "h1",
   executionGraph: [],
@@ -152,6 +174,25 @@ describe("apply", () => {
       dependsOn: [],
       idempotent: true,
     });
+  });
+});
+
+describe("tree depth", () => {
+  // I1. `Operation.safeParse` is itself recursive over `insertNode.node`, so the probe has to
+  // run before the parse or the refusal never happens — a RangeError escapes instead.
+  it("refuses an insert that would nest past the cap, and does not throw", () => {
+    const r = apply(g, { type: "insertNode", parentId: "root", node: chain(300) });
+    expect(!r.ok && r.finding.code).toBe("tree-too-deep");
+    expect(!r.ok && r.finding.message).toMatch(/300-level subtree/);
+  });
+  it("accepts a chain that stays under the cap", () => {
+    const r = apply(g, { type: "insertNode", parentId: "root", node: chain(200) });
+    expect(r.ok).toBe(true);
+  });
+  it("refuses any op once the BASE tree is past the cap", () => {
+    const deep = { ...g, root: chain(MAX_TREE_DEPTH + 1) };
+    const r = apply(deep, { type: "removeNode", nodeId: "n0" });
+    expect(!r.ok && r.finding.code).toBe("tree-too-deep");
   });
 });
 

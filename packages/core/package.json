@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@loom/blueprint-runtime": "*",
+    "@loom/core": "*",
     "@loom/plugin-content": "*",
     "zod": "catalog:"
   },

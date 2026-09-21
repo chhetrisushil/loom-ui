@@ -21,7 +21,14 @@ import {
 } from "./catalog";
 import type { Experience, Finding } from "./experience";
 import { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
-import { type ContainerNode, type ExperienceNode, type LocalizedText, normalize } from "./node";
+import {
+  type ContainerNode,
+  type ExperienceNode,
+  type LocalizedText,
+  MAX_TREE_DEPTH,
+  normalize,
+  treeDepth,
+} from "./node";
 
 // ── Experience → loom Blueprint ───────────────────────────────────────────────
 // Pure and deterministic: same inputs, byte-identical output. A semantic node becomes a loom
@@ -52,6 +59,29 @@ export interface CompileResult {
 
 export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   const findings: Finding[] = [];
+  // Before `validateExperience`, `normalize` or any recursive descent: a tree past the cap is a
+  // finding with an empty blueprint, never a `RangeError` thrown out of a total function.
+  const depth = treeDepth(exp.root);
+  if (depth > MAX_TREE_DEPTH) {
+    return {
+      blueprint: blueprint$({
+        id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
+        title: exp.intent.objective,
+        layout: flex({ direction: "column", children: [] }),
+        projections: [opts.hydrationProjectionId],
+        projectionVersions: { [opts.hydrationProjectionId]: opts.hydrationProjectionVersion },
+      }),
+      findings: [
+        {
+          code: "tree-too-deep",
+          severity: "error",
+          message: `the experience tree nests ${depth} levels, over the ${MAX_TREE_DEPTH} limit`,
+          nodeId: exp.root.id,
+        },
+      ],
+      ok: false,
+    };
+  }
   const semantic = validateExperience(exp, opts.catalog, opts.surface);
   findings.push(...semantic.findings);
   const derived = loomCatalogFor(opts.catalog, opts.surface, opts.baseCatalog);
@@ -169,7 +199,7 @@ function compileNode(
   // (`undeclared-prop`, an error) and is not reported twice here.
   const allowedProps = new Set(contract.props);
   const ownProps = new Set(findEntry(opts.catalog, node.type, node.typeVersion)?.props ?? []);
-  const props = Object.fromEntries(
+  const filtered = Object.fromEntries(
     Object.entries(node.props).filter(([key]) => {
       if (allowedProps.has(key)) return true;
       if (ownProps.has(key))
@@ -182,6 +212,12 @@ function compileNode(
       return false;
     })
   );
+  // Key ORDER is part of the output bytes (`JSON.stringify` walks insertion order), and
+  // `node.props` carries whatever order its author happened to write. Two structurally equal
+  // experiences must compile to byte-identical blueprints — that is the whole claim of a
+  // deterministic compiler — so the emitted props are rebuilt in sorted key order.
+  const props: Record<string, unknown> = {};
+  for (const key of Object.keys(filtered).sort()) props[key] = filtered[key];
   return customWidget$({
     kind: r.kind,
     id: node.id,

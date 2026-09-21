@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Experience, experienceArtifact, genesis } from "./experience";
-import type { SemanticNode } from "./node";
+import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 
 const intent = { objective: "Investigate checkout latency", source: "user" as const };
 
@@ -16,6 +16,38 @@ describe("genesis", () => {
     expect(e.root.kind).toBe("container");
     expect(e.root.id).toBe("root");
     expect(Experience.safeParse(e).success).toBe(true);
+  });
+});
+
+describe("genesis depth cap", () => {
+  // I1. Every other entry point refuses a too-deep tree with a finding; `genesis` is handed a
+  // tree the caller just built, so admitting it would seed a lineage nothing downstream accepts.
+  it("throws when the supplied root nests past the cap", () => {
+    let deep: ContainerNode = {
+      id: "n0",
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [],
+    };
+    for (let i = 1; i <= MAX_TREE_DEPTH; i++)
+      deep = {
+        id: `n${i}`,
+        order: "V",
+        kind: "container",
+        direction: "column",
+        span: 12,
+        children: [deep],
+      };
+    expect(() =>
+      genesis({
+        experienceId: "exp-1",
+        intent,
+        meta: { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" },
+        root: deep,
+      })
+    ).toThrow(/over the 256 limit/);
   });
 });
 

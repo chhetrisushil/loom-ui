@@ -2,14 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   type ContainerNode,
   ExperienceNode,
+  MAX_TREE_DEPTH,
   type SemanticNode,
   findNode,
   isContainer,
   nodeIds,
   normalize,
   rebuild,
+  treeDepth,
   walk,
 } from "./node";
+
+/** A left spine `levels` containers deep, built ITERATIVELY — the recursive helpers cannot. */
+function chain(levels: number, leaf?: SemanticNode): ContainerNode {
+  let node: ContainerNode = {
+    id: "n0",
+    order: "V",
+    kind: "container",
+    direction: "column",
+    span: 12,
+    children: leaf ? [leaf] : [],
+  };
+  for (let i = 1; i < levels; i++)
+    node = {
+      id: `n${i}`,
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [node],
+    };
+  return node;
+}
 
 const metric = (id: string, order: string): SemanticNode => ({
   id,
@@ -68,5 +92,23 @@ describe("tree helpers", () => {
     const out = rebuild(root, (n) => (n.id === "a" ? null : n));
     expect(nodeIds(out).sort()).toEqual(["b", "root"]);
     expect(() => rebuild(root, () => null)).toThrow(/root/);
+  });
+});
+
+describe("treeDepth / MAX_TREE_DEPTH", () => {
+  it("counts the root as 1 and measures the deepest path", () => {
+    expect(treeDepth(metric("x", "x"))).toBe(1);
+    expect(treeDepth(root)).toBe(2);
+    expect(MAX_TREE_DEPTH).toBe(256);
+  });
+  it("measures a tree far deeper than the call stack without recursing", () => {
+    // The point of the iterative implementation: this is the guard that keeps `walk`, `rebuild`,
+    // `normalize` and zod's recursive node schema from ever seeing a tree like this, so it must
+    // survive one they could not.
+    expect(treeDepth(chain(50_000))).toBe(50_000);
+  });
+  it("tolerates unparsed input — it runs before the schema does", () => {
+    expect(treeDepth(undefined as never)).toBe(0);
+    expect(treeDepth({ kind: "container" } as never)).toBe(1);
   });
 });

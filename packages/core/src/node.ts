@@ -67,6 +67,37 @@ export function isContainer(n: ExperienceNode): n is ContainerNode {
   return n.kind === "container";
 }
 
+/**
+ * The deepest nesting an experience tree may carry. Everything downstream of the tree — zod's
+ * recursive parse, `walk`, `rebuild`, `normalize`, `canonicalJson` — is recursive, so a tree deep
+ * enough to exhaust the JS stack turns a total, finding-returning API into a `RangeError` thrown
+ * from inside a library. The cap is checked at every entry point BEFORE any of that runs, so a
+ * hostile or generated tree is refused with a finding instead.
+ */
+export const MAX_TREE_DEPTH = 256;
+
+/**
+ * Depth of the deepest path, counting the root as 1. ITERATIVE by construction (an explicit
+ * stack): this is the guard that keeps the recursive code below from being reached, so it must
+ * itself survive a tree no recursive walk could. Tolerates unparsed input — it runs before the
+ * zod parse — and reports 0 for anything that is not a node object.
+ */
+export function treeDepth(root: ExperienceNode): number {
+  if (typeof root !== "object" || root === null) return 0;
+  let max = 0;
+  const stack: Array<{ node: unknown; depth: number }> = [{ node: root, depth: 1 }];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const { node, depth } = top;
+    if (typeof node !== "object" || node === null) continue;
+    if (depth > max) max = depth;
+    const children = (node as { children?: unknown }).children;
+    if (Array.isArray(children)) {
+      for (const child of children) stack.push({ node: child, depth: depth + 1 });
+    }
+  }
+  return max;
+}
+
 /** Depth-first walk, parent before children. */
 export function walk(
   root: ExperienceNode,

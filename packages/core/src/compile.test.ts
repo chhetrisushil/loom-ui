@@ -4,7 +4,7 @@ import { defineSemanticCatalog } from "./catalog";
 import { compile } from "./compile";
 import { genesis } from "./experience";
 import { loomCatalogFor } from "./loomCatalog";
-import type { ContainerNode, SemanticNode } from "./node";
+import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 import { testCatalog } from "./testCatalog";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
@@ -61,6 +61,28 @@ const opts = {
   catalog: testCatalog,
   hydrationProjectionId: "hydration",
   hydrationProjectionVersion: "1.0.0",
+};
+
+/** A left spine `levels` containers deep, built ITERATIVELY — the recursive helpers cannot. */
+const chain = (levels: number): ContainerNode => {
+  let out: ContainerNode = {
+    id: "n0",
+    order: "V",
+    kind: "container",
+    direction: "column",
+    span: 12,
+    children: [],
+  };
+  for (let i = 1; i < levels; i++)
+    out = {
+      id: `n${i}`,
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [out],
+    };
+  return out;
 };
 
 describe("compile", () => {
@@ -202,6 +224,39 @@ describe("compile", () => {
     expect(r.findings.map((f) => f.message).join(" ")).toMatch(/TimeSeries/);
     expect(r.findings.map((f) => f.message).join(" ")).toMatch(/Note/);
     expect(r.ok).toBe(false);
+  });
+  // C1, compiler half: `JSON.stringify` walks insertion order, so two structurally equal
+  // experiences whose props were written in different orders used to emit different BYTES from a
+  // compiler whose headline claim is determinism.
+  it("emits props in sorted key order, so props written {a,b} and {b,a} compile identically", () => {
+    const withAB = {
+      ...exp,
+      root: { ...root, children: [sem("m", "Metric", { props: { format: "short", unit: "ms" } })] },
+    };
+    const withBA = {
+      ...exp,
+      root: { ...root, children: [sem("m", "Metric", { props: { unit: "ms", format: "short" } })] },
+    };
+    const a = compile(withAB, opts);
+    const b = compile(withBA, opts);
+    expect(JSON.stringify(a.blueprint)).toBe(JSON.stringify(b.blueprint));
+    // sorted semantic props, then the framework-owned `span` last — a fixed position, not the
+    // author's insertion order
+    expect(JSON.stringify(a.blueprint)).toContain(
+      '"props":{"format":"short","unit":"ms","span":6}'
+    );
+  });
+  // I1. `validateExperience`, `normalize` and the compile walk are all recursive; the probe runs
+  // before any of them, and a blueprint still comes back so a caller can degrade.
+  it("reports a tree past the cap as a finding and still returns a blueprint", () => {
+    const r = compile({ ...exp, root: chain(300) }, opts);
+    expect(r.ok).toBe(false);
+    expect(r.findings.map((f) => f.code)).toEqual(["tree-too-deep"]);
+    expect(r.blueprint.layout.children).toEqual([]);
+    expect(MAX_TREE_DEPTH).toBe(256);
+  });
+  it("compiles a tree under the cap", () => {
+    expect(compile({ ...exp, root: chain(200) }, opts).ok).toBe(true);
   });
   it("an unpersisted experience compiles to an id marked as such", () => {
     expect(compile({ ...exp, versionHash: "" }, opts).blueprint.id).toBe("exp-1@unsealed");
