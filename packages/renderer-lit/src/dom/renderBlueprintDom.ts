@@ -13,7 +13,12 @@ import {
   traverseBlueprint,
 } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
-import { type DomRegistry, type DomWidgetHandle, placeholderFor } from "./registry";
+import {
+  type DomRegistry,
+  type DomWidgetHandle,
+  placeholderFor,
+  projectionPlaceholder,
+} from "./registry";
 
 export interface DomRenderOptions {
   readonly projectionRuntime: ProjectionRuntime;
@@ -41,8 +46,20 @@ export function renderBlueprintDom(
   const statusProjectionId = opts.statusProjectionId ?? HYDRATION_PROJECTION_ID;
   const disposers: Array<() => void> = [];
   const stateMap = new Map<string, unknown>();
-  for (const id of blueprint.projections)
-    stateMap.set(id, opts.projectionRuntime.getState(id, opts.executionId));
+  const unregisteredProjections: string[] = [];
+  for (const id of blueprint.projections) {
+    try {
+      stateMap.set(id, opts.projectionRuntime.getState(id, opts.executionId));
+    } catch {
+      // A blueprint can declare a projection its runtime never registered — a finding, not a
+      // thrown mount. Widgets bound to it render with `value: undefined` / no status below
+      // (selectSlice's `resolvePath(undefined, path)` is null-safe), and still subscribe:
+      // `subscribeSelector` seeds via `peekState`, which does not throw for an unregistered
+      // projection, so a later `register` + event lights the widget up without a remount.
+      stateMap.set(id, undefined);
+      unregisteredProjections.push(id);
+    }
+  }
 
   const selectSlice = (widget: Widget, state: unknown): Slice => {
     const path = widget.binding?.path ?? "";
@@ -115,13 +132,30 @@ export function renderBlueprintDom(
   element.dataset.blueprintId = blueprint.id;
   const title = document.createElement("h1");
   title.textContent = blueprint.title;
-  element.append(title, root);
+  element.append(title, ...unregisteredProjections.map(projectionPlaceholder));
+  element.append(root);
   host.appendChild(element);
   return {
     element,
     dispose: () => {
-      for (const d of disposers.splice(0)) d();
-      element.remove();
+      const errors: unknown[] = [];
+      try {
+        for (const d of disposers.splice(0)) {
+          try {
+            d();
+          } catch (e) {
+            errors.push(e);
+          }
+        }
+      } finally {
+        element.remove();
+      }
+      if (errors.length > 0) {
+        throw new AggregateError(
+          errors,
+          "renderBlueprintDom: dispose failed for one or more widgets"
+        );
+      }
     },
   };
 }

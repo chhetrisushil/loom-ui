@@ -33,3 +33,11 @@ export function placeholderFor(
       : `[Renderer error for ${kind}${detail ? `: ${detail}` : ""}]`;
   return el;
 }
+
+/** A blueprint declared a projection its runtime never registered — degrade visibly, don't throw. */
+export function projectionPlaceholder(projectionId: string): HTMLElement {
+  const el = document.createElement("div");
+  el.dataset.placeholder = "projection";
+  el.textContent = `[Projection "${projectionId}" is not registered]`;
+  return el;
+}

@@ -163,4 +163,70 @@ describe("renderBlueprintDom", () => {
     await Promise.resolve();
     expect(host.querySelector("[data-widget-id='cpu']")?.textContent).toBe("CPU=87|-");
   });
+  it("an unregistered projection renders a visible placeholder instead of throwing, and its widgets show undefined until it's registered", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const ghost = blueprint$({
+      id: "g",
+      title: "Ghost",
+      layout: stack({
+        children: [
+          MetricCard({ id: "cpu", title: "CPU", binding: { projectionId: "ghost", path: "cpu" } }),
+        ],
+      }),
+      projections: ["ghost"],
+    });
+    const { registry } = recording();
+    const host = document.createElement("div");
+    expect(() =>
+      renderBlueprintDom(host, ghost, { projectionRuntime: runtime, executionId: "x", registry })
+    ).not.toThrow();
+    expect(host.querySelector("[data-placeholder='projection']")?.textContent).toBe(
+      '[Projection "ghost" is not registered]'
+    );
+    expect(host.querySelector("[data-widget-id='cpu']")?.textContent).toBe("CPU=undefined|-");
+  });
+  it("a dispose that throws still tears down every other widget and removes the element, then rethrows", async () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const calls: string[] = [];
+    const throwingDispose: DomWidgetRenderer = (host, props) => {
+      const el = document.createElement("span");
+      el.textContent = `${props.widget.title}=${String(props.value)}`;
+      host.appendChild(el);
+      return {
+        update: () => {},
+        dispose: () => {
+          throw new Error("boom-dispose");
+        },
+      };
+    };
+    const recordingDispose: DomWidgetRenderer = (host, props) => {
+      const el = document.createElement("span");
+      el.textContent = `${props.widget.title}=${String(props.value)}`;
+      host.appendChild(el);
+      return {
+        update: (value, status) => {
+          el.textContent = `${props.widget.title}=${String(value)}|${status?.state ?? "-"}`;
+          calls.push(`update:${props.widget.id}`);
+        },
+        dispose: () => calls.push(`dispose:${props.widget.id}`),
+      };
+    };
+    const registry = new RendererRegistry<DomWidgetRenderer>()
+      .register("MetricCard", throwingDispose)
+      .register("StatusBadge", recordingDispose);
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry,
+    });
+    expect(() => handle.dispose()).toThrow(AggregateError);
+    expect(calls).toContain("dispose:phase");
+    expect(host.querySelector("[data-blueprint-id='e@v']")).toBeNull();
+    calls.length = 0;
+    store.setValue("h-phase", "x", { state: "ready" });
+    await Promise.resolve();
+    expect(calls).not.toContain("update:phase");
+  });
 });
