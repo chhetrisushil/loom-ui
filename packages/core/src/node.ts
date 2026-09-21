@@ -6,7 +6,10 @@ import { z } from "zod";
 // — `Trend`, `Metric` — never a visual kind; the catalogue resolves it per surface (catalog.ts).
 
 export const NodeId = z.string().min(1);
-export const OrderKey = z.string().min(1);
+// Base-62 only. An order key is compared with a plain string compare and minted by `order.ts`
+// from that alphabet; anything else is either a hand-written key that will sort somewhere its
+// author did not intend, or a value from outside that was never an order key at all.
+export const OrderKey = z.string().regex(/^[0-9A-Za-z]+$/);
 export const Priority = z.enum(["P0", "P1", "P2"]);
 export type Priority = z.infer<typeof Priority>;
 export const Span = z.number().int().min(1).max(12);
@@ -124,7 +127,10 @@ export function nodeIds(root: ExperienceNode): string[] {
   return ids;
 }
 
-/** Structural clone with children sorted by `order` at every level. Never mutates its input. */
+/**
+ * Structural copy (children re-sorted; `props` shallow-copied; `label`/`binding` shared) with
+ * children sorted by `order` at every level. Never mutates its input.
+ */
 export function normalize(node: ExperienceNode): ExperienceNode {
   if (!isContainer(node)) return { ...node, props: { ...node.props } };
   const children = [...node.children]

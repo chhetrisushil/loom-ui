@@ -211,6 +211,18 @@ describe("replay", () => {
     expect(a.ok && b.ok && JSON.stringify(a.value)).toBe(b.ok && JSON.stringify(b.value));
     expect(a.ok && a.value.experienceId).toBe("exp-1");
   });
+  // A prompt that materialised NOTHING is still an event in the lineage. `replay` over an empty
+  // list returns its argument unchanged, which would hand back the SEALED base and make the op
+  // indistinguishable from never having happened.
+  it("a prompt with no materialized primitives still produces an unsealed child", () => {
+    const sealed = { ...g, versionHash: "sha256:base" };
+    const r = apply(sealed, { type: "prompt", text: "do nothing", materialized: [] });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.versionHash).toBe("");
+    expect(r.value.parents).toEqual(["sha256:base"]);
+    expect(r.value.root).toEqual(sealed.root);
+  });
   it("stops at the first failing op and names its index", () => {
     const r = replay(g, [{ type: "removeNode", nodeId: "ghost" }]);
     expect(!r.ok && r.finding.message).toMatch(/op #0 \(removeNode\)/);

@@ -221,7 +221,13 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
     }
     case "prompt":
       // Replay path: fold the materialised primitives. Re-invoking the planner is never core's job.
-      return replay(base, op.materialized);
+      // A prompt that materialised NOTHING is still an event in the lineage — a planner that
+      // declined, or produced only no-ops. `replay` over an empty list returns its argument
+      // unchanged, which would hand back the SEALED base and make the op indistinguishable from
+      // never having happened; `next` produces the unsealed child the other cases do.
+      return op.materialized.length === 0
+        ? { ok: true, value: next(base, {}) }
+        : replay(base, op.materialized);
   }
 }
 
@@ -236,7 +242,7 @@ export function replay(genesis: Experience, ops: readonly Operation[]): OpResult
         ok: false,
         finding: { ...r.finding, message: `op #${i} (${op.type}): ${r.finding.message}` },
       };
-    cur = { ...r.value, experienceId: genesis.experienceId };
+    cur = r.value;
   }
   return { ok: true, value: cur };
 }

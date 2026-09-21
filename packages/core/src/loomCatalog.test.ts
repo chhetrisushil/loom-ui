@@ -2,7 +2,7 @@ import { builtinCatalog } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
 import { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
-import { testCatalog } from "./testCatalog";
+import { testCatalog } from "./testCatalog.test-support";
 
 describe("loomCatalogFor", () => {
   it("declares every kind the surface resolves to, with base props plus span for built-ins", () => {
@@ -79,6 +79,64 @@ describe("loomCatalogFor", () => {
     expect(loomCatalogFor(c, "web").findings.map((f) => f.code)).toEqual([
       "kind-contract-conflict",
     ]);
+  });
+  // I4. `validateExperience` reads the ENTRY's binding and loom's `validateBlueprint` reads the
+  // resolved KIND's, so a pair that contradicts each other guarantees every node of that type a
+  // finding from one side or the other, whatever the composer does. Report it once, here.
+  it("an entry whose binding contradicts the kind it resolves to is a finding, and is skipped", () => {
+    const c = defineSemanticCatalog({
+      id: "c",
+      entries: [
+        {
+          name: "Explainer",
+          version: "1.0.0",
+          props: [],
+          binding: "none",
+          surfaces: { web: { kind: "StatusBadge" } }, // builtin StatusBadge is binding: "required"
+        },
+      ],
+    });
+    const { catalog, findings } = loomCatalogFor(c, "web");
+    expect(findings.map((f) => f.code)).toEqual(["binding-contract-conflict"]);
+    expect(findings[0]?.message).toMatch(/Explainer@1\.0\.0.*"none".*StatusBadge.*"required"/);
+    expect(catalog.entries.find((e) => e.kind === "StatusBadge")).toBeUndefined();
+  });
+  it("the conflict points the other way too, and `optional` absorbs either side", () => {
+    const conflicting = defineSemanticCatalog({
+      id: "c",
+      entries: [
+        {
+          name: "Needy",
+          version: "1.0.0",
+          props: [],
+          binding: "required",
+          surfaces: { web: { kind: "Decoration", props: [], binding: "none" } },
+        },
+      ],
+    });
+    expect(loomCatalogFor(conflicting, "web").findings.map((f) => f.code)).toEqual([
+      "binding-contract-conflict",
+    ]);
+    const tolerant = defineSemanticCatalog({
+      id: "c",
+      entries: [
+        {
+          name: "Either",
+          version: "1.0.0",
+          props: [],
+          binding: "optional",
+          surfaces: { web: { kind: "StatusBadge" } },
+        },
+        {
+          name: "Loose",
+          version: "1.0.0",
+          props: [],
+          binding: "none",
+          surfaces: { web: { kind: "Maybe", props: [], binding: "optional" } },
+        },
+      ],
+    });
+    expect(loomCatalogFor(tolerant, "web").findings).toEqual([]);
   });
   it("base is builtinCatalog by default and every base entry stays intact", () => {
     for (const e of builtinCatalog.entries) expect(e.props).not.toContain(SPAN_PROP);

@@ -15,6 +15,9 @@ Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes
 
 ## Shape of a composition
 
+*Illustrative — not a compiling snippet.* It elides the `meta`, `ctx` and `contentStore` a real
+caller supplies, and names a catalogue it does not define.
+
 ```ts
 import { apply, compile, genesis } from "@loom-ui/core";
 import { EXPERIENCE_COMPOSED, putExperience } from "@loom-ui/core/log";
@@ -24,9 +27,12 @@ const r = apply(exp, { type: "insertNode", parentId: "root", node: { id: "p99", 
 if (!r.ok) throw new Error(r.finding.message);
 
 // Inside a loom execution: seal, store the bytes, log the reference (a userspace event).
-const { experience, ref } = await putExperience(contentStore, r.value);
-ctx.emit(EXPERIENCE_COMPOSED, { ref, parents: experience.parents, ops: [{ op, by: { source: "user" }, at: now }] });
+// `putExperience` is total — an experience carrying a value the content address cannot be taken
+// over (NaN, a bigint) comes back as an `artifact-unhashable` finding rather than a throw.
+const put = await putExperience(contentStore, r.value);
+if (!put.ok) throw new Error(put.finding.message);
+ctx.emit(EXPERIENCE_COMPOSED, { ref: put.ref, parents: put.experience.parents, ops: [{ op, by: { source: "user" }, at: now }] });
 
 // Anywhere, later, with no model in the path: compile per surface and hand loom the Blueprint.
-const { blueprint, findings } = compile(experience, { surface: "web", catalog, hydrationProjectionId: "hydration", hydrationProjectionVersion: "1.0.0" });
+const { blueprint, findings } = compile(put.experience, { surface: "web", catalog, hydrationProjectionId: "hydration", hydrationProjectionVersion: "1.0.0" });
 ```

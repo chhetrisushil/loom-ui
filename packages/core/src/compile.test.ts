@@ -4,8 +4,14 @@ import { defineSemanticCatalog } from "./catalog";
 import { compile } from "./compile";
 import { genesis } from "./experience";
 import { loomCatalogFor } from "./loomCatalog";
-import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
-import { testCatalog } from "./testCatalog";
+import {
+  type ContainerNode,
+  type ExperienceNode,
+  MAX_TREE_DEPTH,
+  type SemanticNode,
+  walk,
+} from "./node";
+import { testCatalog } from "./testCatalog.test-support";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
 const sem = (id: string, type: string, extra: Partial<SemanticNode> = {}): SemanticNode => ({
@@ -47,6 +53,29 @@ const root: ContainerNode = {
     },
   ],
 };
+/** The minimal `ProviderSpec` a bound handle needs to exist. */
+const providerSpec = (handle: string) => ({
+  handle,
+  executionGraph: [],
+  reshaping: { engine: "JSONPath" as const, scriptRef: "sha256:s" },
+  outputShapeHash: "sha256:o",
+  cachePolicy: { ttlSeconds: 60, scope: "global" as const },
+});
+// Fixture adjustment (I5): a bound handle with no `ProviderSpec` is now an `unknown-handle` warn,
+// so every fixture declares one per handle its tree binds. Filtering the warn out of the
+// assertions instead would have left the new check asserted nowhere.
+const providersFor = (node: ExperienceNode) => {
+  const out: Record<string, ReturnType<typeof providerSpec>> = {};
+  walk(node, (n) => {
+    if (n.kind === "semantic" && n.binding) out[n.binding.handle] = providerSpec(n.binding.handle);
+  });
+  return out;
+};
+const withRoot = (base: typeof exp, next: ContainerNode) => ({
+  ...base,
+  root: next,
+  providers: providersFor(next),
+});
 const exp = {
   ...genesis({
     experienceId: "exp-1",
@@ -55,6 +84,7 @@ const exp = {
   }),
   versionHash: "sha256:abc",
   root,
+  providers: providersFor(root),
 };
 const opts = {
   surface: "web" as const,
@@ -143,10 +173,10 @@ describe("compile", () => {
     expect(report.widgets).toBe(3);
   });
   it("resolves a degrade chain per surface: Trend becomes a DataTable on terminal and a TimeSeries on web", () => {
-    const e = {
-      ...exp,
-      root: { ...root, children: [sem("t", "Trend", { props: { series: ["a"] } })] },
-    };
+    const e = withRoot(exp, {
+      ...root,
+      children: [sem("t", "Trend", { props: { series: ["a"] } })],
+    });
     const web = compile(e, opts);
     const term = compile(e, { ...opts, surface: "terminal" });
     expect(web.ok && term.ok).toBe(true);
@@ -164,43 +194,37 @@ describe("compile", () => {
     ]);
   });
   it("sibling order follows the order key, not array position", () => {
-    const e = {
-      ...exp,
-      root: {
-        ...root,
-        children: [
-          { ...sem("b-id", "Status"), order: "b" },
-          { ...sem("a-id", "Status"), order: "a" },
-        ],
-      },
-    };
+    const e = withRoot(exp, {
+      ...root,
+      children: [
+        { ...sem("bId", "Status"), order: "b" },
+        { ...sem("aId", "Status"), order: "a" },
+      ],
+    });
     const r = compile(e, opts);
     expect(r.blueprint.layout.children.map((c) => (c as { id: string }).id)).toEqual([
-      "a-id",
-      "b-id",
+      "aId",
+      "bId",
     ]);
   });
   it("omits an unresolvable node, records the finding, and still emits the rest", () => {
-    const e = {
-      ...exp,
-      root: {
-        ...root,
-        children: [
-          sem("x", "Explainer", { binding: undefined }),
-          sem("p99", "Metric", { props: { unit: "ms" } }),
-        ],
-      },
-    };
+    const e = withRoot(exp, {
+      ...root,
+      children: [
+        sem("x", "Explainer", { binding: undefined }),
+        sem("p99", "Metric", { props: { unit: "ms" } }),
+      ],
+    });
     const r = compile(e, { ...opts, surface: "terminal" });
     expect(r.ok).toBe(false);
     expect(r.findings.map((f) => f.code)).toEqual(["unresolvable-on-surface"]);
     expect(r.blueprint.layout.children.map((c) => (c as { id: string }).id)).toEqual(["p99"]);
   });
   it("a semantic defect surfaces as a finding and the blueprint is still produced for degradation", () => {
-    const e = {
-      ...exp,
-      root: { ...root, children: [sem("p99", "Metric", { props: { rows: [1] } })] },
-    };
+    const e = withRoot(exp, {
+      ...root,
+      children: [sem("p99", "Metric", { props: { rows: [1] } })],
+    });
     const r = compile(e, opts);
     expect(r.ok).toBe(false);
     expect(r.findings.map((f) => f.code)).toEqual(["undeclared-prop"]);
@@ -229,14 +253,14 @@ describe("compile", () => {
   // experiences whose props were written in different orders used to emit different BYTES from a
   // compiler whose headline claim is determinism.
   it("emits props in sorted key order, so props written {a,b} and {b,a} compile identically", () => {
-    const withAB = {
-      ...exp,
-      root: { ...root, children: [sem("m", "Metric", { props: { format: "short", unit: "ms" } })] },
-    };
-    const withBA = {
-      ...exp,
-      root: { ...root, children: [sem("m", "Metric", { props: { unit: "ms", format: "short" } })] },
-    };
+    const withAB = withRoot(exp, {
+      ...root,
+      children: [sem("m", "Metric", { props: { format: "short", unit: "ms" } })],
+    });
+    const withBA = withRoot(exp, {
+      ...root,
+      children: [sem("m", "Metric", { props: { unit: "ms", format: "short" } })],
+    });
     const a = compile(withAB, opts);
     const b = compile(withBA, opts);
     expect(JSON.stringify(a.blueprint)).toBe(JSON.stringify(b.blueprint));
@@ -257,6 +281,44 @@ describe("compile", () => {
   });
   it("compiles a tree under the cap", () => {
     expect(compile({ ...exp, root: chain(200) }, opts).ok).toBe(true);
+  });
+  // I2. loom's `Layout` has no per-child span field, so a nested container's span is dropped on
+  // the floor — silently, until now.
+  it("warns that a nested container's span is not rendered, and does not warn for the root", () => {
+    const e = withRoot(exp, {
+      ...root,
+      children: [
+        {
+          id: "narrow",
+          order: "A",
+          kind: "container",
+          direction: "row",
+          span: 3,
+          children: [sem("phase", "Status")],
+        },
+      ],
+    });
+    const r = compile(e, opts);
+    expect(r.ok).toBe(true); // a warn, not an error
+    expect(r.findings).toEqual([
+      {
+        code: "span-not-rendered",
+        severity: "warn",
+        message:
+          'container "narrow" declares span 3, and loom\'s layouts carry no per-child span — it is not rendered',
+        nodeId: "narrow",
+      },
+    ]);
+    // the root is span 12 in this fixture; a root of any span is full-width by definition
+    expect(compile(withRoot(exp, { ...root, span: 6, children: [] }), opts).findings).toEqual([]);
+  });
+  // I3. `validateExperience` and loom's `validateBlueprint` both see a binding on a none-binding
+  // kind. Without the dedupe the composer got the same defect twice under two different codes.
+  it("reports a binding on a none-binding type exactly once, semantically", () => {
+    const e = withRoot(exp, { ...root, children: [sem("note", "Explainer")] });
+    const r = compile(e, opts);
+    expect(r.findings.map((f) => f.code)).toEqual(["unexpected-binding"]);
+    expect(r.findings.map((f) => f.code)).not.toContain("loom:unexpected-binding");
   });
   it("an unpersisted experience compiles to an id marked as such", () => {
     expect(compile({ ...exp, versionHash: "" }, opts).blueprint.id).toBe("exp-1@unsealed");

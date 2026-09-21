@@ -37,6 +37,18 @@ import {
 // whose `span` rides in props — declared by the derived loom catalogue (loomCatalog.ts). Nothing
 // semantic is smuggled into props: the experience is the source of truth, the blueprint derived.
 
+/**
+ * The hydration projection's top-level key. A widget's binding path is `values.<handle>`, and the
+ * projection that hydrates the surface must publish under the same prefix — one spelling, in one
+ * place, so the two halves of the contract cannot drift apart in a string literal.
+ */
+export const HYDRATION_VALUES_PREFIX = "values";
+
+/** The binding path a provider `handle` hydrates through. */
+export function hydrationPath(handle: string): string {
+  return `${HYDRATION_VALUES_PREFIX}.${handle}`;
+}
+
 export interface CompileOptions {
   readonly surface: Surface;
   readonly catalog: SemanticCatalog;
@@ -91,7 +103,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
 
   const layout = compileContainer(
     normalize(exp.root) as ContainerNode,
-    exp,
+    true,
     opts,
     resolveLabel,
     catalogByKind,
@@ -136,21 +148,33 @@ function sameDefect(ours: string, loomCode: string): boolean {
     // not fire; kept so a future compiler change cannot double-report.
     (ours === "undeclared-prop" && loomCode === "undeclared-prop") ||
     (ours === "missing-binding" && loomCode === "missing-binding") ||
+    (ours === "unexpected-binding" && loomCode === "unexpected-binding") ||
     (ours === "duplicate-node-id" && loomCode === "duplicate-node-id")
   );
 }
 
 function compileContainer(
   node: ContainerNode,
-  exp: Experience,
+  isRoot: boolean,
   opts: CompileOptions,
   resolveLabel: (l: LocalizedText) => string,
   catalogByKind: ReadonlyMap<string, CatalogEntry>,
   findings: Finding[]
 ): Layout {
+  // A container's `span` has nowhere to go: loom's `Layout` has no per-child span field (only a
+  // WIDGET carries one, in props). The root's span is the full width by definition, so only a
+  // NESTED container narrower than 12 is expressing an intent the blueprint silently drops —
+  // which is exactly the kind of loss the finding channel exists to make visible.
+  if (!isRoot && node.span !== 12)
+    findings.push({
+      code: "span-not-rendered",
+      severity: "warn",
+      message: `container "${node.id}" declares span ${node.span}, and loom's layouts carry no per-child span — it is not rendered`,
+      nodeId: node.id,
+    });
   const children: Array<Widget | Layout> = [];
   for (const child of node.children) {
-    const out = compileNode(child, exp, opts, resolveLabel, catalogByKind, findings);
+    const out = compileNode(child, opts, resolveLabel, catalogByKind, findings);
     if (out !== undefined) children.push(out);
   }
   if (node.direction === "grid")
@@ -164,14 +188,13 @@ function compileContainer(
 
 function compileNode(
   node: ExperienceNode,
-  exp: Experience,
   opts: CompileOptions,
   resolveLabel: (l: LocalizedText) => string,
   catalogByKind: ReadonlyMap<string, CatalogEntry>,
   findings: Finding[]
 ): Widget | Layout | undefined {
   if (node.kind === "container")
-    return compileContainer(node, exp, opts, resolveLabel, catalogByKind, findings);
+    return compileContainer(node, false, opts, resolveLabel, catalogByKind, findings);
   const r = resolveSurface(opts.catalog, node.type, node.typeVersion, opts.surface, node.id);
   if (!r.ok) return undefined; // the finding was recorded by validateExperience; the node is omitted, never faked
   // A resolved kind with no entry in the derived catalogue (loomCatalogFor already reported
@@ -224,7 +247,10 @@ function compileNode(
     ...(node.label !== undefined && { title: resolveLabel(node.label) }),
     props: { ...props, [SPAN_PROP]: node.span },
     ...(node.binding !== undefined && {
-      binding: { projectionId: opts.hydrationProjectionId, path: `values.${node.binding.handle}` },
+      binding: {
+        projectionId: opts.hydrationProjectionId,
+        path: hydrationPath(node.binding.handle),
+      },
     }),
   });
 }

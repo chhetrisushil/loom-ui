@@ -36,12 +36,26 @@ export function defineSemanticCatalog(catalog: SemanticCatalog): SemanticCatalog
   return catalog;
 }
 
+/**
+ * Order two dotted versions. Numeric segments compare numerically (so `1.2.0 < 1.10.0`);
+ * anything else compares as a string. The all-numeric assumption was not safe: `Number("0-beta")`
+ * is `NaN`, every comparison against `NaN` is false, and the subtraction returned `NaN` — which
+ * `checkFloor`'s `< 0` and `> 0` both read as "no", so a prerelease typeVersion silently satisfied
+ * a floor it does not meet. The result is always finite.
+ */
 export function compareVersions(a: string, b: string): number {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
+  const pa = a.split(".");
+  const pb = b.split(".");
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d;
+    const sa = pa[i] ?? "0";
+    const sb = pb[i] ?? "0";
+    const na = Number(sa);
+    const nb = Number(sb);
+    if (Number.isFinite(na) && Number.isFinite(nb)) {
+      if (na !== nb) return na - nb;
+      continue;
+    }
+    if (sa !== sb) return sa < sb ? -1 : 1;
   }
   return 0;
 }
@@ -186,7 +200,7 @@ export function validateExperience(
     ids.add(n.id);
     if (n.kind !== "semantic") return;
     nodes++;
-    checkSemantic(n, catalog, surface, findings);
+    checkSemantic(n, exp, catalog, surface, findings);
   });
   findings.push(...checkFloor(exp, exp.vocabularyFloor));
   return { ok: findings.every((f) => f.severity !== "error"), findings, nodes };
@@ -194,10 +208,29 @@ export function validateExperience(
 
 function checkSemantic(
   n: SemanticNode,
+  exp: Experience,
   catalog: SemanticCatalog,
   surface: Surface,
   findings: Finding[]
 ): void {
+  // A binding names a handle; `exp.providers` is what turns a handle into something to fetch. A
+  // handle with no spec renders a permanently empty widget and says nothing about why, so it is
+  // reported — as a WARN, because the composer may legitimately be mid-composition (bind the node
+  // now, remap the provider next op), and because nothing downstream is unsafe: the blueprint's
+  // binding path is inert until a projection publishes under it.
+  // `hasOwnProperty`, not `in` or a truthiness check: `providers` is a plain record, so a handle
+  // spelled "__proto__" or "toString" would otherwise resolve against Object.prototype and the
+  // finding would vanish for exactly the inputs most worth flagging.
+  if (
+    n.binding !== undefined &&
+    !Object.prototype.hasOwnProperty.call(exp.providers, n.binding.handle)
+  )
+    findings.push({
+      code: "unknown-handle",
+      severity: "warn",
+      message: `"${n.id}" binds handle "${n.binding.handle}", which this experience does not provide`,
+      nodeId: n.id,
+    });
   const entry = findEntry(catalog, n.type, n.typeVersion);
   if (!entry) {
     findings.push(
