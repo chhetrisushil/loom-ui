@@ -165,7 +165,9 @@ describe("apply", () => {
     } as never;
     const r = apply(g, { type: "remapProvider", handle: "h1", spec: specWithDefaults });
     if (!r.ok) throw new Error(r.finding.message);
-    expect(r.value.providers.h1.executionGraph[0]).toEqual({
+    const remapped = r.value.providers.h1;
+    if (remapped === undefined) throw new Error("remapProvider did not write providers.h1");
+    expect(remapped.executionGraph[0]).toEqual({
       stepId: "s1",
       toolName: "t1",
       toolVersion: "1.0.0",

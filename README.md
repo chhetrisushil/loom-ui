@@ -22,6 +22,7 @@ caller supplies, and names a catalogue it does not define.
 ```ts
 import { apply, compile, genesis } from "@loom-ui/core";
 import { EXPERIENCE_COMPOSED, putExperience } from "@loom-ui/core/log";
+import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loom-ui/hydration";
 
 let exp = genesis({ experienceId: "checkout-triage", intent: { objective: "Investigate checkout latency", source: "user" }, meta });
 const r = apply(exp, { type: "insertNode", parentId: "root", node: { id: "p99", order: "V", kind: "semantic", type: "Metric", typeVersion: "1.0.0", span: 6, props: { unit: "ms" }, binding: { handle: "latency-p99", priority: "P0" } } });
@@ -35,7 +36,7 @@ if (!put.ok) throw new Error(put.finding.message);
 ctx.emit(EXPERIENCE_COMPOSED, { ref: put.ref, parents: put.experience.parents, ops: [{ op, by: { source: "user" }, at: now }] });
 
 // Anywhere, later, with no model in the path: compile per surface and hand loom the Blueprint.
-const { blueprint, findings } = compile(put.experience, { surface: "web", catalog, hydrationProjectionId: "hydration", hydrationProjectionVersion: "1.0.0" });
+const { blueprint, findings } = compile(put.experience, { surface: "web", catalog, hydrationProjectionId: HYDRATION_PROJECTION_ID, hydrationProjectionVersion: HYDRATION_PROJECTION_VERSION });
 ```
 
 ## Shape of hydration (illustrative — not a compiling snippet)

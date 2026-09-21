@@ -27,7 +27,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 
 - Tests resolve loom from its **built `dist`**. Edit loom → rebuild loom → then test here.
 - `pnpm typecheck` runs against loom's built `.d.ts`; it is the guard that catches a rotted import
-  vitest would miss. CI runs it.
+  vitest would miss. CI runs it. It covers `src` only — the package `tsconfig.json`s exclude
+  `*.test.ts` / `*.test-support.ts` because they must not be emitted into `dist`.
+- Test files are typechecked by `pnpm typecheck:tests` (CI-gated); a test that does not typecheck
+  is a defect. It runs each package's `tsconfig.test.json` (the same options, `noEmit`, nothing
+  excluded), so a fixture that only compiles because vitest never typechecks it fails the build.
 - Package `clean` scripts remove `dist` **and** `tsconfig.tsbuildinfo`; `rm -rf dist` alone lets
   `tsc --build` skip emit.
 - `@loom-ui/core` is pure and isomorphic. Anything needing Node (crypto, fs) lives behind the
