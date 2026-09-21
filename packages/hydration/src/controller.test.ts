@@ -358,6 +358,41 @@ describe("HydrationController lifecycle", () => {
     expect(tools(inv)).toEqual(["tool.x"]); // nothing started after dispose
   });
 
+  it("dispose error-statuses batch-queued (P1) handles too, not just in-flight ones", async () => {
+    const { clock, inv, ctl, store } = rig(() => new Promise(() => {}));
+    ctl.load(withNodes([node("a", "x", "P0"), node("b", "y", "P1")], ["x", "y"]));
+    await flush();
+    expect(store.status("y")?.state).toBe("pending"); // batch-queued, not yet started
+    ctl.dispose();
+    expect(store.status("x")?.state).toBe("error");
+    expect(store.status("x")?.finding?.code).toBe("disposed");
+    expect(store.status("y")?.state).toBe("error");
+    expect(store.status("y")?.finding?.code).toBe("disposed");
+    clock.advance(100);
+    await flush();
+    expect(tools(inv)).toEqual(["tool.x"]); // the batch timer was cancelled: "y" is never invoked
+  });
+
+  it("a store subscriber that throws on the first `pending` publish still lands `start` on an error status", async () => {
+    const { ctl, store } = rig();
+    // Unsubscribed once the throwing episode is over: recomposing away from a handle whose
+    // last-published slice still has a live listener is a separate, pre-existing gap
+    // (`recompose`'s own `store.remove` is not guarded) — not what this test is about.
+    const unsubscribe = store.subscribe("h", () => {
+      throw new Error("subscriber boom");
+    });
+    ctl.load(withNodes([node("a", "h", "P0")], ["h"]));
+    await flush(); // resolving at all is part of the assertion: no unhandled rejection
+    expect(store.status("h")?.state).toBe("error");
+    expect(store.status("h")?.finding?.code).toBe("hydration-internal");
+    expect(ctl.inFlight()).toEqual([]);
+    unsubscribe();
+    // The controller itself is not wedged by the throwing subscriber: a fresh handle works.
+    ctl.load(withNodes([node("b", "k", "P0")], ["k"]));
+    await flush();
+    expect(store.status("k")?.state).toBe("ready");
+  });
+
   it("a second load replaces the first experience: handles it no longer binds are dropped", async () => {
     const { inv, ctl, store } = rig();
     ctl.load(withNodes([node("n1", "a", "P0")], ["a"]));
