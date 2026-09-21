@@ -66,6 +66,20 @@ describe("HydrationStore", () => {
     await Promise.resolve();
     expect(seen).toEqual(["h1:pending", "h1:ready"]);
   });
+  it("runtimeSubscribe fires on any handle's change, with the whole state", () => {
+    const s = mk();
+    const seen: unknown[] = [];
+    s.runtimeSubscribe((state) => seen.push(state));
+    s.setValue("h1", 1, { state: "ready" });
+    s.setStatus("h2", { state: "pending" });
+    expect(seen).toEqual([
+      { values: { h1: 1 }, status: { h1: { state: "ready", seq: 1 } } },
+      {
+        values: { h1: 1 },
+        status: { h1: { state: "ready", seq: 1 }, h2: { state: "pending", seq: 2 } },
+      },
+    ]);
+  });
   it("refuses prototype-shaped handles, and a rejected write does not consume a seq", () => {
     expect(isReservedHandle("__proto__")).toBe(true);
     expect(isReservedHandle("constructor")).toBe(true);

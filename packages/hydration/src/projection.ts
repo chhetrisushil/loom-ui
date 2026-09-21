@@ -137,6 +137,15 @@ export class HydrationStore {
     this.emit({ kind: "remove", handle });
   }
 
+  /** Whole-state subscription: fires on ANY handle's value or status change. For a surface that renders the full projection (e.g. a terminal `watch` loop) rather than one widget's slice. */
+  runtimeSubscribe(listener: (state: HydrationState) => void): () => void {
+    return this.runtime.subscribe<HydrationState>(
+      HYDRATION_PROJECTION_ID,
+      this.executionId,
+      listener
+    );
+  }
+
   /** Slice-scoped: fires only when THIS handle's status seq or value changes. Change-only, like loom's subscribe. */
   subscribe(handle: string, listener: (slice: HandleSlice) => void): () => void {
     return this.runtime.subscribeSelector<HydrationState, HandleSlice>(
