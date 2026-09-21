@@ -45,4 +45,14 @@ describe("HydrationCache", () => {
     );
     expect(c.get(providerSpec("z", [mcpStep("s", "t")]), undefined)).toBeUndefined();
   });
+  it("invalidate(handle) never mis-hits a different handle that contains the delimiter as text", () => {
+    const c = new HydrationCache(() => 0);
+    const h = providerSpec("h", [mcpStep("s", "t")]);
+    const xh = providerSpec("x:h", [mcpStep("s", "t")]);
+    c.set(h, undefined, 1);
+    c.set(xh, undefined, 2);
+    c.invalidate("h");
+    expect(c.get(h, undefined)).toBeUndefined();
+    expect(c.get(xh, undefined)).toEqual({ value: 2 });
+  });
 });
