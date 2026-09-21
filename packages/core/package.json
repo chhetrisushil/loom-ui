@@ -1,0 +1,28 @@
+{
+  "name": "@loom-ui/core",
+  "version": "0.0.1",
+  "description": "Experience Model, operations + replay, semantic catalogue, and the compiler to loom's Blueprint",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./log": { "types": "./dist/log.d.ts", "default": "./dist/log.js" }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@loom/blueprint-runtime": "*",
+    "@loom/plugin-content": "*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "^5.6.3",
+    "vitest": "catalog:"
+  }
+}
