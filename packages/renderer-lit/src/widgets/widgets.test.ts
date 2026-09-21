@@ -76,6 +76,60 @@ describe("kind widgets", () => {
     });
     expect(derived.shadowRoot?.querySelectorAll("th").length).toBe(2);
   });
+  it("lu-data-table derives columns from the UNION of the rows' keys, like loom's React renderer", async () => {
+    // A first-row sample drops every column the first row happens to be missing — a filter
+    // nobody asked for, and a divergence from `DataTableRenderer.deriveColumns`.
+    const el = await mount<HTMLElement>("lu-data-table", {
+      widget: customWidget$({ kind: "DataTable", id: "t3", title: "Top", binding: b }),
+      value: [{ a: 1 }, { a: 2, b: "x" }],
+    });
+    const headers = [...(el.shadowRoot?.querySelectorAll("th") ?? [])].map((th) =>
+      (th.textContent ?? "").trim()
+    );
+    expect(headers).toEqual(["a", "b"]);
+    expect(text(el)).toContain("x");
+  });
+  it("lu-data-table treats a column named __proto__ as an ordinary (absent) column", async () => {
+    const el = await mount<HTMLElement>("lu-data-table", {
+      widget: customWidget$({
+        kind: "DataTable",
+        id: "t4",
+        title: "Top",
+        binding: b,
+        props: { columns: ["__proto__", "db"] },
+      }),
+      value: [{ db: "orders" }],
+    });
+    expect(el.shadowRoot?.querySelectorAll("th").length).toBe(2);
+    // Neither the prototype object nor a numeric right-align leaked out of the cache.
+    expect(text(el)).not.toContain("[object Object]");
+    expect(({} as Record<string, unknown>).db).toBeUndefined();
+  });
+  it("lu-list renders loom's Timeline entry shape — message, timestamp and level", async () => {
+    const el = await mount<HTMLElement>("lu-list", {
+      widget: customWidget$({ kind: "Timeline", id: "tl", title: "Events", binding: b }),
+      value: [{ timestamp: "2026-01-01T00:00:00Z", message: "deployed", level: "info" }],
+    });
+    expect(text(el)).toContain("deployed");
+    expect(text(el)).toContain("2026-01-01T00:00:00Z");
+    expect(text(el)).not.toContain("[object Object]");
+    expect(el.shadowRoot?.querySelector("li")?.getAttribute("data-level")).toBe("info");
+  });
+  it("lu-list ignores props.maxItems, because loom's React renderer does", async () => {
+    const el = await mount<HTMLElement>("lu-list", {
+      widget: customWidget$({
+        kind: "Timeline",
+        id: "tl2",
+        title: "Events",
+        binding: b,
+        props: { maxItems: 1 },
+      }),
+      value: [{ message: "one" }, { message: "two" }],
+    });
+    expect(el.shadowRoot?.querySelectorAll("li").length).toBe(2);
+    const first = el.shadowRoot?.querySelector("li");
+    expect(first?.hasAttribute("data-level")).toBe(false);
+  });
   it("lu-timeseries draws one path per series and never emits NaN into the SVG; lu-bar-chart one bar per entry", async () => {
     const ts = await mount<HTMLElement>("lu-timeseries", {
       widget: customWidget$({ kind: "TimeSeries", id: "ts", title: "Latency", binding: b }),

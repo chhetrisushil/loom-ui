@@ -66,8 +66,15 @@ export function renderBlueprintDom(
     const value = widget.binding ? resolvePath(state, path) : undefined;
     if (widget.binding?.projectionId !== statusProjectionId) return { value, status: undefined };
     const handle = handleFromPath(path);
+    // Own properties only, exactly as the terminal surface's `withStatus` reads them: a state
+    // with no `status` map, or a binding to `values.__proto__`, must yield NO status — a plain
+    // `status[handle]` read hands `Object.prototype` back for that handle, and an object that is
+    // not a `HandleStatus` but is not `undefined` either is the worst of both.
+    const statuses = (state as HydrationState | undefined)?.status;
     const status =
-      handle === undefined ? undefined : (state as HydrationState | undefined)?.status?.[handle];
+      handle === undefined || statuses === undefined || !Object.hasOwn(statuses, handle)
+        ? undefined
+        : statuses[handle];
     return { value, status };
   };
 

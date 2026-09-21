@@ -1,3 +1,4 @@
+import type { Widget } from "@loom/blueprint-runtime";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
@@ -16,6 +17,11 @@ function isEmpty(v: unknown): boolean {
   return v === null || v === undefined;
 }
 
+/** Own properties only: a column named `__proto__` reads as absent, never as the row's prototype. */
+function cell(row: Row, column: string): unknown {
+  return Object.hasOwn(row, column) ? row[column] : undefined;
+}
+
 function compareCells(a: unknown, b: unknown): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   const as = String(a);
@@ -31,10 +37,14 @@ export class LuDataTable extends LuWidget {
   @state() private sortDir: 1 | -1 = -1;
   @state() private visibleRows = INITIAL_ROWS;
 
-  // Memoize the per-column numeric detection so it isn't recomputed (O(rows×cols)) on every
-  // sort click — only when the underlying value reference changes.
-  private numericRef?: unknown;
-  private numericCache: Record<string, boolean> = {};
+  // Memoize the derived columns and the per-column numeric detection so neither is recomputed
+  // (both O(rows×cols)) on every sort click — only when the value or the widget changes.
+  // A `Map`, not an object: a column literally named `__proto__` must land as an ordinary entry
+  // rather than reaching the prototype setter (and reading it back as `Object.prototype`, which
+  // is truthy, so every cell in that column would right-align as "numeric").
+  private cacheRef: { value: unknown; widget: Widget } | undefined;
+  private columnsCache: string[] = [];
+  private numericCache = new Map<string, boolean>();
 
   static styles = css`
     .sr-only {
@@ -116,37 +126,51 @@ export class LuDataTable extends LuWidget {
     }
   `;
 
-  private columns(rows: readonly Row[]): string[] {
-    const declared = (this.widget.props as { columns?: string[] }).columns;
-    return declared ?? Object.keys(rows[0] ?? {});
-  }
-
-  private numericColumns(
-    rows: readonly Row[],
-    columns: readonly string[]
-  ): Record<string, boolean> {
-    if (this.numericRef !== this.value) {
-      const cache: Record<string, boolean> = {};
+  /**
+   * Columns come from the widget when declared; otherwise from the UNION of every row's keys, in
+   * first-seen order — mirroring loom's `DataTableRenderer.deriveColumns`. Sampling the first row
+   * alone silently drops every column that row happens to be missing, which is the table
+   * equivalent of a filter nobody asked for.
+   */
+  private analyze(rows: readonly Row[]): {
+    columns: readonly string[];
+    numeric: Map<string, boolean>;
+  } {
+    const ref = this.cacheRef;
+    if (ref === undefined || ref.value !== this.value || ref.widget !== this.widget) {
+      const declared = (this.widget.props as { columns?: string[] }).columns;
+      let columns: string[];
+      if (declared !== undefined) {
+        columns = declared;
+      } else {
+        const seen = new Set<string>();
+        for (const row of rows) for (const key of Object.keys(row)) seen.add(key);
+        columns = [...seen];
+      }
+      const numeric = new Map<string, boolean>();
       for (const c of columns)
-        cache[c] = rows.every((r) => typeof r[c] === "number" || isEmpty(r[c]));
-      this.numericCache = cache;
-      this.numericRef = this.value;
+        numeric.set(
+          c,
+          rows.every((r) => typeof cell(r, c) === "number" || isEmpty(cell(r, c)))
+        );
+      this.columnsCache = columns;
+      this.numericCache = numeric;
+      this.cacheRef = { value: this.value, widget: this.widget };
     }
-    return this.numericCache;
+    return { columns: this.columnsCache, numeric: this.numericCache };
   }
 
   protected renderReady(): TemplateResult | typeof nothing {
     const rows = this.value as Row[];
-    const columns = this.columns(rows);
-    const numeric = this.numericColumns(rows, columns);
+    const { columns, numeric } = this.analyze(rows);
     let sorted = rows;
     if (this.sortCol !== null) {
       const c = this.sortCol;
       const dir = this.sortDir;
       sorted = [...rows].sort((a, b) => {
-        if (isEmpty(a[c])) return 1;
-        if (isEmpty(b[c])) return -1;
-        return compareCells(a[c], b[c]) * dir;
+        if (isEmpty(cell(a, c))) return 1;
+        if (isEmpty(cell(b, c))) return -1;
+        return compareCells(cell(a, c), cell(b, c)) * dir;
       });
     }
     const total = sorted.length;
@@ -157,7 +181,7 @@ export class LuDataTable extends LuWidget {
         <thead>
           <tr>
             ${columns.map(
-              (c) => html`<th class=${numeric[c] ? "num" : ""} @click=${() => this.sortBy(c)}>
+              (c) => html`<th class=${numeric.get(c) ? "num" : ""} @click=${() => this.sortBy(c)}>
                 ${c}${this.sortCol === c ? (this.sortDir === 1 ? " ↑" : " ↓") : ""}
               </th>`
             )}
@@ -167,9 +191,9 @@ export class LuDataTable extends LuWidget {
           ${windowed.map(
             (r) => html`<tr>
               ${columns.map((c) => {
-                const cell = r[c];
-                return html`<td class=${numeric[c] ? "num" : ""}>
-                  ${isEmpty(cell) ? "—" : typeof cell === "number" ? measure(cell) : String(cell)}
+                const v = cell(r, c);
+                return html`<td class=${numeric.get(c) ? "num" : ""}>
+                  ${isEmpty(v) ? "—" : typeof v === "number" ? measure(v) : String(v)}
                 </td>`;
               })}
             </tr>`
