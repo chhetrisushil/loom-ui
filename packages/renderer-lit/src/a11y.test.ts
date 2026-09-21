@@ -1,0 +1,24 @@
+import { describe, expect, it } from "vitest";
+import { describeValue } from "./a11y";
+import { setLocale } from "./i18n";
+
+describe("describeValue", () => {
+  it("speaks each kind, and distinguishes loading from a contract error", () => {
+    setLocale("en-US");
+    expect(describeValue("MetricCard", 412, "p99")).toBe("p99: 412");
+    expect(describeValue("StatusBadge", "ok", "Phase")).toBe("Phase: ok");
+    expect(describeValue("DataTable", [{ a: 1 }, { a: 2 }], "Top")).toBe("Top: table with 2 rows");
+    expect(
+      describeValue(
+        "TimeSeries",
+        { series: [{ label: "p99", unit: "ms", points: [{ timestamp: "t", value: 3 }] }] },
+        "Latency"
+      )
+    ).toBe("Latency: p99 3 ms");
+    expect(describeValue("BarChart", { bars: [{ label: "a", value: 1 }] }, "Bars")).toBe(
+      "Bars: a 1"
+    );
+    expect(describeValue("MetricCard", undefined, "p99")).toBe("p99: loading");
+    expect(describeValue("MetricCard", "not a number", "p99")).toBe("p99: error");
+  });
+});
