@@ -27,6 +27,7 @@
       "@loom/event-runtime": "link:../loom/packages/event-runtime",
       "@loom/plugin-content": "link:../loom/plugins/content",
       "@loom/plugin-mcp": "link:../loom/plugins/mcp",
+      "@loom/plugin-renderer-terminal": "link:../loom/plugins/renderer-terminal",
       "@loom/plugin-sandbox": "link:../loom/plugins/sandbox",
       "@loom/projection-runtime": "link:../loom/packages/projection-runtime",
       "@loom/replay-vm": "link:../loom/packages/replay-vm",

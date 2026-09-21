@@ -1,0 +1,33 @@
+{
+  "name": "@loom-ui/renderer-lit",
+  "version": "0.0.1",
+  "description": "loom DOM renderer adapter + Lit widgets registered under loom kinds; the framework's web surface beside loom's React renderer",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@loom-ui/core": "workspace:*",
+    "@loom-ui/hydration": "workspace:*",
+    "@loom/blueprint-runtime": "*",
+    "@loom/projection-runtime": "*",
+    "lit": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "happy-dom": "catalog:",
+    "typescript": "^5.6.3",
+    "vitest": "catalog:"
+  }
+}

@@ -52,3 +52,11 @@ export { HYDRATION_VALUES_PREFIX, compile, handleFromPath, hydrationPath } from 
 export type { CompileOptions, CompileResult } from "./compile";
 export { experienceHandles } from "./handles";
 export type { HandleUse } from "./handles";
+export {
+  BarChartValue,
+  FRAMEWORK_KINDS,
+  TimeSeriesValue,
+  checkKindValue,
+  kindValueContract,
+  kindValueContracts,
+} from "./values";
