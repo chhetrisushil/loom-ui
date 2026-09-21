@@ -1,0 +1,30 @@
+{
+  "name": "loom-ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A semantic UI framework for loom: an Experience Model that compiles to loom's Blueprint. Consumes the sibling ../loom checkout's unpublished @loom/* packages via pnpm.overrides (link:). See AGENTS.md.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.14.4",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "clean": "pnpm -r clean"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@loom/blueprint-runtime": "link:../loom/packages/blueprint-runtime",
+      "@loom/classify": "link:../loom/packages/classify",
+      "@loom/core": "link:../loom/packages/core",
+      "@loom/event-runtime": "link:../loom/packages/event-runtime",
+      "@loom/plugin-content": "link:../loom/plugins/content",
+      "@loom/scheduler": "link:../loom/packages/scheduler"
+    }
+  }
+}

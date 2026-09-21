@@ -1,0 +1,51 @@
+# loom-ui consumes the sibling ../loom checkout via pnpm.overrides (link:). CI therefore checks
+# loom out NEXT TO this repo, builds it, then builds/typechecks/lints/tests loom-ui against it.
+# The loom checkout needs a PAT with read access to chhetrisushil/loom in the LOOM_TOKEN secret.
+# Without it the checkout step fails and so does the run — loudly, rather than testing against
+# nothing. That is the intended behaviour.
+name: build + typecheck + lint + test
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: loom-ui
+      - name: Checkout loom (the framework this repo compiles to)
+        uses: actions/checkout@v4
+        with:
+          repository: chhetrisushil/loom
+          token: ${{ secrets.LOOM_TOKEN }}
+          path: loom
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            loom/pnpm-lock.yaml
+            loom-ui/pnpm-lock.yaml
+      - name: Install and build loom
+        working-directory: loom
+        run: pnpm install --frozen-lockfile && pnpm build
+      - name: Install loom-ui
+        working-directory: loom-ui
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: loom-ui
+        run: pnpm build
+      - name: Typecheck against loom's built declarations
+        working-directory: loom-ui
+        run: pnpm typecheck
+      - name: Lint
+        working-directory: loom-ui
+        run: pnpm lint
+      - name: Test
+        working-directory: loom-ui
+        run: pnpm test
