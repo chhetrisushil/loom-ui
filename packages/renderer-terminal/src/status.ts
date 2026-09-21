@@ -23,9 +23,13 @@ export function withStatus(
   for (const kind of registry.kinds()) {
     const inner = registry.get(kind) as TerminalWidgetRenderer;
     out.register(kind, (w, v) => {
-      const check = checkKindValue(w.kind, v);
-      if (!check.ok) return `✗ ${title(w)}: ${check.finding.message}`;
-      if (w.binding?.projectionId !== statusProjectionId) return inner(w, v);
+      // Not bound to the status projection: no status to consult, just the contract then the
+      // renderer.
+      if (w.binding?.projectionId !== statusProjectionId) {
+        const check = checkKindValue(w.kind, v);
+        if (!check.ok) return `✗ ${title(w)}: ${check.finding.message}`;
+        return inner(w, v);
+      }
       const handle = handleFromPath(w.binding.path);
       const status =
         handle === undefined
@@ -33,8 +37,14 @@ export function withStatus(
           : Object.hasOwn(state.status, handle)
             ? state.status[handle]
             : undefined;
-      if (status?.state === "pending") return `⋯ ${title(w)}`;
+      // Canonical order, matching the Lit base widget's `state()`: a live status error outranks
+      // a stale value's own contract violation — the finding on the STATUS is the more specific
+      // diagnosis (e.g. "provider timed out") than the generic "does not match its contract"
+      // the last-known value would otherwise produce.
       if (status?.state === "error") return `✗ ${title(w)}: ${status.finding?.message ?? "error"}`;
+      const check = checkKindValue(w.kind, v);
+      if (!check.ok) return `✗ ${title(w)}: ${check.finding.message}`;
+      if (status?.state === "pending") return `⋯ ${title(w)}`;
       if (status?.state === "stale") return `~ ${inner(w, v)}`;
       return inner(w, v);
     });

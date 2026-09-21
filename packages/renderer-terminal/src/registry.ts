@@ -10,11 +10,28 @@ const title = (w: Widget): string => w.title ?? w.kind;
 const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s.padEnd(n));
 const num = (v: number): string => (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "—");
 
+/**
+ * Min and max of the finite values, in one pass — never `Math.min(...values)` /
+ * `Math.max(...values)`, which spreads the whole array into call arguments and hits V8's
+ * argument-count ceiling on a long series. `undefined` iff no value is finite.
+ */
+function finiteMinMax(values: readonly number[]): { min: number; max: number } | undefined {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let seen = false;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    seen = true;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return seen ? { min, max } : undefined;
+}
+
 export function sparkline(values: readonly number[]): string {
-  const finite = values.filter(Number.isFinite);
-  if (finite.length === 0) return "";
-  const min = Math.min(...finite);
-  const max = Math.max(...finite);
+  const range = finiteMinMax(values);
+  if (range === undefined) return "";
+  const { min, max } = range;
   return values
     .map((v) =>
       Number.isFinite(v)
@@ -45,7 +62,13 @@ const timeSeries = guarded("TimeSeries", (w, v) => {
 
 const barChart = guarded("BarChart", (w, v) => {
   const { bars, unit } = v as BarChartValue;
-  const max = Math.max(1, ...bars.map((b) => Math.abs(b.value)).filter(Number.isFinite));
+  // Single-pass max (never Math.max(...spread) — same argument-count hazard as sparkline's
+  // min/max), floored at 1 so an all-non-finite/zero series never divides by zero below.
+  let max = 1;
+  for (const b of bars) {
+    const abs = Math.abs(b.value);
+    if (Number.isFinite(abs) && abs > max) max = abs;
+  }
   const lines = bars.map((b) => {
     const filled = Number.isFinite(b.value) ? Math.round((Math.abs(b.value) / max) * 20) : 0;
     return `    ${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${num(b.value)}${unit ?? ""}`;
