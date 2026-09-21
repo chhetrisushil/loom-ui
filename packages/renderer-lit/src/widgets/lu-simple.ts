@@ -1,6 +1,6 @@
 // Five compact built-in elements: the loom kinds with no bespoke Lit widget, matching loom's
-// React renderers' semantics.
-import { type TemplateResult, css, html, type nothing } from "lit";
+// React renderers' semantics (`plugins/renderer-react/src/renderers/*.tsx` in loom).
+import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { measure } from "../format";
 import { LuWidget } from "./base";
@@ -30,12 +30,20 @@ export class LuProgress extends LuWidget {
   `;
 
   protected renderReady(): TemplateResult | typeof nothing {
-    const v = this.value as number;
     const props = this.widget.props as { max?: number };
-    const max = props.max ?? 100;
-    return html`<progress max=${max} value=${v}></progress><span>${measure(v)}</span>`;
+    // Mirrors ProgressBarRenderer: core's contract is `z.number()`, which rejects NaN but
+    // accepts Infinity, so both `max` and the bound value are re-checked for finiteness here.
+    // Omitting the `value` attribute (via Lit's `nothing`) is the standard representation of an
+    // INDETERMINATE bar — a bar at zero and a bar with no usable data must not look identical.
+    const max = typeof props.max === "number" && props.max > 0 ? props.max : 100;
+    const raw = this.value as number;
+    const current = Number.isFinite(raw) ? raw : undefined;
+    return html`<progress max=${max} value=${current !== undefined ? current : nothing}></progress>
+      <span>${current === undefined ? "—" : measure(current)}</span>`;
   }
 }
+
+const ALERT_SEVERITIES = new Set(["info", "warning", "error", "critical"]);
 
 @customElement("lu-alert")
 export class LuAlert extends LuWidget {
@@ -52,7 +60,14 @@ export class LuAlert extends LuWidget {
 
   protected renderReady(): TemplateResult | typeof nothing {
     const props = this.widget.props as { severity?: string };
-    return html`<div class="alert" data-severity=${props.severity ?? "info"}>${this.value as string}</div>`;
+    // Mirrors AlertCardRenderer's `SEVERITIES` allow-list: an unrecognised severity falls back
+    // to "info" rather than being interpolated straight into `data-severity`, so a bound string
+    // can never author a style hook.
+    const severity =
+      props.severity !== undefined && ALERT_SEVERITIES.has(props.severity)
+        ? props.severity
+        : "info";
+    return html`<div class="alert" data-severity=${severity}>${this.value as string}</div>`;
   }
 }
 
@@ -126,20 +141,30 @@ export class LuApproval extends LuWidget {
     }
   `;
 
+  // Exact action shape from ApprovalCardRenderer — an app's `onAction` handler must not care
+  // which renderer fired it, so "one web compile serves React or Lit" means these dispatch
+  // identically: `type` is upper-case and `payload.approved` carries the boolean, not the type.
+  private approve = (): void => {
+    this.onAction?.({ type: "APPROVE", widgetId: this.widget.id, payload: { approved: true } });
+  };
+  private reject = (): void => {
+    this.onAction?.({ type: "REJECT", widgetId: this.widget.id, payload: { approved: false } });
+  };
+
   protected renderReady(): TemplateResult | typeof nothing {
     const props = this.widget.props as { approveLabel?: string; rejectLabel?: string };
+    // Gated on `Boolean(value)` like ApprovalCardRenderer: a resolved (or absent) approval
+    // shows no actions, only the same "No pending approval" text React renders.
+    const pending = Boolean(this.value);
     return html`<div class="title">${this.title_}</div>
-      <div class="value">${describeEntry(this.value)}</div>
-      <div class="actions">
-        <button
-          @click=${() => this.onAction?.({ type: "approve", widgetId: this.widget.id })}
-        >
-          ${props.approveLabel ?? "Approve"}
-        </button>
-        <button @click=${() => this.onAction?.({ type: "reject", widgetId: this.widget.id })}>
-          ${props.rejectLabel ?? "Reject"}
-        </button>
-      </div>`;
+      ${
+        pending
+          ? html`<div class="actions">
+              <button @click=${this.approve}>${props.approveLabel ?? "Approve"}</button>
+              <button @click=${this.reject}>${props.rejectLabel ?? "Reject"}</button>
+            </div>`
+          : html`<div class="resolved">No pending approval</div>`
+      }`;
   }
 }
 

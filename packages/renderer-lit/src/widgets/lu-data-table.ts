@@ -1,5 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { describeValue } from "../a11y";
 import { measure } from "../format";
 import { LuWidget } from "./base";
 
@@ -36,6 +37,17 @@ export class LuDataTable extends LuWidget {
   private numericCache: Record<string, boolean> = {};
 
   static styles = css`
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
     :host {
       display: block;
       height: 100%;
@@ -141,6 +153,7 @@ export class LuDataTable extends LuWidget {
     const shown = Math.min(this.visibleRows, total);
     const windowed = shown < total ? sorted.slice(0, shown) : sorted;
     return html`<table>
+        <caption class="sr-only">${describeValue("DataTable", rows, this.title_)}</caption>
         <thead>
           <tr>
             ${columns.map(
