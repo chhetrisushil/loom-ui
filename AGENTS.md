@@ -35,3 +35,6 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`);
   build your own and `.merge()` — the defaults are shared singletons.
+- Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
+  reported (`onDrift`), never repaired here; the app's durable execution applies `remapOperation`'s op and
+  emits `SCHEMA_REPAIRED`. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else.
