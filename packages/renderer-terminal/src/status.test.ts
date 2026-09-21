@@ -59,4 +59,28 @@ describe("renderExperience", () => {
     store.setValue("ha", "not-a-number", { state: "ready" });
     expect(renderExperience(bp, store)).toMatch(/✗ A: .*contract/);
   });
+  it("a status error outranks a contract violation on the same handle's stale value, like the Lit base widget", () => {
+    const errBp = blueprint$({
+      id: "e2@v",
+      title: "Dash2",
+      layout: stack({
+        children: [
+          MetricCard({
+            id: "e",
+            title: "E",
+            binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h-e" },
+          }),
+        ],
+      }),
+      projections: [HYDRATION_PROJECTION_ID],
+    });
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e2" });
+    store.setValue("h-e", "not-a-number", {
+      state: "error",
+      finding: { code: "provider-failed", severity: "error", message: "tool down" },
+    });
+    const out = renderExperience(errBp, store);
+    expect(out).toContain("✗ E: tool down");
+    expect(out).not.toMatch(/contract/);
+  });
 });
