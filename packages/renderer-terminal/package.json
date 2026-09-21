@@ -1,0 +1,24 @@
+{
+  "name": "@loom-ui/renderer-terminal",
+  "version": "0.0.1",
+  "description": "Terminal renderers for the framework's kinds, merged over loom's kind-aware terminal registry, with hydration status",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@loom-ui/core": "workspace:*",
+    "@loom-ui/hydration": "workspace:*",
+    "@loom/blueprint-runtime": "*",
+    "@loom/plugin-renderer-terminal": "*",
+    "@loom/projection-runtime": "*"
+  },
+  "devDependencies": { "@types/node": "catalog:", "typescript": "^5.6.3", "vitest": "catalog:" }
+}
