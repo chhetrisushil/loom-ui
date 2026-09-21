@@ -8,6 +8,10 @@ on:
   push:
     branches: [main]
   pull_request:
+env:
+  # the loom commit this repo is built and tested against; bump deliberately after rebuilding
+  # ../loom at that commit and re-running the suite
+  LOOM_REF: 4f79569d2964c554c1ad80f5d30de8e9dba667a5
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -19,6 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: chhetrisushil/loom
+          ref: ${{ env.LOOM_REF }}
           token: ${{ secrets.LOOM_TOKEN }}
           path: loom
       - uses: pnpm/action-setup@v4
