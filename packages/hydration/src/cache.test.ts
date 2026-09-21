@@ -45,6 +45,20 @@ describe("HydrationCache", () => {
     );
     expect(c.get(providerSpec("z", [mcpStep("s", "t")]), undefined)).toBeUndefined();
   });
+  it("two SPECS for one handle are two entries — a repaired provider never reads the old spec's value", () => {
+    const c = new HydrationCache(() => 0);
+    const v1 = providerSpec("h", [mcpStep("s", "t")]);
+    const v2 = providerSpec("h", [{ ...mcpStep("s", "t"), toolSchemaHash: "v2" }]);
+    c.set(v1, undefined, 1);
+    c.set(v2, undefined, 2);
+    expect(c.get(v1, undefined)).toEqual({ value: 1 });
+    expect(c.get(v2, undefined)).toEqual({ value: 2 });
+    // The key is the spec's CONTENT, not its object identity: an equal spec hits the same entry.
+    expect(c.get(providerSpec("h", [mcpStep("s", "t")]), undefined)).toEqual({ value: 1 });
+    c.invalidate("h"); // still drops every spec-generation of the handle
+    expect(c.get(v1, undefined)).toBeUndefined();
+    expect(c.get(v2, undefined)).toBeUndefined();
+  });
   it("invalidate(handle) never mis-hits a different handle that contains the delimiter as text", () => {
     const c = new HydrationCache(() => 0);
     const h = providerSpec("h", [mcpStep("s", "t")]);

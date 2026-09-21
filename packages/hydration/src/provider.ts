@@ -4,7 +4,7 @@ import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import type { TransientInvoker } from "./invoker";
 import { resolveArguments, terminalSteps, topoWaves } from "./plan";
-import { outputShapeHashOf, reshape } from "./reshape";
+import { outputShapeHashOf, reshape, safeStringify } from "./reshape";
 
 // ── Executing one provider ────────────────────────────────────────────────────
 // The transient interpreter (ADRs 0060–0066): walk the graph in waves, invoke `mcp.invoke` per
@@ -135,7 +135,7 @@ export async function executeProvider(
             node.stepId,
             err(
               `tool-${e.channel}`,
-              `step "${node.stepId}" (${node.toolName}) failed on channel ${e.channel}: ${JSON.stringify(e.payload)}`
+              `step "${node.stepId}" (${node.toolName}) failed on channel ${e.channel}: ${safeStringify(e.payload)}`
             )
           );
         } else if (opts.signal?.aborted) {
@@ -190,7 +190,20 @@ export async function executeProvider(
     });
     return { ok: true, value: shaped.value, findings };
   }
-  const observed = outputShapeHashOf(shaped.value);
+  // The shaped value is tool-authored: `shapeHash` refuses a nest past its depth cap (and any
+  // value it cannot walk). An unhashable value is an UNVERIFIABLE one — reported as a failure,
+  // never published as if the pin had matched, and never as a throw out of this total function.
+  let observed: string;
+  try {
+    observed = outputShapeHashOf(shaped.value);
+  } catch (e) {
+    const f = err(
+      "output-shape-unhashable",
+      `provider "${spec.handle}" output cannot be shape-hashed, so the pinned ${spec.outputShapeHash} cannot be checked: ${e instanceof Error ? e.message : String(e)}`
+    );
+    findings.push(f);
+    return { ok: false, finding: f, drift, findings };
+  }
   if (observed !== spec.outputShapeHash) {
     drift.push({ kind: "output", handle: spec.handle, expected: spec.outputShapeHash, observed });
     const f = err(

@@ -9,7 +9,7 @@ import {
   isReservedHandle,
 } from "./projection";
 
-const mk = () => new HydrationStore(new InMemoryProjectionRuntime(), "exp-1");
+const mk = () => new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
 
 describe("hydrationProjection", () => {
   it("declares its id and a semver version (what the compiler pins)", () => {
@@ -77,9 +77,29 @@ describe("HydrationStore", () => {
     s.setStatus("h1", { state: "pending" });
     expect(s.status("h1")).toEqual({ state: "pending", seq: 1 });
   });
+  it("two viewers of one experience are isolated even on a shared runtime", async () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const alice = new HydrationStore(runtime, { experienceId: "exp-1", principalId: "alice" });
+    const bob = new HydrationStore(runtime, { experienceId: "exp-1", principalId: "bob" });
+    expect(alice.scope).toEqual({ experienceId: "exp-1", principalId: "alice" });
+    expect(alice.executionId).toBe("exp-1:alice");
+    expect(bob.executionId).toBe("exp-1:bob");
+    const seen: unknown[] = [];
+    bob.subscribe("h", (slice) => seen.push(slice));
+    alice.setValue("h", { secret: 1 }, { state: "ready" });
+    await Promise.resolve();
+    expect(alice.value("h")).toEqual({ secret: 1 });
+    expect(bob.value("h")).toBeUndefined();
+    expect(bob.status("h")).toBeUndefined();
+    expect(seen).toEqual([]); // the other viewer's widget is not even woken
+  });
+  it("a scope with no principal keys on the experience alone", () => {
+    const s = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    expect(s.executionId).toBe("exp-1");
+  });
   it("the fold itself refuses a reserved handle from a forged envelope on the shared runtime, never assigning through a prototype setter", () => {
     const runtime = new InMemoryProjectionRuntime();
-    const s = new HydrationStore(runtime, "exp-1");
+    const s = new HydrationStore(runtime, { experienceId: "exp-1" });
     runtime.handleEvent({
       id: "forged",
       workflowId: "x",

@@ -127,3 +127,32 @@ describe("executeProvider", () => {
     expect(!r.ok && r.finding.code).toBe("empty-graph");
   });
 });
+
+describe("executeProvider is total: a value it cannot inspect is a finding, never a throw", () => {
+  it("an output the shape hash cannot walk fails as output-shape-unhashable with no drift record", async () => {
+    // Deeper than `shapeOf`'s 1024 cap — a tool server can return this, and a throw here would
+    // escape `executeProvider` as a rejection with no finding attached to the handle.
+    let deep: unknown = { leaf: 1 };
+    for (let i = 0; i < 1100; i++) deep = { n: deep };
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => deep);
+    const spec = providerSpec("h", [mcpStep("s", "t")], {
+      outputShapeHash: outputShapeHashOf({ leaf: 1 }),
+    });
+    const r = await executeProvider(spec, { invoker: inv });
+    expect(!r.ok && r.finding.code).toBe("output-shape-unhashable");
+    expect(!r.ok && r.findings.map((f) => f.code)).toEqual(["output-shape-unhashable"]);
+    // Unverifiable is not the same as drifted: nothing here is a pin the app could remap.
+    expect(!r.ok && r.drift).toEqual([]);
+  });
+
+  it("a typed failure whose payload cannot be serialized still produces its tool-<channel> finding", async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => {
+      throw new TypedFailure("rateLimited", cyclic);
+    });
+    const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), { invoker: inv });
+    expect(!r.ok && r.findings.map((f) => f.code)).toEqual(["tool-rateLimited"]);
+    expect(!r.ok && r.findings[0]?.message).toContain("[unserializable payload]");
+  });
+});

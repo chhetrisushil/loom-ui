@@ -8,7 +8,7 @@ import {
   treeDepth,
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { HydrationCache } from "./cache";
+import { HydrationCache, specFingerprint } from "./cache";
 import type { TransientInvoker } from "./invoker";
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type DriftRecord, executeProvider } from "./provider";
@@ -18,6 +18,14 @@ import { type DriftRecord, executeProvider } from "./provider";
 // for — and publishes results to the store. P0 now; P1 collected in a batching window; P2 held
 // until the surface says the widget is visible. A recompose aborts loads the new experience no
 // longer binds. Clock and timers are injected: scheduling is a pure function of calls made.
+//
+// "Once each" is per SPEC, not per handle name: `loaded` remembers the fingerprint of the spec a
+// handle was last started with, so a repaired provider (a remapped schema pin) re-runs exactly
+// once while an unchanged one — including a `stale` one whose drift is still unrepaired — is not
+// re-invoked on every load.
+//
+// Nothing here ever leaks a rejection: `start` is the only async path and it publishes its own
+// failures as an `error` status. A surface that loses one handle keeps the rest of its data.
 
 export interface DriftReport {
   readonly experienceId: string;
@@ -56,6 +64,18 @@ const defaultTimer = (fn: () => void, ms: number): (() => void) => {
   return () => clearTimeout(t);
 };
 
+const tooDeep = (exp: Experience): Finding => ({
+  code: "tree-too-deep",
+  severity: "error",
+  message: `experience "${exp.experienceId}" exceeds MAX_TREE_DEPTH (${MAX_TREE_DEPTH})`,
+});
+
+const disposedFinding = (what: string): Finding => ({
+  code: "disposed",
+  severity: "error",
+  message: `the hydration controller is disposed; ${what} does nothing`,
+});
+
 export class HydrationController {
   private readonly cache: HydrationCache;
   private readonly setTimer: (fn: () => void, ms: number) => () => void;
@@ -64,7 +84,10 @@ export class HydrationController {
   private pending: Load[] = [];
   private cancelBatch: (() => void) | undefined;
   private readonly lazy = new Map<string, Load>();
+  /** handle → fingerprint of the spec it was last STARTED with. Pruned with the handle. */
+  private readonly loaded = new Map<string, string>();
   private current: Experience | undefined;
+  private disposed = false;
 
   constructor(private readonly opts: ControllerOptions) {
     this.cache = opts.cache ?? new HydrationCache(opts.clock ?? Date.now);
@@ -72,32 +95,32 @@ export class HydrationController {
     this.batchWindowMs = opts.batchWindowMs ?? 50;
   }
 
-  /** Bind an experience: schedule every handle it binds. Findings for handles that cannot load. */
+  /**
+   * Bind an experience: schedule every handle it binds. Findings for handles that cannot load.
+   * A second `load` while one experience is already bound IS a recompose — the previous
+   * experience's handles are aborted and dropped rather than left published forever.
+   */
   load(exp: Experience): { findings: Finding[] } {
-    const findings: Finding[] = [];
-    if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
-      findings.push({
-        code: "tree-too-deep",
-        severity: "error",
-        message: `experience "${exp.experienceId}" exceeds MAX_TREE_DEPTH (${MAX_TREE_DEPTH})`,
-      });
-      return { findings };
-    }
-    this.current = exp;
-    for (const use of experienceHandles(exp)) this.schedule(exp, use, findings);
-    return { findings };
+    if (this.disposed) return { findings: [disposedFinding("load")] };
+    if (this.current !== undefined) return this.recompose(exp);
+    return this.bind(exp);
   }
 
   /** The surface reports a lazy (P2) widget entered the viewport. */
   markVisible(handle: string): void {
+    if (this.disposed) return;
     const load = this.lazy.get(handle);
     if (!load) return;
     this.lazy.delete(handle);
-    void this.start(load);
+    this.start(load).catch(() => {});
   }
 
   /** A new artifact replaces the current one: abort and drop unbound handles, keep the rest, load new ones. */
   recompose(next: Experience): { findings: Finding[] } {
+    if (this.disposed) return { findings: [disposedFinding("recompose")] };
+    // Before anything is aborted or dropped: a tree we refuse to bind must leave the CURRENT
+    // one exactly as it was, not half-torn-down between two experiences.
+    if (treeDepth(next.root) > MAX_TREE_DEPTH) return { findings: [tooDeep(next)] };
     const nextHandles = new Set(experienceHandles(next).map((h) => h.handle));
     for (const handle of [
       ...this.inflight.keys(),
@@ -109,40 +132,75 @@ export class HydrationController {
       this.inflight.get(handle)?.abort();
       this.inflight.delete(handle);
       this.lazy.delete(handle);
+      this.loaded.delete(handle);
       this.pending = this.pending.filter((p) => p.handle !== handle);
       if (this.opts.store.status(handle) !== undefined) this.opts.store.remove(handle);
     }
-    return this.load(next);
+    return this.bind(next);
   }
 
   /** Drop cached results (one handle or all) and reload the affected bound handles. */
-  invalidate(handle?: string): void {
+  invalidate(handle?: string): { findings: Finding[] } {
+    if (this.disposed) return { findings: [disposedFinding("invalidate")] };
     this.cache.invalidate(handle);
-    if (!this.current) return;
+    if (!this.current) return { findings: [] };
     for (const use of experienceHandles(this.current)) {
       if (handle !== undefined && use.handle !== handle) continue;
       const spec = this.specFor(this.current, use.handle);
-      if (spec)
-        void this.start({
-          handle: use.handle,
-          spec,
-          experienceId: this.current.experienceId,
-          versionHash: this.current.versionHash,
-        });
+      if (!spec) continue;
+      // An in-flight load is answering the question we just invalidated: cancel it, or its late
+      // result publishes the value `invalidate` was called to get rid of.
+      this.inflight.get(use.handle)?.abort();
+      this.inflight.delete(use.handle);
+      const load: Load = {
+        handle: use.handle,
+        spec,
+        experienceId: this.current.experienceId,
+        versionHash: this.current.versionHash,
+      };
+      this.start(load).catch(() => {});
     }
+    return { findings: [] };
   }
 
   inFlight(): string[] {
     return [...this.inflight.keys()].sort();
   }
 
+  /** Terminal: every in-flight load is aborted and reported, and nothing schedules again. */
   dispose(): void {
-    for (const ac of this.inflight.values()) ac.abort();
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const [handle, ac] of this.inflight) {
+      ac.abort();
+      // The widget must not sit on a spinner forever because its controller went away.
+      this.opts.store.setStatus(handle, {
+        state: "error",
+        finding: {
+          code: "disposed",
+          severity: "error",
+          message: `hydration for "${handle}" was disposed while in flight`,
+        },
+      });
+    }
     this.inflight.clear();
     this.cancelBatch?.();
     this.cancelBatch = undefined;
     this.pending = [];
     this.lazy.clear();
+    this.loaded.clear();
+    this.current = undefined;
+  }
+
+  private bind(exp: Experience): { findings: Finding[] } {
+    const findings: Finding[] = [];
+    if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
+      findings.push(tooDeep(exp));
+      return { findings };
+    }
+    this.current = exp;
+    for (const use of experienceHandles(exp)) this.schedule(exp, use, findings);
+    return { findings };
   }
 
   private specFor(exp: Experience, handle: string): ProviderSpec | undefined {
@@ -169,8 +227,17 @@ export class HydrationController {
       this.opts.store.setStatus(use.handle, { state: "error", finding: f });
       return;
     }
+    const fp = specFingerprint(spec);
     const st = this.opts.store.status(use.handle)?.state;
-    if (this.inflight.has(use.handle) || st === "ready" || st === "pending") return; // already loading or loaded for this store
+    if (this.loaded.get(use.handle) === fp) {
+      // Same question, already asked: loading, loaded, or drifted-and-awaiting-repair.
+      if (st === "ready" || st === "pending" || st === "stale") return;
+    } else {
+      // A different spec for this handle (repaired pin, new tool, new reshaping): whatever is in
+      // flight is answering the OLD question. Cancel it and ask the new one.
+      this.inflight.get(use.handle)?.abort();
+      this.inflight.delete(use.handle);
+    }
     const load: Load = {
       handle: use.handle,
       spec,
@@ -183,7 +250,7 @@ export class HydrationController {
     }
     this.lazy.delete(use.handle); // promoted out of P2: the lazy entry has a new owner (P0/P1 below)
     if (use.priority === "P0") {
-      void this.start(load);
+      this.start(load).catch(() => {});
       return;
     }
     this.opts.store.setStatus(use.handle, { state: "pending" });
@@ -192,12 +259,14 @@ export class HydrationController {
       this.cancelBatch = undefined;
       const batch = this.pending;
       this.pending = [];
-      for (const l of batch) void this.start(l);
+      for (const l of batch) this.start(l).catch(() => {});
     }, this.batchWindowMs);
   }
 
   private async start(load: Load): Promise<void> {
     const { handle, spec } = load;
+    if (this.disposed) return;
+    this.loaded.set(handle, specFingerprint(spec));
     const principalId = this.opts.principal?.id;
     const cached = this.cache.get(spec, principalId);
     if (cached) {
@@ -209,35 +278,52 @@ export class HydrationController {
     const ac = new AbortController();
     this.inflight.set(handle, ac);
     this.opts.store.setStatus(handle, { state: "pending" });
-    const outcome = await executeProvider(spec, {
-      invoker: this.opts.invoker,
-      signal: ac.signal,
-      ...(this.opts.principal?.chain && { principal: this.opts.principal.chain }),
-      ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
-    });
-    if (this.inflight.get(handle) !== ac || ac.signal.aborted) return; // superseded or aborted: drop the late result
-    this.inflight.delete(handle);
-    if (outcome.ok) {
-      this.cache.set(spec, principalId, outcome.value);
-      const warn = outcome.findings.find((f) => f.severity === "warn");
-      this.opts.store.setValue(handle, outcome.value, {
-        state: "ready",
-        ...(warn && { finding: warn }),
+    try {
+      const outcome = await executeProvider(spec, {
+        invoker: this.opts.invoker,
+        signal: ac.signal,
+        ...(this.opts.principal?.chain && { principal: this.opts.principal.chain }),
+        ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
       });
-      return;
-    }
-    if (outcome.drift.length > 0) {
-      this.opts.store.setStatus(handle, { state: "stale", finding: outcome.finding });
-      this.opts.onDrift?.({
-        experienceId: load.experienceId,
-        versionHash: load.versionHash,
-        handle,
-        spec,
-        drift: outcome.drift,
-        findings: outcome.findings,
+      if (this.inflight.get(handle) !== ac || ac.signal.aborted) return; // superseded or aborted: drop the late result
+      this.inflight.delete(handle);
+      if (outcome.ok) {
+        this.cache.set(spec, principalId, outcome.value);
+        const warn = outcome.findings.find((f) => f.severity === "warn");
+        this.opts.store.setValue(handle, outcome.value, {
+          state: "ready",
+          ...(warn && { finding: warn }),
+        });
+        return;
+      }
+      if (outcome.drift.length > 0) {
+        this.opts.store.setStatus(handle, { state: "stale", finding: outcome.finding });
+        this.opts.onDrift?.({
+          experienceId: load.experienceId,
+          versionHash: load.versionHash,
+          handle,
+          spec,
+          drift: outcome.drift,
+          findings: outcome.findings,
+        });
+        return;
+      }
+      this.opts.store.setStatus(handle, { state: "error", finding: outcome.finding });
+    } catch (e) {
+      // `executeProvider` is total by construction — but an invoker that rejects with a value
+      // whose message getter throws, a store listener that throws, or any future defect must
+      // land on the widget as an error status, never as an unhandled rejection that takes the
+      // host process down.
+      if (this.inflight.get(handle) !== ac || ac.signal.aborted) return;
+      this.inflight.delete(handle);
+      this.opts.store.setStatus(handle, {
+        state: "error",
+        finding: {
+          code: "hydration-internal",
+          severity: "error",
+          message: e instanceof Error ? e.message : String(e),
+        },
       });
-      return;
     }
-    this.opts.store.setStatus(handle, { state: "error", finding: outcome.finding });
   }
 }
