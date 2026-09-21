@@ -162,7 +162,7 @@ describe("putExperience / getExperience", () => {
       parents: [],
       intent: { source: "user", objective: "x" },
       experienceId: "exp-1",
-      vocabularyFloor: { minVersion: "0.0.0", types: [] },
+      vocabularyFloor: { types: [] },
       providers: {
         h: {
           cachePolicy: { scope: "global", ttlSeconds: 60 },

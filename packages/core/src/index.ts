@@ -48,5 +48,5 @@ export type {
   SurfaceResolution,
 } from "./catalog";
 export { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
-export { compile } from "./compile";
+export { HYDRATION_VALUES_PREFIX, compile, hydrationPath } from "./compile";
 export type { CompileOptions, CompileResult } from "./compile";

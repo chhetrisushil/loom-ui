@@ -8,7 +8,7 @@ import {
 } from "./catalog";
 import { genesis } from "./experience";
 import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
-import { testCatalog } from "./testCatalog";
+import { testCatalog } from "./testCatalog.test-support";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
 const sem = (id: string, type: string, extra: Partial<SemanticNode> = {}): SemanticNode => ({
@@ -22,9 +22,23 @@ const sem = (id: string, type: string, extra: Partial<SemanticNode> = {}): Seman
   binding: { handle: `h-${id}`, priority: "P1" },
   ...extra,
 });
+/** The minimal `ProviderSpec` a bound handle needs to exist. */
+const providerSpec = (handle: string) => ({
+  handle,
+  executionGraph: [],
+  reshaping: { engine: "JSONPath" as const, scriptRef: "sha256:s" },
+  outputShapeHash: "sha256:o",
+  cachePolicy: { ttlSeconds: 60, scope: "global" as const },
+});
+// Fixture adjustment (I5): a bound handle with no `ProviderSpec` is now an `unknown-handle` warn,
+// so these experiences declare a provider per handle their nodes bind. Filtering the warn out of
+// the assertions instead would have left the new check asserted nowhere.
 const exp = (children: SemanticNode[]) => {
   const g = genesis({ experienceId: "e", intent: { objective: "x", source: "user" }, meta });
-  return { ...g, root: { ...g.root, children } };
+  const providers: Record<string, ReturnType<typeof providerSpec>> = {};
+  for (const c of children)
+    if (c.binding) providers[c.binding.handle] = providerSpec(c.binding.handle);
+  return { ...g, root: { ...g.root, children }, providers };
 };
 /** A left spine `levels` containers deep, built ITERATIVELY — the recursive helpers cannot. */
 const chain = (levels: number): ContainerNode => {
@@ -53,6 +67,12 @@ const codes = (r: { findings: readonly { code: string }[] }) =>
 describe("compareVersions / findEntry", () => {
   it("orders semver numerically and finds an entry by (name, version)", () => {
     expect(compareVersions("1.2.0", "1.10.0")).toBeLessThan(0);
+    // A non-numeric segment used to produce NaN, and `NaN < 0` and `NaN > 0` are BOTH false — so
+    // `checkFloor` read a prerelease as satisfying a floor it does not meet.
+    expect(Number.isFinite(compareVersions("1.0.0-beta", "1.0.0"))).toBe(true);
+    expect(compareVersions("1.0.0-beta", "1.0.0")).toBeGreaterThan(0);
+    expect(compareVersions("1.0.0", "1.0.0-beta")).toBeLessThan(0);
+    expect(compareVersions("1.0.0-beta", "1.0.0-beta")).toBe(0);
     expect(findEntry(testCatalog, "Metric", "1.0.0")?.name).toBe("Metric");
     expect(findEntry(testCatalog, "Metric", "2.0.0")).toBeUndefined();
   });
@@ -88,16 +108,12 @@ describe("resolveSurface", () => {
 describe("checkFloor", () => {
   it("passes when every floor type is present at or above its version, fails naming the missing type", () => {
     const e = exp([sem("m", "Metric")]);
-    expect(
-      checkFloor(e, { minVersion: "0.0.0", types: [{ name: "Metric", version: "1.0.0" }] })
-    ).toEqual([]);
-    const f = checkFloor(e, { minVersion: "0.0.0", types: [{ name: "Status", version: "1.0.0" }] });
+    expect(checkFloor(e, { types: [{ name: "Metric", version: "1.0.0" }] })).toEqual([]);
+    const f = checkFloor(e, { types: [{ name: "Status", version: "1.0.0" }] });
     expect(f.map((x) => x.code)).toEqual(["floor-violation"]);
     expect(f[0]?.message).toMatch(/Status/);
     expect(
-      checkFloor(e, { minVersion: "0.0.0", types: [{ name: "Metric", version: "2.0.0" }] }).map(
-        (x) => x.code
-      )
+      checkFloor(e, { types: [{ name: "Metric", version: "2.0.0" }] }).map((x) => x.code)
     ).toEqual(["floor-violation"]);
   });
 });
@@ -151,10 +167,30 @@ describe("validateExperience", () => {
       nodeId: "b",
     });
   });
+  // I5. A handle with no `ProviderSpec` renders a permanently empty widget and explains nothing.
+  it("warns on a binding to a handle the experience does not provide, without failing it", () => {
+    const e = exp([sem("m", "Metric")]);
+    const r = validateExperience({ ...e, providers: {} }, testCatalog, "web");
+    expect(r.ok).toBe(true); // a warn, not an error
+    expect(r.findings).toEqual([
+      {
+        code: "unknown-handle",
+        severity: "warn",
+        message: '"m" binds handle "h-m", which this experience does not provide',
+        nodeId: "m",
+      },
+    ]);
+    expect(validateExperience(e, testCatalog, "web").findings).toEqual([]);
+  });
+  it("reads providers as an own-property map, so a handle named __proto__ is still reported", () => {
+    const e = exp([sem("m", "Metric", { binding: { handle: "__proto__", priority: "P1" } })]);
+    const r = validateExperience({ ...e, providers: {} }, testCatalog, "web");
+    expect(r.findings.map((f) => f.code)).toEqual(["unknown-handle"]);
+  });
   it("folds floor violations in", () => {
     const e = {
       ...exp([sem("m", "Metric")]),
-      vocabularyFloor: { minVersion: "0.0.0", types: [{ name: "Status", version: "1.0.0" }] },
+      vocabularyFloor: { types: [{ name: "Status", version: "1.0.0" }] },
     };
     expect(codes(validateExperience(e, testCatalog, "web"))).toEqual(["floor-violation"]);
   });

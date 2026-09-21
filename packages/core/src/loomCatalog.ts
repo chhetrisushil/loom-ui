@@ -49,6 +49,24 @@ export function loomCatalogFor(
       });
       continue;
     }
+    // The semantic entry declares whether the TYPE renders bound data; the resolved kind's
+    // contract declares whether the WIDGET does. `optional` absorbs either neighbour, but
+    // `required` against `none` is a straight contradiction in whichever direction it points —
+    // and the two halves are enforced by different checks (`validateExperience` reads the entry,
+    // loom's `validateBlueprint` reads the contract), so an unreconciled pair means every node of
+    // that type is guaranteed a finding from one side or the other, whatever the composer does.
+    // Reporting it once here, against the catalogue, beats reporting it per node forever.
+    if (
+      (entry.binding === "required" && contract.binding === "none") ||
+      (entry.binding === "none" && contract.binding === "required")
+    ) {
+      findings.push({
+        code: "binding-contract-conflict",
+        severity: "error",
+        message: `"${entry.name}@${entry.version}" declares binding "${entry.binding}" but the kind it resolves to on "${surface}", "${r.kind}", declares "${contract.binding}"`,
+      });
+      continue;
+    }
     const prev = entries.get(r.kind);
     if (
       prev &&

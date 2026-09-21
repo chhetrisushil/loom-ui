@@ -64,6 +64,14 @@ describe("ExperienceNode schema", () => {
       "an empty type is not a semantic type"
     ).toBe(false);
   });
+  it("rejects an order key outside the base-62 alphabet the keys are minted from", () => {
+    // Order keys are compared with a plain string compare; a character outside the alphabet
+    // `order.ts` mints from sorts somewhere its author did not intend.
+    expect(ExperienceNode.safeParse({ ...metric("x", "!"), order: "!" }).success).toBe(false);
+    expect(ExperienceNode.safeParse({ ...metric("x", "a-b"), order: "a-b" }).success).toBe(false);
+    expect(ExperienceNode.safeParse({ ...metric("x", "x"), order: "" }).success).toBe(false);
+    expect(ExperienceNode.safeParse({ ...metric("x", "Vz09"), order: "Vz09" }).success).toBe(true);
+  });
   it("rejects a span outside 1..12 and a priority outside P0..P2", () => {
     expect(ExperienceNode.safeParse({ ...metric("x", "x"), span: 0 }).success).toBe(false);
     expect(ExperienceNode.safeParse({ ...metric("x", "x"), span: 13 }).success).toBe(false);

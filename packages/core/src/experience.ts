@@ -36,7 +36,6 @@ export const ProviderSpec = z.object({
 export type ProviderSpec = z.infer<typeof ProviderSpec>;
 
 export const VocabularyFloor = z.object({
-  minVersion: z.string(),
   types: z.array(z.object({ name: z.string().min(1), version: z.string().min(1) })),
 });
 export type VocabularyFloor = z.infer<typeof VocabularyFloor>;
@@ -111,7 +110,7 @@ export function genesis(input: GenesisInput): Experience {
       children: [],
     },
     providers: {},
-    vocabularyFloor: input.vocabularyFloor ?? { minVersion: "0.0.0", types: [] },
+    vocabularyFloor: input.vocabularyFloor ?? { types: [] },
     meta: input.meta,
   };
 }
