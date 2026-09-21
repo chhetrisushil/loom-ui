@@ -48,6 +48,9 @@ jobs:
       - name: Typecheck against loom's built declarations
         working-directory: loom-ui
         run: pnpm typecheck
+      - name: Typecheck test files
+        working-directory: loom-ui
+        run: pnpm typecheck:tests
       - name: Lint
         working-directory: loom-ui
         run: pnpm lint

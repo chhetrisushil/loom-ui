@@ -25,6 +25,12 @@ const sem = (id: string, type: string, extra: Partial<SemanticNode> = {}): Seman
   binding: { handle: `h-${id}`, priority: "P1" },
   ...extra,
 });
+/** `sem` with the binding key ABSENT — under exactOptionalPropertyTypes "unbound" is a missing
+ * key, never a present-and-undefined one. */
+const unbound = (n: SemanticNode): SemanticNode => {
+  const { binding: _binding, ...rest } = n;
+  return rest;
+};
 const root: ContainerNode = {
   id: "root",
   order: "V",
@@ -210,10 +216,7 @@ describe("compile", () => {
   it("omits an unresolvable node, records the finding, and still emits the rest", () => {
     const e = withRoot(exp, {
       ...root,
-      children: [
-        sem("x", "Explainer", { binding: undefined }),
-        sem("p99", "Metric", { props: { unit: "ms" } }),
-      ],
+      children: [unbound(sem("x", "Explainer")), sem("p99", "Metric", { props: { unit: "ms" } })],
     });
     const r = compile(e, { ...opts, surface: "terminal" });
     expect(r.ok).toBe(false);
@@ -342,7 +345,7 @@ describe("compile", () => {
       kind: "container",
       direction: "column",
       span: 12,
-      children: [sem("x", "X", { props: { secret: 1 }, binding: undefined })],
+      children: [unbound(sem("x", "X", { props: { secret: 1 } }))],
     };
     const e = {
       ...genesis({ experienceId: "exp-2", intent: { objective: "test", source: "user" }, meta }),

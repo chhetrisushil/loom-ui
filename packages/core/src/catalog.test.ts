@@ -22,6 +22,12 @@ const sem = (id: string, type: string, extra: Partial<SemanticNode> = {}): Seman
   binding: { handle: `h-${id}`, priority: "P1" },
   ...extra,
 });
+/** `sem` with the binding key ABSENT — under exactOptionalPropertyTypes "unbound" is a missing
+ * key, never a present-and-undefined one. */
+const unbound = (n: SemanticNode): SemanticNode => {
+  const { binding: _binding, ...rest } = n;
+  return rest;
+};
 /** The minimal `ProviderSpec` a bound handle needs to exist. */
 const providerSpec = (handle: string) => ({
   handle,
@@ -135,11 +141,11 @@ describe("validateExperience", () => {
       exp([
         sem("a", "Nope"),
         sem("b", "Metric", { props: { unit: "ms", payload: [1, 2] } }),
-        sem("c", "Metric", { binding: undefined }),
+        unbound(sem("c", "Metric")),
         sem("d", "Explainer"),
         sem("e", "Status"),
         sem("e", "Status"),
-        sem("f", "Explainer", { binding: undefined }),
+        unbound(sem("f", "Explainer")),
       ]),
       testCatalog,
       "terminal"
