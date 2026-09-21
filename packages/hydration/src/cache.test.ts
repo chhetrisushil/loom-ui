@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import { HydrationCache } from "./cache";
+import { ManualClock, mcpStep, providerSpec } from "./testing.test-support";
+
+describe("HydrationCache", () => {
+  it("global scope is shared across principals and expires by ttl against the injected clock", () => {
+    const clock = new ManualClock();
+    const c = new HydrationCache(clock.now);
+    const spec = providerSpec("h", [mcpStep("s", "t")], {
+      cachePolicy: { ttlSeconds: 10, scope: "global" },
+    });
+    c.set(spec, "alice", 1);
+    expect(c.get(spec, "bob")).toEqual({ value: 1 });
+    clock.advance(9_999);
+    expect(c.get(spec, undefined)).toEqual({ value: 1 });
+    clock.advance(1);
+    expect(c.get(spec, undefined)).toBeUndefined();
+  });
+  it("principal scope isolates principals and refuses to cache without one", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")], {
+      cachePolicy: { ttlSeconds: 10, scope: "principal" },
+    });
+    c.set(spec, "alice", "A");
+    expect(c.get(spec, "alice")).toEqual({ value: "A" });
+    expect(c.get(spec, "bob")).toBeUndefined();
+    c.set(spec, undefined, "anon");
+    expect(c.get(spec, undefined)).toBeUndefined();
+  });
+  it("invalidate(handle) drops every scope of that handle; invalidate() drops all; ttl 0 never caches", () => {
+    const c = new HydrationCache(() => 0);
+    const g = providerSpec("h", [mcpStep("s", "t")]);
+    const p = providerSpec("h", [mcpStep("s", "t")], {
+      cachePolicy: { ttlSeconds: 10, scope: "principal" },
+    });
+    c.set(g, undefined, 1);
+    c.set(p, "alice", 2);
+    c.invalidate("h");
+    expect(c.get(g, undefined)).toBeUndefined();
+    expect(c.get(p, "alice")).toBeUndefined();
+    c.set(
+      providerSpec("z", [mcpStep("s", "t")], { cachePolicy: { ttlSeconds: 0, scope: "global" } }),
+      undefined,
+      3
+    );
+    expect(c.get(providerSpec("z", [mcpStep("s", "t")]), undefined)).toBeUndefined();
+  });
+});
