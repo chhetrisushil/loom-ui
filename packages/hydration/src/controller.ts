@@ -193,6 +193,19 @@ export class HydrationController {
     this.inflight.clear();
     this.cancelBatch?.();
     this.cancelBatch = undefined;
+    for (const load of this.pending) {
+      // Already published `pending` by `schedule`; leaving it there would spin the widget
+      // forever waiting on a batch timer that just got cancelled. `this.lazy` entries are left
+      // alone: they were never published, so there is no status to terminate.
+      this.opts.store.setStatus(load.handle, {
+        state: "error",
+        finding: {
+          code: "disposed",
+          severity: "error",
+          message: `hydration for "${load.handle}" was disposed while queued`,
+        },
+      });
+    }
     this.pending = [];
     this.lazy.clear();
     this.loaded.clear();
@@ -284,8 +297,8 @@ export class HydrationController {
     if (this.inflight.has(handle)) return;
     const ac = new AbortController();
     this.inflight.set(handle, ac);
-    this.opts.store.setStatus(handle, { state: "pending" });
     try {
+      this.opts.store.setStatus(handle, { state: "pending" });
       const outcome = await executeProvider(spec, {
         invoker: this.opts.invoker,
         signal: ac.signal,
@@ -318,19 +331,30 @@ export class HydrationController {
       this.opts.store.setStatus(handle, { state: "error", finding: outcome.finding });
     } catch (e) {
       // `executeProvider` is total by construction — but an invoker that rejects with a value
-      // whose message getter throws, a store listener that throws, or any future defect must
-      // land on the widget as an error status, never as an unhandled rejection that takes the
-      // host process down.
+      // whose message getter throws, a store subscriber that throws synchronously on ANY of
+      // this method's publishes (including the very first "pending" one, now inside this
+      // try), or any future defect must land on the widget as an error status, never as an
+      // unhandled rejection that takes the host process down.
       if (this.inflight.get(handle) !== ac || ac.signal.aborted) return;
       this.inflight.delete(handle);
-      this.opts.store.setStatus(handle, {
-        state: "error",
-        finding: {
-          code: "hydration-internal",
-          severity: "error",
-          message: e instanceof Error ? e.message : String(e),
-        },
-      });
+      try {
+        // The publish below can re-trigger the very subscriber whose throw got us here (it is
+        // still subscribed to this handle). A second throw here must not escape: `inflight` is
+        // already cleaned up above, which is the invariant `dispose`/`recompose`/`inFlight`
+        // depend on, and that must hold even if this last publish never lands (the projection
+        // already committed the state that triggered the first throw, so the handle is not
+        // silently stuck "ready").
+        this.opts.store.setStatus(handle, {
+          state: "error",
+          finding: {
+            code: "hydration-internal",
+            severity: "error",
+            message: e instanceof Error ? e.message : String(e),
+          },
+        });
+      } catch {
+        // Ignored — see comment above.
+      }
     }
   }
 }
