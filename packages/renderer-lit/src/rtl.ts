@@ -34,9 +34,9 @@ export type RtlBehavior =
  * while the plot itself keeps meaning what it says.
  */
 export const RTL_BEHAVIOR: Record<string, RtlBehavior> = {
-  "gx-timeseries": "preserve",
-  "gx-bar-chart": "preserve",
-  "gx-sparkline": "preserve",
+  "lu-timeseries": "preserve",
+  "lu-bar-chart": "preserve",
+  "lu-sparkline": "preserve",
   // Everything else is text and boxes, and mirrors.
 };
 

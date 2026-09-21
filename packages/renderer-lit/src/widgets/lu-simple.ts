@@ -5,11 +5,29 @@ import { customElement } from "lit/decorators.js";
 import { measure } from "../format";
 import { LuWidget } from "./base";
 
+/** loom's `TimelineRenderer` entry shape: `{ timestamp?, message?, level? }`. */
+interface TimelineEntry {
+  readonly timestamp?: number | string;
+  readonly message?: string;
+  readonly level?: string;
+}
+
+function asEntry(entry: unknown): TimelineEntry | undefined {
+  return entry !== null && typeof entry === "object" ? (entry as TimelineEntry) : undefined;
+}
+
+/**
+ * The entry's text. loom's React renderer reads `entry.message`; `label`/`title` are accepted
+ * as fallbacks because loom's terminal timeline stringifies whatever it is given, and a plain
+ * string entry is stringified rather than becoming "[object Object]".
+ */
 function describeEntry(entry: unknown): string {
-  if (entry !== null && typeof entry === "object") {
-    const r = entry as Record<string, unknown>;
-    if (typeof r.label === "string") return r.label;
-    if (typeof r.title === "string") return r.title;
+  const r = asEntry(entry);
+  if (r !== undefined) {
+    if (typeof r.message === "string") return r.message;
+    const rec = r as Record<string, unknown>;
+    if (typeof rec.label === "string") return rec.label;
+    if (typeof rec.title === "string") return rec.title;
   }
   return String(entry);
 }
@@ -106,14 +124,32 @@ export class LuList extends LuWidget {
       margin: 0;
       padding-inline-start: 18px;
     }
+    .ts {
+      color: var(--gx-text-dim, #8b949e);
+      margin-inline-end: 6px;
+      font-variant-numeric: tabular-nums;
+    }
   `;
 
+  // Mirrors TimelineRenderer: the timestamp is its own span when the entry carries one, the
+  // level lands on `data-level` (and is absent when the entry has none), and the text is the
+  // entry's `message` — an entry object rendered through `String` would read "[object Object]".
+  // `props.maxItems` is deliberately NOT honoured: loom's React renderer ignores it, and the
+  // two web surfaces must show the same rows for one compiled blueprint.
   protected renderReady(): TemplateResult | typeof nothing {
     const entries = this.value as unknown[];
-    const props = this.widget.props as { maxItems?: number };
-    const items = props.maxItems !== undefined ? entries.slice(0, props.maxItems) : entries;
     return html`<ul>
-      ${items.map((e) => html`<li>${describeEntry(e)}</li>`)}
+      ${entries.map((e) => {
+        const entry = asEntry(e);
+        const level = typeof entry?.level === "string" ? entry.level : undefined;
+        const ts = entry?.timestamp;
+        return html`<li data-level=${level ?? nothing}>
+          ${ts !== undefined && ts !== "" ? html`<span class="ts">${String(ts)}</span>` : nothing}<span
+            class="msg"
+            >${describeEntry(e)}</span
+          >
+        </li>`;
+      })}
     </ul>`;
   }
 }

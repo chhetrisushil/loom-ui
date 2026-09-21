@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { currentLocale, setLocale } from "../i18n";
+import { frameMessage } from "../sandbox/protocol";
 import "./index";
 
 const mount = async <T extends HTMLElement>(
@@ -58,5 +59,27 @@ describe("app-level elements", () => {
     const frame = el.shadowRoot?.querySelector("iframe") as HTMLIFrameElement;
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
     expect(frame.srcdoc.length).toBeGreaterThan(0);
+  });
+  it("lu-sandbox clamps the height the untrusted frame reports for itself", async () => {
+    const el = await mount<HTMLElement>("lu-sandbox", { code: "root.textContent = 'x'", data: {} });
+    const frame = el.shadowRoot?.querySelector("iframe") as HTMLIFrameElement;
+    const report = async (height: number): Promise<string> => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: frameMessage({ type: "resize", height }),
+          source: frame.contentWindow,
+        })
+      );
+      await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+      return (
+        (el.shadowRoot?.querySelector("iframe") as HTMLIFrameElement).getAttribute("style") ?? ""
+      );
+    };
+    expect(await report(320)).toContain("height:320px");
+    // The frame's own report goes straight into the host's layout: a million-pixel (or negative,
+    // or NaN) claim must not.
+    expect(await report(1e9)).toContain("height:4000px");
+    expect(await report(-50)).toContain("height:0px");
+    expect(await report(Number.NaN)).toContain("height:0px");
   });
 });

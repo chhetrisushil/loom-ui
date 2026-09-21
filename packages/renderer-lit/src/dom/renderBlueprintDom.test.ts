@@ -126,6 +126,34 @@ describe("renderBlueprintDom", () => {
       /\[Renderer error for MetricCard/
     );
   });
+  it("a binding to values.__proto__ mounts with NO status — the status map is read by own key", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const proto = blueprint$({
+      id: "p",
+      title: "P",
+      layout: stack({
+        children: [
+          MetricCard({
+            id: "proto",
+            title: "Proto",
+            binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.__proto__" },
+          }),
+        ],
+      }),
+      projections: [HYDRATION_PROJECTION_ID],
+    });
+    const { registry } = recording();
+    const host = document.createElement("div");
+    renderBlueprintDom(host, proto, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry,
+    });
+    // `status["__proto__"]` on a plain object hands back `Object.prototype` — an object that is
+    // not a HandleStatus and is not undefined either. The widget must see no status at all.
+    expect(host.querySelector("[data-widget-id='proto']")?.textContent?.endsWith("|-")).toBe(true);
+  });
   it("a non-hydration projection binding gets no status and still subscribes to its value", async () => {
     const runtime = new InMemoryProjectionRuntime();
     runtime.register<{ cpu: number }>({

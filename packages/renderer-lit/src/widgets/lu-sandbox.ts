@@ -21,6 +21,14 @@ import {
 // and the widget's already-client-visible canonical data: no host secret is ever
 // posted, so the null-origin target (targetOrigin "*") leaks nothing.
 
+/** Upper bound on the height an untrusted frame may claim for itself, in CSS pixels. */
+const MAX_FRAME_HEIGHT = 4000;
+
+/** `[0, MAX_FRAME_HEIGHT]`; a non-finite report (NaN passes `typeof === "number"`) collapses to 0. */
+function clampFrameHeight(height: number): number {
+  return Number.isFinite(height) ? Math.min(Math.max(height, 0), MAX_FRAME_HEIGHT) : 0;
+}
+
 @customElement("lu-sandbox")
 export class LuSandbox extends LitElement {
   /** The untrusted render code: a `(root, data, emit)` function body. */
@@ -51,8 +59,10 @@ export class LuSandbox extends LitElement {
   }
 
   updated(changed: Map<string, unknown>): void {
-    // Code change ⇒ re-initialize the frame from scratch. Data-only change ⇒
-    // just re-render. Both no-op until the frame reports `ready`.
+    // Code change ⇒ re-`init` the LIVE frame with the new code; data-only change ⇒ just
+    // re-render. The frame itself is NOT torn down and rebuilt — `srcdoc` is constant, so the
+    // iframe is never reloaded and whatever the previous code left on the frame's global object
+    // is still there. Both messages no-op until the frame reports `ready`.
     if (changed.has("code")) this.init();
     else if (changed.has("data")) this.post({ type: "render", data: this.data });
   }
@@ -77,7 +87,10 @@ export class LuSandbox extends LitElement {
         this.init();
         break;
       case "resize":
-        this.frameHeight = msg.height;
+        // The height is reported BY the untrusted frame and goes straight into the host's
+        // layout: clamped, so a component that reports 1e9 (or a negative) cannot make the host
+        // page scroll for a million pixels.
+        this.frameHeight = clampFrameHeight(msg.height);
         break;
       case "action":
         this.dispatchEvent(

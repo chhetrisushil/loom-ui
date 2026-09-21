@@ -8,6 +8,18 @@ import { LuWidget } from "./base";
 
 const M = { top: 10, right: 12, bottom: 24, left: 46 };
 
+/**
+ * The largest finite value, in one pass — never `Math.max(...values)`, which spreads the whole
+ * array into call arguments and hits the engine's argument-count ceiling on a long series
+ * (the same helper shape as the terminal registry's `finiteMinMax`). Floored at 0, so an
+ * all-negative or all-non-finite series still yields a usable axis maximum.
+ */
+function finiteMax(bars: readonly { readonly value: number }[]): number {
+  let max = 0;
+  for (const b of bars) if (Number.isFinite(b.value) && b.value > max) max = b.value;
+  return max;
+}
+
 @customElement("lu-bar-chart")
 export class LuBarChart extends LuWidget {
   readonly kind = "BarChart";
@@ -71,7 +83,7 @@ export class LuBarChart extends LuWidget {
     // Finite values only. A single Infinite bar — a reshape script dividing by a count that
     // was zero — otherwise becomes the axis maximum, scaling every real bar to zero height and
     // putting NaN into the gridline geometry.
-    const maxV = Math.max(...bars.filter((b) => Number.isFinite(b.value)).map((b) => b.value), 0);
+    const maxV = finiteMax(bars);
     const sy = linearScale([0, maxV * 1.08 || 1], [M.top + innerH, M.top]);
     const ticks = niceTicks(0, maxV * 1.08 || 1, 4);
     const band = innerW / bars.length;
