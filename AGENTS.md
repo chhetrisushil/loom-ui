@@ -37,8 +37,13 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - `@loom-ui/core` is pure and isomorphic. Anything needing Node (crypto, fs) lives behind the
   `@loom-ui/core/log` subpath.
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
-- Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`);
-  build your own and `.merge()` — the defaults are shared singletons.
+- Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
+  `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.
+- A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
+  with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
+  that pass.
+- `@loom-ui/renderer-lit` is ESM (Lit is ESM-only) and tests under happy-dom; the other packages are
+  CommonJS.
 - Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
   reported (`onDrift`), never repaired here; the app's durable execution applies `remapOperation`'s op and
   emits `SCHEMA_REPAIRED`. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else.

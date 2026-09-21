@@ -11,6 +11,8 @@ in the path.
 |---|---|
 | `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint`; `./log` subpath for content-addressed persistence |
 | `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath reshape → shape check), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, caches per principal, reports drift for the app's durable repair |
+| `@loom-ui/renderer-lit` | A loom DOM renderer adapter (`renderBlueprintDom`, subpath `./dom`) and Lit elements registered under loom kinds (`litRegistry`) — every built-in kind plus `TimeSeries`/`BarChart`; four app-level elements (time-range picker, locale picker, sandbox, A2UI view) |
+| `@loom-ui/renderer-terminal` | `TimeSeries`/`BarChart` string renderers merged over loom's terminal registry, hydration-status decoration (`renderExperience`), and `watch` |
 
 Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
 
@@ -58,3 +60,20 @@ controller.load(experience);              // P0 now, P1 in 50 ms, P2 on markVisi
 const r = remapOperation(report.spec, report.drift);
 if (r.ok) { const next = apply(sealedExperience, r.op); /* seal + put + */ ctx.emit(SCHEMA_REPAIRED, { ...report, op: r.op }); }
 ```
+
+## Rendering (illustrative — not a compiling snippet)
+
+```ts
+// Web, React: loom's renderer, unchanged.
+<BlueprintRenderer blueprint={blueprint} projectionRuntime={runtime} executionId={store.executionId} registry={defaultRegistry} />
+
+// Web, Lit: the same blueprint through the DOM adapter with the Lit registry.
+import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
+const handle = renderBlueprintDom(document.getElementById("app"), blueprint, { projectionRuntime: runtime, executionId: store.executionId, registry: litRegistry });
+
+// Terminal: loom's registry plus the framework kinds, with hydration status.
+import { renderExperience, watch } from "@loom-ui/renderer-terminal";
+const stop = watch(blueprint, store, (frame) => process.stdout.write(`\x1Bc${frame}`));
+```
+
+`TimeSeries` and `BarChart` are Lit-only on the web (`LIT_ONLY_KINDS`): a React consumer gets loom's `[No renderer for …]` placeholder for them. Value shapes per kind are declared once in `@loom-ui/core` (`kindValueContracts`); a mismatch renders as a visible error state on every surface.
