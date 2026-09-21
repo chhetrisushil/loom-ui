@@ -29,6 +29,14 @@ export type MCPToolNode = z.infer<typeof MCPToolNode>;
 export const ProviderSpec = z.object({
   handle: z.string().min(1),
   executionGraph: z.array(MCPToolNode),
+  /**
+   * How the terminal step's raw output becomes the value widgets bind to.
+   * - `QuickJS`: `scriptRef` is a ContentStore address (`sha256:…`) of a script run in
+   *   `@loom/plugin-sandbox` with the raw output as `input`.
+   * - `JSONPath`: `scriptRef` holds the path expression INLINE — a dotted path with optional
+   *   `[i]` indices (`result.items[0].value`); `""` or `$` selects the whole output. A path is
+   *   tiny and human-readable, so content-addressing it buys nothing. (Slice-3 ruling.)
+   */
   reshaping: z.object({ engine: z.enum(["JSONPath", "QuickJS"]), scriptRef: z.string() }),
   outputShapeHash: z.string(),
   cachePolicy: z.object({ ttlSeconds: z.number(), scope: z.enum(["principal", "global"]) }),
