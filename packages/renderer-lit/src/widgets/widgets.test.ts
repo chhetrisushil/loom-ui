@@ -1,4 +1,4 @@
-import { MetricCard, StatusBadge, customWidget$ } from "@loom/blueprint-runtime";
+import { MetricCard, StatusBadge, type WidgetAction, customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import "./index";
 
@@ -39,6 +39,18 @@ describe("kind widgets", () => {
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
     expect(el.shadowRoot?.querySelector("[data-state='error']")).not.toBeNull();
     expect(text(el)).not.toContain("NaN");
+    // The contract check outranks a stale status: a value that fails `checkKindValue` renders
+    // as an error even when the accompanying status says "stale".
+    Object.assign(el, {
+      value: "oops",
+      status: {
+        state: "stale",
+        seq: 3,
+        finding: { code: "output-shape-drift", severity: "error", message: "n" },
+      },
+    });
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    expect(el.shadowRoot?.querySelector("[data-state='error']")).not.toBeNull();
   });
   it("lu-status-badge shows the status string; lu-data-table uses props.columns or derives them", async () => {
     const badge = await mount<HTMLElement>("lu-status-badge", {
@@ -99,6 +111,40 @@ describe("kind widgets", () => {
       },
     });
     expect(bars.shadowRoot?.querySelectorAll("rect.bar").length).toBe(2);
+  });
+  it("lu-progress never puts a non-finite value on the <progress> element or into the DOM", async () => {
+    const el = await mount<HTMLElement>("lu-progress", {
+      widget: customWidget$({ kind: "ProgressBar", id: "pb", title: "Load", binding: b }),
+      value: Number.POSITIVE_INFINITY,
+    });
+    const progress = el.shadowRoot?.querySelector("progress");
+    expect(progress?.hasAttribute("value")).toBe(false);
+    expect(el.shadowRoot?.innerHTML).not.toContain("Infinity");
+  });
+  it("lu-approval dispatches loom's APPROVE/REJECT action shape and gates on a pending value", async () => {
+    const calls: WidgetAction[] = [];
+    const widget = customWidget$({ kind: "ApprovalCard", id: "ap", title: "Deploy", binding: b });
+    const el = await mount<HTMLElement>("lu-approval", {
+      widget,
+      value: true,
+      onAction: (a: WidgetAction) => calls.push(a),
+    });
+    const buttons = el.shadowRoot?.querySelectorAll("button");
+    expect(buttons?.length).toBe(2);
+    (buttons?.[0] as HTMLButtonElement).click();
+    expect(calls).toEqual([{ type: "APPROVE", widgetId: "ap", payload: { approved: true } }]);
+    (buttons?.[1] as HTMLButtonElement).click();
+    expect(calls).toEqual([
+      { type: "APPROVE", widgetId: "ap", payload: { approved: true } },
+      { type: "REJECT", widgetId: "ap", payload: { approved: false } },
+    ]);
+
+    const idle = await mount<HTMLElement>("lu-approval", {
+      widget: customWidget$({ kind: "ApprovalCard", id: "ap2", title: "Deploy", binding: b }),
+      value: false,
+    });
+    expect(idle.shadowRoot?.querySelectorAll("button").length).toBe(0);
+    expect(text(idle)).toContain("No pending approval");
   });
   it("every element exposes an accessible name via aria-label", async () => {
     const el = await mount<HTMLElement>("lu-metric-card", {
