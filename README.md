@@ -77,3 +77,11 @@ const stop = watch(blueprint, store, (frame) => process.stdout.write(`\x1Bc${fra
 ```
 
 `TimeSeries` and `BarChart` are Lit-only on the web (`LIT_ONLY_KINDS`): a React consumer gets loom's `[No renderer for …]` placeholder for them. Value shapes per kind are declared once in `@loom-ui/core` (`kindValueContracts`); a mismatch renders as a visible error state on every surface.
+
+`@loom-ui/renderer-lit` is browser code: `node -e "import('@loom-ui/renderer-lit/dom')"` fails outside
+a bundler, on two counts. No other package here declares it as a dependency, so pnpm never links it
+into another package's `node_modules` for bare-specifier resolution to find. And even resolved
+directly (`node dist/dom/index.js`), its `moduleResolution: "Bundler"` build emits extensionless
+relative specifiers (`./litRegistry`, not `./litRegistry.js`) that only a bundler's resolver
+completes — plain Node ESM resolution requires the extension. Its consumer is a bundler (Vite,
+webpack, …); that is the supported path, not a plain Node `import()`.
