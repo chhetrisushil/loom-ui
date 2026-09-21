@@ -20,8 +20,13 @@ overrides:
   '@loom/blueprint-runtime': link:../loom/packages/blueprint-runtime
   '@loom/classify': link:../loom/packages/classify
   '@loom/core': link:../loom/packages/core
+  '@loom/effect-runtime': link:../loom/packages/effect-runtime
   '@loom/event-runtime': link:../loom/packages/event-runtime
   '@loom/plugin-content': link:../loom/plugins/content
+  '@loom/plugin-mcp': link:../loom/plugins/mcp
+  '@loom/plugin-sandbox': link:../loom/plugins/sandbox
+  '@loom/projection-runtime': link:../loom/packages/projection-runtime
+  '@loom/replay-vm': link:../loom/packages/replay-vm
   '@loom/scheduler': link:../loom/packages/scheduler
 
 importers:
@@ -46,6 +51,40 @@ importers:
       '@loom/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.4
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@22.20.4)
+
+  packages/hydration:
+    dependencies:
+      '@loom-ui/core':
+        specifier: workspace:*
+        version: link:../core
+      '@loom/core':
+        specifier: link:../../../loom/packages/core
+        version: link:../../../loom/packages/core
+      '@loom/effect-runtime':
+        specifier: link:../../../loom/packages/effect-runtime
+        version: link:../../../loom/packages/effect-runtime
+      '@loom/plugin-mcp':
+        specifier: link:../../../loom/plugins/mcp
+        version: link:../../../loom/plugins/mcp
+      '@loom/plugin-sandbox':
+        specifier: link:../../../loom/plugins/sandbox
+        version: link:../../../loom/plugins/sandbox
+      '@loom/projection-runtime':
+        specifier: link:../../../loom/packages/projection-runtime
+        version: link:../../../loom/packages/projection-runtime
       zod:
         specifier: 'catalog:'
         version: 3.25.76
