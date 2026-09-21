@@ -3,12 +3,14 @@ import { type Experience, type Finding, ProviderSpec } from "./experience";
 import {
   ExperienceNode,
   LocalizedText,
+  MAX_TREE_DEPTH,
   NodeId,
   OrderKey,
   Priority,
   findNode,
   normalize,
   rebuild,
+  treeDepth,
 } from "./node";
 
 // ── Operations, not diffs ─────────────────────────────────────────────────────
@@ -94,7 +96,46 @@ function next(
   };
 }
 
+/**
+ * Depth at which `id` sits in `root` (root itself is 1), or undefined. ITERATIVE, like
+ * {@link treeDepth}: it runs on the refusal path, before anything recursive is allowed to.
+ */
+function depthOfNode(root: ExperienceNode, id: string): number | undefined {
+  const stack: Array<{ node: ExperienceNode; depth: number }> = [{ node: root, depth: 1 }];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    if (top.node.id === id) return top.depth;
+    if (top.node.kind === "container")
+      for (const child of top.node.children) stack.push({ node: child, depth: top.depth + 1 });
+  }
+  return undefined;
+}
+
 export function apply(base: Experience, rawOp: Operation): OpResult<Experience> {
+  // Depth first, and before `Operation.safeParse`: zod's parse of `insertNode.node` is itself
+  // recursive, so an over-deep subtree must be refused before the schema ever sees it.
+  const baseDepth = treeDepth(base.root);
+  if (baseDepth > MAX_TREE_DEPTH)
+    return refuse(
+      "tree-too-deep",
+      `the experience tree nests ${baseDepth} levels, over the ${MAX_TREE_DEPTH} limit`,
+      base.root.id
+    );
+  if (
+    typeof rawOp === "object" &&
+    rawOp !== null &&
+    (rawOp as { type?: unknown }).type === "insertNode"
+  ) {
+    const raw = rawOp as { parentId?: unknown; node?: unknown };
+    const added = treeDepth(raw.node as ExperienceNode);
+    const parentDepth =
+      typeof raw.parentId === "string" ? depthOfNode(base.root, raw.parentId) : undefined;
+    if (parentDepth !== undefined && parentDepth + added > MAX_TREE_DEPTH)
+      return refuse(
+        "tree-too-deep",
+        `inserting a ${added}-level subtree under "${raw.parentId}" (depth ${parentDepth}) would nest ${parentDepth + added} levels, over the ${MAX_TREE_DEPTH} limit`,
+        typeof raw.parentId === "string" ? raw.parentId : undefined
+      );
+  }
   const parsed = Operation.safeParse(rawOp);
   if (!parsed.success)
     return refuse("invalid-operation", parsed.error.issues.map((i) => i.message).join("; "));

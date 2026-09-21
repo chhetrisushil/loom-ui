@@ -7,7 +7,7 @@ import {
   validateExperience,
 } from "./catalog";
 import { genesis } from "./experience";
-import type { SemanticNode } from "./node";
+import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 import { testCatalog } from "./testCatalog";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
@@ -25,6 +25,27 @@ const sem = (id: string, type: string, extra: Partial<SemanticNode> = {}): Seman
 const exp = (children: SemanticNode[]) => {
   const g = genesis({ experienceId: "e", intent: { objective: "x", source: "user" }, meta });
   return { ...g, root: { ...g.root, children } };
+};
+/** A left spine `levels` containers deep, built ITERATIVELY — the recursive helpers cannot. */
+const chain = (levels: number): ContainerNode => {
+  let out: ContainerNode = {
+    id: "n0",
+    order: "V",
+    kind: "container",
+    direction: "column",
+    span: 12,
+    children: [],
+  };
+  for (let i = 1; i < levels; i++)
+    out = {
+      id: `n${i}`,
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [out],
+    };
+  return out;
 };
 const codes = (r: { findings: readonly { code: string }[] }) =>
   r.findings.map((f) => f.code).sort();
@@ -136,5 +157,22 @@ describe("validateExperience", () => {
       vocabularyFloor: { minVersion: "0.0.0", types: [{ name: "Status", version: "1.0.0" }] },
     };
     expect(codes(validateExperience(e, testCatalog, "web"))).toEqual(["floor-violation"]);
+  });
+});
+
+describe("tree depth", () => {
+  // I1. `walk` is recursive; without the iterative probe this is a RangeError thrown out of a
+  // function whose entire contract is that a defect is a finding.
+  it("reports a tree past the cap as a finding rather than throwing", () => {
+    const e = { ...exp([]), root: chain(300) };
+    const r = validateExperience(e, testCatalog, "web");
+    expect(r.ok).toBe(false);
+    expect(codes(r)).toEqual(["tree-too-deep"]);
+    expect(r.findings[0]?.message).toMatch(/nests 300 levels/);
+  });
+  it("still validates a tree under the cap", () => {
+    const e = { ...exp([]), root: chain(200) };
+    expect(validateExperience(e, testCatalog, "web").ok).toBe(true);
+    expect(MAX_TREE_DEPTH).toBe(256);
   });
 });

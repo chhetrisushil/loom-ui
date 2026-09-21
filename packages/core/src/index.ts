@@ -2,6 +2,7 @@ export { orderKeyAfterAll, orderKeyBetween } from "./order";
 export {
   ExperienceNode,
   LocalizedText,
+  MAX_TREE_DEPTH,
   NodeId,
   OrderKey,
   Priority,
@@ -11,6 +12,7 @@ export {
   nodeIds,
   normalize,
   rebuild,
+  treeDepth,
   walk,
 } from "./node";
 export type { ContainerNode, SemanticNode } from "./node";
