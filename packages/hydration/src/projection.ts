@@ -35,10 +35,10 @@ export function isReservedHandle(handle: string): boolean {
   return RESERVED.has(handle);
 }
 
+// `Object.fromEntries` uses CreateDataProperty for each entry, so a `__proto__` key lands as
+// an own property — never the prototype setter that a plain `out[k] = v` assignment would hit.
 function without<T>(rec: Record<string, T>, key: string): Record<string, T> {
-  const out: Record<string, T> = {};
-  for (const k of Object.keys(rec)) if (k !== key) out[k] = rec[k] as T;
-  return out;
+  return Object.fromEntries(Object.entries(rec).filter(([k]) => k !== key));
 }
 
 export function hydrationProjection(): Projection<HydrationState> {
@@ -49,6 +49,11 @@ export function hydrationProjection(): Projection<HydrationState> {
     handlers: {
       [HYDRATION_SET_EVENT]: (state, event) => {
         const p = event.payload as SetPayload;
+        // Defense in depth: `HydrationStore` already refuses reserved handles before emitting,
+        // but this projection is registered on a SHARED runtime — any other holder of that
+        // runtime can call `handleEvent` directly with a forged envelope, bypassing the store.
+        // The fold itself must never write a reserved handle into state.
+        if (isReservedHandle(p.handle)) return state;
         if (p.kind === "remove") {
           if (!Object.hasOwn(state.status, p.handle) && !Object.hasOwn(state.values, p.handle))
             return state;
@@ -98,12 +103,15 @@ export class HydrationStore {
   }
 
   setStatus(handle: string, status: Omit<HandleStatus, "seq">): void {
+    this.assertValidHandle(handle);
     this.emit({ kind: "status", handle, status: this.stamp(status) });
   }
   setValue(handle: string, value: unknown, status: Omit<HandleStatus, "seq">): void {
+    this.assertValidHandle(handle);
     this.emit({ kind: "value", handle, value, status: this.stamp(status) });
   }
   remove(handle: string): void {
+    this.assertValidHandle(handle);
     this.emit({ kind: "remove", handle });
   }
 
@@ -121,13 +129,16 @@ export class HydrationStore {
     );
   }
 
+  private assertValidHandle(handle: string): void {
+    if (isReservedHandle(handle)) throw new Error(`handle "${handle}" is reserved`);
+  }
+
   private stamp(status: Omit<HandleStatus, "seq">): HandleStatus {
     this.seq += 1;
     return { ...status, seq: this.seq };
   }
 
   private emit(payload: SetPayload): void {
-    if (isReservedHandle(payload.handle)) throw new Error(`handle "${payload.handle}" is reserved`);
     this.emitSeq += 1;
     const envelope: EventEnvelope = {
       id: `loom-ui-hydration-${this.executionId}-${this.emitSeq}`,
