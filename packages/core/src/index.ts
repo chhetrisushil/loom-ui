@@ -45,3 +45,6 @@ export type {
   Surface,
   SurfaceResolution,
 } from "./catalog";
+export { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
+export { compile } from "./compile";
+export type { CompileOptions, CompileResult } from "./compile";
