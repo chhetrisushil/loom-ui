@@ -158,6 +158,13 @@ export class HydrationController {
         experienceId: this.current.experienceId,
         versionHash: this.current.versionHash,
       };
+      // A lazy widget stays lazy: invalidating must not fetch data for something off-screen.
+      // The next `markVisible` picks the re-queued load up; the status is left as it is, so the
+      // widget keeps showing its last value until it is actually looked at.
+      if (use.priority === "P2") {
+        this.lazy.set(use.handle, load);
+        continue;
+      }
       this.start(load).catch(() => {});
     }
     return { findings: [] };

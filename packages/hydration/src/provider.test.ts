@@ -156,3 +156,21 @@ describe("executeProvider is total: a value it cannot inspect is a finding, neve
     expect(!r.ok && r.findings[0]?.message).toContain("[unserializable payload]");
   });
 });
+
+describe("executeProvider finding order", () => {
+  it("lists findings in GRAPH order, not in the order the steps happened to fail", async () => {
+    // `slow` is declared first and settles last; `fast` throws synchronously. Completion order
+    // is [fast, slow]; the findings must still read [slow, fast].
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, async (input) => {
+      const t = (input as McpIn).toolName;
+      if (t === "fast") throw new TypedFailure("fast", { t });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      throw new TypedFailure("slow", { t });
+    });
+    const r = await executeProvider(
+      providerSpec("h", [mcpStep("a", "slow"), mcpStep("b", "fast")]),
+      { invoker: inv }
+    );
+    expect(!r.ok && r.findings.map((f) => f.code)).toEqual(["tool-slow", "tool-fast"]);
+  });
+});
