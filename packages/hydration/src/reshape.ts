@@ -12,6 +12,20 @@ import { resolvePath } from "./plan";
 
 export type ReshapeResult = { ok: true; value: unknown } | { ok: false; finding: Finding };
 
+/**
+ * A finding MESSAGE must never be the thing that throws. A `TypedFailure` payload is authored by
+ * a tool server or a sandbox script — it can be cyclic, or carry a bigint, and `JSON.stringify`
+ * throws on both. Losing the payload text is a far better outcome than losing the finding.
+ * (Not exported from the package index: it exists for this package's message building.)
+ */
+export function safeStringify(v: unknown): string {
+  try {
+    return JSON.stringify(v) ?? String(v);
+  } catch {
+    return "[unserializable payload]";
+  }
+}
+
 export function jsonPathSelect(value: unknown, path: string): ReshapeResult {
   if (path === "" || path === "$") return { ok: true, value };
   const out = resolvePath(value, path);
@@ -55,7 +69,7 @@ export async function reshape(
         finding: {
           code: `reshape-${err.channel}`,
           severity: "error",
-          message: `sandbox ${err.channel}: ${JSON.stringify(err.payload)}`,
+          message: `sandbox ${err.channel}: ${safeStringify(err.payload)}`,
         },
       };
     return {

@@ -43,7 +43,7 @@ const { blueprint, findings } = compile(put.experience, { surface: "web", catalo
 ```ts
 import { HydrationController, HydrationStore, SCHEMA_REPAIRED, remapOperation } from "@loom-ui/hydration";
 
-const store = new HydrationStore(projectionRuntime, experience.experienceId);
+const store = new HydrationStore(projectionRuntime, { experienceId: experience.experienceId, principalId: viewer.id });
 const controller = new HydrationController({
   invoker: effectRuntime,                 // EffectRuntime satisfies TransientInvoker
   store,

@@ -75,15 +75,37 @@ export interface HandleSlice {
   readonly status: HandleStatus | undefined;
 }
 
+/**
+ * What a store's state belongs to. Isolation is by (experience, principal); two viewers of one
+ * experience must not share a store — `values` holds whatever the viewer's own principal chain
+ * was allowed to read, so a shared store is a cross-viewer data leak, not a cache win.
+ * Omit `principalId` only where there is genuinely one viewer (a single-user CLI, a test).
+ */
+export interface HydrationScope {
+  readonly experienceId: string;
+  readonly principalId?: string;
+}
+
 export class HydrationStore {
   private seq = 0; // status seq — monotone per store
   private emitSeq = 0; // envelope sequence — every emit, including remove
+  /** The projection state key: the scope, flattened. Derived — never passed in. */
+  readonly executionId: string;
 
+  /**
+   * Isolation is by (experience, principal); two viewers of one experience must not share a
+   * store. The projection is keyed by `executionId`, so a per-viewer store is what keeps one
+   * viewer's values out of another's widgets even on a SHARED `ProjectionRuntime`.
+   */
   constructor(
     private readonly runtime: ProjectionRuntime,
-    readonly executionId: string,
+    readonly scope: HydrationScope,
     opts: { register?: boolean } = {}
   ) {
+    this.executionId =
+      scope.principalId === undefined
+        ? scope.experienceId
+        : `${scope.experienceId}:${scope.principalId}`;
     if (opts.register !== false) runtime.register(hydrationProjection());
   }
 

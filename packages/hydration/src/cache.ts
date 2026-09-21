@@ -1,21 +1,59 @@
 import type { ProviderSpec } from "@loom-ui/core";
+import { canonicalJson, fnv1a64 } from "@loom/core";
 
 // ── Result cache ──────────────────────────────────────────────────────────────
 // `scope: "global"` shares one entry per handle; `scope: "principal"` keys on (principal, handle)
 // and refuses to cache when no principal is known — a per-viewer result must never leak to the
 // next viewer. TTL is against an injected clock so tests never sleep.
+//
+// The key also carries the SPEC's fingerprint: a handle whose provider was repaired (a remapped
+// schema pin, a different tool, a new reshaping) is a different question, and must not be
+// answered from the entry the old spec left behind. `invalidate(handle)` still drops every
+// spec-generation of that handle, so the fingerprint never makes a stale entry unreachable.
 
 // NUL: cannot appear in a handle, so `invalidate(handle)`'s suffix match can never mis-hit
 // another handle whose name happens to contain the delimiter (e.g. a handle literally named "h").
 const SEP = String.fromCharCode(0);
+
+// Memoized per spec OBJECT: the controller fingerprints the same spec on every `schedule`, and
+// `canonicalJson` walks the whole graph. A WeakMap keeps that O(1) without pinning specs alive.
+const fingerprints = new WeakMap<ProviderSpec, string>();
+let unhashable = 0;
+
+/**
+ * The content fingerprint of a provider spec — the identity both the cache key and the
+ * controller's "have I already loaded THIS spec?" check are taken over, so the two can never
+ * disagree about what "the same provider" means.
+ *
+ * Total: `canonicalJson` throws on a spec carrying a non-finite number, a bigint or a nest past
+ * its depth cap. Such a spec gets a fingerprint unique to the OBJECT, which is conservative in
+ * both directions — the same object is still recognised as itself (no reload storm), and two
+ * structurally identical unhashable specs are treated as different (no cache hit).
+ */
+export function specFingerprint(spec: ProviderSpec): string {
+  const memo = fingerprints.get(spec);
+  if (memo !== undefined) return memo;
+  let fp: string;
+  try {
+    fp = fnv1a64(canonicalJson(spec));
+  } catch {
+    unhashable += 1;
+    fp = `unhashable-${unhashable}`;
+  }
+  fingerprints.set(spec, fp);
+  return fp;
+}
 
 export class HydrationCache {
   private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
   constructor(private readonly clock: () => number = Date.now) {}
 
   private key(spec: ProviderSpec, principalId: string | undefined): string | undefined {
-    if (spec.cachePolicy.scope === "global") return `g${SEP}${spec.handle}`;
-    return principalId === undefined ? undefined : `p${SEP}${principalId}${SEP}${spec.handle}`;
+    const fp = specFingerprint(spec);
+    if (spec.cachePolicy.scope === "global") return `g${SEP}${fp}${SEP}${spec.handle}`;
+    return principalId === undefined
+      ? undefined
+      : `p${SEP}${principalId}${SEP}${fp}${SEP}${spec.handle}`;
   }
 
   get(spec: ProviderSpec, principalId: string | undefined): { value: unknown } | undefined {
