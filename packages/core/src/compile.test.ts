@@ -1,5 +1,6 @@
 import { RendererRegistry, validateBlueprint } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
+import { defineSemanticCatalog } from "./catalog";
 import { compile } from "./compile";
 import { genesis } from "./experience";
 import { loomCatalogFor } from "./loomCatalog";
@@ -204,5 +205,40 @@ describe("compile", () => {
   });
   it("an unpersisted experience compiles to an id marked as such", () => {
     expect(compile({ ...exp, versionHash: "" }, opts).blueprint.id).toBe("exp-1@unsealed");
+  });
+  it("a resolved kind with no derived contract is omitted with a finding, never emitted with unfiltered props", () => {
+    const malformed = defineSemanticCatalog({
+      id: "malformed",
+      entries: [
+        {
+          name: "X",
+          version: "1.0.0",
+          props: ["secret"],
+          binding: "none",
+          surfaces: { web: { kind: "Mystery" } },
+        },
+      ],
+    });
+    const root2: ContainerNode = {
+      id: "root2",
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [sem("x", "X", { props: { secret: 1 }, binding: undefined })],
+    };
+    const e = {
+      ...genesis({ experienceId: "exp-2", intent: { objective: "test", source: "user" }, meta }),
+      versionHash: "sha256:def",
+      root: root2,
+    };
+    const r = compile(e, { ...opts, catalog: malformed });
+    expect(r.ok).toBe(false);
+    expect(r.blueprint.layout.children).toEqual([]);
+    expect(r.findings.map((f) => f.code).sort()).toEqual([
+      "kind-without-contract",
+      "undeclared-kind-contract",
+    ]);
+    expect(JSON.stringify(r.blueprint)).not.toContain("secret");
   });
 });

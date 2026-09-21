@@ -102,6 +102,8 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
 /** loom's finding codes that restate one this compiler already reported for the same node. */
 function sameDefect(ours: string, loomCode: string): boolean {
   return (
+    // Defensive: props are filtered to the derived contract before the loom pass, so this should
+    // not fire; kept so a future compiler change cannot double-report.
     (ours === "undeclared-prop" && loomCode === "undeclared-prop") ||
     (ours === "missing-binding" && loomCode === "missing-binding") ||
     (ours === "duplicate-node-id" && loomCode === "duplicate-node-id")
@@ -142,6 +144,21 @@ function compileNode(
     return compileContainer(node, exp, opts, resolveLabel, catalogByKind, findings);
   const r = resolveSurface(opts.catalog, node.type, node.typeVersion, opts.surface, node.id);
   if (!r.ok) return undefined; // the finding was recorded by validateExperience; the node is omitted, never faked
+  // A resolved kind with no entry in the derived catalogue (loomCatalogFor already reported
+  // `undeclared-kind-contract` or `kind-contract-conflict` for it) has no allow-list to filter
+  // props against — emitting the widget anyway would let every semantic prop reach `props`
+  // unfiltered, on exactly the path a malformed catalogue produces. Omit the node instead, with
+  // its own finding, the same treatment as an unresolvable node.
+  const contract = catalogByKind.get(r.kind);
+  if (!contract) {
+    findings.push({
+      code: "kind-without-contract",
+      severity: "error",
+      message: `"${node.type}@${node.typeVersion}" resolves to "${r.kind}" on "${opts.surface}", which has no contract in the derived catalogue`,
+      nodeId: node.id,
+    });
+    return undefined;
+  }
   // A degrade chain can land on a kind whose declared contract differs from the ORIGINAL semantic
   // type's own props (e.g. Trend@series degrading to a DataTable@columns): the resolved kind's
   // renderer only understands its own contract, so a prop outside it is dropped here rather than
@@ -150,24 +167,21 @@ function compileNode(
   // render, is a `prop-not-rendered` warn — degradation loses fidelity, and that loss is visible.
   // A prop that is not even declared by the node's own type is `validateExperience`'s territory
   // (`undeclared-prop`, an error) and is not reported twice here.
-  const contract = catalogByKind.get(r.kind);
-  const allowedProps = contract ? new Set(contract.props) : undefined;
+  const allowedProps = new Set(contract.props);
   const ownProps = new Set(findEntry(opts.catalog, node.type, node.typeVersion)?.props ?? []);
-  const props = allowedProps
-    ? Object.fromEntries(
-        Object.entries(node.props).filter(([key]) => {
-          if (allowedProps.has(key)) return true;
-          if (ownProps.has(key))
-            findings.push({
-              code: "prop-not-rendered",
-              severity: "warn",
-              message: `prop "${key}" of "${node.type}@${node.typeVersion}" is not rendered by "${r.kind}" on "${opts.surface}"`,
-              nodeId: node.id,
-            });
-          return false;
-        })
-      )
-    : node.props;
+  const props = Object.fromEntries(
+    Object.entries(node.props).filter(([key]) => {
+      if (allowedProps.has(key)) return true;
+      if (ownProps.has(key))
+        findings.push({
+          code: "prop-not-rendered",
+          severity: "warn",
+          message: `prop "${key}" of "${node.type}@${node.typeVersion}" is not rendered by "${r.kind}" on "${opts.surface}"`,
+          nodeId: node.id,
+        });
+      return false;
+    })
+  );
   return customWidget$({
     kind: r.kind,
     id: node.id,
