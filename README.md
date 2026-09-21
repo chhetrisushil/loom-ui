@@ -10,6 +10,7 @@ in the path.
 | Package | Job |
 |---|---|
 | `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint`; `./log` subpath for content-addressed persistence |
+| `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath reshape → shape check), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, caches per principal, reports drift for the app's durable repair |
 
 Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
 
@@ -35,4 +36,24 @@ ctx.emit(EXPERIENCE_COMPOSED, { ref: put.ref, parents: put.experience.parents, o
 
 // Anywhere, later, with no model in the path: compile per surface and hand loom the Blueprint.
 const { blueprint, findings } = compile(put.experience, { surface: "web", catalog, hydrationProjectionId: "hydration", hydrationProjectionVersion: "1.0.0" });
+```
+
+## Shape of hydration (illustrative — not a compiling snippet)
+
+```ts
+import { HydrationController, HydrationStore, SCHEMA_REPAIRED, remapOperation } from "@loom-ui/hydration";
+
+const store = new HydrationStore(projectionRuntime, experience.experienceId);
+const controller = new HydrationController({
+  invoker: effectRuntime,                 // EffectRuntime satisfies TransientInvoker
+  store,
+  principal: { id: viewer.id, chain: viewer.principalChain },
+  onDrift: (report) => durableRepair(report),  // the app's loom execution, not this package
+});
+controller.load(experience);              // P0 now, P1 in 50 ms, P2 on markVisible
+// ...compile(experience, { hydrationProjectionId: HYDRATION_PROJECTION_ID, hydrationProjectionVersion: HYDRATION_PROJECTION_VERSION, ... })
+
+// Inside durableRepair (a loom execution):
+const r = remapOperation(report.spec, report.drift);
+if (r.ok) { const next = apply(sealedExperience, r.op); /* seal + put + */ ctx.emit(SCHEMA_REPAIRED, { ...report, op: r.op }); }
 ```
