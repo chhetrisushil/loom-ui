@@ -92,6 +92,67 @@ describe("apply", () => {
     } as never);
     expect(!r.ok && r.finding.code).toBe("invalid-operation");
   });
+  it("refuses missing-node, cyclic-move and not-semantic with their codes", () => {
+    const withTree = replay(g, [
+      {
+        type: "insertNode",
+        parentId: "root",
+        node: { id: "c1", order: "a", kind: "container", direction: "row", span: 12, children: [] },
+      },
+      { type: "insertNode", parentId: "c1", node: node("m1") },
+    ]);
+    if (!withTree.ok) throw new Error("setup");
+    const e = withTree.value;
+    const codes = [
+      apply(e, { type: "removeNode", nodeId: "ghost" }),
+      apply(e, { type: "moveNode", nodeId: "ghost", newParentId: "root", newOrder: "b" }),
+      apply(e, { type: "moveNode", nodeId: "c1", newParentId: "m1", newOrder: "b" }), // m1 is not a container → not-a-container
+      apply(e, { type: "setProps", nodeId: "c1", patch: {} }),
+    ].map((r) => (r.ok ? "ok" : r.finding.code));
+    expect(codes).toEqual(["missing-node", "missing-node", "not-a-container", "not-semantic"]);
+    // cyclic-move: a container into its own descendant container
+    const nested = apply(e, {
+      type: "insertNode",
+      parentId: "c1",
+      node: { id: "c2", order: "z", kind: "container", direction: "row", span: 12, children: [] },
+    });
+    if (!nested.ok) throw new Error("setup");
+    const cyc = apply(nested.value, {
+      type: "moveNode",
+      nodeId: "c1",
+      newParentId: "c2",
+      newOrder: "a",
+    });
+    expect(!cyc.ok && cyc.finding.code).toBe("cyclic-move");
+  });
+  it("applies schema defaults from the parsed op (remapProvider's executionGraph entries get dependsOn/idempotent)", () => {
+    const specWithDefaults = {
+      handle: "h1",
+      executionGraph: [
+        {
+          stepId: "s1",
+          toolName: "t1",
+          toolVersion: "1.0.0",
+          toolSchemaHash: "sha256:h",
+          arguments: {},
+        },
+      ],
+      reshaping: { engine: "JSONPath" as const, scriptRef: "sha256:s" },
+      outputShapeHash: "sha256:o",
+      cachePolicy: { ttlSeconds: 60, scope: "global" as const },
+    } as never;
+    const r = apply(g, { type: "remapProvider", handle: "h1", spec: specWithDefaults });
+    if (!r.ok) throw new Error(r.finding.message);
+    expect(r.value.providers.h1.executionGraph[0]).toEqual({
+      stepId: "s1",
+      toolName: "t1",
+      toolVersion: "1.0.0",
+      toolSchemaHash: "sha256:h",
+      arguments: {},
+      dependsOn: [],
+      idempotent: true,
+    });
+  });
 });
 
 describe("replay", () => {
@@ -112,5 +173,14 @@ describe("replay", () => {
   it("stops at the first failing op and names its index", () => {
     const r = replay(g, [{ type: "removeNode", nodeId: "ghost" }]);
     expect(!r.ok && r.finding.message).toMatch(/op #0 \(removeNode\)/);
+  });
+  it("keeps the sealed ancestor as parent across a multi-op fold", () => {
+    const sealed = { ...g, versionHash: "sha256:base" };
+    const r = replay(sealed, [
+      { type: "insertNode", parentId: "root", node: node("m1") },
+      { type: "setProps", nodeId: "m1", patch: { unit: "ms" } },
+    ]);
+    expect(r.ok && r.value.parents).toEqual(["sha256:base"]);
+    expect(r.ok && r.value.versionHash).toBe("");
   });
 });

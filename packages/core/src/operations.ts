@@ -77,7 +77,11 @@ const refuse = (code: string, message: string, nodeId?: string): OpResult<never>
   finding: { code, severity: "error", message, ...(nodeId !== undefined && { nodeId }) },
 });
 
-/** A new unpersisted artifact whose parent is the base — never the base itself. */
+/**
+ * A new unpersisted artifact. Its parent is the base when the base is a sealed artifact; an
+ * unsealed intermediate (mid-fold) carries its own parents forward, so a replay's result cites
+ * the last SEALED ancestor, never nothing.
+ */
 function next(
   base: Experience,
   patch: Partial<Pick<Experience, "root" | "providers">>
@@ -86,14 +90,15 @@ function next(
     ...base,
     ...patch,
     versionHash: "",
-    parents: base.versionHash ? [base.versionHash] : [],
+    parents: base.versionHash ? [base.versionHash] : base.parents,
   };
 }
 
-export function apply(base: Experience, op: Operation): OpResult<Experience> {
-  const parsed = Operation.safeParse(op);
+export function apply(base: Experience, rawOp: Operation): OpResult<Experience> {
+  const parsed = Operation.safeParse(rawOp);
   if (!parsed.success)
     return refuse("invalid-operation", parsed.error.issues.map((i) => i.message).join("; "));
+  const op = parsed.data;
   switch (op.type) {
     case "insertNode": {
       if (findNode(base.root, op.node.id))
