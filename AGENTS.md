@@ -19,6 +19,9 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - Third-party versions live in `pnpm-workspace.yaml`'s `catalog:`; reference them as `"catalog:"`.
 - Package `tsconfig.json`s extend `../../tsconfig.base.json` and carry **no** TypeScript project
   `references` into `../loom` — types resolve from `node_modules`.
+- CI pins loom to `LOOM_REF` in `.github/workflows/ci.yml`. Bump it in the same PR that adapts to
+  a loom change, after checking `../loom` out at that commit, rebuilding it, and running
+  `pnpm typecheck && pnpm test` here.
 
 ## Rules
 
