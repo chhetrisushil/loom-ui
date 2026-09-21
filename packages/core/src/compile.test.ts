@@ -1,7 +1,7 @@
 import { RendererRegistry, validateBlueprint } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
-import { compile } from "./compile";
+import { HYDRATION_VALUES_PREFIX, compile, handleFromPath, hydrationPath } from "./compile";
 import { genesis } from "./experience";
 import { loomCatalogFor } from "./loomCatalog";
 import {
@@ -357,5 +357,20 @@ describe("compile", () => {
       "undeclared-kind-contract",
     ]);
     expect(JSON.stringify(r.blueprint)).not.toContain("secret");
+  });
+});
+
+describe("hydrationPath / handleFromPath", () => {
+  it("round-trips a handle through the binding path, both directions", () => {
+    for (const handle of ["latency-p99", "a.b", "values", "x:h"]) {
+      expect(handleFromPath(hydrationPath(handle))).toBe(handle);
+    }
+    expect(hydrationPath("h")).toBe(`${HYDRATION_VALUES_PREFIX}.h`);
+  });
+  it("a path this projection does not hydrate has no handle", () => {
+    expect(handleFromPath("other.h")).toBeUndefined();
+    expect(handleFromPath(HYDRATION_VALUES_PREFIX)).toBeUndefined(); // no separator, no handle
+    expect(handleFromPath(`${HYDRATION_VALUES_PREFIX}.`)).toBeUndefined(); // empty handle
+    expect(handleFromPath("")).toBeUndefined();
   });
 });

@@ -18,8 +18,7 @@
     "@loom/effect-runtime": "*",
     "@loom/plugin-mcp": "*",
     "@loom/plugin-sandbox": "*",
-    "@loom/projection-runtime": "*",
-    "zod": "catalog:"
+    "@loom/projection-runtime": "*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

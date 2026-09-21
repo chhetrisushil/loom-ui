@@ -49,6 +49,19 @@ export function hydrationPath(handle: string): string {
   return `${HYDRATION_VALUES_PREFIX}.${handle}`;
 }
 
+/**
+ * The inverse of {@link hydrationPath}: the handle a binding path names, or `undefined` if the
+ * path is not one this projection hydrates. Exported so a surface reading a compiled blueprint
+ * (to report per-widget status, or to call `markVisible`) parses the path with the SAME spelling
+ * that produced it, rather than re-deriving `"values."` in a string literal of its own.
+ */
+export function handleFromPath(path: string): string | undefined {
+  const prefix = `${HYDRATION_VALUES_PREFIX}.`;
+  if (!path.startsWith(prefix)) return undefined;
+  const handle = path.slice(prefix.length);
+  return handle === "" ? undefined : handle;
+}
+
 export interface CompileOptions {
   readonly surface: Surface;
   readonly catalog: SemanticCatalog;

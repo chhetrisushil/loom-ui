@@ -153,7 +153,12 @@ export async function executeProvider(
     });
   }
 
-  findings.push(...failed.values());
+  // GRAPH order, not completion order: two independent steps that fail in a race must produce
+  // the same finding list every run, or the surface's error text depends on which tool was slower.
+  for (const step of steps) {
+    const f = failed.get(step.stepId);
+    if (f) findings.push(f);
+  }
   if (failed.size > 0) {
     return {
       ok: false,

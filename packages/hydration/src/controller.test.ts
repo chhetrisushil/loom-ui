@@ -310,6 +310,23 @@ describe("HydrationController lifecycle", () => {
     expect(inv.calls[1]?.opts?.signal?.aborted).toBe(false);
   });
 
+  it("invalidate re-queues a lazy (P2) handle instead of fetching for an off-screen widget", async () => {
+    const { inv, ctl, store } = rig();
+    ctl.load(withNodes([node("a", "h", "P2")], ["h"]));
+    await flush();
+    ctl.markVisible("h");
+    await flush();
+    expect(tools(inv)).toEqual(["tool.h"]);
+    const before = store.status("h");
+    ctl.invalidate("h");
+    await flush();
+    expect(tools(inv)).toEqual(["tool.h"]); // still off-screen as far as the surface said
+    expect(store.status("h")).toEqual(before); // status untouched: the last value stays on screen
+    ctl.markVisible("h");
+    await flush();
+    expect(tools(inv)).toEqual(["tool.h", "tool.h"]);
+  });
+
   it("a too-deep recompose is refused before anything is torn down", async () => {
     const { inv, ctl, store } = rig();
     ctl.load(withNodes([node("a", "h", "P0")], ["h"]));
