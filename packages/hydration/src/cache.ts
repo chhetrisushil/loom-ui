@@ -5,13 +5,17 @@ import type { ProviderSpec } from "@loom-ui/core";
 // and refuses to cache when no principal is known — a per-viewer result must never leak to the
 // next viewer. TTL is against an injected clock so tests never sleep.
 
+// NUL: cannot appear in a handle, so `invalidate(handle)`'s suffix match can never mis-hit
+// another handle whose name happens to contain the delimiter (e.g. a handle literally named "h").
+const SEP = String.fromCharCode(0);
+
 export class HydrationCache {
   private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
   constructor(private readonly clock: () => number = Date.now) {}
 
   private key(spec: ProviderSpec, principalId: string | undefined): string | undefined {
-    if (spec.cachePolicy.scope === "global") return `g:${spec.handle}`;
-    return principalId === undefined ? undefined : `p:${principalId}:${spec.handle}`;
+    if (spec.cachePolicy.scope === "global") return `g${SEP}${spec.handle}`;
+    return principalId === undefined ? undefined : `p${SEP}${principalId}${SEP}${spec.handle}`;
   }
 
   get(spec: ProviderSpec, principalId: string | undefined): { value: unknown } | undefined {
@@ -37,6 +41,6 @@ export class HydrationCache {
       this.entries.clear();
       return;
     }
-    for (const k of [...this.entries.keys()]) if (k.endsWith(`:${handle}`)) this.entries.delete(k);
+    for (const k of [...this.entries.keys()]) if (k.endsWith(SEP + handle)) this.entries.delete(k);
   }
 }

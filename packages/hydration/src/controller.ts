@@ -181,6 +181,7 @@ export class HydrationController {
       this.lazy.set(use.handle, load);
       return;
     }
+    this.lazy.delete(use.handle); // promoted out of P2: the lazy entry has a new owner (P0/P1 below)
     if (use.priority === "P0") {
       void this.start(load);
       return;

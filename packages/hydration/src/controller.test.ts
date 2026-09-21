@@ -1,4 +1,4 @@
-import { type Experience, type SemanticNode, genesis } from "@loom-ui/core";
+import { type ContainerNode, type Experience, type SemanticNode, genesis } from "@loom-ui/core";
 import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
@@ -23,7 +23,7 @@ const withNodes = (nodes: SemanticNode[], handles: string[]): Experience => {
   return {
     ...g,
     versionHash: "sha256:v1",
-    root: { ...g.root, children: nodes },
+    root: { ...(g.root as ContainerNode), children: nodes },
     providers: Object.fromEntries(
       handles.map((h) => [h, providerSpec(h, [mcpStep("s", `tool.${h}`)])])
     ),
@@ -188,6 +188,28 @@ describe("HydrationController scheduling", () => {
     await flush();
     expect(r.findings.map((f) => f.code)).toEqual(["tree-too-deep"]);
     expect(inv.calls).toEqual([]);
+  });
+
+  it("a handle promoted out of P2 by recompose has one owner; a later markVisible is a no-op", async () => {
+    const { inv, ctl } = rig();
+    ctl.load(withNodes([node("a", "h", "P2")], ["h"]));
+    await flush();
+    expect(tools(inv)).toEqual([]);
+    ctl.recompose(withNodes([node("a", "h", "P0")], ["h"]));
+    await flush();
+    expect(tools(inv)).toEqual(["tool.h"]);
+    ctl.markVisible("h");
+    await flush();
+    expect(tools(inv)).toEqual(["tool.h"]);
+  });
+
+  it("a reserved handle is refused with invalid-handle and never invoked", async () => {
+    const { inv, ctl, store } = rig();
+    const r = ctl.load(withNodes([node("a", "__proto__", "P0")], ["__proto__"]));
+    await flush();
+    expect(r.findings.map((f) => f.code)).toEqual(["invalid-handle"]);
+    expect(inv.calls).toEqual([]);
+    expect(store.status("__proto__")).toBeUndefined();
   });
 
   it("dispose aborts everything in flight and cancels the pending batch timer", async () => {
