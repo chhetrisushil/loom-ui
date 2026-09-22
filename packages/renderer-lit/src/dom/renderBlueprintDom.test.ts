@@ -60,7 +60,7 @@ const bp = blueprint$({
 });
 
 describe("renderBlueprintDom", () => {
-  it("mounts containers and widgets, passes status from the hydration projection, honours span in a grid", () => {
+  it("mounts containers and widgets, passes the status its binding declares a path for, honours a grid cell's span", () => {
     const runtime = new InMemoryProjectionRuntime();
     const store = new HydrationStore(runtime, { experienceId: "e" });
     store.setValue("h-p99", 412, { state: "ready" });
@@ -78,6 +78,10 @@ describe("renderBlueprintDom", () => {
     // The span lands on the widget's OWN host — no wrapper element between it and the grid.
     expect(p99Host.style.gridColumn).toBe("span 4");
     expect(p99Host.parentElement).toBe(gridEl);
+    // …and a span-1 cell is left alone: no `grid-column` at all, not "span 1".
+    const stackEl = host.querySelector("[data-layout='stack']") as HTMLElement;
+    expect(stackEl.parentElement).toBe(gridEl);
+    expect(stackEl.style.gridColumn).toBe("");
     expect(p99Host.textContent).toBe("p99=412|ready");
     expect(host.querySelector("[data-widget-id='phase']")?.textContent).toBe("Phase=undefined|-");
     expect(calls).toEqual(["mount:p99", "mount:phase"]);
@@ -227,6 +231,61 @@ describe("renderBlueprintDom", () => {
     });
     await Promise.resolve();
     expect(host.querySelector("[data-widget-id='cpu']")?.textContent).toBe("CPU=87|-");
+  });
+  it("a status change with an UNCHANGED value re-renders even when the producer stamps no seq", async () => {
+    // `BindingStatus.seq` is optional (IR 2.0.0) — only the hydration store happens to stamp
+    // one. A comparator that keys on `seq` alone calls every seq-less pair equal and drops the
+    // headline transition the matrix exists for: the provider failed, the last value stays.
+    const runtime = new InMemoryProjectionRuntime();
+    interface Metrics {
+      cpu: number;
+      health: { state: string; finding?: { code: string; message: string } };
+    }
+    runtime.register<Metrics>({
+      id: "metrics",
+      initialState: { cpu: 87, health: { state: "ready" } },
+      handlers: {
+        FAIL: (s) => ({
+          ...s,
+          health: { state: "error", finding: { code: "provider-failed", message: "tool down" } },
+        }),
+      },
+    });
+    const seqless = blueprint$({
+      id: "s",
+      title: "S",
+      layout: stack({
+        children: [
+          MetricCard({
+            id: "cpu",
+            title: "CPU",
+            binding: { projectionId: "metrics", path: "cpu", status: { path: "health" } },
+          }),
+        ],
+      }),
+      projections: ["metrics"],
+    });
+    const { registry, calls } = recording();
+    const host = document.createElement("div");
+    renderBlueprintDom(host, seqless, {
+      projectionRuntime: runtime,
+      executionId: "x",
+      registry,
+    });
+    expect(host.querySelector("[data-widget-id='cpu']")?.textContent).toBe("CPU=87|ready");
+    calls.length = 0;
+    runtime.handleEvent({
+      id: "1",
+      workflowId: "w",
+      executionId: "x",
+      eventType: "FAIL",
+      sequence: 1,
+      timestamp: 0,
+      payload: {},
+    });
+    await Promise.resolve();
+    expect(calls).toEqual(["update:cpu"]);
+    expect(host.querySelector("[data-widget-id='cpu']")?.textContent).toBe("CPU=87|error");
   });
   it("an unregistered projection renders a visible placeholder instead of throwing, and its widgets show undefined until it's registered", () => {
     const runtime = new InMemoryProjectionRuntime();

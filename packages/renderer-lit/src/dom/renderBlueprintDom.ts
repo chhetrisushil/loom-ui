@@ -111,7 +111,7 @@ export function renderBlueprintDom(
               );
             }
           },
-          (a, b) => a.value === b.value && a.status?.seq === b.status?.seq
+          sliceIsEqual
         );
         disposers.push(off);
       }
@@ -158,6 +158,24 @@ export function renderBlueprintDom(
       }
     },
   };
+}
+
+/**
+ * Two slices are the same UPDATE when the value is unchanged and the status has not moved.
+ *
+ * `seq` is the cheap answer, but it is OPTIONAL on loom's `BindingStatus` (IR 2.0.0) — only the
+ * hydration store happens to stamp one. Comparing `a.status?.seq === b.status?.seq` alone would
+ * call every seq-less status pair equal, silently dropping exactly the transition the status
+ * matrix exists for: "the provider failed, keep the last value" is `ready` → `error` over an
+ * UNCHANGED value, and `undefined` → `{ state: "error" }` compares equal too (both `undefined`).
+ * So `seq` decides only when it is actually present; otherwise the statuses must be the same
+ * object. A producer that rebuilds an equal status object each event re-renders needlessly —
+ * the safe direction to be wrong in.
+ */
+function sliceIsEqual(a: Slice, b: Slice): boolean {
+  if (a.value !== b.value) return false;
+  if (a.status === b.status) return true;
+  return a.status?.seq !== undefined && a.status.seq === b.status?.seq;
 }
 
 function renderContainer(layout: Layout, children: HTMLElement[]): HTMLElement {

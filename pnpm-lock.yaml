@@ -160,9 +160,6 @@ importers:
       '@loom-ui/core':
         specifier: workspace:*
         version: link:../core
-      '@loom-ui/hydration':
-        specifier: workspace:*
-        version: link:../hydration
       '@loom/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
@@ -173,6 +170,9 @@ importers:
         specifier: 'catalog:'
         version: 3.3.3
     devDependencies:
+      '@loom-ui/hydration':
+        specifier: workspace:*
+        version: link:../hydration
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.4
