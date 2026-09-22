@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@loom-ui/core": "workspace:*",
+    "@loom/classify": "*",
     "@loom/core": "*",
     "@loom/effect-runtime": "*",
     "@loom/plugin-mcp": "*",
