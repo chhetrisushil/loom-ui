@@ -104,4 +104,12 @@ await putExperience(content, seal(experience.value));                           
 const revision = await planner.revise({ experience: current, request: { text }, catalog, capabilities }, ctx);
 ```
 
-Capabilities are an INPUT: the app resolves tools, pins `toolSchemaHash`, and supplies a raw `sampleOutput` for each one the planner may bind (no sample ⇒ not bindable). Samples and caller context reach the model only inside a fenced, untrusted DATA block in the user message. Output drift (`DriftRecord{kind:"output"}`) now carries `observedShape` and, when the hydration caller sets `captureSample`, a tainted `observedSample`; `reviseForDrift` turns a drift report into a repair revision.
+Capabilities are an INPUT: the app resolves tools, pins `toolSchemaHash`, and supplies a raw `sampleOutput` for each one the planner may bind (no sample ⇒ not bindable). Everything the framework and the operator did not author reaches the model only inside a fenced, untrusted DATA block in the user message — samples, caller context, the current experience's node list, and a capability's tool-server-authored `description`/`inputSchema` (the CAPABILITIES summary line carries only handle, tool@version, schema pin and whether it is bindable).
+
+`ReferencePlanner` fences its own prompts: it does NOT go through `@loom/llm`'s `buildRequest`/`guardRequest`. The caller hands it a provider whose `complete` it calls directly, so the untrusted-content discipline above is the planner's own, applied at prompt assembly.
+
+`sampleOutput` is deliberately NOT part of a plan's decision id. A sample pins shapes, it is not prose the model reasons from — and a new sample is a new REVISION (that is what `reviseForDrift` asks for), never a silent re-plan of a decision a replay is already serving.
+
+A revision describes, and materialises, only the root's DIRECT children. A nested container is shown as a locked placeholder (`{ id, kind: "container", locked: true, descendants }`) and its subtree is not described at all; a draft naming a node inside one is refused as `nested-node`.
+
+Output drift (`DriftRecord{kind:"output"}`) carries `observedShape` (the RESHAPED value that failed the pin), `observedRawShape` (the raw terminal output's shape, which is what a `reshaping.scriptRef` is authored against) and, when the hydration caller sets `captureSample`, a tainted `observedSample` of the RAW terminal output — raw because a capability's `sampleOutput` is raw by contract. `reviseForDrift` turns a drift report into a repair revision: the handles and node ids go in the request text, the shapes go in `context` (fenced), and the raw sample becomes the drifted capability's `sampleOutput`.
