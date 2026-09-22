@@ -229,6 +229,30 @@ describe("kind widgets", () => {
     expect(label).toBe("Trend, shown as MetricCard: p99: 7");
     expect(el.getAttribute("data-degraded")).toBe("Collection@1.0.0");
   });
+  it("a two-hop chain joins with loom's separator, outermost first — the same string React and the terminal print", async () => {
+    const degraded: Widget = {
+      ...MetricCard({ id: "m", title: "p99", binding: b }),
+      source: {
+        type: "Trend",
+        version: "1.0.0",
+        degradedFrom: [
+          { type: "Collection", version: "1.0.0" },
+          { type: "DataTable", version: "1.0.0" },
+        ],
+      },
+    };
+    const el = await mount<HTMLElement>("lu-metric-card", { widget: degraded, value: 7 });
+    expect(el.getAttribute("data-degraded")).toBe("Collection@1.0.0 › DataTable@1.0.0");
+  });
+  it("an EMPTY chain is not a degradation: no attribute, and the plain accessible name", async () => {
+    const empty: Widget = {
+      ...MetricCard({ id: "m", title: "p99", binding: b }),
+      source: { type: "Trend", version: "1.0.0", degradedFrom: [] },
+    };
+    const el = await mount<HTMLElement>("lu-metric-card", { widget: empty, value: 7 });
+    expect(el.hasAttribute("data-degraded")).toBe(false);
+    expect(el.shadowRoot?.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe("p99: 7");
+  });
   it("a widget that was not degraded says nothing about its source", async () => {
     const plain: Widget = {
       ...MetricCard({ id: "m", title: "p99", binding: b }),
