@@ -47,3 +47,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
   reported (`onDrift`), never repaired here; the app's durable execution applies `remapOperation`'s op and
   emits `SCHEMA_REPAIRED`. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else.
+- A planner returns OPERATIONS, never an Experience, and every model call runs inside `ctx.decide` so
+  replay never re-calls a model. `@loom-ui/planner` imports no invoker, effect runtime, projection
+  runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
+- Anything tool-authored that will be shown to a model (samples, observed drift values) is wrapped with
+  `@loom/classify`'s `tainted` at the producer and fenced as DATA in a user message — never in `system`.

@@ -13,6 +13,7 @@ in the path.
 | `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath reshape → shape check), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, caches per principal, reports drift for the app's durable repair |
 | `@loom-ui/renderer-lit` | A loom DOM renderer adapter (`renderBlueprintDom`, subpath `./dom`) and Lit elements registered under loom kinds (`litRegistry`) — every built-in kind plus `TimeSeries`/`BarChart`; four app-level elements (time-range picker, locale picker, sandbox, A2UI view) |
 | `@loom-ui/renderer-terminal` | `TimeSeries`/`BarChart` string renderers merged over loom's terminal registry, hydration-status decoration (`renderExperience`), and `watch` |
+| `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner that runs its model call as one `ctx.decide` per plan, a catalogue-derived output contract, plan-time pins, drift re-authoring (`reviseForDrift`), the conformance kit any planner must pass, and `interpretAction` (experience ops vs business actions) |
 
 Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
 
@@ -85,3 +86,22 @@ directly (`node dist/dom/index.js`), its `moduleResolution: "Bundler"` build emi
 relative specifiers (`./litRegistry`, not `./litRegistry.js`) that only a bundler's resolver
 completes — plain Node ESM resolution requires the extension. Its consumer is a bundler (Vite,
 webpack, …); that is the supported path, not a plain Node `import()`.
+
+## Planning (illustrative — not a compiling snippet)
+
+```ts
+import { ReferencePlanner, interpretAction } from "@loom-ui/planner";
+import { AnthropicProvider } from "@loom/llm";
+
+const planner = new ReferencePlanner({ model: new AnthropicProvider({ ... }), modelId: "claude-…" });
+
+// Inside a loom flow: the model call is a decision — replay serves the recorded ops.
+const { ops, findings, report } = await planner.compose({ intent, catalog, capabilities }, ctx);
+const experience = replay(genesis({ experienceId, intent, meta }), ops);            // the fold mints the artifact
+await putExperience(content, seal(experience.value));                              // the APP persists and emits EXPERIENCE_COMPOSED
+
+// A revision is ONE prompt op; its materialized primitives replay to the same artifact.
+const revision = await planner.revise({ experience: current, request: { text }, catalog, capabilities }, ctx);
+```
+
+Capabilities are an INPUT: the app resolves tools, pins `toolSchemaHash`, and supplies a raw `sampleOutput` for each one the planner may bind (no sample ⇒ not bindable). Samples and caller context reach the model only inside a fenced, untrusted DATA block in the user message. Output drift (`DriftRecord{kind:"output"}`) now carries `observedShape` and, when the hydration caller sets `captureSample`, a tainted `observedSample`; `reviseForDrift` turns a drift report into a repair revision.
