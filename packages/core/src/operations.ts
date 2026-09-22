@@ -1,3 +1,4 @@
+import type { DataClass } from "@loom/classify";
 import { z } from "zod";
 import { type Experience, type Finding, ProviderSpec } from "./experience";
 import {
@@ -7,6 +8,7 @@ import {
   NodeId,
   OrderKey,
   Priority,
+  Sensitivity,
   findNode,
   normalize,
   rebuild,
@@ -34,7 +36,13 @@ export type Operation =
   | { type: "moveNode"; nodeId: string; newParentId: string; newOrder: string }
   | { type: "setProps"; nodeId: string; patch: Record<string, unknown> }
   | { type: "setLabel"; nodeId: string; label: LocalizedText }
-  | { type: "bindProvider"; nodeId: string; handle: string; priority?: Priority }
+  | {
+      type: "bindProvider";
+      nodeId: string;
+      handle: string;
+      priority?: Priority;
+      sensitivity?: DataClass;
+    }
   | { type: "remapProvider"; handle: string; spec: z.infer<typeof ProviderSpec> }
   | { type: "prompt"; text: string; scopeNodeIds?: string[]; materialized: Operation[] };
 
@@ -55,6 +63,7 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       nodeId: NodeId,
       handle: z.string().min(1),
       priority: Priority.optional(),
+      sensitivity: Sensitivity.optional(),
     }),
     z.object({ type: z.literal("remapProvider"), handle: z.string().min(1), spec: ProviderSpec }),
     z.object({
@@ -204,9 +213,16 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         if (n.id !== op.nodeId || n.kind !== "semantic") return n;
         if (op.type === "setProps") return { ...n, props: { ...n.props, ...op.patch } };
         if (op.type === "setLabel") return { ...n, label: op.label };
+        // `sensitivity` merges the way `priority` does: an op that does not mention it keeps the
+        // class the node already carries, so re-binding a handle cannot silently declassify it.
+        const sens = op.sensitivity ?? n.binding?.sensitivity;
         return {
           ...n,
-          binding: { handle: op.handle, priority: op.priority ?? n.binding?.priority ?? "P1" },
+          binding: {
+            handle: op.handle,
+            priority: op.priority ?? n.binding?.priority ?? "P1",
+            ...(sens !== undefined && { sensitivity: sens }),
+          },
         };
       });
       return { ok: true, value: next(base, { root }) };

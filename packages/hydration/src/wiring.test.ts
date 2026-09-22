@@ -5,7 +5,8 @@ import {
   compile,
   defineSemanticCatalog,
   genesis,
-  handleFromPath,
+  hydrationPath,
+  hydrationStatusPath,
 } from "@loom-ui/core";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
@@ -105,20 +106,26 @@ describe("compiler pin ↔ registered projection", () => {
       hydrationProjectionVersion: HYDRATION_PROJECTION_VERSION,
     });
     // Structural, to avoid a dependency on @loom/blueprint-runtime this package does not declare.
+    // The root is a `column` container, so its children are widgets, not grid cells.
     const children = (r.blueprint.layout as { children: readonly unknown[] }).children;
     const bound = children.map(
-      (c) => (c as { binding?: { projectionId: string; path: string } }).binding
+      (c) =>
+        (
+          c as {
+            binding?: { projectionId: string; path: string; status?: { path: string } };
+          }
+        ).binding
     );
     expect(bound.map((b) => b?.projectionId)).toEqual([
       HYDRATION_PROJECTION_ID,
       HYDRATION_PROJECTION_ID,
     ]);
-    const handles = bound.map((b) => (b === undefined ? undefined : handleFromPath(b.path)));
-    expect(handles).toEqual(["health", "latency"]); // `normalize` orders children by order key
-    for (const h of handles) {
-      if (h === undefined) throw new Error("a bound widget carried no hydration handle");
-      store.setValue(h, { v: h }, { state: "ready" });
-    }
+    // Computed FORWARD from core's path helpers: the compiled paths must be the ones this store
+    // publishes under, for both the value and the status channel (loom ADR 0097 D2).
+    const handles = ["health", "latency"]; // `normalize` orders children by order key
+    expect(bound.map((b) => b?.path)).toEqual(handles.map(hydrationPath));
+    expect(bound.map((b) => b?.status?.path)).toEqual(handles.map(hydrationStatusPath));
+    for (const h of handles) store.setValue(h, { v: h }, { state: "ready" });
     expect(store.state().values).toEqual({ latency: { v: "latency" }, health: { v: "health" } });
   });
 });

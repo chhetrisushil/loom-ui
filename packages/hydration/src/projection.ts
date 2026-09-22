@@ -3,7 +3,8 @@ import type { EventEnvelope } from "@loom/core";
 import type { Projection, ProjectionRuntime } from "@loom/projection-runtime";
 
 // ── One projection, keyed by handle ───────────────────────────────────────────
-// Compiled widgets bind to `values.<handle>` (core's `hydrationPath`), and the compiler pins
+// Compiled widgets bind to `values.<handle>` and declare `status.<handle>` as their status
+// channel (core's `hydrationPath`/`hydrationStatusPath`), and the compiler pins
 // HYDRATION_PROJECTION_VERSION into the blueprint (ADR 0095). Hydration is imperative and
 // transient — nothing here is durable or replayed — so the projection is driven by ONE synthetic
 // in-memory event type. `subscribeSelector` gives each handle its own slice, so a value resolving

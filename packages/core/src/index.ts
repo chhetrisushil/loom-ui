@@ -6,6 +6,7 @@ export {
   NodeId,
   OrderKey,
   Priority,
+  Sensitivity,
   Span,
   findNode,
   isContainer,
@@ -47,8 +48,14 @@ export type {
   Surface,
   SurfaceResolution,
 } from "./catalog";
-export { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
-export { HYDRATION_VALUES_PREFIX, compile, handleFromPath, hydrationPath } from "./compile";
+export { loomCatalogFor } from "./loomCatalog";
+export {
+  HYDRATION_STATUS_PREFIX,
+  HYDRATION_VALUES_PREFIX,
+  compile,
+  hydrationPath,
+  hydrationStatusPath,
+} from "./compile";
 export type { CompileOptions, CompileResult } from "./compile";
 export { experienceHandles } from "./handles";
 export type { HandleUse } from "./handles";
