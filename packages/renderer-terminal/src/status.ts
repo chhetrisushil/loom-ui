@@ -26,7 +26,16 @@ export interface RenderExperienceOptions {
   readonly registry?: RendererRegistry<TerminalWidgetRenderer>;
 }
 
-/** Render the store's projection through loom's terminal renderer: loom's matrix, the framework's contract check. */
+/**
+ * Render the store's projection through loom's terminal renderer: loom's matrix, the framework's
+ * contract check.
+ *
+ * The state map is keyed by `HYDRATION_PROJECTION_ID` — the one id a `HydrationStore` publishes
+ * under. A blueprint compiled with any OTHER `hydrationProjectionId` therefore matches no state
+ * here: every binding resolves to an undefined value and an undefined status, so the surface
+ * renders as loading rows. That is the honest rendering of "this store holds nothing for that
+ * projection", not an error — pass the store's own id to `compile` and the rows fill.
+ */
 export function renderExperience(
   blueprint: Blueprint,
   store: HydrationStore,
