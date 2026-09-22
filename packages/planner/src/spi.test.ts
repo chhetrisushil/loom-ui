@@ -12,6 +12,13 @@ describe("SPI seams", () => {
     expect(second).toEqual({ n: 1 });
     expect(runs).toBe(1);
   });
+  it("returns the raw decider value on the first call and the JSON-persisted value on replay", async () => {
+    const ctx: DecideContext = recordingContext();
+    const first = await ctx.decide("d2", () => ({ a: 1, b: undefined }));
+    const second = await ctx.decide("d2", () => ({ a: 1, b: undefined }));
+    expect(first).toEqual({ a: 1, b: undefined });
+    expect(second).toEqual({ a: 1 });
+  });
   it("scriptedModel repeats its last reply and counts calls", async () => {
     const m: PlannerModel & { calls: number } = scriptedModel(["a", "b"]);
     expect((await m.complete({ messages: [] })).content).toBe("a");

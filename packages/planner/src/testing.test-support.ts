@@ -106,10 +106,14 @@ export function recordingContext(): DecideContext & {
       ctx.deciderCalls += 1;
       const value = await decider();
       // Loom persists the choice as JSON — round-trip it so a non-serialisable value fails HERE.
+      // The FIRST call returns the raw decider result (as loom's real ctx.decide does when it
+      // actually runs the decider); only a cache hit (replay) returns the persisted JSON value.
+      // Otherwise a caller whose value carries `undefined`-valued keys can never observe the
+      // difference between "what the decider returned" and "what got persisted".
       const stored = JSON.parse(JSON.stringify(value)) as T;
       ctx.decisions.set(id, stored);
       ctx.opts.set(id, opts);
-      return stored;
+      return value;
     },
   };
   return ctx;
