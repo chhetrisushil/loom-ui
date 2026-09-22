@@ -63,24 +63,35 @@ export function childSpecs(layout: Layout): ChildSpec[] {
   return layout.children.map((node) => ({ node, span: 1 }));
 }
 
+// Both writers below assign ONLY when the value actually differs. Setting an attribute or a
+// style property to the value it already holds is a no-op to the reader but a real record to a
+// `MutationObserver` — and these two run over every container and every child on every `update`.
+// Guarding them is what makes "an identical Blueprint mutates nothing" literally true rather
+// than merely invisible.
+type StyleProp = "display" | "gridTemplateColumns" | "flexDirection" | "gap";
+const setStyle = (el: HTMLElement, prop: StyleProp, value: string): void => {
+  if (el.style[prop] !== value) el.style[prop] = value;
+};
+
 /** IR 2.0.0: the span is the CELL's, and it lands on the child's own host — no wrapper element. */
 export function applySpan(host: HTMLElement, span: number, inGrid: boolean): void {
-  host.style.gridColumn = inGrid && span > 1 ? `span ${span}` : "";
+  const value = inGrid && span > 1 ? `span ${span}` : "";
+  if (host.style.gridColumn !== value) host.style.gridColumn = value;
 }
 
 /** The container element's own styling, derived only from the layout node. Idempotent. */
 export function styleContainer(el: HTMLElement, layout: Layout): void {
-  el.dataset.layout = layout.type;
+  if (el.dataset.layout !== layout.type) el.dataset.layout = layout.type;
   if (layout.type === "grid") {
-    el.style.display = "grid";
-    el.style.gridTemplateColumns = `repeat(${layout.columns}, 1fr)`;
-    el.style.flexDirection = "";
+    setStyle(el, "display", "grid");
+    setStyle(el, "gridTemplateColumns", `repeat(${layout.columns}, 1fr)`);
+    setStyle(el, "flexDirection", "");
   } else {
-    el.style.display = "flex";
-    el.style.gridTemplateColumns = "";
-    el.style.flexDirection = layout.type === "flex" ? layout.direction : "column";
+    setStyle(el, "display", "flex");
+    setStyle(el, "gridTemplateColumns", "");
+    setStyle(el, "flexDirection", layout.type === "flex" ? layout.direction : "column");
   }
-  el.style.gap = layout.gap !== undefined ? `${layout.gap}px` : "";
+  setStyle(el, "gap", layout.gap !== undefined ? `${layout.gap}px` : "");
 }
 
 // A bound widget's slice, resolved the way loom resolves it: value AND status both come from
