@@ -1,15 +1,11 @@
-import { handleFromPath } from "@loom-ui/core";
 import {
-  HYDRATION_PROJECTION_ID,
-  type HandleStatus,
-  type HydrationState,
-} from "@loom-ui/hydration";
-import {
+  type BindingStatus,
   type Blueprint,
   type Layout,
   type Widget,
   type WidgetAction,
-  resolvePath,
+  resolveWidgetStatus,
+  resolveWidgetValue,
   traverseBlueprint,
 } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
@@ -25,8 +21,6 @@ export interface DomRenderOptions {
   readonly executionId: string;
   readonly registry: DomRegistry;
   readonly onAction?: (action: WidgetAction) => void;
-  /** Projection whose `status.<handle>` accompanies a widget's value. Default: the hydration projection. */
-  readonly statusProjectionId?: string;
 }
 export interface DomRenderHandle {
   readonly element: HTMLElement;
@@ -35,7 +29,7 @@ export interface DomRenderHandle {
 
 interface Slice {
   value: unknown;
-  status: HandleStatus | undefined;
+  status: BindingStatus | undefined;
 }
 
 export function renderBlueprintDom(
@@ -43,7 +37,6 @@ export function renderBlueprintDom(
   blueprint: Blueprint,
   opts: DomRenderOptions
 ): DomRenderHandle {
-  const statusProjectionId = opts.statusProjectionId ?? HYDRATION_PROJECTION_ID;
   const disposers: Array<() => void> = [];
   const stateMap = new Map<string, unknown>();
   const unregisteredProjections: string[] = [];
@@ -53,7 +46,7 @@ export function renderBlueprintDom(
     } catch {
       // A blueprint can declare a projection its runtime never registered — a finding, not a
       // thrown mount. Widgets bound to it render with `value: undefined` / no status below
-      // (selectSlice's `resolvePath(undefined, path)` is null-safe), and still subscribe:
+      // (loom's `resolvePath(undefined, path)` is null-safe), and still subscribe:
       // `subscribeSelector` seeds via `peekState`, which does not throw for an unregistered
       // projection, so a later `register` + event lights the widget up without a remount.
       stateMap.set(id, undefined);
@@ -61,45 +54,38 @@ export function renderBlueprintDom(
     }
   }
 
-  const selectSlice = (widget: Widget, state: unknown): Slice => {
-    const path = widget.binding?.path ?? "";
-    const value = widget.binding ? resolvePath(state, path) : undefined;
-    if (widget.binding?.projectionId !== statusProjectionId) return { value, status: undefined };
-    const handle = handleFromPath(path);
-    // Own properties only, exactly as the terminal surface's `withStatus` reads them: a state
-    // with no `status` map, or a binding to `values.__proto__`, must yield NO status — a plain
-    // `status[handle]` read hands `Object.prototype` back for that handle, and an object that is
-    // not a `HandleStatus` but is not `undefined` either is the worst of both.
-    const statuses = (state as HydrationState | undefined)?.status;
-    const status =
-      handle === undefined || statuses === undefined || !Object.hasOwn(statuses, handle)
-        ? undefined
-        : statuses[handle];
-    return { value, status };
+  // A bound widget's slice, resolved the way loom resolves it: value AND status both come from
+  // the binding's own paths in the SAME projection state (IR 2.0.0), so this adapter knows
+  // nothing about handles or a hydration-shaped state. `resolveWidgetStatus` returns undefined
+  // for a binding with no `status.path` (the channel is opt-in) and for anything that is not a
+  // `BindingStatus` — including the `Object.prototype` a `status.__proto__` path resolves to.
+  //
+  // `subscribeSelector` calls the selector on every event, so the one-entry state map each
+  // widget hands loom is allocated ONCE per widget and rewritten in place, not per call.
+  const sliceSelector = (widget: Widget, projectionId: string): ((state: unknown) => Slice) => {
+    const map = new Map<string, unknown>();
+    return (state) => {
+      map.set(projectionId, state);
+      return { value: resolveWidgetValue(widget, map), status: resolveWidgetStatus(widget, map) };
+    };
   };
 
   const root = traverseBlueprint<HTMLElement>(blueprint.layout, stateMap, {
-    renderWidget: ({ widget, value, onAction }) => {
+    renderWidget: ({ widget, value, status, onAction }) => {
       const widgetHost = document.createElement("div");
       widgetHost.dataset.widgetId = widget.id;
       widgetHost.dataset.widgetKind = widget.kind;
-      const span = widget.props.span;
-      if (typeof span === "number" && Number.isInteger(span) && span >= 1 && span <= 12)
-        widgetHost.style.gridColumn = `span ${span}`;
       const renderer = opts.registry.get(widget.kind);
       if (!renderer) {
         widgetHost.appendChild(placeholderFor(widget.kind, "missing"));
         return widgetHost;
       }
-      const initial = widget.binding
-        ? selectSlice(widget, stateMap.get(widget.binding.projectionId))
-        : { value, status: undefined };
       let handle: DomWidgetHandle;
       try {
         handle = renderer(widgetHost, {
           widget,
-          value: initial.value,
-          ...(initial.status && { status: initial.status }),
+          value,
+          ...(status && { status }),
           ...(onAction && { onAction }),
         });
         if (!handle || typeof handle.update !== "function")
@@ -115,7 +101,7 @@ export function renderBlueprintDom(
         const off = opts.projectionRuntime.subscribeSelector<unknown, Slice>(
           widget.binding.projectionId,
           opts.executionId,
-          (state) => selectSlice(widget, state),
+          sliceSelector(widget, widget.binding.projectionId),
           (slice) => {
             try {
               handle.update(slice.value, slice.status);
@@ -131,7 +117,14 @@ export function renderBlueprintDom(
       }
       return widgetHost;
     },
-    renderContainer: ({ layout, children }) => renderContainer(layout, children),
+    renderContainer: ({ layout, children, cells }) => {
+      // IR 2.0.0: a grid child's span is a property of the CELL, not of the widget. It lands on
+      // the child's own host element — a wrapper would put a non-grid-item between the grid and
+      // its child and silently drop every other grid placement the child carries.
+      if (cells)
+        for (const { span, child } of cells) if (span > 1) child.style.gridColumn = `span ${span}`;
+      return renderContainer(layout, children);
+    },
     ...(opts.onAction && { onAction: opts.onAction }),
   });
 

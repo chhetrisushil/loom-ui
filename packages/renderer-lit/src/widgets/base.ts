@@ -1,7 +1,6 @@
 import { checkKindValue } from "@loom-ui/core";
-import type { HandleStatus } from "@loom-ui/hydration";
-import type { Widget, WidgetAction } from "@loom/blueprint-runtime";
-import { LitElement, type TemplateResult, html, nothing } from "lit";
+import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
+import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { describeValue, errorStateText, loadingStateText, staleStateText } from "../a11y";
 import { localized } from "../i18n";
@@ -16,10 +15,10 @@ export interface WidgetVerdict {
 
 // ── The status matrix ─────────────────────────────────────────────────────────
 //
-// ONE decision table, and the terminal surface implements the SAME one in
-// `@loom-ui/renderer-terminal`'s `status.ts` (`withStatus`). Both are pinned by an identical
-// eight-row table-driven test (`statusMatrix.test.ts` in each package) so the two surfaces
-// cannot drift into disagreeing about what a handle's state means:
+// ONE decision table, over the `BindingStatus` loom resolves from the widget's binding, and the
+// terminal surface implements the SAME one in `@loom-ui/renderer-terminal`. Both are pinned by
+// an identical eight-row table-driven test (`statusMatrix.test.ts` in each package) so the two
+// surfaces cannot drift into disagreeing about what a binding's state means:
 //
 //   1. status "error"                  → error, showing the STATUS finding. The value renderer
 //                                        never runs: a live "provider timed out" is a more
@@ -40,7 +39,7 @@ export interface WidgetVerdict {
 export abstract class LuWidget extends LitElement {
   @property({ attribute: false }) widget!: Widget;
   @property({ attribute: false }) value: unknown = undefined;
-  @property({ attribute: false }) status?: HandleStatus;
+  @property({ attribute: false }) status?: BindingStatus;
   @property({ attribute: false }) onAction?: (a: WidgetAction) => void;
 
   abstract readonly kind: string;
@@ -52,19 +51,46 @@ export abstract class LuWidget extends LitElement {
     return this.widget?.title ?? this.widget?.kind ?? "";
   }
 
+  /**
+   * The semantic type this widget stands for, when that is NOT the kind on screen: a `source`
+   * with a degrade chain means the catalogue could only serve a Trend as a MetricCard. A
+   * sighted reader sees the chain in `data-degraded`; a screen-reader reader must hear it too,
+   * because "p99: 7" alone hides that the shape of the answer was narrowed. An undegraded
+   * widget says nothing — its `source.type` only repeats `kind`.
+   */
+  protected get sourceLabel(): string | undefined {
+    const source = this.widget?.source;
+    if (!source?.degradedFrom?.length) return undefined;
+    return `${source.type}, shown as ${this.widget.kind}`;
+  }
+
+  /** The degrade chain as `Type@version`, outermost first — absent when nothing was degraded. */
+  private get degradedChain(): string | undefined {
+    const chain = this.widget?.source?.degradedFrom;
+    if (!chain?.length) return undefined;
+    return chain.map((s) => `${s.type}@${s.version}`).join(" → ");
+  }
+
   // The verdict is a pure function of (value, status), and `render()`, `label()` and every
   // subclass that puts `label()` into its SVG ask for it — so it is computed ONCE per pair and
   // reused, rather than re-running `checkKindValue` (a Zod parse over the whole value, which for
   // a DataTable is O(rows×cols)) two or three times per update cycle.
   private verdictCache?: {
     value: unknown;
-    status: HandleStatus | undefined;
+    status: BindingStatus | undefined;
     verdict: WidgetVerdict;
   };
 
-  protected willUpdate(): void {
+  protected willUpdate(changed: PropertyValues): void {
     // Warm the memo at the top of the cycle so the first reader is not the one paying for it.
     this.state();
+    // The chain belongs on the HOST, not inside the shadow root: it describes the element a
+    // page styles and queries, and it survives every state the matrix renders. It is a function
+    // of `widget` alone, so a value/status tick never rewrites the attribute.
+    if (!changed.has("widget")) return;
+    const chain = this.degradedChain;
+    if (chain === undefined) this.removeAttribute("data-degraded");
+    else this.setAttribute("data-degraded", chain);
   }
 
   protected state(): WidgetVerdict {
@@ -89,6 +115,12 @@ export abstract class LuWidget extends LitElement {
   }
 
   protected label(): string {
+    const source = this.sourceLabel;
+    const base = this.stateLabel();
+    return source === undefined ? base : `${source}: ${base}`;
+  }
+
+  private stateLabel(): string {
     const s = this.state();
     // "pending" is a load in progress over a value we already have: a screen reader should hear
     // the same "loading" it hears for a first load, not a state name of its own.

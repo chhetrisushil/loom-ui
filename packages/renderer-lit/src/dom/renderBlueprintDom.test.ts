@@ -1,9 +1,11 @@
+import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
 import {
   MetricCard,
   RendererRegistry,
   StatusBadge,
   blueprint$,
+  cell,
   grid,
   stack,
 } from "@loom/blueprint-runtime";
@@ -35,31 +37,27 @@ const recording = (): { registry: RendererRegistry<DomWidgetRenderer>; calls: st
   };
 };
 
+/** A hydration binding, IR 2.0.0: the value path and the status path beside it. */
+const bind = (handle: string) => ({
+  projectionId: HYDRATION_PROJECTION_ID,
+  path: hydrationPath(handle),
+  status: { path: hydrationStatusPath(handle) },
+});
+
 const bp = blueprint$({
   id: "e@v",
   title: "Dash",
   layout: grid({
     columns: 12,
     children: [
-      MetricCard({
-        id: "p99",
-        title: "p99",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h-p99" },
-      }),
+      cell(4, MetricCard({ id: "p99", title: "p99", binding: bind("h-p99") })),
       stack({
-        children: [
-          StatusBadge({
-            id: "phase",
-            title: "Phase",
-            binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h-phase" },
-          }),
-        ],
+        children: [StatusBadge({ id: "phase", title: "Phase", binding: bind("h-phase") })],
       }),
     ],
   }),
   projections: [HYDRATION_PROJECTION_ID],
 });
-(bp.layout.children[0] as { props: Record<string, unknown> }).props.span = 4;
 
 describe("renderBlueprintDom", () => {
   it("mounts containers and widgets, passes status from the hydration projection, honours span in a grid", () => {
@@ -77,7 +75,9 @@ describe("renderBlueprintDom", () => {
     const gridEl = host.querySelector("[data-layout='grid']") as HTMLElement;
     expect(gridEl.style.gridTemplateColumns).toBe("repeat(12, 1fr)");
     const p99Host = host.querySelector("[data-widget-id='p99']") as HTMLElement;
+    // The span lands on the widget's OWN host — no wrapper element between it and the grid.
     expect(p99Host.style.gridColumn).toBe("span 4");
+    expect(p99Host.parentElement).toBe(gridEl);
     expect(p99Host.textContent).toBe("p99=412|ready");
     expect(host.querySelector("[data-widget-id='phase']")?.textContent).toBe("Phase=undefined|-");
     expect(calls).toEqual(["mount:p99", "mount:phase"]);
@@ -137,7 +137,11 @@ describe("renderBlueprintDom", () => {
           MetricCard({
             id: "proto",
             title: "Proto",
-            binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.__proto__" },
+            binding: {
+              projectionId: HYDRATION_PROJECTION_ID,
+              path: "values.__proto__",
+              status: { path: "status.__proto__" },
+            },
           }),
         ],
       }),
@@ -151,8 +155,41 @@ describe("renderBlueprintDom", () => {
       registry,
     });
     // `status["__proto__"]` on a plain object hands back `Object.prototype` — an object that is
-    // not a HandleStatus and is not undefined either. The widget must see no status at all.
+    // not a BindingStatus and is not undefined either. loom's `resolveWidgetStatus` refuses it,
+    // so the widget must see no status at all.
     expect(host.querySelector("[data-widget-id='proto']")?.textContent?.endsWith("|-")).toBe(true);
+  });
+  it("a binding that declares no status path gets no status, even when the store has one for its handle", async () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    store.setValue("h-quiet", 5, { state: "stale" });
+    const quiet = blueprint$({
+      id: "q",
+      title: "Q",
+      layout: stack({
+        children: [
+          MetricCard({
+            id: "quiet",
+            title: "Quiet",
+            // Value only: the status channel is opt-in, declared per binding.
+            binding: { projectionId: HYDRATION_PROJECTION_ID, path: hydrationPath("h-quiet") },
+          }),
+        ],
+      }),
+      projections: [HYDRATION_PROJECTION_ID],
+    });
+    const { registry } = recording();
+    const host = document.createElement("div");
+    renderBlueprintDom(host, quiet, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry,
+    });
+    expect(host.querySelector("[data-widget-id='quiet']")?.textContent).toBe("Quiet=5|-");
+    // And it stays absent across updates — the channel is not re-derived from the path.
+    store.setValue("h-quiet", 6, { state: "error" });
+    await Promise.resolve();
+    expect(host.querySelector("[data-widget-id='quiet']")?.textContent).toBe("Quiet=6|-");
   });
   it("a non-hydration projection binding gets no status and still subscribes to its value", async () => {
     const runtime = new InMemoryProjectionRuntime();
