@@ -15,7 +15,7 @@ import {
 } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
-import { type DomWidgetRenderer, renderBlueprintDom } from "./index";
+import { type DomWidgetRenderer, type RecomposeReport, renderBlueprintDom } from "./index";
 
 const bind = (handle: string): DataBinding => ({
   projectionId: HYDRATION_PROJECTION_ID,
@@ -131,8 +131,21 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     const { host, handle, calls } = setup();
     const before = [...host.querySelectorAll("*")];
     calls.length = 0;
+    // Literally zero, not merely invisible: an attribute rewritten to the value it already holds
+    // is a real MutationRecord, and `styleContainer`/`applySpan`/the root chrome run over every
+    // node on every pass.
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
     const r = handle.update(v1());
+    const records = observer.takeRecords();
+    observer.disconnect();
     const after = [...host.querySelectorAll("*")];
+    expect(records).toEqual([]);
     expect(r).toEqual({
       identity: expect.objectContaining({ ok: true, added: [], findings: [] }),
       remounted: [],
@@ -180,6 +193,8 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     const r = handle.update(next);
     expect(r.identity.added).toEqual(["new"]);
     expect(r.identity.findings.map((f) => f.nodeId)).toEqual(["phase"]);
+    // `phase` was disposed, but it is ABSENT from `next` — it was dropped, not remounted.
+    expect(r.remounted).toEqual([]);
     expect(calls).toEqual(["mount:new", "dispose:phase"]);
     const ids = [...host.querySelectorAll("[data-layout='grid'] > [data-widget-id]")].map(
       (e) => (e as HTMLElement).dataset.widgetId
@@ -190,6 +205,14 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(host.querySelector("[data-widget-id='new']")?.textContent).toBe("New=7|ready");
     expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
+    // The entry tree `dispose` walks is the one `update` left: each live widget once, and the
+    // widget the update already dropped is NOT disposed a second time.
+    expect(calls.filter((c) => c.startsWith("dispose:")).sort()).toEqual([
+      "dispose:memo",
+      "dispose:new",
+      "dispose:p99",
+      "dispose:phase",
+    ]);
   });
 
   it("reordering never moves the focused subtree: the textarea keeps focus, value and selection while its siblings move around it", () => {
@@ -216,7 +239,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("a span change lands on the kept host; dropping to 1 clears it", () => {
-    const { host, handle } = setup();
+    const { host, handle, store, runtime } = setup();
     const p99Host = host.querySelector("[data-widget-id='p99']") as HTMLElement;
     expect(p99Host.style.gridColumn).toBe("span 4");
     const next = v1();
@@ -228,6 +251,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect((host.querySelector("[data-widget-id='memo']") as HTMLElement).style.gridColumn).toBe(
       ""
     );
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
@@ -246,6 +270,24 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect((host.querySelector("[data-widget-id='memo']") as HTMLElement).dataset.widgetKind).toBe(
       "StatusBadge"
     );
+    handle.dispose();
+  });
+
+  it("a kept id whose kind changes to one no renderer is registered for is remounted onto the missing placeholder and reported", () => {
+    const { host, handle, calls } = setup();
+    calls.length = 0;
+    const next = v1();
+    const g = next.layout as { children: Array<{ node: { kind: string } }> };
+    g.children[1]!.node.kind = "Nope";
+    const r = handle.update(next);
+    expect(r.remounted).toEqual(["memo"]);
+    expect(r.findings).toEqual([
+      { code: "mount-failed", nodeId: "memo", message: 'no renderer for "Nope"' },
+    ]);
+    expect(calls).toEqual(["dispose:memo"]); // disposed, and nothing mounted in its place
+    const memoHost = host.querySelector("[data-widget-id='memo']") as HTMLElement;
+    expect(memoHost.textContent).toBe("[No renderer for Nope]");
+    expect(memoHost.dataset.widgetKind).toBe("Nope");
     handle.dispose();
   });
 
@@ -283,7 +325,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("container styles are patched in place; a container TYPE change remounts that container's widgets", () => {
-    const { host, handle, calls } = setup();
+    const { host, handle, calls, store, runtime } = setup();
     const gridEl = host.querySelector("[data-layout='grid']") as HTMLElement;
     calls.length = 0;
     const a = v1();
@@ -305,6 +347,117 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect((host.querySelector("[data-layout='flex']") as HTMLElement).style.flexDirection).toBe(
       "row"
     );
+    expect(shape(handle.element)).toEqual(freshShape(b, store, runtime));
+    handle.dispose();
+  });
+
+  it("the ROOT container's type change is patched in place: the root element, and every kept widget's element, survive", () => {
+    const { host, handle, calls, store, runtime } = setup();
+    const rootEl = host.querySelector("[data-layout='grid']") as HTMLElement;
+    const p99Host = host.querySelector("[data-widget-id='p99']") as HTMLElement;
+    const ta = host.querySelector("textarea[data-note='memo']") as HTMLTextAreaElement;
+    calls.length = 0;
+    // The root has no parent to be keyed by position within, so — unlike every other container —
+    // a type change re-styles it rather than sweeping it away.
+    const next = blueprint$({
+      id: "e@1",
+      title: "Board",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: stack({
+        children: [
+          MetricCard({ id: "p99", title: "p99", binding: bind("h-p99"), unit: "ms" }),
+          note("memo"),
+        ],
+      }),
+    });
+    const r = handle.update(next);
+    expect(host.querySelector("[data-layout='stack']")).toBe(rootEl);
+    expect(host.querySelector("[data-layout='grid']")).toBeNull();
+    expect(host.querySelector("[data-widget-id='p99']")).toBe(p99Host);
+    expect(host.querySelector("textarea[data-note='memo']")).toBe(ta);
+    expect(p99Host.style.gridColumn).toBe(""); // no longer under a grid
+    expect(r.remounted).toEqual([]); // `phase` went with the dropped stack; nothing was re-created
+    expect(r.identity.findings.map((f) => f.nodeId)).toEqual(["phase"]);
+    expect(calls).toEqual(["dispose:phase"]);
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
+  it("dropping the FIRST of two sibling containers: the survivor's widgets are remounted, the dropped one's id is only in identity", () => {
+    const twoStacks = (): Blueprint =>
+      blueprint$({
+        id: "e@1",
+        title: "Board",
+        projections: [HYDRATION_PROJECTION_ID],
+        layout: grid({
+          columns: 12,
+          children: [
+            stack({ children: [MetricCard({ id: "a", title: "A", binding: bind("h-a") })] }),
+            stack({ children: [MetricCard({ id: "b", title: "B", binding: bind("h-b") })] }),
+          ],
+        }),
+      });
+    const { host, handle, calls, store, runtime } = setup(twoStacks());
+    const bHostBefore = host.querySelector("[data-widget-id='b']");
+    calls.length = 0;
+    // Containers are keyed by ORDINAL, so dropping the first shifts the second onto the first's
+    // entry: `b` really is destroyed and re-created, and the report has to say so.
+    const next = blueprint$({
+      id: "e@1",
+      title: "Board",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: grid({
+        columns: 12,
+        children: [
+          stack({ children: [MetricCard({ id: "b", title: "B", binding: bind("h-b") })] }),
+        ],
+      }),
+    });
+    const r = handle.update(next);
+    expect(r.remounted).toEqual(["b"]);
+    expect(r.remounted).not.toContain("a");
+    expect(r.identity.findings.map((f) => f.nodeId)).toEqual(["a"]);
+    expect(calls).toEqual(["mount:b", "dispose:a", "dispose:b"]);
+    expect(host.querySelectorAll("[data-widget-id='b']")).toHaveLength(1);
+    expect(host.querySelector("[data-widget-id='b']")).not.toBe(bHostBefore);
+    expect(host.querySelector("[data-widget-id='a']")).toBeNull();
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
+  it("a widget moved out of a nested container into the root is remounted, and the report says so", () => {
+    const { host, handle, calls, store, runtime } = setup();
+    store.setValue("h-extra", 3, { state: "ready" });
+    const phaseHostBefore = host.querySelector("[data-widget-id='phase']") as HTMLElement;
+    calls.length = 0;
+    // Widgets are keyed PER CONTAINER: `phase` leaving the stack for the root grid is a destroy
+    // and a create, not a move. `remounted` is what tells the caller its DOM state is gone.
+    const next = blueprint$({
+      id: "e@1",
+      title: "Board",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: grid({
+        columns: 12,
+        children: [
+          cell(4, MetricCard({ id: "p99", title: "p99", binding: bind("h-p99"), unit: "ms" })),
+          cell(8, note("memo")),
+          cell(12, StatusBadge({ id: "phase", title: "Phase", binding: bind("h-phase") })),
+          stack({
+            children: [MetricCard({ id: "extra", title: "Extra", binding: bind("h-extra") })],
+          }),
+        ],
+      }),
+    });
+    const r = handle.update(next);
+    expect(r.remounted).toEqual(["phase"]);
+    expect(r.identity.added).toEqual(["extra"]);
+    expect(r.identity.findings).toEqual([]);
+    expect(calls).toEqual(["mount:phase", "mount:extra", "dispose:phase"]);
+    const phaseHostAfter = host.querySelector("[data-widget-id='phase']") as HTMLElement;
+    expect(phaseHostAfter).not.toBe(phaseHostBefore);
+    expect(phaseHostBefore.isConnected).toBe(false);
+    expect(phaseHostAfter.parentElement).toBe(host.querySelector("[data-layout='grid']"));
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
@@ -334,6 +487,8 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(r.findings).toEqual([
       { code: "patch-failed", nodeId: "p99", message: "cannot relabel" },
     ]);
+    // A degraded widget is NOT a remount: it holds no handle at all.
+    expect(r.remounted).toEqual([]);
     expect(
       host.querySelector("[data-widget-id='p99'] [data-placeholder='error']")?.textContent
     ).toBe("[Renderer error for MetricCard: cannot relabel]");
@@ -388,8 +543,27 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     handle.dispose();
   });
 
+  it("update never throws: a Blueprint the adapter cannot even walk comes back as a finding, live tree untouched", () => {
+    const { host, handle } = setup();
+    const before = [...host.querySelectorAll("*")];
+    const next = v1();
+    (next.layout as { children: unknown }).children = null;
+    let r!: RecomposeReport;
+    expect(() => {
+      r = handle.update(next);
+    }).not.toThrow();
+    expect(r.findings.map((f) => f.code)).toEqual(["patch-failed"]);
+    expect(r.findings[0]?.nodeId).toBe("");
+    expect(r.identity.compared).toBe(0); // loom's own tell that nothing was compared
+    expect(r.remounted).toEqual([]);
+    const after = [...host.querySelectorAll("*")];
+    expect(after.length).toBe(before.length);
+    expect(after.every((n, i) => n === before[i])).toBe(true);
+    handle.dispose();
+  });
+
   it("title, blueprint id and projection placeholders are patched; update after dispose is a reported no-op", () => {
-    const { host, handle, calls } = setup();
+    const { host, handle, calls, store, runtime } = setup();
     const next = v1();
     (next as { title: string }).title = "Board v2";
     (next as { id: string }).id = "e@2";
@@ -400,6 +574,14 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(host.querySelector("[data-placeholder='projection']")?.textContent).toBe(
       '[Projection "ghost" is not registered]'
     );
+    // Rebuilt placeholders sit between the title and the root container, exactly where a fresh
+    // mount puts them.
+    expect([...handle.element.children].map((e) => (e as HTMLElement).dataset.placeholder)).toEqual(
+      [undefined, "projection", undefined]
+    );
+    expect(handle.element.children[0]?.tagName).toBe("H1");
+    expect((handle.element.children[2] as HTMLElement).dataset.layout).toBe("grid");
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
     calls.length = 0;
     const r = handle.update(v1());

@@ -1,6 +1,8 @@
 import {
+  type Blueprint,
   type Layout,
   type Widget,
+  blueprintNodeIds,
   resolveWidgetStatus,
   resolveWidgetValue,
 } from "@loom/blueprint-runtime";
@@ -32,7 +34,16 @@ import {
 // around it, because detaching a focused `<textarea>` costs the user their caret and selection.
 
 export interface Accumulator {
-  readonly remounted: string[];
+  /**
+   * Every widget id this pass DISPOSED — dropped, swept out with a retyped container, or torn
+   * down to be mounted again. Deliberately not "remounted": whether a disposal was a remount or
+   * a removal is not knowable at the disposal site (a container reconciled early can destroy a
+   * widget the new tree re-creates under a DIFFERENT parent later in the same pass), so the two
+   * are separated at the end of `update` — an id present in `next` was remounted, an id absent
+   * from it was dropped and is already loom's `identity.findings`. Per-branch bookkeeping got
+   * this wrong in both directions.
+   */
+  readonly disposed: string[];
   readonly rebound: string[];
   readonly findings: RecomposeFinding[];
 }
@@ -96,10 +107,10 @@ function remountWidget(
   disposeEntry(entry, errors);
   for (const e of errors)
     acc.findings.push({ code: "mount-failed", nodeId: entry.widget.id, message: messageOf(e) });
+  acc.disposed.push(next.id);
   entry.widget = next;
   // `renderInto` clears the host itself, so the old renderer's DOM leaves with it.
   renderInto(entry, ctx, fail(acc, "mount-failed"));
-  acc.remounted.push(next.id);
 }
 
 function reconcileWidget(
@@ -186,14 +197,13 @@ export function reconcileContainer(
         child = kept;
       } else {
         if (kept) {
-          // Same ordinal, different type: the container is remounted whole. Disposing it HERE
-          // (rather than leaving it to the dropped loop) is what puts its widget ids in
-          // `remounted` — they are still present in the new tree, so a dropped-id would lie.
+          // Same ordinal, different type: the container is swept out whole and mounted again.
+          // Its widget ids are DISPOSED, not necessarily remounted — the new tree decides.
           const errors: unknown[] = [];
           disposeEntry(kept, errors);
           for (const e of errors)
             acc.findings.push({ code: "mount-failed", nodeId: "", message: messageOf(e) });
-          acc.remounted.push(...widgetIdsOf(kept));
+          acc.disposed.push(...widgetIdsOf(kept));
           kept.el.remove();
           used.add(kept);
         }
@@ -209,6 +219,7 @@ export function reconcileContainer(
   for (const c of entry.children) {
     if (used.has(c)) continue;
     const errors: unknown[] = [];
+    acc.disposed.push(...widgetIdsOf(c));
     disposeEntry(c, errors);
     for (const e of errors)
       acc.findings.push({
@@ -222,4 +233,25 @@ export function reconcileContainer(
   reorderChildren(entry.el, targetEls, pinnedChild(targetEls));
   entry.layout = next;
   entry.children = nextChildren;
+}
+
+/**
+ * The ids a pass actually REMOUNTED: disposed during the pass, and still present in `next`.
+ *
+ * Anything disposed and absent from `next` was DROPPED — loom's `identity.findings` already says
+ * so, and repeating it as a remount would be a lie. Deriving the list here, from what happened
+ * plus the new tree, is what keeps the two honest no matter which branch did the disposing: a
+ * retyped container whose widgets the new tree does not keep, and a widget moved between
+ * containers (destroyed by one container's dropped loop, re-created by another's mount) both
+ * land where they belong without either branch knowing the other ran.
+ *
+ * Order is `next`'s DOCUMENT order (`blueprintNodeIds` is pre-order), so the list reads the way
+ * the tree does rather than in reconcile-visit order.
+ */
+export function remountedOf(next: Blueprint, disposed: readonly string[]): string[] {
+  // Also what keeps this total on a malformed `next`: a blueprint `blueprintNodeIds` cannot walk
+  // never reached the reconcile, so nothing was disposed and the walk is never attempted.
+  if (disposed.length === 0) return [];
+  const gone = new Set(disposed);
+  return blueprintNodeIds(next).filter((id) => gone.has(id));
 }
