@@ -41,7 +41,9 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.
 - A widget's status is a Blueprint concern (`binding.status.path`), never a projection read in an
   adapter; spans are grid cells, never props; `source` says what a widget stands for and is never in
-  `props`.
+  `props`. A span therefore applies ONLY under a `grid` parent (it becomes that cell's span); under a
+  `row`/`column` parent — a flex layout with no columns — it is not applicable and is dropped without
+  a finding (loom ADR 0097 D5).
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
