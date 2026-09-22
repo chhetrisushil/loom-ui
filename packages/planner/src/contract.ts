@@ -1,4 +1,9 @@
-import { type SemanticCatalog, type SemanticEntry, findEntry } from "@loom-ui/core";
+import {
+  type SemanticCatalog,
+  type SemanticEntry,
+  compareVersions,
+  findEntry,
+} from "@loom-ui/core";
 import { z } from "zod";
 import type { CapabilityRef } from "./spi";
 
@@ -36,11 +41,7 @@ export function entryFor(
   let best: SemanticEntry | undefined;
   for (const e of catalog.entries) {
     if (e.name !== type) continue;
-    if (
-      best === undefined ||
-      e.version.localeCompare(best.version, undefined, { numeric: true }) > 0
-    )
-      best = e;
+    if (best === undefined || compareVersions(e.version, best.version) > 0) best = e;
   }
   return best;
 }
