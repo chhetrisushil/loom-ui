@@ -321,7 +321,11 @@ export function materialize(
       bound !== undefined &&
       (current.binding?.handle !== bound.handle ||
         current.binding?.priority !== bound.priority ||
-        current.binding?.sensitivity !== bound.sensitivity)
+        // A class the draft SETS and that differs is a change; a draft that merely OMITS one is
+        // not. `bindProvider`'s apply merges (`op.sensitivity ?? existing`), so an op emitted to
+        // drop a class cannot drop it — it would be a vacuous op, and a removal needs
+        // remove + insert the way a type change does.
+        (bound.sensitivity !== undefined && current.binding?.sensitivity !== bound.sensitivity))
     )
       ops.push({
         type: "bindProvider",
