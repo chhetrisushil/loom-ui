@@ -9,6 +9,9 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./log": { "types": "./dist/log.d.ts", "default": "./dist/log.js" }
   },
+  "typesVersions": {
+    "*": { "log": ["./dist/log.d.ts"] }
+  },
   "scripts": {
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
