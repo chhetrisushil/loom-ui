@@ -1,5 +1,10 @@
-import type { Blueprint, WidgetAction } from "@loom/blueprint-runtime";
+import {
+  type Blueprint,
+  type WidgetAction,
+  preservesBlueprintNodes,
+} from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
+import { type Accumulator, reconcileContainer } from "./reconcile";
 import { type DomRegistry, type RecomposeReport, projectionPlaceholder } from "./registry";
 import { type ContainerEntry, type MountContext, disposeEntry, mountContainer } from "./tree";
 
@@ -11,7 +16,11 @@ export interface DomRenderOptions {
 }
 export interface DomRenderHandle {
   readonly element: HTMLElement;
-  /** Land a revised Blueprint on the live tree (Task 3). Never throws. */
+  /**
+   * Land a revised Blueprint on the live tree: widgets keyed by id, containers by ordinal and
+   * type, the focused subtree never moved. Never throws — renderer failures come back in
+   * `RecomposeReport.findings` with the failing widget already on its error placeholder.
+   */
   update(next: Blueprint): RecomposeReport;
   dispose(): void;
 }
@@ -71,8 +80,30 @@ export function renderBlueprintDom(
   return {
     element,
     update: (next) => {
-      // Task 3 replaces this body. Until then the adapter is mount-only.
-      throw new Error(`update not implemented (next: ${next.id})`);
+      const identity = preservesBlueprintNodes(state.current, next);
+      if (state.disposed)
+        return {
+          identity,
+          remounted: [],
+          rebound: [],
+          findings: [{ code: "patch-failed", nodeId: "", message: "disposed" }],
+        };
+      const acc: Accumulator = { remounted: [], rebound: [], findings: [] };
+      // The state map is the SAME Map instance the mount context holds — every widget's
+      // resolution reads through it, so it is rewritten in place, never reassigned.
+      const rebuilt = buildStateMap(next, opts.projectionRuntime, opts.executionId);
+      ctx.stateMap.clear();
+      for (const [k, v] of rebuilt.stateMap) ctx.stateMap.set(k, v);
+      reconcileContainer(state.root, next.layout, ctx, acc);
+      // Root chrome: title, id, projection placeholders (rebuilt from the new projection list).
+      element.dataset.blueprintId = next.id;
+      title.textContent = next.title;
+      for (const p of [...element.children])
+        if ((p as HTMLElement).dataset.placeholder === "projection") p.remove();
+      for (const id of rebuilt.unregistered)
+        element.insertBefore(projectionPlaceholder(id), state.root.el);
+      state.current = next;
+      return { identity, remounted: acc.remounted, rebound: acc.rebound, findings: acc.findings };
     },
     dispose: () => {
       state.disposed = true;
