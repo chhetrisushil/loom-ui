@@ -1,6 +1,7 @@
 export { DRAFT_ID, MAX_DRAFT_NODES, entryFor, parseModelJson, planSchema } from "./contract";
 export type { DraftBinding, DraftNode, Parsed, PlanDraft } from "./contract";
 export { planDecisionId } from "./decision";
+export { DEFAULT_TTL_SECONDS, buildProviderSpec, materialize, providerHandle } from "./materialize";
 export {
   COMPOSE_SYSTEM,
   REVISE_SYSTEM,
