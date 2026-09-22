@@ -117,10 +117,30 @@ export function sliceIsEqual(a: Slice, b: Slice): boolean {
   return a.status?.seq !== undefined && a.status.seq === b.status?.seq;
 }
 
-/** Degrade a live widget to its error placeholder: the host's content is the placeholder alone. */
+/**
+ * Degrade a live widget to its error placeholder: the host's content is the placeholder alone.
+ *
+ * This TEARS THE WIDGET DOWN, it does not merely hide it. Dropping `entry.handle` on its own
+ * would leave the subscription closure — which closes over the destructured `handle`, not over
+ * `entry` — pushing slices into a renderer that has already failed, and would leak whatever the
+ * handle holds because nothing ever calls `dispose()` on it. So: unsubscribe first (that is what
+ * stops further `update` calls), then dispose. Both in `try`/`catch`: a renderer that threw once
+ * may well throw again, and the placeholder must go up regardless.
+ */
 export function showError(entry: WidgetEntry, message: string): void {
-  entry.host.replaceChildren(placeholderFor(entry.widget.kind, "error", message));
+  try {
+    entry.unsubscribe?.();
+  } catch {
+    // A failing unsubscribe must not stop the teardown.
+  }
+  try {
+    entry.handle?.dispose();
+  } catch {
+    // Ditto — the handle is dropped either way, so it is never disposed twice.
+  }
+  entry.unsubscribe = undefined;
   entry.handle = undefined;
+  entry.host.replaceChildren(placeholderFor(entry.widget.kind, "error", message));
 }
 
 /** (Re)subscribe a widget to its binding's projection. Drops any previous subscription first. */
@@ -152,12 +172,19 @@ export function renderInto(
   onFail: (f: { nodeId: string; message: string }) => void
 ): void {
   const { widget, host } = entry;
+  // The host is cleared unconditionally, so a REMOUNT in place needs no caller discipline: every
+  // path below (placeholder, renderer output, error) starts from an empty host.
+  host.replaceChildren();
   // Set BEFORE the lookup: a kind with no renderer still labels its host with the kind it wanted.
   host.dataset.widgetKind = widget.kind;
   const renderer = ctx.registry.get(widget.kind);
   if (!renderer) {
     host.replaceChildren(placeholderFor(widget.kind, "missing"));
     entry.handle = undefined;
+    // A missing renderer is a REPORTED failure, not a silent one: a widget the new blueprint
+    // added of a kind nobody registered lands in `RecomposeReport.findings` as `mount-failed`.
+    // The initial mount passes a no-op `onFail`, so mount behaviour is unchanged.
+    onFail({ nodeId: widget.id, message: `no renderer for "${widget.kind}"` });
     return;
   }
   const value = resolveWidgetValue(widget, ctx.stateMap);
