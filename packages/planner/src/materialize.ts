@@ -186,9 +186,9 @@ export function materialize(
     const existingNode = existing.get(n.id);
     const bound = resolveBinding(n);
     if (existingNode === undefined) {
-      // The node is inserted UNBOUND and, when it binds, a distinct `bindProvider` follows —
-      // never baked into the inserted node's literal — so `remapProvider … bindProvider` is the
-      // one code path that pins a binding, whether the node is new or already exists.
+      // A new node's binding travels INSIDE its insertNode: one op, no intermediate artifact
+      // that would trip `missing-binding` for a moment that never actually existed. `bindProvider`
+      // is reserved for an EXISTING node whose binding changed (the revise diff, below).
       const node: SemanticNode = {
         id: n.id,
         order: orderKeyAfterAll(siblings),
@@ -198,16 +198,10 @@ export function materialize(
         span: n.span,
         label: { key: `${n.id}.label`, fallback: n.label },
         props: n.props,
+        ...(bound !== undefined && { binding: bound }),
       };
       siblings.push(node);
       ops.push({ type: "insertNode", parentId: root.id, node });
-      if (bound !== undefined)
-        ops.push({
-          type: "bindProvider",
-          nodeId: n.id,
-          handle: bound.handle,
-          priority: bound.priority,
-        });
       continue;
     }
     if (existingNode.kind !== "semantic") {
