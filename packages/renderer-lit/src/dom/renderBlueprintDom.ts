@@ -1,20 +1,7 @@
-import {
-  type BindingStatus,
-  type Blueprint,
-  type Layout,
-  type Widget,
-  type WidgetAction,
-  resolveWidgetStatus,
-  resolveWidgetValue,
-  traverseBlueprint,
-} from "@loom/blueprint-runtime";
+import type { Blueprint, WidgetAction } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
-import {
-  type DomRegistry,
-  type DomWidgetHandle,
-  placeholderFor,
-  projectionPlaceholder,
-} from "./registry";
+import { type DomRegistry, type RecomposeReport, projectionPlaceholder } from "./registry";
+import { type ContainerEntry, type MountContext, disposeEntry, mountContainer } from "./tree";
 
 export interface DomRenderOptions {
   readonly projectionRuntime: ProjectionRuntime;
@@ -24,12 +11,33 @@ export interface DomRenderOptions {
 }
 export interface DomRenderHandle {
   readonly element: HTMLElement;
+  /** Land a revised Blueprint on the live tree (Task 3). Never throws. */
+  update(next: Blueprint): RecomposeReport;
   dispose(): void;
 }
 
-interface Slice {
-  value: unknown;
-  status: BindingStatus | undefined;
+/** Every projection the blueprint declares → its current state, or `undefined` if unregistered. */
+export function buildStateMap(
+  blueprint: Blueprint,
+  runtime: ProjectionRuntime,
+  executionId: string
+): { stateMap: Map<string, unknown>; unregistered: string[] } {
+  const stateMap = new Map<string, unknown>();
+  const unregistered: string[] = [];
+  for (const id of blueprint.projections) {
+    try {
+      stateMap.set(id, runtime.getState(id, executionId));
+    } catch {
+      // A blueprint can declare a projection its runtime never registered — a finding, not a
+      // thrown mount. Widgets bound to it render with `value: undefined` / no status (loom's
+      // `resolvePath(undefined, path)` is null-safe) and still subscribe: `subscribeSelector`
+      // seeds via `peekState`, which does not throw, so a later `register` + event lights the
+      // widget up without a remount.
+      stateMap.set(id, undefined);
+      unregistered.push(id);
+    }
+  }
+  return { stateMap, unregistered };
 }
 
 export function renderBlueprintDom(
@@ -37,116 +45,40 @@ export function renderBlueprintDom(
   blueprint: Blueprint,
   opts: DomRenderOptions
 ): DomRenderHandle {
-  const disposers: Array<() => void> = [];
-  const stateMap = new Map<string, unknown>();
-  const unregisteredProjections: string[] = [];
-  for (const id of blueprint.projections) {
-    try {
-      stateMap.set(id, opts.projectionRuntime.getState(id, opts.executionId));
-    } catch {
-      // A blueprint can declare a projection its runtime never registered — a finding, not a
-      // thrown mount. Widgets bound to it render with `value: undefined` / no status below
-      // (loom's `resolvePath(undefined, path)` is null-safe), and still subscribe:
-      // `subscribeSelector` seeds via `peekState`, which does not throw for an unregistered
-      // projection, so a later `register` + event lights the widget up without a remount.
-      stateMap.set(id, undefined);
-      unregisteredProjections.push(id);
-    }
-  }
-
-  // A bound widget's slice, resolved the way loom resolves it: value AND status both come from
-  // the binding's own paths in the SAME projection state (IR 2.0.0), so this adapter knows
-  // nothing about handles or a hydration-shaped state. `resolveWidgetStatus` returns undefined
-  // for a binding with no `status.path` (the channel is opt-in) and for anything that is not a
-  // `BindingStatus` — including the `Object.prototype` a `status.__proto__` path resolves to.
-  //
-  // `subscribeSelector` calls the selector on every event, so the one-entry state map each
-  // widget hands loom is allocated ONCE per widget and rewritten in place, not per call.
-  const sliceSelector = (widget: Widget, projectionId: string): ((state: unknown) => Slice) => {
-    const map = new Map<string, unknown>();
-    return (state) => {
-      map.set(projectionId, state);
-      return { value: resolveWidgetValue(widget, map), status: resolveWidgetStatus(widget, map) };
-    };
-  };
-
-  const root = traverseBlueprint<HTMLElement>(blueprint.layout, stateMap, {
-    renderWidget: ({ widget, value, status, onAction }) => {
-      const widgetHost = document.createElement("div");
-      widgetHost.dataset.widgetId = widget.id;
-      widgetHost.dataset.widgetKind = widget.kind;
-      const renderer = opts.registry.get(widget.kind);
-      if (!renderer) {
-        widgetHost.appendChild(placeholderFor(widget.kind, "missing"));
-        return widgetHost;
-      }
-      let handle: DomWidgetHandle;
-      try {
-        handle = renderer(widgetHost, {
-          widget,
-          value,
-          ...(status && { status }),
-          ...(onAction && { onAction }),
-        });
-        if (!handle || typeof handle.update !== "function")
-          throw new Error("renderer returned no handle");
-      } catch (e) {
-        widgetHost.replaceChildren(
-          placeholderFor(widget.kind, "error", e instanceof Error ? e.message : String(e))
-        );
-        return widgetHost;
-      }
-      disposers.push(() => handle.dispose());
-      if (widget.binding) {
-        const off = opts.projectionRuntime.subscribeSelector<unknown, Slice>(
-          widget.binding.projectionId,
-          opts.executionId,
-          sliceSelector(widget, widget.binding.projectionId),
-          (slice) => {
-            try {
-              handle.update(slice.value, slice.status);
-            } catch (e) {
-              widgetHost.replaceChildren(
-                placeholderFor(widget.kind, "error", e instanceof Error ? e.message : String(e))
-              );
-            }
-          },
-          sliceIsEqual
-        );
-        disposers.push(off);
-      }
-      return widgetHost;
-    },
-    renderContainer: ({ layout, children, cells }) => {
-      // IR 2.0.0: a grid child's span is a property of the CELL, not of the widget. It lands on
-      // the child's own host element — a wrapper would put a non-grid-item between the grid and
-      // its child and silently drop every other grid placement the child carries.
-      if (cells)
-        for (const { span, child } of cells) if (span > 1) child.style.gridColumn = `span ${span}`;
-      return renderContainer(layout, children);
-    },
+  const { stateMap, unregistered } = buildStateMap(
+    blueprint,
+    opts.projectionRuntime,
+    opts.executionId
+  );
+  const ctx: MountContext = {
+    registry: opts.registry,
+    projectionRuntime: opts.projectionRuntime,
+    executionId: opts.executionId,
+    stateMap,
     ...(opts.onAction && { onAction: opts.onAction }),
-  });
+  };
+  const root: ContainerEntry = mountContainer(blueprint.layout, ctx, () => {});
 
   const element = document.createElement("div");
   element.dataset.blueprintId = blueprint.id;
   const title = document.createElement("h1");
   title.textContent = blueprint.title;
-  element.append(title, ...unregisteredProjections.map(projectionPlaceholder));
-  element.append(root);
+  element.append(title, ...unregistered.map(projectionPlaceholder));
+  element.append(root.el);
   host.appendChild(element);
+
+  const state = { current: blueprint, root, disposed: false };
   return {
     element,
+    update: (next) => {
+      // Task 3 replaces this body. Until then the adapter is mount-only.
+      throw new Error(`update not implemented (next: ${next.id})`);
+    },
     dispose: () => {
+      state.disposed = true;
       const errors: unknown[] = [];
       try {
-        for (const d of disposers.splice(0)) {
-          try {
-            d();
-          } catch (e) {
-            errors.push(e);
-          }
-        }
+        disposeEntry(state.root, errors);
       } finally {
         element.remove();
       }
@@ -158,37 +90,4 @@ export function renderBlueprintDom(
       }
     },
   };
-}
-
-/**
- * Two slices are the same UPDATE when the value is unchanged and the status has not moved.
- *
- * `seq` is the cheap answer, but it is OPTIONAL on loom's `BindingStatus` (IR 2.0.0) — only the
- * hydration store happens to stamp one. Comparing `a.status?.seq === b.status?.seq` alone would
- * call every seq-less status pair equal, silently dropping exactly the transition the status
- * matrix exists for: "the provider failed, keep the last value" is `ready` → `error` over an
- * UNCHANGED value, and `undefined` → `{ state: "error" }` compares equal too (both `undefined`).
- * So `seq` decides only when it is actually present; otherwise the statuses must be the same
- * object. A producer that rebuilds an equal status object each event re-renders needlessly —
- * the safe direction to be wrong in.
- */
-function sliceIsEqual(a: Slice, b: Slice): boolean {
-  if (a.value !== b.value) return false;
-  if (a.status === b.status) return true;
-  return a.status?.seq !== undefined && a.status.seq === b.status?.seq;
-}
-
-function renderContainer(layout: Layout, children: HTMLElement[]): HTMLElement {
-  const el = document.createElement("div");
-  el.dataset.layout = layout.type;
-  if (layout.type === "grid") {
-    el.style.display = "grid";
-    el.style.gridTemplateColumns = `repeat(${layout.columns}, 1fr)`;
-  } else {
-    el.style.display = "flex";
-    el.style.flexDirection = layout.type === "flex" ? layout.direction : "column";
-  }
-  if (layout.gap !== undefined) el.style.gap = `${layout.gap}px`;
-  el.append(...children);
-  return el;
 }
