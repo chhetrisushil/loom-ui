@@ -19,12 +19,12 @@
   },
   "dependencies": {
     "@loom-ui/core": "workspace:*",
-    "@loom-ui/hydration": "workspace:*",
     "@loom/blueprint-runtime": "*",
     "@loom/projection-runtime": "*",
     "lit": "catalog:"
   },
   "devDependencies": {
+    "@loom-ui/hydration": "workspace:*",
     "@types/node": "catalog:",
     "happy-dom": "catalog:",
     "typescript": "^5.6.3",
