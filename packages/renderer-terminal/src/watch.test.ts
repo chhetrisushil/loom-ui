@@ -1,3 +1,4 @@
+import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
 import { MetricCard, blueprint$, stack } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
@@ -16,7 +17,11 @@ describe("watch", () => {
           MetricCard({
             id: "a",
             title: "A",
-            binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.ha" },
+            binding: {
+              projectionId: HYDRATION_PROJECTION_ID,
+              path: hydrationPath("ha"),
+              status: { path: hydrationStatusPath("ha") },
+            },
           }),
         ],
       }),
