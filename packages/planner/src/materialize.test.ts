@@ -419,6 +419,109 @@ describe("materialize — revise (diff against the base)", () => {
     const { ops, findings } = materialize(draft, exp, planningCatalog, capabilitiesFixture);
     expect(findings.filter((f) => f.severity === "error")).toEqual([]);
     expect(ops).toEqual([]);
+    // No op, but not silence: the model asked for something the merge cannot do, and a caller
+    // reading the findings is the only party who can tell the class is still there.
+    const notRemoved = findings.filter((f) => f.code === "sensitivity-not-removed");
+    expect(notRemoved).toHaveLength(1);
+    expect(notRemoved[0]?.severity).toBe("warn");
+    expect(notRemoved[0]?.nodeId).toBe("top_skus");
+    expect(notRemoved[0]?.message).toContain("sensitive");
+  });
+  it("a caller-only type whose node carries a class says nothing when the draft omits it: the model never saw the class", () => {
+    // `Metric` leaves `sensitivity` absent in the catalogue, so the class on this node is the
+    // CALLER's — `describeExperience` never showed it and the draft could not have carried it.
+    const callerClassified: PlanDraft = {
+      summary: "s",
+      nodes: [
+        { ...draft.nodes[0]!, binding: { ...draft.nodes[0]!.binding!, sensitivity: "sensitive" } },
+        draft.nodes[1]!,
+        draft.nodes[2]!,
+      ],
+    };
+    const r = replay(
+      base(),
+      materialize(callerClassified, base(), planningCatalog, capabilitiesFixture).ops
+    );
+    if (!r.ok) throw new Error(r.finding.message);
+    const { ops, findings } = materialize(draft, r.value, planningCatalog, capabilitiesFixture);
+    expect(findings).toEqual([]);
+    expect(ops).toEqual([]);
+  });
+  it("a model may not LOWER a class: the effective class stays the strictest of the two, no bindProvider is emitted, and the attempt is a warn", () => {
+    const secretDraft: PlanDraft = {
+      summary: "s",
+      nodes: [
+        draft.nodes[0]!,
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "secret" } },
+        draft.nodes[2]!,
+      ],
+    };
+    const r = replay(
+      base(),
+      materialize(secretDraft, base(), planningCatalog, capabilitiesFixture).ops
+    );
+    if (!r.ok) throw new Error(r.finding.message);
+    const exp = r.value;
+    const lowered: PlanDraft = {
+      summary: "s",
+      nodes: [
+        draft.nodes[0]!,
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "internal" } },
+        draft.nodes[2]!,
+      ],
+    };
+    const { ops, findings } = materialize(lowered, exp, planningCatalog, capabilitiesFixture);
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(ops).toEqual([]);
+    const notLowered = findings.filter((f) => f.code === "sensitivity-not-lowered");
+    expect(notLowered).toHaveLength(1);
+    expect(notLowered[0]?.severity).toBe("warn");
+    expect(notLowered[0]?.nodeId).toBe("top_skus");
+    expect(notLowered[0]?.message).toContain("top_skus");
+    expect(notLowered[0]?.message).toContain("secret");
+    expect(notLowered[0]?.message).toContain("internal");
+    const after = replay(exp, ops);
+    expect(after.ok).toBe(true);
+    if (after.ok) {
+      const kids = after.value.root.kind === "container" ? after.value.root.children : [];
+      const topSkus = kids.find((k) => k.id === "top_skus");
+      expect(topSkus?.kind === "semantic" && topSkus.binding?.sensitivity).toBe("secret");
+    }
+  });
+  it("a model may RAISE a class: the proposal is stricter, so it is emitted and there is no warn", () => {
+    const internalDraft: PlanDraft = {
+      summary: "s",
+      nodes: [
+        draft.nodes[0]!,
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "internal" } },
+        draft.nodes[2]!,
+      ],
+    };
+    const r = replay(
+      base(),
+      materialize(internalDraft, base(), planningCatalog, capabilitiesFixture).ops
+    );
+    if (!r.ok) throw new Error(r.finding.message);
+    const exp = r.value;
+    const raised: PlanDraft = {
+      summary: "s",
+      nodes: [
+        draft.nodes[0]!,
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "secret" } },
+        draft.nodes[2]!,
+      ],
+    };
+    const { ops, findings } = materialize(raised, exp, planningCatalog, capabilitiesFixture);
+    expect(findings).toEqual([]);
+    expect(ops).toEqual([
+      {
+        type: "bindProvider",
+        nodeId: "top_skus",
+        handle: expect.any(String),
+        priority: "P1",
+        sensitivity: "secret",
+      },
+    ]);
   });
   it("a capability's sample changing shape under an UNCHANGED handle re-emits the provider (stale pin) with no bindProvider", () => {
     const exp = composed();

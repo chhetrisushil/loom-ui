@@ -11,6 +11,7 @@ import {
   orderKeyAfterAll,
 } from "@loom-ui/core";
 import { jsonPathSelect, outputShapeHashOf } from "@loom-ui/hydration";
+import { strictest } from "@loom/classify";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import { type DraftBinding, type DraftNode, type PlanDraft, entryFor } from "./contract";
 import type { CapabilityRef } from "./spi";
@@ -132,6 +133,12 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
  * is not one, a props change that would need a key gone is reported as a `props-not-removed`
  * warn and the patch still carries every key the draft wants SET (additions/changes go through
  * normally; nothing here can make a key vanish).
+ *
+ * A confidentiality class is the same shape of limit, one notch tighter: an existing node's class
+ * is clamped to `strictest(current, proposed)`, so a draft may raise it but never lower it
+ * (`sensitivity-not-lowered`) nor remove it (`sensitivity-not-removed`) — both warns, neither an
+ * op. Only a type the catalogue marks `model-may-set` gets those warns; everywhere else the class
+ * is the caller's and the model never saw it.
  */
 export function materialize(
   draft: PlanDraft,
@@ -213,7 +220,10 @@ export function materialize(
     if (already === undefined) emittedThisRun.set(handle, { spec, capability: cap.handle });
     // `sensitivity` rides on the NODE's binding, not on the provider spec: the same fetch can
     // feed two nodes, and the class describes what a node shows, not how it was fetched — so it
-    // is deliberately outside `providerHandle`'s identity.
+    // is deliberately outside `providerHandle`'s identity. What comes out here is the model's
+    // RAW proposal: an inserted node has no current class for it to lower (`strictest(undefined,
+    // p) === p`), so the clamp lives in the revise diff below, which is the only place a
+    // previously-set class exists to be lowered.
     return {
       handle,
       priority: n.binding.priority,
@@ -317,22 +327,52 @@ export function materialize(
           n.id
         )
       );
+    // The class the node ends up with. A model may RAISE a class (that is what `model-may-set`
+    // admits) but never LOWER one: a draft is the least trusted input in the pipeline, and
+    // "declassify this" is precisely the instruction a prompt injection would carry. The clamp
+    // is `strictest`, so the monotone direction is the data's own ordering (secret > sensitive >
+    // internal), not a rule restated here. It is unconditional: a class on a caller-only type
+    // never reaches a well-formed draft (`planSchema` refuses it), and if one does arrive through
+    // a direct `materialize` call it still may not weaken what the node carries.
+    const currentClass = current.binding?.sensitivity;
+    const clamped = strictest(currentClass, bound?.sensitivity);
+    // `bindProvider`'s apply merges (`op.sensitivity ?? existing`), so no op can DROP a class and
+    // no op is needed to KEEP one: the only class worth carrying is a clamp that actually moved.
+    const classChanged = clamped !== currentClass;
+    if (
+      entry.sensitivity === "model-may-set" &&
+      bound !== undefined &&
+      currentClass !== undefined
+    ) {
+      if (bound.sensitivity === undefined)
+        findings.push(
+          warn(
+            "sensitivity-not-removed",
+            `node "${n.id}": the merge cannot remove a class, so "${currentClass}" remains; dropping one needs remove + insert`,
+            n.id
+          )
+        );
+      else if (bound.sensitivity !== clamped)
+        findings.push(
+          warn(
+            "sensitivity-not-lowered",
+            `node "${n.id}": a class may only be raised, so "${currentClass}" remains ("${bound.sensitivity}" ignored)`,
+            n.id
+          )
+        );
+    }
     if (
       bound !== undefined &&
       (current.binding?.handle !== bound.handle ||
         current.binding?.priority !== bound.priority ||
-        // A class the draft SETS and that differs is a change; a draft that merely OMITS one is
-        // not. `bindProvider`'s apply merges (`op.sensitivity ?? existing`), so an op emitted to
-        // drop a class cannot drop it — it would be a vacuous op, and a removal needs
-        // remove + insert the way a type change does.
-        (bound.sensitivity !== undefined && current.binding?.sensitivity !== bound.sensitivity))
+        classChanged)
     )
       ops.push({
         type: "bindProvider",
         nodeId: n.id,
         handle: bound.handle,
         priority: bound.priority,
-        ...(bound.sensitivity !== undefined && { sensitivity: bound.sensitivity }),
+        ...(classChanged && clamped !== undefined && { sensitivity: clamped }),
       });
     if (current.type !== entry.name || current.typeVersion !== entry.version)
       findings.push(
