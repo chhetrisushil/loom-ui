@@ -292,6 +292,30 @@ describe("materialize — compose", () => {
       expect(second?.kind === "semantic" ? second.binding : undefined).toBeUndefined();
     }
   });
+  it("carries a draft binding's sensitivity onto the inserted node, and leaves it absent when the draft has none", () => {
+    const classified: PlanDraft = {
+      summary: "s",
+      nodes: [
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "sensitive" } },
+        draft.nodes[0]!,
+      ],
+    };
+    const { ops, findings } = materialize(classified, base(), planningCatalog, capabilitiesFixture);
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    const inserted = ops.filter((o) => o.type === "insertNode");
+    const topSkus = inserted.find((o) => o.type === "insertNode" && o.node.id === "top_skus");
+    expect(
+      topSkus?.type === "insertNode" &&
+        topSkus.node.kind === "semantic" &&
+        topSkus.node.binding?.sensitivity
+    ).toBe("sensitive");
+    const orders = inserted.find((o) => o.type === "insertNode" && o.node.id === "orders");
+    expect(
+      orders?.type === "insertNode" && orders.node.kind === "semantic"
+        ? "sensitivity" in (orders.node.binding ?? {})
+        : true
+    ).toBe(false);
+  });
 });
 
 describe("materialize — revise (diff against the base)", () => {
@@ -346,6 +370,35 @@ describe("materialize — revise (diff against the base)", () => {
     };
     const { ops } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
     expect(ops.map((o) => o.type)).toEqual(["remapProvider", "bindProvider"]);
+  });
+  it("a binding whose ONLY change is its sensitivity emits a bindProvider carrying it — the handle is untouched, so no remapProvider", () => {
+    const exp = composed();
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: [
+        draft.nodes[0]!,
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "sensitive" } },
+        draft.nodes[2]!,
+      ],
+    };
+    const { ops, findings } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(ops).toEqual([
+      {
+        type: "bindProvider",
+        nodeId: "top_skus",
+        handle: expect.any(String),
+        priority: "P1",
+        sensitivity: "sensitive",
+      },
+    ]);
+    const r = replay(exp, ops);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const kids = r.value.root.kind === "container" ? r.value.root.children : [];
+      const topSkus = kids.find((k) => k.id === "top_skus");
+      expect(topSkus?.kind === "semantic" && topSkus.binding?.sensitivity).toBe("sensitive");
+    }
   });
   it("a capability's sample changing shape under an UNCHANGED handle re-emits the provider (stale pin) with no bindProvider", () => {
     const exp = composed();

@@ -21,6 +21,9 @@ export const planningCatalog: SemanticCatalog = defineSemanticCatalog({
       version: "1.0.0",
       props: ["columns"],
       binding: "required",
+      // The ONLY entry here that lets a planner propose a confidentiality class; every other
+      // entry leaves `sensitivity` absent, which means the documented default "caller".
+      sensitivity: "model-may-set",
       surfaces: { web: { kind: "DataTable" }, terminal: { kind: "DataTable" } },
     },
     {

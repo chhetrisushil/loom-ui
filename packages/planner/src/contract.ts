@@ -1,9 +1,11 @@
 import {
   type SemanticCatalog,
   type SemanticEntry,
+  Sensitivity,
   compareVersions,
   findEntry,
 } from "@loom-ui/core";
+import type { DataClass } from "@loom/classify";
 import { z } from "zod";
 import type { CapabilityRef } from "./spi";
 
@@ -16,6 +18,12 @@ export interface DraftBinding {
   /** Inline dotted JSONPath over the tool's raw output; "" or "$" selects the whole output. */
   readonly path: string;
   readonly priority: "P0" | "P1" | "P2";
+  /**
+   * The confidentiality class the model proposes for this binding's data. Admitted ONLY where the
+   * catalogue entry says `sensitivity: "model-may-set"`; everywhere else it is the caller's to
+   * set and a draft carrying one is a schema issue.
+   */
+  readonly sensitivity?: DataClass;
 }
 export interface DraftNode {
   readonly id: string;
@@ -70,6 +78,7 @@ export function planSchema(
           arguments: z.record(z.unknown()).default({}),
           path: z.string().default(""),
           priority: z.enum(["P0", "P1", "P2"]).default("P1"),
+          sensitivity: Sensitivity.optional(),
         })
         .optional(),
     })
@@ -109,6 +118,15 @@ export function planSchema(
           code: z.ZodIssueCode.custom,
           path: ["binding", "capability"],
           message: `capability "${n.binding.capability}" was not offered (offered: ${[...handles].join(", ") || "none"})`,
+        });
+      // An entry that says nothing means `"caller"` (catalog.ts): a class the model proposes is
+      // refused unless the entry opts in by name. This is the ONLY reader of
+      // `SemanticEntry.sensitivity` — the default lives here, not in a helper nobody else calls.
+      if (n.binding?.sensitivity !== undefined && entry.sensitivity !== "model-may-set")
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["binding", "sensitivity"],
+          message: `"${entry.name}" does not let the model set a sensitivity class`,
         });
     });
   return z

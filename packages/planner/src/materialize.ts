@@ -173,9 +173,9 @@ export function materialize(
   const siblings: Array<{ order: string }> = [...root.children];
   const seen = new Set<string>();
 
-  const resolveBinding = (
-    n: DraftNode
-  ): { handle: string; priority: DraftBinding["priority"] } | undefined => {
+  // Exactly a node's binding — the shape this resolver exists to produce — so `sensitivity`
+  // cannot drift from what `insertNode` will carry.
+  const resolveBinding = (n: DraftNode): NonNullable<SemanticNode["binding"]> | undefined => {
     if (n.binding === undefined) return undefined;
     const cap = caps.get(n.binding.capability);
     if (cap === undefined) {
@@ -211,7 +211,14 @@ export function materialize(
       declaredSpecs.set(handle, spec);
     }
     if (already === undefined) emittedThisRun.set(handle, { spec, capability: cap.handle });
-    return { handle, priority: n.binding.priority };
+    // `sensitivity` rides on the NODE's binding, not on the provider spec: the same fetch can
+    // feed two nodes, and the class describes what a node shows, not how it was fetched — so it
+    // is deliberately outside `providerHandle`'s identity.
+    return {
+      handle,
+      priority: n.binding.priority,
+      ...(n.binding.sensitivity !== undefined && { sensitivity: n.binding.sensitivity }),
+    };
   };
 
   for (const n of draft.nodes) {
@@ -312,13 +319,16 @@ export function materialize(
       );
     if (
       bound !== undefined &&
-      (current.binding?.handle !== bound.handle || current.binding?.priority !== bound.priority)
+      (current.binding?.handle !== bound.handle ||
+        current.binding?.priority !== bound.priority ||
+        current.binding?.sensitivity !== bound.sensitivity)
     )
       ops.push({
         type: "bindProvider",
         nodeId: n.id,
         handle: bound.handle,
         priority: bound.priority,
+        ...(bound.sensitivity !== undefined && { sensitivity: bound.sensitivity }),
       });
     if (current.type !== entry.name || current.typeVersion !== entry.version)
       findings.push(

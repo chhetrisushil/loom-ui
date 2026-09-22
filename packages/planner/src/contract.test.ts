@@ -115,6 +115,82 @@ describe("planSchema", () => {
     }));
     expect(schema.safeParse({ summary: "s", nodes: many }).success).toBe(false);
   });
+  it("admits binding.sensitivity on a type whose catalogue entry says model-may-set", () => {
+    const r = schema.safeParse({
+      summary: "s",
+      nodes: [
+        {
+          id: "top_skus",
+          type: "Collection",
+          label: "Top SKUs",
+          span: 8,
+          props: { columns: ["sku"] },
+          binding: {
+            capability: "orders_summary",
+            arguments: {},
+            path: "rows",
+            priority: "P1",
+            sensitivity: "sensitive",
+          },
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.nodes[0]?.binding?.sensitivity).toBe("sensitive");
+  });
+  it("refuses binding.sensitivity on a type that does not declare model-may-set — the default is caller", () => {
+    const r = schema.safeParse({
+      summary: "s",
+      nodes: [
+        {
+          id: "orders",
+          type: "Metric",
+          label: "Orders (7d)",
+          span: 4,
+          props: { unit: "orders" },
+          binding: {
+            capability: "orders_summary",
+            arguments: {},
+            path: "totals.count",
+            priority: "P0",
+            sensitivity: "sensitive",
+          },
+        },
+      ],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const issue = r.error.issues.find((i) => i.path.join(".") === "nodes.0.binding.sensitivity");
+      expect(issue).toBeDefined();
+      expect(issue?.message).toContain("Metric");
+    }
+  });
+  it("refuses a sensitivity outside @loom/classify's vocabulary even where the model may set one", () => {
+    const r = schema.safeParse({
+      summary: "s",
+      nodes: [
+        {
+          id: "top_skus",
+          type: "Collection",
+          label: "Top SKUs",
+          span: 8,
+          props: { columns: ["sku"] },
+          binding: {
+            capability: "orders_summary",
+            arguments: {},
+            path: "rows",
+            priority: "P1",
+            sensitivity: "top-secret",
+          },
+        },
+      ],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success)
+      expect(r.error.issues.some((i) => i.path.join(".") === "nodes.0.binding.sensitivity")).toBe(
+        true
+      );
+  });
 });
 
 describe("entryFor", () => {
