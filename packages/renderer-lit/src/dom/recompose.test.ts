@@ -114,12 +114,17 @@ const shape = (el: Element): unknown => ({
   children: [...el.children].map(shape),
 });
 
-const freshShape = (bp: Blueprint, store: HydrationStore, runtime: InMemoryProjectionRuntime) => {
+const freshShape = (
+  bp: Blueprint,
+  store: HydrationStore,
+  runtime: InMemoryProjectionRuntime,
+  registry: RendererRegistry<DomWidgetRenderer> = recording().registry
+) => {
   const host = document.createElement("div");
   const h = renderBlueprintDom(host, bp, {
     projectionRuntime: runtime,
     executionId: store.executionId,
-    registry: recording().registry,
+    registry,
   });
   const s = shape(h.element);
   h.dispose();
@@ -159,7 +164,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("a kept widget whose node changed is patched in place: same host, same element, patch called, no remount", () => {
-    const { host, handle, calls } = setup();
+    const { host, handle, calls, store, runtime } = setup();
     const p99El = host.querySelector("[data-widget-id='p99'] span");
     calls.length = 0;
     const next = v1();
@@ -170,6 +175,9 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(host.querySelector("[data-widget-id='p99'] span")).toBe(p99El);
     expect(p99El?.textContent).toBe("p99 (ms)=412|ready");
     expect(r.remounted).toEqual([]);
+    // The node-identity checks above are strictly stronger for `p99` alone; this covers the
+    // whole tree, including the siblings the identity checks never look at.
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
@@ -216,7 +224,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("reordering never moves the focused subtree: the textarea keeps focus, value and selection while its siblings move around it", () => {
-    const { host, handle } = setup();
+    const { host, handle, store, runtime } = setup();
     const ta = host.querySelector("textarea[data-note='memo']") as HTMLTextAreaElement;
     ta.focus();
     ta.value = "half-typed note";
@@ -235,6 +243,10 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(ta.value).toBe("half-typed note");
     expect(ta.selectionStart).toBe(4);
     expect(host.querySelector("textarea[data-note='memo']")).toBe(ta);
+    // The node-identity checks above only look at `memo`'s textarea; this covers the whole tree
+    // (`.value` is a live-DOM property, not reflected in `textContent`, so it does not upset shape
+    // parity even though the focused textarea was never remounted).
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
@@ -256,7 +268,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("a kind change remounts exactly that widget and reports it", () => {
-    const { host, handle, calls } = setup();
+    const { host, handle, calls, store, runtime } = setup();
     const memoEl = host.querySelector("[data-widget-id='memo'] textarea");
     calls.length = 0;
     const next = v1();
@@ -270,11 +282,12 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect((host.querySelector("[data-widget-id='memo']") as HTMLElement).dataset.widgetKind).toBe(
       "StatusBadge"
     );
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
   it("a kept id whose kind changes to one no renderer is registered for is remounted onto the missing placeholder and reported", () => {
-    const { host, handle, calls } = setup();
+    const { host, handle, calls, store, runtime } = setup();
     calls.length = 0;
     const next = v1();
     const g = next.layout as { children: Array<{ node: { kind: string } }> };
@@ -288,12 +301,13 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     const memoHost = host.querySelector("[data-widget-id='memo']") as HTMLElement;
     expect(memoHost.textContent).toBe("[No renderer for Nope]");
     expect(memoHost.dataset.widgetKind).toBe("Nope");
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
   it("a renderer without patch is remounted on a node change and reported", () => {
     const reg = recording(false);
-    const { handle, calls } = setup(v1(), reg);
+    const { handle, calls, store, runtime } = setup(v1(), reg);
     calls.length = 0;
     const next = v1();
     (next.layout as { children: Array<{ node: { title?: string } }> }).children[0]!.node.title =
@@ -301,11 +315,17 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     const r = handle.update(next);
     expect(r.remounted).toEqual(["p99"]);
     expect(calls).toEqual(["dispose:p99", "mount:p99"]);
+    // Compared against a fresh render built with THIS row's registry (no `patch`), not the
+    // default `recording()` — a fresh mount never calls `patch` either way, but a distinct
+    // registry instance keeps this row's own `calls` ledger (already asserted above) untouched.
+    expect(shape(handle.element)).toEqual(
+      freshShape(next, store, runtime, recording(false).registry)
+    );
     handle.dispose();
   });
 
   it("a binding change re-subscribes and pushes the first slice synchronously; unchanged bindings keep their subscription", async () => {
-    const { host, handle, calls, store } = setup();
+    const { host, handle, calls, store, runtime } = setup();
     store.setValue("h-alt", 99, { state: "ready" });
     calls.length = 0;
     const next = v1();
@@ -315,6 +335,9 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(r.rebound).toEqual(["p99"]);
     expect(calls).toEqual(["patch:p99", "update:p99"]);
     expect(host.querySelector("[data-widget-id='p99'] span")?.textContent).toBe("p99=99|ready");
+    // Checked here, before the further `store.setValue` calls below change values a fresh mount
+    // would also observe — the point of this assertion is the rebind, not the later pushes.
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     calls.length = 0;
     store.setValue("h-p99", 1, { state: "ready" }); // the OLD handle: nobody listens any more
     store.setValue("h-alt", 100, { state: "ready" });
@@ -493,6 +516,9 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
       host.querySelector("[data-widget-id='p99'] [data-placeholder='error']")?.textContent
     ).toBe("[Renderer error for MetricCard: cannot relabel]");
     expect(reg.calls).toContain("patch:phase");
+    // No shape parity here: `next` still declares `p99` as a plain MetricCard, so a fresh mount
+    // of `next` would render it normally — the live tree's error placeholder (reached only
+    // because `patch` throws, which a fresh mount never calls) has no fresh-render equivalent.
     // The failed widget was TORN DOWN, not just hidden: its handle was disposed once…
     expect(calls).toEqual(["dispose:p99"]);
     handle.dispose();
@@ -500,6 +526,10 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("a renderer that throws from update is torn down: disposed once, unsubscribed, and never disposed twice", () => {
+    // No shape parity in this row: it never calls `handle.update(next)` at all — it drives the
+    // existing binding subscription via `store.setValue`, and the degraded error placeholder
+    // this leaves `p99` on has no fresh-render equivalent (a fresh mount never calls `update`
+    // enough times to throw).
     const seen: string[] = [];
     let n = 0;
     const brittle: DomWidgetRenderer = (host, props) => {
@@ -529,7 +559,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
   });
 
   it("a widget added with a kind no renderer is registered for lands in findings as mount-failed", () => {
-    const { host, handle } = setup();
+    const { host, handle, store, runtime } = setup();
     const next = v1();
     const g = next.layout as { children: unknown[] };
     g.children.push(cell(4, { _tag: "Widget" as const, id: "odd", kind: "Nope", props: {} }));
@@ -540,10 +570,14 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(host.querySelector("[data-widget-id='odd']")?.textContent).toBe(
       "[No renderer for Nope]"
     );
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 
   it("update never throws: a Blueprint the adapter cannot even walk comes back as a finding, live tree untouched", () => {
+    // No shape parity: `next` is unwalkable (`children: null`), so there is no well-defined fresh
+    // render to build one from — the point of this row is that the LIVE tree is left untouched,
+    // which the before/after node-identity check below proves directly.
     const { host, handle } = setup();
     const before = [...host.querySelectorAll("*")];
     const next = v1();
