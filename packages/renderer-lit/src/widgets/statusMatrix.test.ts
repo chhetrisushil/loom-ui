@@ -1,5 +1,4 @@
-import type { HandleStatus } from "@loom-ui/hydration";
-import { MetricCard } from "@loom/blueprint-runtime";
+import { type BindingStatus, MetricCard } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import "./index";
 
@@ -10,7 +9,7 @@ import "./index";
 
 interface MatrixRow {
   readonly name: string;
-  readonly status: HandleStatus | undefined;
+  readonly status: BindingStatus | undefined;
   readonly value: unknown;
   /** The `data-state` the widget's root carries. */
   readonly state: "loading" | "pending" | "stale" | "error" | "ready";
@@ -20,18 +19,18 @@ interface MatrixRow {
   readonly showsValue: boolean;
 }
 
-const err: HandleStatus = {
+const err: BindingStatus = {
   state: "error",
   seq: 1,
-  finding: { code: "provider-failed", severity: "error", message: "tool down" },
+  finding: { code: "provider-failed", message: "tool down" },
 };
-const stale: HandleStatus = {
+const stale: BindingStatus = {
   state: "stale",
   seq: 2,
-  finding: { code: "output-shape-drift", severity: "error", message: "drifted" },
+  finding: { code: "output-shape-drift", message: "drifted" },
 };
-const pending: HandleStatus = { state: "pending", seq: 3 };
-const ready: HandleStatus = { state: "ready", seq: 4 };
+const pending: BindingStatus = { state: "pending", seq: 3 };
+const ready: BindingStatus = { state: "ready", seq: 4 };
 
 const MATRIX: readonly MatrixRow[] = [
   {

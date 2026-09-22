@@ -1,4 +1,10 @@
-import { MetricCard, StatusBadge, type WidgetAction, customWidget$ } from "@loom/blueprint-runtime";
+import {
+  MetricCard,
+  StatusBadge,
+  type Widget,
+  type WidgetAction,
+  customWidget$,
+} from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import "./index";
 
@@ -206,5 +212,30 @@ describe("kind widgets", () => {
       value: 7,
     });
     expect(el.shadowRoot?.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe("p99: 7");
+  });
+  it("a degraded widget names the semantic type it stands for and carries the chain on its host", async () => {
+    const degraded: Widget = {
+      ...MetricCard({ id: "m", title: "p99", binding: b }),
+      source: {
+        type: "Trend",
+        version: "1.0.0",
+        degradedFrom: [{ type: "Collection", version: "1.0.0" }],
+      },
+    };
+    const el = await mount<HTMLElement>("lu-metric-card", { widget: degraded, value: 7 });
+    const label = el.shadowRoot?.querySelector("[aria-label]")?.getAttribute("aria-label");
+    expect(label).toContain("Trend, shown as MetricCard");
+    // The full name: what it stands for, then the ordinary description of what is on screen.
+    expect(label).toBe("Trend, shown as MetricCard: p99: 7");
+    expect(el.getAttribute("data-degraded")).toBe("Collection@1.0.0");
+  });
+  it("a widget that was not degraded says nothing about its source", async () => {
+    const plain: Widget = {
+      ...MetricCard({ id: "m", title: "p99", binding: b }),
+      source: { type: "MetricCard", version: "1.0.0" },
+    };
+    const el = await mount<HTMLElement>("lu-metric-card", { widget: plain, value: 7 });
+    expect(el.shadowRoot?.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe("p99: 7");
+    expect(el.hasAttribute("data-degraded")).toBe(false);
   });
 });

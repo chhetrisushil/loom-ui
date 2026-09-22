@@ -1,5 +1,5 @@
 import { FRAMEWORK_KINDS } from "@loom-ui/core";
-import { type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
+import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import "../widgets/index";
 import type { DomRegistry, DomWidgetRenderer } from "./registry";
 
@@ -9,7 +9,7 @@ export function elementRenderer(tag: string): DomWidgetRenderer {
     const el = document.createElement(tag) as HTMLElement & {
       widget: unknown;
       value: unknown;
-      status: unknown;
+      status: BindingStatus | undefined;
       onAction: unknown;
     };
     el.widget = props.widget;

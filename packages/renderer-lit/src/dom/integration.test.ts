@@ -1,3 +1,4 @@
+import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
 import { MetricCard, StatusBadge, blueprint$, grid } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
@@ -11,6 +12,13 @@ import { renderBlueprintDom } from "./renderBlueprintDom";
 // actually runs — blueprint → runtime → store → adapter → real Lit elements → shadow DOM —
 // because each of those seams was green in isolation while the pair could still be wrong.
 
+/** A hydration binding, IR 2.0.0: the value path and the status path beside it. */
+const bind = (handle: string) => ({
+  projectionId: HYDRATION_PROJECTION_ID,
+  path: hydrationPath(handle),
+  status: { path: hydrationStatusPath(handle) },
+});
+
 const bp = blueprint$({
   id: "e@v",
   title: "Dash",
@@ -20,12 +28,12 @@ const bp = blueprint$({
       MetricCard({
         id: "a",
         title: "p99",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h-a" },
+        binding: bind("h-a"),
       }),
       StatusBadge({
         id: "b",
         title: "Phase",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h-b" },
+        binding: bind("h-b"),
       }),
     ],
   }),
