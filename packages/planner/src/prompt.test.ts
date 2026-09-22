@@ -1,6 +1,7 @@
 import { type Experience, genesis } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
 import {
+  COMPOSE_SYSTEM,
   MAX_FENCE_BODY,
   composeMessages,
   describeCapabilities,
@@ -25,6 +26,11 @@ describe("prompt", () => {
     expect(cat).toContain("binding: required");
     expect(cat).toContain("Insight@1.0.0");
     expect(cat).toContain("binding: none");
+    // Only the entry that declares it says so; the default ("caller") is silent, and the system
+    // prompt is what tells the model the line is the permission.
+    expect(cat).toMatch(/- Collection@1\.0\.0 —[^\n]*; sensitivity: model-may-set/);
+    expect(cat).not.toMatch(/- Metric@1\.0\.0 —[^\n]*sensitivity/);
+    expect(COMPOSE_SYSTEM).toContain("sensitivity: model-may-set");
     const caps = describeCapabilities(capabilitiesFixture);
     expect(caps).toContain("orders_summary");
     expect(caps).toContain("orders.summary@2.1.0");
@@ -255,5 +261,58 @@ describe("prompt", () => {
     });
     const notOfferedUser = notOffered.messages.find((m) => m.role === "user")?.content ?? "";
     expect(notOfferedUser).toContain("(not offered) unknown.tool@9.9.9");
+  });
+  it("describeExperience shows a binding's sensitivity so a revise can echo it back byte-identical", () => {
+    const withSensitivity: Experience = {
+      experienceId: "e",
+      versionHash: "",
+      parents: [],
+      intent: intentFixture,
+      root: {
+        id: "root",
+        order: "V",
+        kind: "container",
+        direction: "column",
+        span: 12,
+        children: [
+          {
+            id: "top_skus",
+            order: "a",
+            kind: "semantic",
+            type: "Collection",
+            typeVersion: "1.0.0",
+            span: 8,
+            props: { columns: ["sku"] },
+            binding: { handle: "h1", priority: "P1", sensitivity: "sensitive" },
+          },
+        ],
+      },
+      providers: {
+        h1: {
+          handle: "h1",
+          executionGraph: [
+            {
+              stepId: "s1",
+              toolName: "orders.summary",
+              toolVersion: "2.1.0",
+              toolSchemaHash: "sha256:orders-summary-2-1",
+              arguments: { window: "7d" },
+              dependsOn: [],
+              idempotent: true,
+            },
+          ],
+          reshaping: { engine: "JSONPath", scriptRef: "rows" },
+          outputShapeHash: "sha256:x",
+          cachePolicy: { ttlSeconds: 60, scope: "principal" },
+        },
+      },
+      vocabularyFloor: { types: [] },
+      meta: metaFixture,
+    };
+    const described = describeExperience(withSensitivity, capabilitiesFixture) as {
+      nodes: Array<{ binding?: Record<string, unknown> }>;
+    };
+    expect(described.nodes[0]?.binding?.sensitivity).toBe("sensitive");
+    expect(JSON.stringify(described, null, 2)).toContain('"sensitivity": "sensitive"');
   });
 });

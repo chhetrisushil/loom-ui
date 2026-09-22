@@ -2,6 +2,8 @@ import {
   compile,
   experienceHandles,
   genesis,
+  hydrationPath,
+  hydrationStatusPath,
   isContainer,
   loomCatalogFor,
   replay,
@@ -13,7 +15,7 @@ import {
   HydrationStore,
 } from "@loom-ui/hydration";
 import { renderExperience } from "@loom-ui/renderer-terminal";
-import { validateBlueprint } from "@loom/blueprint-runtime";
+import { type Layout, type Widget, validateBlueprint } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { ReferencePlanner } from "./reference";
@@ -65,6 +67,14 @@ const revise = JSON.stringify({
   ],
 });
 
+/** Every widget in a blueprint's layout, grid cells unwrapped. */
+const widgetsOf = (node: Widget | Layout): Widget[] =>
+  "_tag" in node
+    ? [node]
+    : node.type === "grid"
+      ? node.children.flatMap((c) => widgetsOf(c.node))
+      : node.children.flatMap(widgetsOf);
+
 describe("intent → artifact → compile → revise → new artifact → recompile → terminal", () => {
   it("runs end to end with a scripted planner, only the new node's id is new, and the same artifact renders on the terminal with hydration status", async () => {
     const planner = new ReferencePlanner({
@@ -93,6 +103,13 @@ describe("intent → artifact → compile → revise → new artifact → recomp
       validateBlueprint(web.blueprint, loomCatalogFor(planningCatalog, "web").catalog).ok
     ).toBe(true);
     expect(web.blueprint.id).toBe(`${v1.experienceId}@${v1.versionHash}`);
+    // IR 2.0.0: every bound widget declares a status channel beside its value path, in the same
+    // projection state — that is what the renderer reads delivery state off, below.
+    const ordersWidget = widgetsOf(web.blueprint.layout).find((w) => w.id === "orders");
+    const ordersBinding = experienceHandles(v1).find((u) => u.nodeIds.includes("orders"));
+    if (ordersBinding === undefined) throw new Error("expected a handle for orders");
+    expect(ordersWidget?.binding?.path).toBe(hydrationPath(ordersBinding.handle));
+    expect(ordersWidget?.binding?.status?.path).toBe(hydrationStatusPath(ordersBinding.handle));
 
     const revised = await planner.revise(
       {
