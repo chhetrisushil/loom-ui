@@ -22,13 +22,23 @@ export interface DriftRecord {
   readonly expected: string;
   readonly observed: string;
   /**
-   * Output drift only: the structural shape loom's `shapeOf` saw, so a planner can re-author the
-   * reshaping from the record alone (slice-3 carry-over). Absent when the value could not be walked.
+   * Output drift only: the structural shape loom's `shapeOf` saw of the RESHAPED value — the one
+   * that failed the pin, so it explains the mismatch. Absent when the value could not be walked.
    */
   readonly observedShape?: Shape;
   /**
-   * Output drift only, and ONLY when `ExecuteOptions.captureSample` is set: the reshaped value,
-   * ALWAYS wrapped as untrusted content (ADR 0085) — it is tool-authored and will be shown to a model.
+   * Output drift only: the structural shape of the RAW terminal output the reshaping was applied
+   * to. A planner re-authors a `reshaping.scriptRef`, which is a path into the RAW output — so
+   * without this a record carrying no sample gives it nothing to author a path against.
+   * Absent when the raw value could not be walked.
+   */
+  readonly observedRawShape?: Shape;
+  /**
+   * Output drift only, and ONLY when `ExecuteOptions.captureSample` is set: the RAW terminal
+   * output (the single terminal step's output, or the stepId-keyed record when there are several)
+   * — NOT the reshaped value, because the planner consumes a sample as a capability's
+   * `sampleOutput`, which is raw by contract and is what a `path` is authored against. ALWAYS
+   * wrapped as untrusted content (ADR 0085): it is tool-authored and will be shown to a model.
    */
   readonly observedSample?: TaintedValue<unknown>;
 }
@@ -43,7 +53,7 @@ export interface ExecuteOptions {
   readonly principal?: TransientInvokeOptions["principal"];
   /** Parallel steps per wave. Default 4. */
   readonly concurrency?: number;
-  /** Attach the reshaped value to an output-drift record as a tainted sample. Default false. */
+  /** Attach the RAW terminal output to an output-drift record as a tainted sample. Default false. */
   readonly captureSample?: boolean;
 }
 
@@ -230,14 +240,24 @@ export async function executeProvider(
     } catch {
       observedShape = undefined; // `observed` above already proved it hashable; belt and braces
     }
+    // The RAW output has not been through `shapeHash`, so — unlike the reshaped value — nothing
+    // has proved it walkable. A raw value too deep or too wide for `shapeOf` simply leaves the
+    // field absent; it must never turn a drift REPORT into a throw.
+    let observedRawShape: Shape | undefined;
+    try {
+      observedRawShape = shapeOf(raw);
+    } catch {
+      observedRawShape = undefined;
+    }
     drift.push({
       kind: "output",
       handle: spec.handle,
       expected: spec.outputShapeHash,
       observed,
       ...(observedShape !== undefined && { observedShape }),
+      ...(observedRawShape !== undefined && { observedRawShape }),
       ...(opts.captureSample === true && {
-        observedSample: tainted(shaped.value, `provider:${spec.handle}`),
+        observedSample: tainted(raw, `provider:${spec.handle}`),
       }),
     });
     const f = err(

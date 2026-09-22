@@ -79,6 +79,8 @@ describe("executeProvider", () => {
         expected: outputShapeHashOf({ p99: "string-now" }),
         observed: outputShapeHashOf({ p99: 1 }),
         observedShape: { p99: "number" },
+        // This spec's reshaping is the identity (`scriptRef: ""`), so raw and reshaped coincide.
+        observedRawShape: { p99: "number" },
       },
     ]);
   });
@@ -159,10 +161,17 @@ describe("executeProvider is total: a value it cannot inspect is a finding, neve
   });
 });
 
-describe("output drift carries the observed shape, and a sample only on opt-in", () => {
+describe("output drift carries both shapes, and a RAW sample only on opt-in", () => {
   const specPinnedToNumber = providerSpec("h", [mcpStep("s", "t")], {
     outputShapeHash: outputShapeHashOf({ count: 1 }),
   });
+  // A NON-identity reshaping, so "the sample is raw" is actually observable: the tool now nests
+  // the count it used to return flat, and the planner re-authors `totals.count` → the new path.
+  const specWithPath = providerSpec("h", [mcpStep("s", "t")], {
+    reshaping: { engine: "JSONPath", scriptRef: "totals.count" },
+    outputShapeHash: outputShapeHashOf(412),
+  });
+  const nestedReply = { totals: { count: { value: 412 } } };
   const invokerReturning = (output: unknown): FakeInvoker =>
     new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => output);
   const spec = providerSpec("h", [mcpStep("list", "db.list")]);
@@ -182,21 +191,37 @@ describe("output drift carries the observed shape, and a sample only on opt-in",
     if (!outcome.ok) {
       const d = outcome.drift.find((r) => r.kind === "output");
       expect(d?.observedShape).toEqual({ count: "string" });
+      expect(d?.observedRawShape).toEqual({ count: "string" }); // identity reshaping
       expect(d?.observedSample).toBeUndefined();
     }
   });
 
-  it("captures the reshaped value as a TAINTED sample when captureSample is set", async () => {
-    const outcome = await executeProvider(specPinnedToNumber, {
-      invoker: invokerReturning({ count: "412" }),
+  it("captures the RAW terminal output as a TAINTED sample when captureSample is set, with the reshaped shape AND the raw shape beside it", async () => {
+    const outcome = await executeProvider(specWithPath, {
+      invoker: invokerReturning(nestedReply),
       captureSample: true,
     });
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
       const d = outcome.drift.find((r) => r.kind === "output");
       expect(isTainted(d?.observedSample)).toBe(true);
-      expect(unwrapTainted(d?.observedSample)).toEqual({ count: "412" });
-      expect(taintOf(d?.observedSample)?.origin).toBe(`provider:${specPinnedToNumber.handle}`);
+      // The RAW reply, NOT the reshaped `{ value: 412 }`: a planner authors a path against raw.
+      expect(unwrapTainted(d?.observedSample)).toEqual(nestedReply);
+      expect(taintOf(d?.observedSample)?.origin).toBe(`provider:${specWithPath.handle}`);
+      expect(d?.observedShape).toEqual({ value: "number" }); // what failed the pin
+      expect(d?.observedRawShape).toEqual({ totals: { count: { value: "number" } } });
+    }
+  });
+
+  it("without a sample the raw shape alone still says where the value moved to", async () => {
+    const outcome = await executeProvider(specWithPath, {
+      invoker: invokerReturning(nestedReply),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      const d = outcome.drift.find((r) => r.kind === "output");
+      expect(d?.observedSample).toBeUndefined();
+      expect(d?.observedRawShape).toEqual({ totals: { count: { value: "number" } } });
     }
   });
 
@@ -209,6 +234,7 @@ describe("output drift carries the observed shape, and a sample only on opt-in",
     if (!outcome.ok) {
       const d = outcome.drift.find((r) => r.kind === "input");
       expect(d?.observedShape).toBeUndefined();
+      expect(d?.observedRawShape).toBeUndefined();
       expect(d?.observedSample).toBeUndefined();
     }
   });

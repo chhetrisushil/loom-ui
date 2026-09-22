@@ -133,6 +133,9 @@ importers:
       '@loom-ui/renderer-terminal':
         specifier: workspace:*
         version: link:../renderer-terminal
+      '@loom/plugin-mcp':
+        specifier: link:../../../loom/plugins/mcp
+        version: link:../../../loom/plugins/mcp
       '@loom/plugin-renderer-terminal':
         specifier: link:../../../loom/plugins/renderer-terminal
         version: link:../../../loom/plugins/renderer-terminal

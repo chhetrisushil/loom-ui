@@ -7,6 +7,7 @@ import {
   type SemanticCatalog,
   type SemanticNode,
   isContainer,
+  nodeIds,
   orderKeyAfterAll,
 } from "@loom-ui/core";
 import { jsonPathSelect, outputShapeHashOf } from "@loom-ui/hydration";
@@ -29,14 +30,21 @@ const warn = (code: string, message: string, nodeId?: string): Finding => ({
   ...(nodeId !== undefined && { nodeId }),
 });
 
-/** Identical (tool, version, arguments, path) → identical handle, so two nodes share one fetch. */
+/**
+ * Identical (tool, version, SCHEMA PIN, arguments, path) → identical handle, so two nodes share
+ * one fetch. The schema hash is part of the identity, not just the spec: two capabilities can
+ * offer the same tool@version pinned to DIFFERENT input schemas (one stale, one current), and
+ * without the pin in the hash they would collide on one handle whose spec pins whichever
+ * capability materialised first — a silent mis-pin, where including it makes them two providers.
+ */
 export function providerHandle(
   toolName: string,
   toolVersion: string,
+  toolSchemaHash: string,
   args: Record<string, unknown>,
   path: string
 ): string {
-  return `p-${fnv1a64(canonicalJson({ toolName, toolVersion, args, path }))}`;
+  return `p-${fnv1a64(canonicalJson({ toolName, toolVersion, toolSchemaHash, args, path }))}`;
 }
 
 export function buildProviderSpec(
@@ -76,7 +84,13 @@ export function buildProviderSpec(
       ),
     };
   }
-  const handle = providerHandle(cap.toolName, cap.toolVersion, binding.arguments, binding.path);
+  const handle = providerHandle(
+    cap.toolName,
+    cap.toolVersion,
+    cap.toolSchemaHash,
+    binding.arguments,
+    binding.path
+  );
   return {
     ok: true,
     spec: {
@@ -105,7 +119,9 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
  * Draft → operations by DIFFING against `base.root`'s direct children. Compose is the special
  * case where the base is an empty genesis. The reference planner authors a FLAT list under the
  * root (nested containers are the app's, untouched here); a draft id that names a container is
- * refused. Order: remapProvider before the bindProvider/insertNode that needs it; removals last.
+ * refused as `not-semantic`, and one that names a node NESTED inside such a container is refused
+ * as `nested-node` — `describeExperience` never shows those, so a draft naming one is either a
+ * hallucination or an instruction the model was told to ignore. Order: remapProvider before the bindProvider/insertNode that needs it; removals last.
  *
  * `setProps` (core's `apply`) MERGES the patch into the existing props, so there is no way to
  * DELETE a key through this op: a patch value of `undefined` round-trips through `Operation`'s
@@ -139,6 +155,12 @@ export function materialize(
   const root = base.root;
   const caps = new Map(capabilities.map((c) => [c.handle, c] as const));
   const existing = new Map(root.children.map((c) => [c.id, c] as const));
+  // WHOLE-TREE id index, root included. `existing` covers only what this function may author
+  // (the root's direct children), so an id that is in the tree but not in `existing` names a
+  // node nested inside an application-owned container: not editable here, and not insertable
+  // either (replay would refuse the duplicate id). It is refused by name, before anything else
+  // observable — a binding resolved, a provider declared — can happen for it.
+  const allIds = new Set(nodeIds(root));
   // Seeded from the base: a handle already declared with THIS spec needs no new remapProvider.
   // A capability's sample can change under an unchanged (tool, version, args, path) — Task 5
   // feeds an OBSERVED sample this way — so the gate compares specs, not just handle presence,
@@ -208,12 +230,23 @@ export function materialize(
     const existingNode = existing.get(n.id);
     // Refuse a container id BEFORE touching the binding: a draft node that collides with a
     // container must never resolve a capability, declare a provider, or leave a capability
-    // finding behind — it is refused outright, with nothing else observable from it.
-    if (existingNode !== undefined && existingNode.kind !== "semantic") {
+    // finding behind — it is refused outright, with nothing else observable from it. The root
+    // itself is a container that is not among its own children, so it is named explicitly.
+    if (n.id === root.id || (existingNode !== undefined && existingNode.kind !== "semantic")) {
       findings.push(
         err(
           "not-semantic",
           `"${n.id}" is a container; the planner only authors semantic nodes`,
+          n.id
+        )
+      );
+      continue;
+    }
+    if (existingNode === undefined && allIds.has(n.id)) {
+      findings.push(
+        err(
+          "nested-node",
+          `"${n.id}" is nested inside a container the planner does not author; it can only be edited by the application`,
           n.id
         )
       );

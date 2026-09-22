@@ -94,7 +94,13 @@ describe("materialize — compose", () => {
       expect(r.spec.outputShapeHash).toBe(outputShapeHashOf(412));
       expect(r.spec.reshaping).toEqual({ engine: "JSONPath", scriptRef: "totals.count" });
       expect(r.spec.handle).toBe(
-        providerHandle("orders.summary", "2.1.0", { window: "7d" }, "totals.count")
+        providerHandle(
+          "orders.summary",
+          "2.1.0",
+          "sha256:orders-summary-2-1",
+          { window: "7d" },
+          "totals.count"
+        )
       );
     }
   });
@@ -188,7 +194,51 @@ describe("materialize — compose", () => {
     const { findings } = materialize(d, base(), planningCatalog, capabilitiesFixture);
     expect(findings.map((f) => f.code)).toContain("unknown-capability");
   });
-  it("two capabilities colliding on the same (tool, version, args, path) handle: the first gets the provider, the second is refused as provider-conflict with its binding dropped", () => {
+  it("the same tool@version pinned to DIFFERENT input schemas is TWO providers, not one — the schema pin is part of the handle", () => {
+    const twoPins: CapabilityRef[] = [
+      {
+        handle: "capOld",
+        toolName: "shared.tool",
+        toolVersion: "1.0.0",
+        toolSchemaHash: "sha256:a",
+        sampleOutput: { value: 1 },
+      },
+      {
+        handle: "capNew",
+        toolName: "shared.tool",
+        toolVersion: "1.0.0",
+        toolSchemaHash: "sha256:b",
+        sampleOutput: { value: 1 },
+      },
+    ];
+    const d: PlanDraft = {
+      summary: "s",
+      nodes: [
+        {
+          id: "first",
+          type: "Metric",
+          label: "first",
+          span: 6,
+          props: {},
+          binding: { capability: "capOld", arguments: {}, path: "value", priority: "P1" },
+        },
+        {
+          id: "second",
+          type: "Metric",
+          label: "second",
+          span: 6,
+          props: {},
+          binding: { capability: "capNew", arguments: {}, path: "value", priority: "P1" },
+        },
+      ],
+    };
+    const { ops, findings } = materialize(d, base(), planningCatalog, twoPins);
+    const remaps = ops.filter((o) => o.type === "remapProvider");
+    expect(remaps).toHaveLength(2);
+    expect(new Set(remaps.map((o) => (o as { handle: string }).handle)).size).toBe(2);
+    expect(findings).toEqual([]);
+  });
+  it("two capabilities colliding on the same (tool, version, schema pin, args, path) handle with different SAMPLES: the first gets the provider, the second is refused as provider-conflict with its binding dropped", () => {
     const conflicting: CapabilityRef[] = [
       {
         handle: "capA",
@@ -198,11 +248,13 @@ describe("materialize — compose", () => {
         sampleOutput: { value: 1 },
       },
       {
+        // Same tool, version, schema pin — so the SAME handle — but a sample of a different
+        // shape, so the spec it would pin (`outputShapeHash`) is not the same spec.
         handle: "capB",
         toolName: "shared.tool",
         toolVersion: "1.0.0",
-        toolSchemaHash: "sha256:b",
-        sampleOutput: { value: 1 },
+        toolSchemaHash: "sha256:a",
+        sampleOutput: { value: "one" },
       },
     ];
     const d: PlanDraft = {
@@ -407,5 +459,66 @@ describe("materialize — revise (diff against the base)", () => {
     );
     expect(ops.filter((o) => o.type === "remapProvider")).toHaveLength(0);
     expect(findings.map((f) => f.code)).toEqual(["not-semantic"]);
+  });
+  it("a draft id naming a node NESTED inside a container is refused as nested-node: no insert, no provider, and replay still applies", () => {
+    const withContainer = apply(composed(), {
+      type: "insertNode",
+      parentId: "root",
+      node: { id: "grp", order: "Z", kind: "container", direction: "row", span: 12, children: [] },
+    });
+    if (!withContainer.ok) throw new Error(withContainer.finding.message);
+    const withDeep = apply(withContainer.value, {
+      type: "insertNode",
+      parentId: "grp",
+      node: {
+        id: "deep",
+        order: "a",
+        kind: "semantic",
+        type: "Insight",
+        typeVersion: "1.0.0",
+        span: 12,
+        label: { key: "deep.label", fallback: "Deep" },
+        props: { tone: "neutral" },
+      },
+    });
+    if (!withDeep.ok) throw new Error(withDeep.finding.message);
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: [
+        ...draft.nodes,
+        { id: "deep", type: "Insight", label: "edited", span: 12, props: { tone: "warn" } },
+      ],
+    };
+    const { ops, findings } = materialize(
+      revised,
+      withDeep.value,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    const nested = findings.filter((f) => f.code === "nested-node");
+    expect(nested).toHaveLength(1);
+    expect(nested[0]?.severity).toBe("error");
+    expect(nested[0]?.nodeId).toBe("deep");
+    expect(ops.some((o) => o.type === "insertNode" && o.node.id === "deep")).toBe(false);
+    expect(ops.some((o) => o.type === "setProps" && o.nodeId === "deep")).toBe(false);
+    // The refusal is what keeps replay clean: an insert would collide with the existing id.
+    const r = replay(withDeep.value, ops);
+    expect(r.ok).toBe(true);
+  });
+  it("a draft id naming the ROOT is refused as not-semantic", () => {
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: [{ id: "root", type: "Insight", label: "x", span: 12, props: {} }],
+    };
+    const { ops, findings } = materialize(
+      revised,
+      composed(),
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.filter((f) => f.code === "not-semantic").map((f) => f.nodeId)).toEqual([
+      "root",
+    ]);
+    expect(ops.some((o) => o.type === "insertNode")).toBe(false);
   });
 });

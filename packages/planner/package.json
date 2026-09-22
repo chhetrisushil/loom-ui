@@ -1,11 +1,16 @@
 {
   "name": "@loom-ui/planner",
   "version": "0.0.1",
-  "description": "Planner SPI for loom-ui: intent + semantic catalogue + capabilities → operations, through ctx.decide; reference planner and conformance kit",
+  "description": "Planner SPI for loom-ui: intent + semantic catalogue + capabilities \u2192 operations, through ctx.decide; reference planner and conformance kit",
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
@@ -24,6 +29,7 @@
   },
   "devDependencies": {
     "@loom-ui/renderer-terminal": "workspace:*",
+    "@loom/plugin-mcp": "*",
     "@loom/plugin-renderer-terminal": "*",
     "@loom/projection-runtime": "*",
     "@types/node": "catalog:",

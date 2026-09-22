@@ -92,6 +92,13 @@ export interface PlanResult {
 }
 
 export interface Planner {
+  /**
+   * One plan, recorded as ONE `ctx.decide` keyed on every input that shapes the prompt — intent,
+   * catalogue content, surface, the offered capabilities' identity AND their tool-authored text,
+   * and the caller's context. A capability's `sampleOutput` is deliberately NOT part of that key:
+   * a new sample is a new REVISION (`reviseForDrift` asks for one), never a silent re-plan of a
+   * decision a replay is already serving.
+   */
   compose(input: ComposeInput, ctx: DecideContext): Promise<PlanResult>;
   revise(input: ReviseInput, ctx: DecideContext): Promise<PlanResult>;
 }

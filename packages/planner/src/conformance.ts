@@ -10,7 +10,14 @@ import {
   validateExperience,
 } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
-import type { CapabilityRef, ComposeInput, DecideContext, Planner, ReviseInput } from "./spi";
+import type {
+  CapabilityRef,
+  ComposeInput,
+  DecideContext,
+  PlanReport,
+  Planner,
+  ReviseInput,
+} from "./spi";
 
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
@@ -30,6 +37,30 @@ export interface ConformanceFixture {
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
+
+/**
+ * A `PlanReport` is what a caller stamps provenance from and what a prompt regression is measured
+ * on, so it is part of the contract, not decoration. Three claims must hold or the numbers lie:
+ * at least one attempt was made (a plan nobody attempted is not a plan), the model is NAMED, and
+ * `firstAttemptValid` agrees with the attempts it summarises — it means "clean on the first call",
+ * which is exactly "there was one attempt and every attempt parsed".
+ */
+function reportFindings(label: string, report: PlanReport): Finding[] {
+  const findings: Finding[] = [];
+  if (report.attempts.length < 1)
+    findings.push(err("report-invalid", `${label}: report.attempts is empty`));
+  if (report.modelId === "")
+    findings.push(err("report-invalid", `${label}: report.modelId is empty`));
+  const clean = report.attempts.length === 1 && report.attempts.every((a) => a.parsed);
+  if (report.firstAttemptValid !== clean)
+    findings.push(
+      err(
+        "report-invalid",
+        `${label}: firstAttemptValid is ${report.firstAttemptValid} but ${report.attempts.length} attempt(s) ${report.attempts.every((a) => a.parsed) ? "all parsed" : "did not all parse"}`
+      )
+    );
+  return findings;
+}
 
 /** True when calling into the planner itself threw instead of returning a `PlanResult`. */
 async function safely<T>(
@@ -72,11 +103,14 @@ export async function checkPlannerConformance(
   const firstAttempt = await safely("compose", () => planner.compose(composeInput, fx.ctx));
   if (!firstAttempt.ok) return [firstAttempt.finding];
   const first = firstAttempt.value;
+  findings.push(...reportFindings("compose", first.report));
   first.ops.forEach((op, i) => {
     if (!Operation.safeParse(op).success)
       findings.push(err("op-invalid", `compose op #${i} is not an Operation`));
   });
-  if (findings.length > 0) return findings;
+  // Only an INVALID OP stops the kit here: nothing below can replay ops that are not operations.
+  // A `report-invalid` finding is collected and the rest of the contract is still checked.
+  if (findings.some((f) => f.code === "op-invalid")) return findings;
   const composed = replay(g, first.ops);
   if (!composed.ok) return [err("compose-replay-failed", composed.finding.message)];
   const v = validateExperience(composed.value, fx.catalog, surface);
@@ -128,6 +162,7 @@ export async function checkPlannerConformance(
   );
   if (!reviseAttempt.ok) return [...findings, reviseAttempt.finding];
   const revised = reviseAttempt.value;
+  findings.push(...reportFindings("revise", revised.report));
   if (revised.ops.length !== 1 || revised.ops[0]?.type !== "prompt") {
     findings.push(
       err(

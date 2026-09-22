@@ -195,6 +195,53 @@ describe("checkPlannerConformance", () => {
     });
     expect(f2).toEqual([]);
   });
+  it("a planner whose report does not describe its own attempts fails report-invalid, and the rest of the contract is still checked", async () => {
+    const reference = () => new ReferencePlanner({ model: scriptedModel([compose]), modelId: "m" });
+    const lyingReport: Planner = {
+      compose: async (i, ctx) => ({
+        ...(await reference().compose(i, ctx)),
+        // No attempts, no model named, and "clean on the first call" over zero calls.
+        report: { decisionId: "x", attempts: [], firstAttemptValid: true, modelId: "" },
+      }),
+      revise: async (i, ctx) => {
+        const r = await new ReferencePlanner({
+          model: scriptedModel([revise]),
+          modelId: "m",
+        }).revise(i, ctx);
+        return {
+          ...r,
+          report: {
+            ...r.report,
+            // Two attempts that both parsed, still claiming first-attempt-clean.
+            attempts: [
+              { parsed: true, findings: [] },
+              { parsed: true, findings: [] },
+            ],
+            firstAttemptValid: true,
+          },
+        };
+      },
+    };
+    const findings = await checkPlannerConformance(lyingReport, {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: capabilitiesFixture,
+      meta: metaFixture,
+      revision: { text: "add an insight" },
+      ctx: recordingContext(),
+    });
+    const invalid = findings.filter((f) => f.code === "report-invalid");
+    expect(invalid).toHaveLength(4); // compose: empty attempts, empty modelId, bad flag; revise: bad flag
+    expect(invalid.map((f) => f.message).join("\n")).toContain("report.attempts is empty");
+    expect(invalid.map((f) => f.message).join("\n")).toContain("report.modelId is empty");
+    // Nothing else about this planner is wrong, so report-invalid is ALL that is reported.
+    expect(findings.map((f) => f.code)).toEqual([
+      "report-invalid",
+      "report-invalid",
+      "report-invalid",
+      "report-invalid",
+    ]);
+  });
   it("a planner whose compose rejects resolves with a planner-threw finding naming the error, never a rejection", async () => {
     const throwing: Planner = {
       compose: async () => {
