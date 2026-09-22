@@ -58,3 +58,5 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
 - Anything tool-authored that will be shown to a model (samples, observed drift values) is wrapped with
   `@loom/classify`'s `tainted` at the producer and fenced as DATA in a user message — never in `system`.
+- A kept widget is never re-created: identity is the widget id, `renderBlueprintDom`'s `update` patches in place, and the subtree holding the focused element never leaves the DOM. A renderer that cannot patch (`DomWidgetHandle.patch` absent) is remounted and REPORTED, never silently.
+- User-entered state is DOM state. A renderer overwrites an input's value only when the BOUND value changed — never on `patch`, never on a re-render that the value did not cause (set `.value` from a `willUpdate`/`update` path that checks the value changed, not from a template expression).
