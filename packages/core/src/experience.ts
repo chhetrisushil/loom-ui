@@ -89,7 +89,11 @@ export interface GenesisInput {
 }
 
 /**
- * A new lineage: unpersisted, parentless, with an empty column root unless one is supplied.
+ * A new lineage: unpersisted, parentless, with an empty 12-column GRID root unless one is supplied.
+ *
+ * The root is a grid, not a column, because every child carries a `span` 1–12 and the planner
+ * asks the model for one ("a 12-column row"); only a grid parent turns that span into a cell —
+ * under a `row`/`column` parent compile drops it without a finding (ADR 0097 D5).
  *
  * THROWS if a supplied `root` nests past {@link MAX_TREE_DEPTH}. Unlike `apply`/`compile`, which
  * receive trees from the outside and refuse them with a finding, `genesis` is handed a tree the
@@ -113,7 +117,7 @@ export function genesis(input: GenesisInput): Experience {
       id: "root",
       order: "V",
       kind: "container",
-      direction: "column",
+      direction: "grid",
       span: 12,
       children: [],
     },

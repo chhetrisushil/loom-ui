@@ -5,7 +5,7 @@ import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 const intent = { objective: "Investigate checkout latency", source: "user" as const };
 
 describe("genesis", () => {
-  it("creates an unpersisted lineage root with an empty column container", () => {
+  it("creates an unpersisted lineage root with an empty 12-column grid container, so a child's span means what the planner promised", () => {
     const e = genesis({
       experienceId: "exp-1",
       intent,
@@ -15,6 +15,10 @@ describe("genesis", () => {
     expect(e.parents).toEqual([]);
     expect(e.root.kind).toBe("container");
     expect(e.root.id).toBe("root");
+    if (e.root.kind !== "container") throw new Error("expected a container root");
+    expect(e.root.direction).toBe("grid");
+    expect(e.root.span).toBe(12);
+    expect(e.root.children).toEqual([]);
     expect(Experience.safeParse(e).success).toBe(true);
   });
 });
