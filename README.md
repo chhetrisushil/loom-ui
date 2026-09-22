@@ -12,8 +12,8 @@ in the path.
 | `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint`; `./log` subpath for content-addressed persistence |
 | `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath reshape → shape check), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, caches per principal, reports drift for the app's durable repair |
 | `@loom-ui/renderer-lit` | A loom DOM renderer adapter (`renderBlueprintDom`, subpath `./dom`) and Lit elements registered under loom kinds (`litRegistry`) — every built-in kind plus `TimeSeries`/`BarChart`; four app-level elements (time-range picker, locale picker, sandbox, A2UI view) |
-| `@loom-ui/renderer-terminal` | `TimeSeries`/`BarChart` string renderers merged over loom's terminal registry, hydration-status decoration (`renderExperience`), and `watch` |
-| `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner that runs its model call as one `ctx.decide` per plan, a catalogue-derived output contract, plan-time pins, drift re-authoring (`reviseForDrift`), the conformance kit any planner must pass, and `interpretAction` (experience ops vs business actions) |
+| `@loom-ui/renderer-terminal` | `TimeSeries`/`BarChart` string renderers merged over loom's terminal registry, `renderExperience` (loom's status matrix — a declared channel with no value yet prints loom's loading row `⋯ <title>` — with the framework's value check in loom's `check` seam), and `watch` |
+| `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner that runs its model call as one `ctx.decide` per plan, a catalogue-derived output contract (a model may set `binding.sensitivity` only on a type whose entry declares `sensitivity: "model-may-set"`), plan-time pins, drift re-authoring (`reviseForDrift`), the conformance kit any planner must pass, and `interpretAction` (experience ops vs business actions) |
 
 Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
 
@@ -72,12 +72,12 @@ if (r.ok) { const next = apply(sealedExperience, r.op); /* seal + put + */ ctx.e
 import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
 const handle = renderBlueprintDom(document.getElementById("app"), blueprint, { projectionRuntime: runtime, executionId: store.executionId, registry: litRegistry });
 
-// Terminal: loom's registry plus the framework kinds, with hydration status.
+// Terminal: loom's registry plus the framework kinds; status comes from the Blueprint.
 import { renderExperience, watch } from "@loom-ui/renderer-terminal";
 const stop = watch(blueprint, store, (frame) => process.stdout.write(`\x1Bc${frame}`));
 ```
 
-`TimeSeries` and `BarChart` are Lit-only on the web (`LIT_ONLY_KINDS`): a React consumer gets loom's `[No renderer for …]` placeholder for them. Value shapes per kind are declared once in `@loom-ui/core` (`kindValueContracts`); a mismatch renders as a visible error state on the Lit and terminal surfaces (loom's React renderer validates nothing — it duck-types the value it is given). Two further React↔Lit asymmetries are sanctioned rather than defects: React receives no hydration status, so it shows a value without saying whether it is pending, stale or failed, and `props.span` is honoured by Lit's DOM adapter and ignored by React (ADR 0096 D4).
+Compile targets loom's Blueprint IR 2.0.0: every grid child is a `GridCell` with the node's span, every bound widget declares `binding.status.path = status.<handle>` beside `values.<handle>` in the hydration projection, and carries `source` (its semantic type and any degradation). loom's React, Lit and terminal renderers all read status and spans from the Blueprint; nothing reads the hydration projection behind it. The Lit widgets keep loom-ui's per-kind value contracts, and the terminal plugs the same check into loom's `check` seam.
 
 `@loom-ui/renderer-lit` is browser code: `node -e "import('@loom-ui/renderer-lit/dom')"` fails outside
 a bundler, on two counts. No other package here declares it as a dependency, so pnpm never links it
