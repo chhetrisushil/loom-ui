@@ -43,7 +43,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   adapter; spans are grid cells, never props; `source` says what a widget stands for and is never in
   `props`. A span therefore applies ONLY under a `grid` parent (it becomes that cell's span); under a
   `row`/`column` parent — a flex layout with no columns — it is not applicable and is dropped without
-  a finding (loom ADR 0097 D5).
+  a finding (loom ADR 0097 D5). That is why `genesis`' default root — the one the reference planner
+  composes into — is a 12-column `grid`: the span the compose prompt asks the model for lands as a cell.
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.

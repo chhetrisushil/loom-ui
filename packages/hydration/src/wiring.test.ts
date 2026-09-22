@@ -106,12 +106,13 @@ describe("compiler pin ↔ registered projection", () => {
       hydrationProjectionVersion: HYDRATION_PROJECTION_VERSION,
     });
     // Structural, to avoid a dependency on @loom/blueprint-runtime this package does not declare.
-    // The root is a `column` container, so its children are widgets, not grid cells.
+    // The root is genesis' default 12-column `grid`, so its children are `GridCell`s: unwrap the
+    // widget from each cell (`{ span, node }`) before reading its binding.
     const children = (r.blueprint.layout as { children: readonly unknown[] }).children;
     const bound = children.map(
       (c) =>
         (
-          c as {
+          ("node" in (c as object) ? (c as { node: unknown }).node : c) as {
             binding?: { projectionId: string; path: string; status?: { path: string } };
           }
         ).binding

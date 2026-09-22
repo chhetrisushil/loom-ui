@@ -110,6 +110,15 @@ describe("intent → artifact → compile → revise → new artifact → recomp
     if (ordersBinding === undefined) throw new Error("expected a handle for orders");
     expect(ordersWidget?.binding?.path).toBe(hydrationPath(ordersBinding.handle));
     expect(ordersWidget?.binding?.status?.path).toBe(hydrationStatusPath(ordersBinding.handle));
+    // The reference planner composes into genesis' default root, a 12-column grid: the spans the
+    // model chose (COMPOSE_SYSTEM promises "a 12-column row") ride in cells, never dropped.
+    expect(web.blueprint.layout.type).toBe("grid");
+    const webGrid = web.blueprint.layout as Extract<Layout, { type: "grid" }>;
+    expect(webGrid.columns).toBe(12);
+    expect(webGrid.children.map((c) => ["_tag" in c.node ? c.node.id : c.node.type, c.span])).toEqual([
+      ["orders", 4],
+      ["top_skus", 8],
+    ]);
 
     const revised = await planner.revise(
       {
