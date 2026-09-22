@@ -1,35 +1,26 @@
+import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, blueprint$, stack } from "@loom/blueprint-runtime";
+import { MetricCard, blueprint$, customWidget$, stack } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
-import { renderExperience } from "./status";
+import { kindValueCheck, renderExperience } from "./status";
+
+/** A binding on the hydration projection, with its status channel declared. */
+const bound = (handle: string) => ({
+  projectionId: HYDRATION_PROJECTION_ID,
+  path: hydrationPath(handle),
+  status: { path: hydrationStatusPath(handle) },
+});
 
 const bp = blueprint$({
   id: "e@v",
   title: "Dash",
   layout: stack({
     children: [
-      MetricCard({
-        id: "a",
-        title: "A",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.ha" },
-        unit: "ms",
-      }),
-      MetricCard({
-        id: "b",
-        title: "B",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.hb" },
-      }),
-      MetricCard({
-        id: "c",
-        title: "C",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.hc" },
-      }),
-      MetricCard({
-        id: "d",
-        title: "D",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.hd" },
-      }),
+      MetricCard({ id: "a", title: "A", binding: bound("ha"), unit: "ms" }),
+      MetricCard({ id: "b", title: "B", binding: bound("hb") }),
+      MetricCard({ id: "c", title: "C", binding: bound("hc") }),
+      MetricCard({ id: "d", title: "D", binding: bound("hd") }),
     ],
   }),
   projections: [HYDRATION_PROJECTION_ID],
@@ -64,13 +55,7 @@ describe("renderExperience", () => {
       id: "e2@v",
       title: "Dash2",
       layout: stack({
-        children: [
-          MetricCard({
-            id: "e",
-            title: "E",
-            binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h-e" },
-          }),
-        ],
+        children: [MetricCard({ id: "e", title: "E", binding: bound("h-e") })],
       }),
       projections: [HYDRATION_PROJECTION_ID],
     });
@@ -82,5 +67,43 @@ describe("renderExperience", () => {
     const out = renderExperience(errBp, store);
     expect(out).toContain("✗ E: tool down");
     expect(out).not.toMatch(/contract/);
+  });
+  // loom runs `check` ONLY for a binding that declares a status channel, so a channel-less widget
+  // never reaches the seam. The framework's own `guarded` kind renderers are what still refuse a
+  // bad value there — the contract holds on both paths, from two different places.
+  it("a widget with NO status channel still refuses a bad value, through the framework's own kind renderer", () => {
+    const noChannelBp = blueprint$({
+      id: "e3@v",
+      title: "Dash3",
+      layout: stack({
+        children: [
+          customWidget$({
+            id: "t",
+            kind: "TimeSeries",
+            title: "Latency",
+            binding: { projectionId: HYDRATION_PROJECTION_ID, path: hydrationPath("ht") },
+          }),
+        ],
+      }),
+      projections: [HYDRATION_PROJECTION_ID],
+    });
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e3" });
+    store.setValue("ht", { nope: 1 }, { state: "ready" });
+    const out = renderExperience(noChannelBp, store);
+    expect(out).toMatch(/✗ Latency: .*contract/);
+    // No channel ⇒ no matrix glyphs from loom either.
+    expect(out).not.toMatch(/[⋯~]/);
+  });
+});
+
+describe("kindValueCheck", () => {
+  const widget = MetricCard({ id: "m", title: "p99", binding: bound("h") });
+  it("reports the framework's finding for a value that violates its kind contract", () => {
+    const c = kindValueCheck(widget, "oops");
+    expect(c?.code).toBe("value-contract");
+    expect(c?.message).toMatch(/MetricCard/);
+  });
+  it("says nothing about a value that satisfies its kind contract", () => {
+    expect(kindValueCheck(widget, 412)).toBeUndefined();
   });
 });

@@ -1,3 +1,4 @@
+import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
 import { MetricCard, blueprint$, stack } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
@@ -7,7 +8,9 @@ import { renderExperience } from "./status";
 // ── The status matrix, terminal side ──────────────────────────────────────────
 // The SAME eight rows are asserted against the Lit surface in `@loom-ui/renderer-lit`'s
 // `src/widgets/statusMatrix.test.ts`. The two tables are the contract that the two surfaces
-// render one decision table; edit neither alone.
+// render one decision table; edit neither alone. Since IR 2.0.0 that decision table is LOOM's
+// (ADR 0097 D2) on both surfaces — these rows pin that the framework still gets it, through a
+// declared status channel per binding plus its own value contract in loom's `check` seam.
 
 type State = "error" | "stale" | "pending" | "ready";
 
@@ -32,7 +35,10 @@ const MATRIX: readonly MatrixRow[] = [
   { name: "pending + value", state: "pending", value: 412, line: "⋯ p99: 412" },
   { name: "pending + no value", state: "pending", value: undefined, line: "⋯ p99" },
   { name: "ready + value", state: "ready", value: 412, line: "p99: 412" },
-  { name: "ready + no value", state: "ready", value: undefined, line: "p99: —" },
+  // The loading row: a DECLARED channel whose value has not arrived reads "it has not
+  // arrived", not "the answer is nothing" — the same line as pending-with-no-value, and the
+  // `loading` data-state on the Lit side (ADR 0097 D2).
+  { name: "ready + no value", state: "ready", value: undefined, line: "⋯ p99" },
 ];
 
 const bp = blueprint$({
@@ -43,7 +49,11 @@ const bp = blueprint$({
       MetricCard({
         id: "m",
         title: "p99",
-        binding: { projectionId: HYDRATION_PROJECTION_ID, path: "values.h" },
+        binding: {
+          projectionId: HYDRATION_PROJECTION_ID,
+          path: hydrationPath("h"),
+          status: { path: hydrationStatusPath("h") },
+        },
       }),
     ],
   }),
