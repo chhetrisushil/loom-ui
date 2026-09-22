@@ -163,6 +163,52 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     handle.dispose();
   });
 
+  it("an identical blueprint with an unregistered projection makes zero DOM mutations", () => {
+    // v1() only declares HYDRATION_PROJECTION_ID, which `setup()`'s store always resolves, so the
+    // root-chrome placeholder block never runs over a non-empty `unregistered` list in the row
+    // above. A declared-but-never-registered projection is the case that block exists for.
+    const bp = v1();
+    (bp as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost"];
+    const { host, handle, calls } = setup(bp);
+    calls.length = 0;
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    const next = v1();
+    (next as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost"];
+    const r = handle.update(next);
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(r.findings).toEqual([]);
+    expect(r.remounted).toEqual([]);
+    expect(calls).toEqual([]);
+    handle.dispose();
+  });
+
+  it("a changed unregistered-projection set replaces exactly the placeholders, in the new order, with shape parity", () => {
+    const bp = v1();
+    (bp as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost-a", "ghost-b"];
+    const { host, handle, store, runtime } = setup(bp);
+    const next = v1();
+    (next as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost-c"];
+    handle.update(next);
+    expect(
+      [...host.querySelectorAll("[data-placeholder='projection']")].map((e) => e.textContent)
+    ).toEqual(['[Projection "ghost-c" is not registered]']);
+    // Placeholders still sit between the title and the root container, exactly where a fresh
+    // mount puts them.
+    expect([...handle.element.children].map((e) => (e as HTMLElement).dataset.placeholder)).toEqual(
+      [undefined, "projection", undefined]
+    );
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
   it("a kept widget whose node changed is patched in place: same host, same element, patch called, no remount", () => {
     const { host, handle, calls, store, runtime } = setup();
     const p99El = host.querySelector("[data-widget-id='p99'] span");

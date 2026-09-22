@@ -66,6 +66,7 @@ export function placeholderFor(
 export function projectionPlaceholder(projectionId: string): HTMLElement {
   const el = document.createElement("div");
   el.dataset.placeholder = "projection";
+  el.dataset.projectionId = projectionId;
   el.textContent = `[Projection "${projectionId}" is not registered]`;
   return el;
 }

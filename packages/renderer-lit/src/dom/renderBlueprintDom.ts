@@ -105,10 +105,18 @@ export function renderBlueprintDom(
         // not so much as replace the title's text node.
         if (element.dataset.blueprintId !== next.id) element.dataset.blueprintId = next.id;
         if (title.textContent !== next.title) title.textContent = next.title;
-        for (const p of [...element.children])
-          if ((p as HTMLElement).dataset.placeholder === "projection") p.remove();
-        for (const id of rebuilt.unregistered)
-          element.insertBefore(projectionPlaceholder(id), state.root.el);
+        const currentPlaceholders = [...element.children].filter(
+          (p) => (p as HTMLElement).dataset.placeholder === "projection"
+        ) as HTMLElement[];
+        const currentIds = currentPlaceholders.map((p) => p.dataset.projectionId);
+        const sameIds =
+          currentIds.length === rebuilt.unregistered.length &&
+          currentIds.every((id, i) => id === rebuilt.unregistered[i]);
+        if (!sameIds) {
+          for (const p of currentPlaceholders) p.remove();
+          for (const id of rebuilt.unregistered)
+            element.insertBefore(projectionPlaceholder(id), state.root.el);
+        }
         state.current = next;
         return {
           identity,
