@@ -195,4 +195,46 @@ describe("checkPlannerConformance", () => {
     });
     expect(f2).toEqual([]);
   });
+  it("a planner whose compose rejects resolves with a planner-threw finding naming the error, never a rejection", async () => {
+    const throwing: Planner = {
+      compose: async () => {
+        throw new Error("boom");
+      },
+      revise: async () => ({
+        ops: [],
+        findings: [],
+        report: { decisionId: "y", attempts: [], firstAttemptValid: true, modelId: "m" },
+      }),
+    };
+    const findings = await checkPlannerConformance(throwing, {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: capabilitiesFixture,
+      meta: metaFixture,
+      revision: { text: "x" },
+      ctx: recordingContext(),
+    });
+    const finding = findings.find((f) => f.code === "planner-threw");
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("boom");
+  });
+  it("a planner whose compose works but whose revise rejects reports planner-threw, not revise-not-prompt", async () => {
+    const composeOkReviseThrows: Planner = {
+      compose: (i, ctx) =>
+        new ReferencePlanner({ model: scriptedModel([compose]), modelId: "m" }).compose(i, ctx),
+      revise: async () => {
+        throw new Error("boom");
+      },
+    };
+    const findings = await checkPlannerConformance(composeOkReviseThrows, {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: capabilitiesFixture,
+      meta: metaFixture,
+      revision: { text: "x" },
+      ctx: recordingContext(),
+    });
+    expect(findings.map((f) => f.code)).toContain("planner-threw");
+    expect(findings.map((f) => f.code)).not.toContain("revise-not-prompt");
+  });
 });

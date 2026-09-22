@@ -69,6 +69,34 @@ describe("interpretAction", () => {
     });
     expect(prompt.kind === "refused" && prompt.finding.code).toBe("prompt-not-interactive");
   });
+  it("an experience.op carrying a valid remapProvider is refused with provider-op-not-interactive — a data-plane re-pin is a planner or app repair action, not a widget click", () => {
+    const remap = interpretAction(exp, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "note",
+      payload: {
+        type: "remapProvider",
+        handle: "h1",
+        spec: {
+          handle: "h1",
+          executionGraph: [
+            {
+              stepId: "s1",
+              toolName: "orders.summary",
+              toolVersion: "2.1.0",
+              toolSchemaHash: "sha256:orders-summary-2-1",
+              arguments: { window: "7d" },
+              dependsOn: [],
+              idempotent: true,
+            },
+          ],
+          reshaping: { engine: "JSONPath", scriptRef: "totals.count" },
+          outputShapeHash: "sha256:x",
+          cachePolicy: { ttlSeconds: 60, scope: "principal" },
+        },
+      },
+    });
+    expect(remap.kind === "refused" && remap.finding.code).toBe("provider-op-not-interactive");
+  });
   it("names the promotion event", () => {
     expect(EXPERIENCE_PROMOTED).toBe("EXPERIENCE_PROMOTED");
   });
