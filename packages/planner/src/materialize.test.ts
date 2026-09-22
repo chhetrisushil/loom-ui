@@ -3,6 +3,7 @@ import { outputShapeHashOf } from "@loom-ui/hydration";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
 import { buildProviderSpec, materialize, providerHandle } from "./materialize";
+import type { CapabilityRef } from "./spi";
 import {
   capabilitiesFixture,
   intentFixture,
@@ -187,6 +188,58 @@ describe("materialize — compose", () => {
     const { findings } = materialize(d, base(), planningCatalog, capabilitiesFixture);
     expect(findings.map((f) => f.code)).toContain("unknown-capability");
   });
+  it("two capabilities colliding on the same (tool, version, args, path) handle: the first gets the provider, the second is refused as provider-conflict with its binding dropped", () => {
+    const conflicting: CapabilityRef[] = [
+      {
+        handle: "capA",
+        toolName: "shared.tool",
+        toolVersion: "1.0.0",
+        toolSchemaHash: "sha256:a",
+        sampleOutput: { value: 1 },
+      },
+      {
+        handle: "capB",
+        toolName: "shared.tool",
+        toolVersion: "1.0.0",
+        toolSchemaHash: "sha256:b",
+        sampleOutput: { value: 1 },
+      },
+    ];
+    const d: PlanDraft = {
+      summary: "s",
+      nodes: [
+        {
+          id: "first",
+          type: "Metric",
+          label: "first",
+          span: 6,
+          props: {},
+          binding: { capability: "capA", arguments: {}, path: "value", priority: "P1" },
+        },
+        {
+          id: "second",
+          type: "Metric",
+          label: "second",
+          span: 6,
+          props: {},
+          binding: { capability: "capB", arguments: {}, path: "value", priority: "P1" },
+        },
+      ],
+    };
+    const { ops, findings } = materialize(d, base(), planningCatalog, conflicting);
+    expect(ops.filter((o) => o.type === "remapProvider")).toHaveLength(1);
+    expect(findings.map((f) => f.code)).toEqual(["provider-conflict"]);
+    expect(findings[0]?.nodeId).toBe("second");
+    const r = replay(base(), ops);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const kids = r.value.root.kind === "container" ? r.value.root.children : [];
+      const first = kids.find((k) => k.id === "first");
+      const second = kids.find((k) => k.id === "second");
+      expect(first?.kind === "semantic" && first.binding?.handle).toBeDefined();
+      expect(second?.kind === "semantic" ? second.binding : undefined).toBeUndefined();
+    }
+  });
 });
 
 describe("materialize — revise (diff against the base)", () => {
@@ -242,6 +295,71 @@ describe("materialize — revise (diff against the base)", () => {
     const { ops } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
     expect(ops.map((o) => o.type)).toEqual(["remapProvider", "bindProvider"]);
   });
+  it("a capability's sample changing shape under an UNCHANGED handle re-emits the provider (stale pin) with no bindProvider", () => {
+    const exp = composed();
+    const staleShapeCapabilities: CapabilityRef[] = capabilitiesFixture.map((c) =>
+      c.handle === "orders_summary"
+        ? {
+            ...c,
+            sampleOutput: {
+              window: "7d",
+              totals: { count: "412", revenueCents: 1_234_500 },
+              rows: [{ sku: "A1", units: 5 }],
+            },
+          }
+        : c
+    );
+    const { ops, findings } = materialize(draft, exp, planningCatalog, staleShapeCapabilities);
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(ops.filter((o) => o.type === "bindProvider")).toHaveLength(0);
+    const remaps = ops.filter((o) => o.type === "remapProvider");
+    expect(remaps).toHaveLength(1);
+    expect(remaps[0]?.type === "remapProvider" && remaps[0].spec.outputShapeHash).toBe(
+      outputShapeHashOf("412")
+    );
+  });
+  it("a removed prop key whose sibling keys are otherwise unchanged: props-not-removed warns and no setProps op is emitted", () => {
+    const composedProps = () => {
+      const seed: PlanDraft = {
+        summary: "s",
+        nodes: [
+          {
+            id: "widget",
+            type: "Metric",
+            label: "Widget",
+            span: 6,
+            props: { columns: ["sku", "units"], unit: "x" },
+          },
+        ],
+      };
+      const r = replay(base(), materialize(seed, base(), planningCatalog, capabilitiesFixture).ops);
+      if (!r.ok) throw new Error(r.finding.message);
+      return r.value;
+    };
+    const exp = composedProps();
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: [
+        {
+          id: "widget",
+          type: "Metric",
+          label: "Widget",
+          span: 6,
+          props: { columns: ["sku", "units"] },
+        },
+      ],
+    };
+    const { ops, findings } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
+    expect(ops.filter((o) => o.type === "setProps")).toHaveLength(0);
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: "props-not-removed",
+        severity: "warn",
+        nodeId: "widget",
+        message: expect.stringContaining('"unit"'),
+      }),
+    ]);
+  });
   it("a span change is reported (span-unchanged, warn) and not applied — span is not a prop", () => {
     const exp = composed();
     const revised: PlanDraft = {
@@ -264,14 +382,30 @@ describe("materialize — revise (diff against the base)", () => {
     if (!withContainer.ok) throw new Error(withContainer.finding.message);
     const revised: PlanDraft = {
       summary: "s",
-      nodes: [...draft.nodes, { id: "grp", type: "Insight", label: "x", span: 12, props: {} }],
+      nodes: [
+        ...draft.nodes,
+        {
+          id: "grp",
+          type: "Insight",
+          label: "x",
+          span: 12,
+          props: {},
+          binding: {
+            capability: "orders_summary",
+            arguments: { window: "7d" },
+            path: "totals.count",
+            priority: "P1",
+          },
+        },
+      ],
     };
-    const { findings } = materialize(
+    const { ops, findings } = materialize(
       revised,
       withContainer.value,
       planningCatalog,
       capabilitiesFixture
     );
-    expect(findings.map((f) => f.code)).toContain("not-semantic");
+    expect(ops.filter((o) => o.type === "remapProvider")).toHaveLength(0);
+    expect(findings.map((f) => f.code)).toEqual(["not-semantic"]);
   });
 });
