@@ -728,6 +728,9 @@ describe("renderBlueprintDom.update — a pass that cannot complete leaves nothi
         message: "malformed node at layout.children[2].children[2]",
       },
     ]);
+    // Not loom's report over `next`: its walk stops at the undefined node, so any id after it
+    // would read as dropped. A rejected tree was not compared, and the report says so.
+    expect(r.identity).toEqual({ ok: true, findings: [], added: [], compared: 0 });
     expect(r.remounted).toEqual([]);
     expect(r.rebound).toEqual([]);
     const after = [...host.querySelectorAll("*")];
@@ -736,9 +739,6 @@ describe("renderBlueprintDom.update — a pass that cannot complete leaves nothi
     expect(host.querySelector("[data-widget-id='fresh']")).toBeNull();
     expect(calls).toEqual([]); // rejected before anything mounted
     expect(counts.live).toBe(liveBefore);
-    // Whatever the pass did mount, it disposed again: every mount is matched by a dispose.
-    const mounts = calls.filter((c) => c === "mount:fresh").length;
-    expect(calls.filter((c) => c === "dispose:fresh").length).toBe(mounts);
     handle.dispose();
     expect(counts.live).toBe(0);
   });
