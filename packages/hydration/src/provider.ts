@@ -1,7 +1,9 @@
 import type { Finding, MCPToolNode, ProviderSpec } from "@loom-ui/core";
+import { type TaintedValue, tainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { type Shape, shapeOf } from "@loom/plugin-sandbox";
 import type { TransientInvoker } from "./invoker";
 import { resolveArguments, terminalSteps, topoWaves } from "./plan";
 import { outputShapeHashOf, reshape, safeStringify } from "./reshape";
@@ -19,6 +21,16 @@ export interface DriftRecord {
   readonly toolName?: string;
   readonly expected: string;
   readonly observed: string;
+  /**
+   * Output drift only: the structural shape loom's `shapeOf` saw, so a planner can re-author the
+   * reshaping from the record alone (slice-3 carry-over). Absent when the value could not be walked.
+   */
+  readonly observedShape?: Shape;
+  /**
+   * Output drift only, and ONLY when `ExecuteOptions.captureSample` is set: the reshaped value,
+   * ALWAYS wrapped as untrusted content (ADR 0085) — it is tool-authored and will be shown to a model.
+   */
+  readonly observedSample?: TaintedValue<unknown>;
 }
 
 export type ProviderOutcome =
@@ -31,6 +43,8 @@ export interface ExecuteOptions {
   readonly principal?: TransientInvokeOptions["principal"];
   /** Parallel steps per wave. Default 4. */
   readonly concurrency?: number;
+  /** Attach the reshaped value to an output-drift record as a tainted sample. Default false. */
+  readonly captureSample?: boolean;
 }
 
 async function mapLimit<T, R>(
@@ -210,7 +224,22 @@ export async function executeProvider(
     return { ok: false, finding: f, drift, findings };
   }
   if (observed !== spec.outputShapeHash) {
-    drift.push({ kind: "output", handle: spec.handle, expected: spec.outputShapeHash, observed });
+    let observedShape: Shape | undefined;
+    try {
+      observedShape = shapeOf(shaped.value);
+    } catch {
+      observedShape = undefined; // `observed` above already proved it hashable; belt and braces
+    }
+    drift.push({
+      kind: "output",
+      handle: spec.handle,
+      expected: spec.outputShapeHash,
+      observed,
+      ...(observedShape !== undefined && { observedShape }),
+      ...(opts.captureSample === true && {
+        observedSample: tainted(shaped.value, `provider:${spec.handle}`),
+      }),
+    });
     const f = err(
       "output-shape-drift",
       `provider "${spec.handle}" output shape ${observed} differs from the pinned ${spec.outputShapeHash}`

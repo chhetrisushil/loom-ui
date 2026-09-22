@@ -1,3 +1,4 @@
+import { isTainted, taintOf, unwrapTainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
@@ -77,6 +78,7 @@ describe("executeProvider", () => {
         handle: "h",
         expected: outputShapeHashOf({ p99: "string-now" }),
         observed: outputShapeHashOf({ p99: 1 }),
+        observedShape: { p99: "number" },
       },
     ]);
   });
@@ -154,6 +156,61 @@ describe("executeProvider is total: a value it cannot inspect is a finding, neve
     const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), { invoker: inv });
     expect(!r.ok && r.findings.map((f) => f.code)).toEqual(["tool-rateLimited"]);
     expect(!r.ok && r.findings[0]?.message).toContain("[unserializable payload]");
+  });
+});
+
+describe("output drift carries the observed shape, and a sample only on opt-in", () => {
+  const specPinnedToNumber = providerSpec("h", [mcpStep("s", "t")], {
+    outputShapeHash: outputShapeHashOf({ count: 1 }),
+  });
+  const invokerReturning = (output: unknown): FakeInvoker =>
+    new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => output);
+  const spec = providerSpec("h", [mcpStep("list", "db.list")]);
+  const invokerThrowingSchemaDrift = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => {
+    throw new TypedFailure("schemaDrift", {
+      toolName: "db.list",
+      expectedSchemaHash: "schema-db.list",
+      observedHash: "schema-v2",
+    });
+  });
+
+  it("records observedShape (loom shapeOf) and no sample by default", async () => {
+    const outcome = await executeProvider(specPinnedToNumber, {
+      invoker: invokerReturning({ count: "412" }),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      const d = outcome.drift.find((r) => r.kind === "output");
+      expect(d?.observedShape).toEqual({ count: "string" });
+      expect(d?.observedSample).toBeUndefined();
+    }
+  });
+
+  it("captures the reshaped value as a TAINTED sample when captureSample is set", async () => {
+    const outcome = await executeProvider(specPinnedToNumber, {
+      invoker: invokerReturning({ count: "412" }),
+      captureSample: true,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      const d = outcome.drift.find((r) => r.kind === "output");
+      expect(isTainted(d?.observedSample)).toBe(true);
+      expect(unwrapTainted(d?.observedSample)).toEqual({ count: "412" });
+      expect(taintOf(d?.observedSample)?.origin).toBe(`provider:${specPinnedToNumber.handle}`);
+    }
+  });
+
+  it("input drift records are unchanged (no shape, no sample)", async () => {
+    const outcome = await executeProvider(spec, {
+      invoker: invokerThrowingSchemaDrift,
+      captureSample: true,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      const d = outcome.drift.find((r) => r.kind === "input");
+      expect(d?.observedShape).toBeUndefined();
+      expect(d?.observedSample).toBeUndefined();
+    }
   });
 });
 
