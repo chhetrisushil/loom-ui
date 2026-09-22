@@ -1,4 +1,4 @@
-import { apply, genesis, replay, validateExperience } from "@loom-ui/core";
+import { type Operation, apply, genesis, replay, validateExperience } from "@loom-ui/core";
 import { outputShapeHashOf } from "@loom-ui/hydration";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
@@ -44,16 +44,28 @@ const draft: PlanDraft = {
   ],
 };
 
+const declaredBefore = (ops: Operation[]) =>
+  ops.every((op, i) => {
+    const handle =
+      op.type === "insertNode" && op.node.kind === "semantic"
+        ? op.node.binding?.handle
+        : op.type === "bindProvider"
+          ? op.handle
+          : undefined;
+    return (
+      handle === undefined ||
+      ops.slice(0, i).some((p) => p.type === "remapProvider" && p.handle === handle)
+    );
+  });
+
 describe("materialize — compose", () => {
-  it("emits remapProvider before the bindProvider that needs it, one insertNode per node in order, and replays to a valid experience", () => {
+  it("declares a provider before any op that references its handle, one insertNode per node in order, and replays to a valid experience", () => {
     const { ops, findings } = materialize(draft, base(), planningCatalog, capabilitiesFixture);
     expect(findings.filter((f) => f.severity === "error")).toEqual([]);
     const types = ops.map((o) => o.type);
     expect(types.filter((t) => t === "insertNode")).toHaveLength(3);
     expect(types.filter((t) => t === "remapProvider")).toHaveLength(2); // two distinct (args, path) → two providers
-    const firstRemap = types.indexOf("remapProvider");
-    const firstBind = types.indexOf("bindProvider");
-    expect(firstRemap).toBeLessThan(firstBind);
+    expect(declaredBefore(ops)).toBe(true);
     const r = replay(base(), ops);
     expect(r.ok).toBe(true);
     if (r.ok) {
