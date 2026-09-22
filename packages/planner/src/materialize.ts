@@ -139,7 +139,15 @@ export function materialize(
   const root = base.root;
   const caps = new Map(capabilities.map((c) => [c.handle, c] as const));
   const existing = new Map(root.children.map((c) => [c.id, c] as const));
-  const declared = new Set<string>(Object.keys(base.providers));
+  // Seeded from the base: a handle already declared with THIS spec needs no new remapProvider.
+  // A capability's sample can change under an unchanged (tool, version, args, path) — Task 5
+  // feeds an OBSERVED sample this way — so the gate compares specs, not just handle presence,
+  // or a re-shaped/re-hashed spec would pin silently stale.
+  const declaredSpecs = new Map<string, ProviderSpec>(Object.entries(base.providers));
+  // What THIS run has already emitted a spec for, and under which capability — so a second node
+  // naming a DIFFERENT capability that happens to collide on the same (tool, version, args, path)
+  // handle is caught as a conflict instead of one spec silently overwriting the other.
+  const emittedThisRun = new Map<string, { spec: ProviderSpec; capability: string }>();
   const siblings: Array<{ order: string }> = [...root.children];
   const seen = new Set<string>();
 
@@ -163,11 +171,25 @@ export function materialize(
       findings.push(built.finding);
       return undefined;
     }
-    if (!declared.has(built.spec.handle)) {
-      ops.push({ type: "remapProvider", handle: built.spec.handle, spec: built.spec });
-      declared.add(built.spec.handle);
+    const spec = built.spec;
+    const handle = spec.handle;
+    const already = emittedThisRun.get(handle);
+    if (already !== undefined && !sameJson(already.spec, spec)) {
+      findings.push(
+        err(
+          "provider-conflict",
+          `two nodes bind the same provider handle with different specs (capability ${already.capability} vs ${cap.handle})`,
+          n.id
+        )
+      );
+      return undefined;
     }
-    return { handle: built.spec.handle, priority: n.binding.priority };
+    if (!declaredSpecs.has(handle) || !sameJson(declaredSpecs.get(handle), spec)) {
+      ops.push({ type: "remapProvider", handle, spec });
+      declaredSpecs.set(handle, spec);
+    }
+    if (already === undefined) emittedThisRun.set(handle, { spec, capability: cap.handle });
+    return { handle, priority: n.binding.priority };
   };
 
   for (const n of draft.nodes) {
@@ -184,6 +206,19 @@ export function materialize(
       continue;
     }
     const existingNode = existing.get(n.id);
+    // Refuse a container id BEFORE touching the binding: a draft node that collides with a
+    // container must never resolve a capability, declare a provider, or leave a capability
+    // finding behind — it is refused outright, with nothing else observable from it.
+    if (existingNode !== undefined && existingNode.kind !== "semantic") {
+      findings.push(
+        err(
+          "not-semantic",
+          `"${n.id}" is a container; the planner only authors semantic nodes`,
+          n.id
+        )
+      );
+      continue;
+    }
     const bound = resolveBinding(n);
     if (existingNode === undefined) {
       // A new node's binding travels INSIDE its insertNode: one op, no intermediate artifact
@@ -204,16 +239,10 @@ export function materialize(
       ops.push({ type: "insertNode", parentId: root.id, node });
       continue;
     }
-    if (existingNode.kind !== "semantic") {
-      findings.push(
-        err(
-          "not-semantic",
-          `"${n.id}" is a container; the planner only authors semantic nodes`,
-          n.id
-        )
-      );
-      continue;
-    }
+    // TypeScript can't derive "existingNode is a SemanticNode" from the disjunctive negation of
+    // the compound guard above, so this repeats the discriminant check — always false at runtime
+    // here — purely to narrow `existingNode` for the assignments below.
+    if (existingNode.kind !== "semantic") continue;
     const current = existingNode;
     // Existing semantic node: emit only what changed.
     if (current.label?.fallback !== n.label)
@@ -232,7 +261,13 @@ export function materialize(
             n.id
           )
         );
-      ops.push({ type: "setProps", nodeId: n.id, patch: n.props });
+      // A patch is worth emitting only if it SETS something: a new key, or a retained key whose
+      // value changed. A draft that only drops a key (already reported above) would merge back
+      // in as a no-op — patch === current on every key `apply` can actually change — so skip it.
+      const setsSomething = Object.keys(n.props).some(
+        (k) => !(k in current.props) || !sameJson(current.props[k], n.props[k])
+      );
+      if (setsSomething) ops.push({ type: "setProps", nodeId: n.id, patch: n.props });
     }
     if (current.span !== n.span)
       findings.push(
