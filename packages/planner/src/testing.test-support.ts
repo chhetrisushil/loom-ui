@@ -28,7 +28,14 @@ export const planningCatalog: SemanticCatalog = defineSemanticCatalog({
       version: "1.0.0",
       props: ["tone"],
       binding: "none",
-      surfaces: { web: { kind: "StreamingText" }, terminal: { kind: "StreamingText" } },
+      // Unbound content has no legitimate builtin kind to resolve to: every one of loom's eight
+      // built-ins (incl. StreamingText) hard-requires a binding, so a kind OUTSIDE the base
+      // catalogue is the only way to declare a `binding: "none"` surface resolution — with its
+      // own explicit contract (ADR 0088 D2).
+      surfaces: {
+        web: { kind: "Insight", props: ["tone"], binding: "none" },
+        terminal: { kind: "Insight", props: ["tone"], binding: "none" },
+      },
     },
     {
       name: "Status",
