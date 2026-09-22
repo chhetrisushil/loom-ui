@@ -11,6 +11,6 @@ describe("the loom Blueprint IR this compiler targets", () => {
     expect(
       BLUEPRINT_IR_VERSION,
       "loom's Blueprint IR changed — review compile.ts and bump deliberately"
-    ).toBe("1.0.0");
+    ).toBe("2.0.0");
   });
 });

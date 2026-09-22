@@ -80,6 +80,30 @@ describe("ExperienceNode schema", () => {
         .success
     ).toBe(false);
   });
+  it("a binding may carry a sensitivity class; an unknown class is refused by the schema", () => {
+    const ok = ExperienceNode.safeParse({
+      id: "s",
+      order: "V",
+      kind: "semantic",
+      type: "Metric",
+      typeVersion: "1.0.0",
+      span: 6,
+      props: {},
+      binding: { handle: "h", priority: "P1", sensitivity: "sensitive" },
+    });
+    expect(ok.success).toBe(true);
+    const bad = ExperienceNode.safeParse({
+      id: "s",
+      order: "V",
+      kind: "semantic",
+      type: "Metric",
+      typeVersion: "1.0.0",
+      span: 6,
+      props: {},
+      binding: { handle: "h", priority: "P1", sensitivity: "top-secret" },
+    });
+    expect(bad.success).toBe(false);
+  });
 });
 
 describe("tree helpers", () => {

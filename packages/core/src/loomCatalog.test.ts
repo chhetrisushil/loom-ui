@@ -1,18 +1,18 @@
 import { builtinCatalog } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
-import { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
+import { loomCatalogFor } from "./loomCatalog";
 import { testCatalog } from "./testCatalog.test-support";
 
 describe("loomCatalogFor", () => {
-  it("declares every kind the surface resolves to, with base props plus span for built-ins", () => {
+  it("declares every kind the surface resolves to, with the base contract exactly, for built-ins", () => {
     const { catalog, findings } = loomCatalogFor(testCatalog, "web");
     expect(findings).toEqual([]);
     expect(catalog.id).toBe("test.semantic.v1/web");
     const metric = catalog.entries.find((e) => e.kind === "MetricCard");
     expect(metric).toEqual({
       kind: "MetricCard",
-      props: ["unit", "format", SPAN_PROP],
+      props: ["unit", "format"],
       binding: "required",
     });
     expect(catalog.entries.map((e) => e.kind).sort()).toEqual([
@@ -27,7 +27,7 @@ describe("loomCatalogFor", () => {
     const { catalog } = loomCatalogFor(testCatalog, "web");
     expect(catalog.entries.find((e) => e.kind === "TimeSeries")).toEqual({
       kind: "TimeSeries",
-      props: ["series", SPAN_PROP],
+      props: ["series"],
       binding: "required",
     });
   });
@@ -138,7 +138,12 @@ describe("loomCatalogFor", () => {
     });
     expect(loomCatalogFor(tolerant, "web").findings).toEqual([]);
   });
-  it("base is builtinCatalog by default and every base entry stays intact", () => {
-    for (const e of builtinCatalog.entries) expect(e.props).not.toContain(SPAN_PROP);
+  // IR 2.0.0: a grid child's span rides in a `GridCell`, never in a widget's props. Neither the
+  // base catalogue nor the derived one may declare `span` — a declaration here is what made the
+  // old `props.span` smuggling pass `validateBlueprint`.
+  it("base is builtinCatalog by default and no contract, base or derived, declares span", () => {
+    for (const e of builtinCatalog.entries) expect(e.props).not.toContain("span");
+    for (const e of loomCatalogFor(testCatalog, "web").catalog.entries)
+      expect(e.props).not.toContain("span");
   });
 });

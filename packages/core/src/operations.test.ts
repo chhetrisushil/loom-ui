@@ -106,6 +106,32 @@ describe("apply", () => {
     const bad = apply(e, { type: "remapProvider", handle: "h2", spec });
     expect(!bad.ok && bad.finding.code).toBe("handle-mismatch");
   });
+  it("bindProvider carries a sensitivity class, keeps an existing one, and refuses an unknown one", () => {
+    const must = (r: ReturnType<typeof apply>) => {
+      if (!r.ok) throw new Error(r.finding.message);
+      return r.value;
+    };
+    const bindingOf = (e: typeof g) => {
+      const n = e.root.kind === "container" ? e.root.children[0] : undefined;
+      return n && n.kind === "semantic" ? n.binding : undefined;
+    };
+    const inserted = must(apply(g, { type: "insertNode", parentId: "root", node: node("m1") }));
+    const bound = must(
+      apply(inserted, { type: "bindProvider", nodeId: "m1", handle: "h1", sensitivity: "secret" })
+    );
+    expect(bindingOf(bound)).toEqual({ handle: "h1", priority: "P1", sensitivity: "secret" });
+    // Merge semantics, like `priority`: an op that says nothing about sensitivity keeps the one
+    // the node already carries rather than silently declassifying it.
+    const rebound = must(apply(bound, { type: "bindProvider", nodeId: "m1", handle: "h2" }));
+    expect(bindingOf(rebound)).toEqual({ handle: "h2", priority: "P1", sensitivity: "secret" });
+    const bad = apply(bound, {
+      type: "bindProvider",
+      nodeId: "m1",
+      handle: "h1",
+      sensitivity: "x",
+    } as never);
+    expect(!bad.ok && bad.finding.code).toBe("invalid-operation");
+  });
   it("rejects a structurally invalid operation with a finding rather than a throw", () => {
     const r = apply(g, {
       type: "insertNode",

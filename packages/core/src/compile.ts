@@ -7,6 +7,7 @@ import {
   type WidgetCatalog,
   blueprint$,
   catalogCoverage,
+  cell,
   customWidget$,
   flex,
   grid,
@@ -20,7 +21,7 @@ import {
   validateExperience,
 } from "./catalog";
 import type { Experience, Finding } from "./experience";
-import { SPAN_PROP, loomCatalogFor } from "./loomCatalog";
+import { loomCatalogFor } from "./loomCatalog";
 import {
   type ContainerNode,
   type ExperienceNode,
@@ -33,9 +34,11 @@ import {
 // ── Experience → loom Blueprint ───────────────────────────────────────────────
 // Pure and deterministic: same inputs, byte-identical output. A semantic node becomes a loom
 // Widget whose `id` IS the node id (so a WidgetAction maps straight back), whose `kind` is the
-// surface resolution, whose binding points at the hydration projection's `values.<handle>`, and
-// whose `span` rides in props — declared by the derived loom catalogue (loomCatalog.ts). Nothing
-// semantic is smuggled into props: the experience is the source of truth, the blueprint derived.
+// surface resolution, whose `source` records the semantic type and the degrade chain that reached
+// that kind, and whose binding points at the hydration projection's `values.<handle>` with
+// `status.<handle>` as its status channel. A node's `span` rides in the `GridCell` its parent grid
+// wraps it in (Blueprint IR 2.0.0). Nothing semantic is smuggled into props: the experience is the
+// source of truth, the blueprint derived.
 
 /**
  * The hydration projection's top-level key. A widget's binding path is `values.<handle>`, and the
@@ -50,16 +53,15 @@ export function hydrationPath(handle: string): string {
 }
 
 /**
- * The inverse of {@link hydrationPath}: the handle a binding path names, or `undefined` if the
- * path is not one this projection hydrates. Exported so a surface reading a compiled blueprint
- * (to report per-widget status, or to call `markVisible`) parses the path with the SAME spelling
- * that produced it, rather than re-deriving `"values."` in a string literal of its own.
+ * The hydration projection's status key. A binding declares `status.<handle>` as its status
+ * channel (loom ADR 0097 D2), in the same projection state its value reads from, so a renderer
+ * reads delivery state off the blueprint rather than re-deriving hydration's keying.
  */
-export function handleFromPath(path: string): string | undefined {
-  const prefix = `${HYDRATION_VALUES_PREFIX}.`;
-  if (!path.startsWith(prefix)) return undefined;
-  const handle = path.slice(prefix.length);
-  return handle === "" ? undefined : handle;
+export const HYDRATION_STATUS_PREFIX = "status";
+
+/** The status path a provider `handle` publishes its delivery state under. */
+export function hydrationStatusPath(handle: string): string {
+  return `${HYDRATION_STATUS_PREFIX}.${handle}`;
 }
 
 export interface CompileOptions {
@@ -116,7 +118,6 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
 
   const layout = compileContainer(
     normalize(exp.root) as ContainerNode,
-    true,
     opts,
     resolveLabel,
     catalogByKind,
@@ -168,34 +169,32 @@ function sameDefect(ours: string, loomCode: string): boolean {
 
 function compileContainer(
   node: ContainerNode,
-  isRoot: boolean,
   opts: CompileOptions,
   resolveLabel: (l: LocalizedText) => string,
   catalogByKind: ReadonlyMap<string, CatalogEntry>,
   findings: Finding[]
 ): Layout {
-  // A container's `span` has nowhere to go: loom's `Layout` has no per-child span field (only a
-  // WIDGET carries one, in props). The root's span is the full width by definition, so only a
-  // NESTED container narrower than 12 is expressing an intent the blueprint silently drops —
-  // which is exactly the kind of loss the finding channel exists to make visible.
-  if (!isRoot && node.span !== 12)
-    findings.push({
-      code: "span-not-rendered",
-      severity: "warn",
-      message: `container "${node.id}" declares span ${node.span}, and loom's layouts carry no per-child span — it is not rendered`,
-      nodeId: node.id,
-    });
-  const children: Array<Widget | Layout> = [];
+  // Each compiled child is paired with the SOURCE node it came from, because a grid needs the
+  // child's own `span` to wrap it in a `GridCell` and the compiled Widget/Layout no longer
+  // carries one. A child that compiled to `undefined` (unresolvable, no contract) is skipped —
+  // its finding was already recorded.
+  const compiled: Array<{ from: ExperienceNode; child: Widget | Layout }> = [];
   for (const child of node.children) {
     const out = compileNode(child, opts, resolveLabel, catalogByKind, findings);
-    if (out !== undefined) children.push(out);
+    if (out !== undefined) compiled.push({ from: child, child: out });
   }
   if (node.direction === "grid")
-    return grid({ columns: 12, ...(node.gap !== undefined && { gap: node.gap }), children });
+    return grid({
+      columns: 12,
+      ...(node.gap !== undefined && { gap: node.gap }),
+      children: compiled.map(({ from, child }) => cell(from.span, child)),
+    });
+  // Neither `flex` nor `stack` has columns for a span to occupy (loom ADR 0097 D5), so a child's
+  // span is simply not a fact about a flex row — it is not dropped, it does not apply.
   return flex({
     direction: node.direction,
     ...(node.gap !== undefined && { gap: node.gap }),
-    children,
+    children: compiled.map(({ child }) => child),
   });
 }
 
@@ -207,7 +206,7 @@ function compileNode(
   findings: Finding[]
 ): Widget | Layout | undefined {
   if (node.kind === "container")
-    return compileContainer(node, false, opts, resolveLabel, catalogByKind, findings);
+    return compileContainer(node, opts, resolveLabel, catalogByKind, findings);
   const r = resolveSurface(opts.catalog, node.type, node.typeVersion, opts.surface, node.id);
   if (!r.ok) return undefined; // the finding was recorded by validateExperience; the node is omitted, never faked
   // A resolved kind with no entry in the derived catalogue (loomCatalogFor already reported
@@ -254,16 +253,33 @@ function compileNode(
   // deterministic compiler — so the emitted props are rebuilt in sorted key order.
   const props: Record<string, unknown> = {};
   for (const key of Object.keys(filtered).sort()) props[key] = filtered[key];
-  return customWidget$({
-    kind: r.kind,
-    id: node.id,
-    ...(node.label !== undefined && { title: resolveLabel(node.label) }),
-    props: { ...props, [SPAN_PROP]: node.span },
+  // `via` starts with the node's OWN type key, so everything after it is the chain that had to be
+  // walked to reach `r.kind` — outermost first, which is the order loom's `degradedFrom` declares.
+  const degradedFrom = r.via.slice(1).map((key) => {
+    const at = key.lastIndexOf("@");
+    return { type: key.slice(0, at), version: key.slice(at + 1) };
+  });
+  // `customWidget$` is loom's builder and takes no `source`; it is spread and the two structural
+  // fields added, rather than reaching into loom to widen a config this compiler happens to need.
+  return {
+    ...customWidget$({
+      kind: r.kind,
+      id: node.id,
+      ...(node.label !== undefined && { title: resolveLabel(node.label) }),
+      props,
+    }),
+    source: {
+      type: node.type,
+      version: node.typeVersion,
+      ...(degradedFrom.length > 0 && { degradedFrom }),
+    },
     ...(node.binding !== undefined && {
       binding: {
         projectionId: opts.hydrationProjectionId,
         path: hydrationPath(node.binding.handle),
+        status: { path: hydrationStatusPath(node.binding.handle) },
+        ...(node.binding.sensitivity !== undefined && { sensitivity: node.binding.sensitivity }),
       },
     }),
-  });
+  };
 }

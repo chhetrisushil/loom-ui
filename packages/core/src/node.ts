@@ -1,3 +1,4 @@
+import type { DataClass } from "@loom/classify";
 import { z } from "zod";
 
 // ── The Experience node tree ──────────────────────────────────────────────────
@@ -13,6 +14,12 @@ export const OrderKey = z.string().regex(/^[0-9A-Za-z]+$/);
 export const Priority = z.enum(["P0", "P1", "P2"]);
 export type Priority = z.infer<typeof Priority>;
 export const Span = z.number().int().min(1).max(12);
+/**
+ * A binding's confidentiality class, `@loom/classify`'s vocabulary. DECLARED here and carried onto
+ * the compiled `DataBinding.sensitivity` (loom ADR 0097 D4) so an audience check downstream reads
+ * it off the artifact; nothing in this package enforces it.
+ */
+export const Sensitivity = z.enum(["secret", "sensitive", "internal"]);
 
 export const LocalizedText = z.object({ key: z.string().min(1), fallback: z.string() });
 export type LocalizedText = z.infer<typeof LocalizedText>;
@@ -36,7 +43,7 @@ export interface SemanticNode {
   span: number;
   label?: LocalizedText;
   props: Record<string, unknown>;
-  binding?: { handle: string; priority: Priority };
+  binding?: { handle: string; priority: Priority; sensitivity?: DataClass };
 }
 
 export type ExperienceNode = ContainerNode | SemanticNode;
@@ -61,7 +68,13 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
       span: Span,
       label: LocalizedText.optional(),
       props: z.record(z.unknown()),
-      binding: z.object({ handle: z.string().min(1), priority: Priority }).optional(),
+      binding: z
+        .object({
+          handle: z.string().min(1),
+          priority: Priority,
+          sensitivity: Sensitivity.optional(),
+        })
+        .optional(),
     }),
   ])
 ) as z.ZodType<ExperienceNode>;

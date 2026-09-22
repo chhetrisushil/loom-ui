@@ -8,14 +8,16 @@ import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
 import type { Finding } from "./experience";
 
 // ── The loom catalogue this framework compiles against ────────────────────────
-// ADR 0088 D2: loom checks the catalogue it is given and does not define one. The compiler emits
-// each node's `span` as a widget prop (loom's layouts have no per-child span), and loom's
-// `validateBlueprint` would flag that as `undeclared-prop` against `builtinCatalog` (ADR 0096 D4).
-// So the framework owns its loom catalogue: derived from the semantic catalogue, one entry per
-// kind a surface resolves to, with the base contract plus `span`. A kind outside the base must
-// declare its own contract on the resolution — both fields — or it is a finding.
-
-export const SPAN_PROP = "span";
+// ADR 0088 D2: loom checks the catalogue it is given and does not define one. The framework still
+// owns its loom catalogue — the semantic catalogue names kinds (`TimeSeries`, `Note`) that are not
+// in `builtinCatalog` — so it is derived here: one entry per kind a surface resolves to, carrying
+// the base contract EXACTLY. A kind outside the base must declare its own contract on the
+// resolution — both fields — or it is a finding.
+//
+// Nothing framework-owned is added to a contract. `span` used to be (loom's layouts had no
+// per-child span, so the compiler smuggled it through `props`); Blueprint IR 2.0.0 carries it in a
+// `GridCell` instead, and a contract that still declared it would re-legalise exactly the prop
+// loom's `validateBlueprint` is there to refuse.
 
 export function loomCatalogFor(
   catalog: SemanticCatalog,
@@ -34,11 +36,11 @@ export function loomCatalogFor(
     const fromBase = baseByKind.get(r.kind);
     let contract: CatalogEntry;
     if (fromBase) {
-      contract = { kind: r.kind, props: [...fromBase.props, SPAN_PROP], binding: fromBase.binding };
+      contract = { kind: r.kind, props: [...fromBase.props], binding: fromBase.binding };
     } else if (r.contract.props !== undefined && r.contract.binding !== undefined) {
       contract = {
         kind: r.kind,
-        props: [...r.contract.props, SPAN_PROP],
+        props: [...r.contract.props],
         binding: r.contract.binding,
       };
     } else {

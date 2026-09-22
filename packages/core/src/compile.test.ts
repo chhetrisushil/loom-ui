@@ -1,7 +1,22 @@
-import { RendererRegistry, validateBlueprint } from "@loom/blueprint-runtime";
+import {
+  type Blueprint,
+  type GridCell,
+  type GridLayout,
+  type Layout,
+  RendererRegistry,
+  type Widget,
+  validateBlueprint,
+} from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
-import { HYDRATION_VALUES_PREFIX, compile, handleFromPath, hydrationPath } from "./compile";
+import {
+  type CompileResult,
+  HYDRATION_STATUS_PREFIX,
+  HYDRATION_VALUES_PREFIX,
+  compile,
+  hydrationPath,
+  hydrationStatusPath,
+} from "./compile";
 import { genesis } from "./experience";
 import { loomCatalogFor } from "./loomCatalog";
 import {
@@ -121,6 +136,26 @@ const chain = (levels: number): ContainerNode => {
   return out;
 };
 
+/** A grid's children are `GridCell`s in IR 2.0.0 — every fixture rooted at `root` is a grid. */
+const cells = (r: CompileResult): readonly GridCell[] =>
+  (r.blueprint.layout as GridLayout).children;
+const nodes = (r: CompileResult) => cells(r).map((c) => c.node);
+
+/** Every widget in a compiled blueprint, reading grid children through their cells. */
+const widgetsOf = (bp: Blueprint): Widget[] => {
+  const out: Widget[] = [];
+  const visit = (n: Widget | Layout): void => {
+    if ("_tag" in n) {
+      out.push(n);
+      return;
+    }
+    if (n.type === "grid") for (const c of n.children) visit(c.node);
+    else for (const child of n.children) visit(child);
+  };
+  visit(bp.layout);
+  return out;
+};
+
 describe("compile", () => {
   it("emits a loom Blueprint with node ids preserved, bindings into the hydration projection, and the pin", () => {
     const { blueprint, findings, ok } = compile(exp, opts);
@@ -137,32 +172,53 @@ describe("compile", () => {
       gap: 8,
       children: [
         {
-          _tag: "Widget",
-          id: "p99",
-          kind: "MetricCard",
-          title: "p99 latency",
-          props: { unit: "ms", span: 6 },
-          binding: { projectionId: "hydration", path: "values.h-p99" },
+          span: 6,
+          node: {
+            _tag: "Widget",
+            id: "p99",
+            kind: "MetricCard",
+            title: "p99 latency",
+            props: { unit: "ms" },
+            source: { type: "Metric", version: "1.0.0" },
+            binding: {
+              projectionId: "hydration",
+              path: "values.h-p99",
+              status: { path: "status.h-p99" },
+            },
+          },
         },
         {
-          type: "flex",
-          direction: "row",
-          children: [
-            {
-              _tag: "Widget",
-              id: "phase",
-              kind: "StatusBadge",
-              props: { span: 6 },
-              binding: { projectionId: "hydration", path: "values.h-phase" },
-            },
-            {
-              _tag: "Widget",
-              id: "top",
-              kind: "DataTable",
-              props: { columns: ["db", "p99"], span: 6 },
-              binding: { projectionId: "hydration", path: "values.h-top" },
-            },
-          ],
+          span: 12,
+          node: {
+            type: "flex",
+            direction: "row",
+            children: [
+              {
+                _tag: "Widget",
+                id: "phase",
+                kind: "StatusBadge",
+                props: {},
+                source: { type: "Status", version: "1.0.0" },
+                binding: {
+                  projectionId: "hydration",
+                  path: "values.h-phase",
+                  status: { path: "status.h-phase" },
+                },
+              },
+              {
+                _tag: "Widget",
+                id: "top",
+                kind: "DataTable",
+                props: { columns: ["db", "p99"] },
+                source: { type: "Collection", version: "1.0.0" },
+                binding: {
+                  projectionId: "hydration",
+                  path: "values.h-top",
+                  status: { path: "status.h-top" },
+                },
+              },
+            ],
+          },
         },
       ],
     });
@@ -172,8 +228,19 @@ describe("compile", () => {
     const b = compile({ ...exp, root: { ...root, children: [...root.children] } }, opts);
     expect(JSON.stringify(a.blueprint)).toBe(JSON.stringify(b.blueprint));
   });
-  it("passes loom's own validateBlueprint against the derived catalogue — span is declared, not smuggled", () => {
+  // IR 2.0.0 D1: a grid child's width is an edge from the grid to the child, so it rides in a
+  // `GridCell` — never in `props`, where it was both a reserved key in every derived contract and
+  // an `undeclared-prop` against loom's own catalogue.
+  it("spans ride in grid cells, never in props", () => {
     const { blueprint } = compile(exp, opts);
+    expect(blueprint.layout.type).toBe("grid");
+    const children = (blueprint.layout as GridLayout).children;
+    for (const c of children) expect("node" in c).toBe(true);
+    const p99 = children.find((c) => (c.node as { id?: string }).id === "p99");
+    expect(p99?.span).toBe(6);
+    const widgets = widgetsOf(blueprint);
+    expect(widgets).toHaveLength(3);
+    for (const w of widgets) expect(Object.keys(w.props)).not.toContain("span");
     const report = validateBlueprint(blueprint, loomCatalogFor(testCatalog, "web").catalog);
     expect(report.ok).toBe(true);
     expect(report.widgets).toBe(3);
@@ -186,9 +253,17 @@ describe("compile", () => {
     const web = compile(e, opts);
     const term = compile(e, { ...opts, surface: "terminal" });
     expect(web.ok && term.ok).toBe(true);
-    const kindOf = (r: typeof web) => (r.blueprint.layout.children[0] as { kind: string }).kind;
-    expect(kindOf(web)).toBe("TimeSeries");
-    expect(kindOf(term)).toBe("DataTable");
+    const widgetOf = (r: typeof web) => nodes(r)[0] as Widget;
+    expect(widgetOf(web).kind).toBe("TimeSeries");
+    expect(widgetOf(term).kind).toBe("DataTable");
+    // IR 2.0.0 D3: `source` says what the widget STANDS FOR, and the chain that got it there.
+    // On web the type resolves natively, so there is no `degradedFrom` key at all.
+    expect(widgetOf(web).source).toEqual({ type: "Trend", version: "1.0.0" });
+    expect(widgetOf(term).source).toEqual({
+      type: "Trend",
+      version: "1.0.0",
+      degradedFrom: [{ type: "Collection", version: "1.0.0" }],
+    });
     expect(web.findings).toEqual([]);
     expect(term.findings).toEqual([
       {
@@ -208,10 +283,7 @@ describe("compile", () => {
       ],
     });
     const r = compile(e, opts);
-    expect(r.blueprint.layout.children.map((c) => (c as { id: string }).id)).toEqual([
-      "aId",
-      "bId",
-    ]);
+    expect(nodes(r).map((c) => (c as { id: string }).id)).toEqual(["aId", "bId"]);
   });
   it("omits an unresolvable node, records the finding, and still emits the rest", () => {
     const e = withRoot(exp, {
@@ -221,7 +293,7 @@ describe("compile", () => {
     const r = compile(e, { ...opts, surface: "terminal" });
     expect(r.ok).toBe(false);
     expect(r.findings.map((f) => f.code)).toEqual(["unresolvable-on-surface"]);
-    expect(r.blueprint.layout.children.map((c) => (c as { id: string }).id)).toEqual(["p99"]);
+    expect(nodes(r).map((c) => (c as { id: string }).id)).toEqual(["p99"]);
   });
   it("a semantic defect surfaces as a finding and the blueprint is still produced for degradation", () => {
     const e = withRoot(exp, {
@@ -235,8 +307,8 @@ describe("compile", () => {
   });
   it("uses resolveLabel when given and the fallback otherwise; an unlabeled node has no title", () => {
     const upper = compile(exp, { ...opts, resolveLabel: (l) => l.key.toUpperCase() });
-    expect((upper.blueprint.layout.children[0] as { title?: string }).title).toBe("LATENCY.P99");
-    const flex = compile(exp, opts).blueprint.layout.children[1] as {
+    expect((nodes(upper)[0] as { title?: string }).title).toBe("LATENCY.P99");
+    const flex = nodes(compile(exp, opts))[1] as {
       children: Array<{ title?: string }>;
     };
     expect(flex.children[0]?.title).toBeUndefined();
@@ -251,6 +323,40 @@ describe("compile", () => {
     expect(r.findings.map((f) => f.message).join(" ")).toMatch(/TimeSeries/);
     expect(r.findings.map((f) => f.message).join(" ")).toMatch(/Note/);
     expect(r.ok).toBe(false);
+  });
+  // IR 2.0.0 D4: a binding's confidentiality class is DECLARED on the artifact an audience check
+  // will later read. The compiler carries it through; it enforces nothing.
+  it("carries a binding's sensitivity class onto the compiled binding, and omits the key when absent", () => {
+    const e = withRoot(exp, {
+      ...root,
+      children: [
+        sem("secretMetric", "Metric", {
+          props: { unit: "ms" },
+          binding: { handle: "h-secret", priority: "P1", sensitivity: "sensitive" },
+        }),
+        sem("plainMetric", "Metric", { props: { unit: "ms" } }),
+      ],
+    });
+    const r = compile(e, opts);
+    expect(r.findings).toEqual([]);
+    const byId = new Map(widgetsOf(r.blueprint).map((w) => [w.id, w] as const));
+    expect(byId.get("secretMetric")?.binding).toEqual({
+      projectionId: "hydration",
+      path: hydrationPath("h-secret"),
+      status: { path: hydrationStatusPath("h-secret") },
+      sensitivity: "sensitive",
+    });
+    const plain = byId.get("plainMetric")?.binding;
+    expect(plain).toEqual({
+      projectionId: "hydration",
+      path: hydrationPath("h-plainMetric"),
+      status: { path: hydrationStatusPath("h-plainMetric") },
+    });
+    expect(plain && "sensitivity" in plain).toBe(false);
+    // loom validates the class it is handed; an unknown one would be `sensitivity-unknown`.
+    expect(validateBlueprint(r.blueprint, loomCatalogFor(testCatalog, "web").catalog).ok).toBe(
+      true
+    );
   });
   // C1, compiler half: `JSON.stringify` walks insertion order, so two structurally equal
   // experiences whose props were written in different orders used to emit different BYTES from a
@@ -267,11 +373,9 @@ describe("compile", () => {
     const a = compile(withAB, opts);
     const b = compile(withBA, opts);
     expect(JSON.stringify(a.blueprint)).toBe(JSON.stringify(b.blueprint));
-    // sorted semantic props, then the framework-owned `span` last — a fixed position, not the
-    // author's insertion order
-    expect(JSON.stringify(a.blueprint)).toContain(
-      '"props":{"format":"short","unit":"ms","span":6}'
-    );
+    // sorted semantic props, and nothing framework-owned among them — the span rides in the cell
+    expect(JSON.stringify(a.blueprint)).toContain('"props":{"format":"short","unit":"ms"}');
+    expect(JSON.stringify(a.blueprint)).toContain('"span":6');
   });
   // I1. `validateExperience`, `normalize` and the compile walk are all recursive; the probe runs
   // before any of them, and a blueprint still comes back so a caller can degrade.
@@ -285,9 +389,10 @@ describe("compile", () => {
   it("compiles a tree under the cap", () => {
     expect(compile({ ...exp, root: chain(200) }, opts).ok).toBe(true);
   });
-  // I2. loom's `Layout` has no per-child span field, so a nested container's span is dropped on
-  // the floor — silently, until now.
-  it("warns that a nested container's span is not rendered, and does not warn for the root", () => {
+  // I2, closed by IR 2.0.0: a nested container's span used to have nowhere to go and was
+  // reported as `span-not-rendered`. A `GridCell` carries it, so the loss — and the finding —
+  // are both gone.
+  it("a nested container's span rides in its cell, with no span-not-rendered finding", () => {
     const e = withRoot(exp, {
       ...root,
       children: [
@@ -296,24 +401,17 @@ describe("compile", () => {
           order: "A",
           kind: "container",
           direction: "row",
-          span: 3,
+          span: 6,
           children: [sem("phase", "Status")],
         },
       ],
     });
     const r = compile(e, opts);
-    expect(r.ok).toBe(true); // a warn, not an error
-    expect(r.findings).toEqual([
-      {
-        code: "span-not-rendered",
-        severity: "warn",
-        message:
-          'container "narrow" declares span 3, and loom\'s layouts carry no per-child span — it is not rendered',
-        nodeId: "narrow",
-      },
-    ]);
-    // the root is span 12 in this fixture; a root of any span is full-width by definition
-    expect(compile(withRoot(exp, { ...root, span: 6, children: [] }), opts).findings).toEqual([]);
+    expect(r.ok).toBe(true);
+    expect(r.findings).toEqual([]);
+    expect(cells(r)).toHaveLength(1);
+    expect(cells(r)[0]?.span).toBe(6);
+    expect((cells(r)[0]?.node as { type?: string }).type).toBe("flex");
   });
   // I3. `validateExperience` and loom's `validateBlueprint` both see a binding on a none-binding
   // kind. Without the dedupe the composer got the same defect twice under two different codes.
@@ -363,17 +461,14 @@ describe("compile", () => {
   });
 });
 
-describe("hydrationPath / handleFromPath", () => {
-  it("round-trips a handle through the binding path, both directions", () => {
+describe("hydrationPath / hydrationStatusPath", () => {
+  // No inverse: IR 2.0.0 puts the status channel on the artifact, so a renderer reads
+  // `binding.status.path` rather than parsing a handle back out of `binding.path`.
+  it("names a handle's value and status channels under distinct prefixes", () => {
     for (const handle of ["latency-p99", "a.b", "values", "x:h"]) {
-      expect(handleFromPath(hydrationPath(handle))).toBe(handle);
+      expect(hydrationPath(handle)).toBe(`${HYDRATION_VALUES_PREFIX}.${handle}`);
+      expect(hydrationStatusPath(handle)).toBe(`${HYDRATION_STATUS_PREFIX}.${handle}`);
     }
-    expect(hydrationPath("h")).toBe(`${HYDRATION_VALUES_PREFIX}.h`);
-  });
-  it("a path this projection does not hydrate has no handle", () => {
-    expect(handleFromPath("other.h")).toBeUndefined();
-    expect(handleFromPath(HYDRATION_VALUES_PREFIX)).toBeUndefined(); // no separator, no handle
-    expect(handleFromPath(`${HYDRATION_VALUES_PREFIX}.`)).toBeUndefined(); // empty handle
-    expect(handleFromPath("")).toBeUndefined();
+    expect(HYDRATION_VALUES_PREFIX).not.toBe(HYDRATION_STATUS_PREFIX);
   });
 });

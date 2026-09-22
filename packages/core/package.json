@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@loom/blueprint-runtime": "*",
+    "@loom/classify": "*",
     "@loom/core": "*",
     "@loom/plugin-content": "*",
     "zod": "catalog:"

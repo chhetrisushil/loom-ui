@@ -25,6 +25,12 @@ export interface SemanticEntry {
   readonly version: string;
   readonly props: readonly string[];
   readonly binding: "required" | "optional" | "none";
+  /**
+   * Who may set a binding's confidentiality class on a node of this type: the caller composing
+   * the experience (the default, `"caller"`), or a planner proposing one. Declarative only —
+   * the compiler carries whatever class the node's binding holds.
+   */
+  readonly sensitivity?: "caller" | "model-may-set";
   readonly surfaces: Partial<Record<Surface, SurfaceResolution>>;
 }
 export interface SemanticCatalog {
