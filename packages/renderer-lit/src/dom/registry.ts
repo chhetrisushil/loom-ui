@@ -1,5 +1,6 @@
 import type {
   BindingStatus,
+  IdentityReport,
   RendererRegistry,
   Widget,
   WidgetAction,
@@ -19,10 +20,33 @@ export interface DomWidgetProps {
 }
 export interface DomWidgetHandle {
   update(value: unknown, status?: BindingStatus): void;
+  /**
+   * The widget NODE changed (props, title, source, …) but kept its id and kind. Optional: a
+   * renderer without it is remounted on any widget change (reported in `RecomposeReport.remounted`).
+   * User-entered state inside the widget is DOM state — a renderer must not overwrite it here.
+   */
+  patch?(widget: Widget): void;
   dispose(): void;
 }
 export type DomWidgetRenderer = (host: HTMLElement, props: DomWidgetProps) => DomWidgetHandle;
 export type DomRegistry = RendererRegistry<DomWidgetRenderer>;
+
+/** One adapter-side failure during `update`; the widget is already on its error placeholder. */
+export interface RecomposeFinding {
+  readonly code: "patch-failed" | "mount-failed";
+  readonly nodeId: string;
+  readonly message: string;
+}
+
+/** What `DomRenderHandle.update(next)` did. `identity` is loom's report, not a second vocabulary. */
+export interface RecomposeReport {
+  readonly identity: IdentityReport;
+  /** Kept their id but changed kind, or their renderer has no `patch`: disposed and mounted again. */
+  readonly remounted: readonly string[];
+  /** Binding changed: unsubscribed, re-subscribed, first slice pushed synchronously. */
+  readonly rebound: readonly string[];
+  readonly findings: readonly RecomposeFinding[];
+}
 
 export function placeholderFor(
   kind: string,

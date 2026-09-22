@@ -22,6 +22,9 @@ export function elementRenderer(tag: string): DomWidgetRenderer {
         el.value = value;
         el.status = status;
       },
+      patch: (widget) => {
+        el.widget = widget;
+      },
       dispose: () => el.remove(),
     };
   };
