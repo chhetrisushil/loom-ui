@@ -4,6 +4,7 @@ import {
   type Widget,
   type WidgetAction,
   asCell,
+  isWidget,
   resolveWidgetStatus,
   resolveWidgetValue,
 } from "@loom/blueprint-runtime";
@@ -51,7 +52,49 @@ export interface Slice {
   status: BindingStatus | undefined;
 }
 
-export const isWidgetNode = (n: Widget | Layout): n is Widget => "_tag" in n;
+/**
+ * Total over ANY input — loom's own `isWidget`. The old `"_tag" in n` threw on `undefined`, which
+ * is exactly the node a malformed child list carries (`cell(4, undefined)`, a `[…, undefined]`).
+ */
+export const isWidgetNode = (n: Widget | Layout): n is Widget => isWidget(n);
+
+const LAYOUT_TYPES = new Set(["grid", "flex", "stack"]);
+
+/**
+ * Every node under `layout` that is neither a widget nor a walkable layout, as a path from the
+ * root (`layout.children[2].children[0]`). Iterative, like loom's walkers: a deep tree must not
+ * blow the stack. `update` runs this over the WHOLE revised tree before it mutates anything —
+ * loom's `blueprintNodeIds` stops silently at an undefined node, so the identity walk does not
+ * catch it, and a reconcile that met it half-way would already have mounted its siblings.
+ */
+export function malformedNodes(layout: unknown): string[] {
+  const bad: string[] = [];
+  const stack: Array<{ node: unknown; path: string }> = [{ node: layout, path: "layout" }];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const { node, path } = top;
+    if (isWidget(node)) continue;
+    const l = node as { type?: unknown; children?: unknown } | null;
+    if (
+      typeof l !== "object" ||
+      l === null ||
+      !LAYOUT_TYPES.has(l.type as string) ||
+      !Array.isArray(l.children)
+    ) {
+      bad.push(path);
+      continue;
+    }
+    const children = l.children as unknown[];
+    for (let i = children.length - 1; i >= 0; i--) {
+      const c = children[i];
+      const child =
+        l.type === "grid" && typeof c === "object" && c !== null
+          ? asCell(c as Widget | Layout).node
+          : c;
+      stack.push({ node: child, path: `${path}.children[${i}]` });
+    }
+  }
+  return bad;
+}
 
 /** A layout's children with the span each one occupies: cells under a grid, 1 elsewhere. */
 export function childSpecs(layout: Layout): ChildSpec[] {
@@ -219,10 +262,17 @@ export function renderInto(
   subscribeEntry(entry, ctx);
 }
 
+/**
+ * Called with every entry a mount creates, BEFORE its renderer runs — so a caller can undo a
+ * mount that throws half-way (a refused subscribe after the renderer already returned a handle).
+ */
+export type TrackMount = (entry: Entry) => void;
+
 export function mountWidget(
   widget: Widget,
   ctx: MountContext,
-  onFail: (f: { nodeId: string; message: string }) => void
+  onFail: (f: { nodeId: string; message: string }) => void,
+  track?: TrackMount
 ): WidgetEntry {
   const host = document.createElement("div");
   host.dataset.widgetId = widget.id;
@@ -233,6 +283,7 @@ export function mountWidget(
     handle: undefined,
     unsubscribe: undefined,
   };
+  track?.(entry);
   renderInto(entry, ctx, onFail);
   return entry;
 }
@@ -240,40 +291,46 @@ export function mountWidget(
 export function mountContainer(
   layout: Layout,
   ctx: MountContext,
-  onFail: (f: { nodeId: string; message: string }) => void
+  onFail: (f: { nodeId: string; message: string }) => void,
+  track?: TrackMount
 ): ContainerEntry {
   const el = document.createElement("div");
   styleContainer(el, layout);
   const inGrid = layout.type === "grid";
-  const children: Entry[] = [];
+  const entry: ContainerEntry = { kind: "container", el, layout, children: [] };
+  track?.(entry);
   for (const { node, span } of childSpecs(layout)) {
     const child = isWidgetNode(node)
-      ? mountWidget(node, ctx, onFail)
-      : mountContainer(node, ctx, onFail);
+      ? mountWidget(node, ctx, onFail, track)
+      : mountContainer(node, ctx, onFail, track);
     const childEl = elementOf(child);
     applySpan(childEl, span, inGrid);
     el.appendChild(childEl);
-    children.push(child);
+    entry.children.push(child);
   }
-  return { kind: "container", el, layout, children };
+  return entry;
 }
 
-/** Unsubscribe and dispose every widget under `entry`, collecting errors. Leaves the DOM in place. */
-export function disposeEntry(entry: Entry, errors: unknown[]): void {
+/**
+ * Unsubscribe and dispose every widget under `entry`, reporting each failure against the WIDGET
+ * id it came from (a container has no id of its own to blame). Leaves the DOM in place.
+ * Idempotent: a disposed widget has no handle or subscription left to dispose again.
+ */
+export function disposeEntry(entry: Entry, onError: (widgetId: string, e: unknown) => void): void {
   if (entry.kind === "container") {
-    for (const c of entry.children) disposeEntry(c, errors);
+    for (const c of entry.children) disposeEntry(c, onError);
     return;
   }
   try {
     entry.unsubscribe?.();
   } catch (e) {
-    errors.push(e);
+    onError(entry.widget.id, e);
   }
   entry.unsubscribe = undefined;
   try {
     entry.handle?.dispose();
   } catch (e) {
-    errors.push(e);
+    onError(entry.widget.id, e);
   }
   entry.handle = undefined;
 }

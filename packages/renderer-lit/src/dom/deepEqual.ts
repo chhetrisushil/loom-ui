@@ -11,6 +11,9 @@ export function deepEqual(a: unknown, b: unknown): boolean {
     for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
     return true;
   }
+  // Two `Object.create(null)` objects compare UNEQUAL here, and that is fine: Widget/Layout are
+  // JSON-shaped, and loom's only null-prototype object is the Blueprint-level pin map, which is
+  // never inside a Widget or Layout — the most it could cost is a needless patch, never a skip.
   if (
     Object.getPrototypeOf(a) !== Object.prototype ||
     Object.getPrototypeOf(b) !== Object.prototype

@@ -46,6 +46,13 @@ export interface Accumulator {
   readonly disposed: string[];
   readonly rebound: string[];
   readonly findings: RecomposeFinding[];
+  /**
+   * Every entry this pass MOUNTED (widgets and containers, nested ones included), recorded
+   * before each renderer runs. Until `reconcileContainer` commits `entry.children` these live
+   * only in locals, so a throw mid-pass would strand them — subscribed, in the DOM, and out of
+   * reach of `dispose()`. `update`'s catch disposes and removes exactly these.
+   */
+  readonly mounted: Entry[];
 }
 
 /** The direct child (if any) whose subtree holds the focused element. It must never leave the DOM. */
@@ -56,9 +63,11 @@ export function pinnedChild(children: readonly HTMLElement[]): HTMLElement | und
 }
 
 /**
- * Put `parent`'s children in `target` order with the fewest moves that never touch `pinned`:
- * nodes before it are placed back-to-front against it, nodes after it front-to-back. A node
- * already in place is not moved (an unchanged sequence makes zero mutations). Every node in
+ * Put `parent`'s children in `target` order without ever moving `pinned`: nodes before it are
+ * placed back-to-front against it, nodes after it front-to-back. One O(n) walk — NOT a minimal
+ * move set (that is a longest-increasing-subsequence problem, not attempted): a node already in
+ * its slot relative to its neighbour is not moved, so an unchanged sequence makes zero
+ * mutations, but a single element moved far can shift every node between its two positions. Every node in
  * `target` must already be a child of `parent`; nodes not in `target` must already be removed.
  */
 export function reorderChildren(
@@ -96,6 +105,19 @@ const fail =
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** A widget's dispose/unsubscribe threw: a `mount-failed` against that widget's own id. */
+const disposeFailed =
+  (acc: Accumulator) =>
+  (widgetId: string, e: unknown): void => {
+    acc.findings.push({ code: "mount-failed", nodeId: widgetId, message: messageOf(e) });
+  };
+
+const trackIn =
+  (acc: Accumulator) =>
+  (entry: Entry): void => {
+    acc.mounted.push(entry);
+  };
+
 /** Dispose a kept widget's handle and run its renderer again into the same host. */
 function remountWidget(
   entry: WidgetEntry,
@@ -103,10 +125,7 @@ function remountWidget(
   ctx: MountContext,
   acc: Accumulator
 ): void {
-  const errors: unknown[] = [];
-  disposeEntry(entry, errors);
-  for (const e of errors)
-    acc.findings.push({ code: "mount-failed", nodeId: entry.widget.id, message: messageOf(e) });
+  disposeEntry(entry, disposeFailed(acc));
   acc.disposed.push(next.id);
   entry.widget = next;
   // `renderInto` clears the host itself, so the old renderer's DOM leaves with it.
@@ -186,7 +205,7 @@ export function reconcileContainer(
         reconcileWidget(kept, node, ctx, acc);
         child = kept;
       } else {
-        child = mountWidget(node, ctx, fail(acc, "mount-failed"));
+        child = mountWidget(node, ctx, fail(acc, "mount-failed"), trackIn(acc));
         entry.el.appendChild(child.host); // position fixed by the reorder below
       }
     } else {
@@ -199,15 +218,12 @@ export function reconcileContainer(
         if (kept) {
           // Same ordinal, different type: the container is swept out whole and mounted again.
           // Its widget ids are DISPOSED, not necessarily remounted — the new tree decides.
-          const errors: unknown[] = [];
-          disposeEntry(kept, errors);
-          for (const e of errors)
-            acc.findings.push({ code: "mount-failed", nodeId: "", message: messageOf(e) });
+          disposeEntry(kept, disposeFailed(acc));
           acc.disposed.push(...widgetIdsOf(kept));
           kept.el.remove();
           used.add(kept);
         }
-        child = mountContainer(node, ctx, fail(acc, "mount-failed"));
+        child = mountContainer(node, ctx, fail(acc, "mount-failed"), trackIn(acc));
         entry.el.appendChild(child.el);
       }
     }
@@ -218,15 +234,8 @@ export function reconcileContainer(
   // Dropped: anything old that the new layout did not claim.
   for (const c of entry.children) {
     if (used.has(c)) continue;
-    const errors: unknown[] = [];
     acc.disposed.push(...widgetIdsOf(c));
-    disposeEntry(c, errors);
-    for (const e of errors)
-      acc.findings.push({
-        code: "mount-failed",
-        nodeId: c.kind === "widget" ? c.widget.id : "",
-        message: messageOf(e),
-      });
+    disposeEntry(c, disposeFailed(acc));
     elementOf(c).remove();
   }
   const targetEls = nextChildren.map(elementOf);
