@@ -1,5 +1,6 @@
+import { defineSemanticCatalog } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
-import { parseModelJson, planSchema } from "./contract";
+import { entryFor, parseModelJson, planSchema } from "./contract";
 import { capabilitiesFixture, planningCatalog } from "./testing.test-support";
 
 const schema = planSchema(planningCatalog, capabilitiesFixture);
@@ -113,6 +114,25 @@ describe("planSchema", () => {
       props: {},
     }));
     expect(schema.safeParse({ summary: "s", nodes: many }).success).toBe(false);
+  });
+});
+
+describe("entryFor", () => {
+  const versionsCatalog = defineSemanticCatalog({
+    id: "test.versions.v1",
+    entries: [
+      { name: "Metric", version: "1.9.0", props: [], binding: "none", surfaces: {} },
+      { name: "Metric", version: "1.10.0", props: [], binding: "none", surfaces: {} },
+    ],
+  });
+  it("picks the numerically-latest version via core's compareVersions, not a locale string compare", () => {
+    expect(entryFor(versionsCatalog, "Metric")?.version).toBe("1.10.0");
+  });
+  it("resolves an exact version when one is given", () => {
+    expect(entryFor(versionsCatalog, "Metric", "1.9.0")?.version).toBe("1.9.0");
+  });
+  it("returns undefined for an unknown explicit version, so planSchema reports it", () => {
+    expect(entryFor(versionsCatalog, "Metric", "9.9.9")).toBeUndefined();
   });
 });
 
