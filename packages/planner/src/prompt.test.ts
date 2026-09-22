@@ -31,6 +31,8 @@ describe("prompt", () => {
     expect(cat).toMatch(/- Collection@1\.0\.0 —[^\n]*; sensitivity: model-may-set/);
     expect(cat).not.toMatch(/- Metric@1\.0\.0 —[^\n]*sensitivity/);
     expect(COMPOSE_SYSTEM).toContain("sensitivity: model-may-set");
+    // The response template must OFFER the field, or a model following it literally never emits one.
+    expect(COMPOSE_SYSTEM).toContain('"sensitivity"?: "secret" | "sensitive" | "internal"');
     const caps = describeCapabilities(capabilitiesFixture);
     expect(caps).toContain("orders_summary");
     expect(caps).toContain("orders.summary@2.1.0");
@@ -176,7 +178,7 @@ describe("prompt", () => {
       vocabularyFloor: { types: [] },
       meta: metaFixture,
     };
-    const described = describeExperience(exp, capabilitiesFixture) as {
+    const described = describeExperience(exp, capabilitiesFixture, planningCatalog) as {
       nodes: Array<Record<string, unknown>>;
     };
     expect(described.nodes.map((n) => n.id)).toEqual(["shown", "grp"]);
@@ -262,57 +264,72 @@ describe("prompt", () => {
     const notOfferedUser = notOffered.messages.find((m) => m.role === "user")?.content ?? "";
     expect(notOfferedUser).toContain("(not offered) unknown.tool@9.9.9");
   });
-  it("describeExperience shows a binding's sensitivity so a revise can echo it back byte-identical", () => {
-    const withSensitivity: Experience = {
-      experienceId: "e",
-      versionHash: "",
-      parents: [],
-      intent: intentFixture,
-      root: {
-        id: "root",
-        order: "V",
-        kind: "container",
-        direction: "column",
-        span: 12,
-        children: [
+  const classifiedNodeOfType = (type: string): Experience => ({
+    experienceId: "e",
+    versionHash: "",
+    parents: [],
+    intent: intentFixture,
+    root: {
+      id: "root",
+      order: "V",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      children: [
+        {
+          id: "shown",
+          order: "a",
+          kind: "semantic",
+          type,
+          typeVersion: "1.0.0",
+          span: 8,
+          props: {},
+          binding: { handle: "h1", priority: "P1", sensitivity: "sensitive" },
+        },
+      ],
+    },
+    providers: {
+      h1: {
+        handle: "h1",
+        executionGraph: [
           {
-            id: "top_skus",
-            order: "a",
-            kind: "semantic",
-            type: "Collection",
-            typeVersion: "1.0.0",
-            span: 8,
-            props: { columns: ["sku"] },
-            binding: { handle: "h1", priority: "P1", sensitivity: "sensitive" },
+            stepId: "s1",
+            toolName: "orders.summary",
+            toolVersion: "2.1.0",
+            toolSchemaHash: "sha256:orders-summary-2-1",
+            arguments: { window: "7d" },
+            dependsOn: [],
+            idempotent: true,
           },
         ],
+        reshaping: { engine: "JSONPath", scriptRef: "rows" },
+        outputShapeHash: "sha256:x",
+        cachePolicy: { ttlSeconds: 60, scope: "principal" },
       },
-      providers: {
-        h1: {
-          handle: "h1",
-          executionGraph: [
-            {
-              stepId: "s1",
-              toolName: "orders.summary",
-              toolVersion: "2.1.0",
-              toolSchemaHash: "sha256:orders-summary-2-1",
-              arguments: { window: "7d" },
-              dependsOn: [],
-              idempotent: true,
-            },
-          ],
-          reshaping: { engine: "JSONPath", scriptRef: "rows" },
-          outputShapeHash: "sha256:x",
-          cachePolicy: { ttlSeconds: 60, scope: "principal" },
-        },
-      },
-      vocabularyFloor: { types: [] },
-      meta: metaFixture,
-    };
-    const described = describeExperience(withSensitivity, capabilitiesFixture) as {
-      nodes: Array<{ binding?: Record<string, unknown> }>;
-    };
+    },
+    vocabularyFloor: { types: [] },
+    meta: metaFixture,
+  });
+  it("describeExperience shows a binding's sensitivity so a revise can echo it back byte-identical", () => {
+    const described = describeExperience(
+      classifiedNodeOfType("Collection"),
+      capabilitiesFixture,
+      planningCatalog
+    ) as { nodes: Array<{ binding?: Record<string, unknown> }> };
     expect(described.nodes[0]?.binding?.sensitivity).toBe("sensitive");
     expect(JSON.stringify(described, null, 2)).toContain('"sensitivity": "sensitive"');
+  });
+  it("hides a CALLER-set class on a caller-only type: it is not the model's to echo, so revise never round-trips into a refusal", () => {
+    // Metric leaves `sensitivity` absent in the catalogue, i.e. "caller". The class is real on the
+    // node — the compiler still carries it — but showing it would ask the model to echo a field
+    // `planSchema` then refuses, and which the diff could not drop either.
+    const described = describeExperience(
+      classifiedNodeOfType("Metric"),
+      capabilitiesFixture,
+      planningCatalog
+    ) as { nodes: Array<{ binding?: Record<string, unknown> }> };
+    expect(described.nodes[0]?.binding).toBeDefined();
+    expect(described.nodes[0]?.binding && "sensitivity" in described.nodes[0].binding).toBe(false);
+    expect(JSON.stringify(described)).not.toContain("sensitive");
   });
 });

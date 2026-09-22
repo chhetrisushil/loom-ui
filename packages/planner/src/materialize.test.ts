@@ -400,6 +400,26 @@ describe("materialize — revise (diff against the base)", () => {
       expect(topSkus?.kind === "semantic" && topSkus.binding?.sensitivity).toBe("sensitive");
     }
   });
+  it("a draft that OMITS a class the node already carries emits nothing: core's bindProvider merges, so an op that drops it would be vacuous", () => {
+    const classified: PlanDraft = {
+      summary: "s",
+      nodes: [
+        draft.nodes[0]!,
+        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "sensitive" } },
+        draft.nodes[2]!,
+      ],
+    };
+    const r = replay(
+      base(),
+      materialize(classified, base(), planningCatalog, capabilitiesFixture).ops
+    );
+    if (!r.ok) throw new Error(r.finding.message);
+    const exp = r.value;
+    // `draft` is `classified` minus the class, and identical in every other respect.
+    const { ops, findings } = materialize(draft, exp, planningCatalog, capabilitiesFixture);
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(ops).toEqual([]);
+  });
   it("a capability's sample changing shape under an UNCHANGED handle re-emits the provider (stale pin) with no bindProvider", () => {
     const exp = composed();
     const staleShapeCapabilities: CapabilityRef[] = capabilitiesFixture.map((c) =>
