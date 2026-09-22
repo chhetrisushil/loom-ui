@@ -7,7 +7,14 @@ import {
 import type { ProjectionRuntime } from "@loom/projection-runtime";
 import { type Accumulator, reconcileContainer, remountedOf } from "./reconcile";
 import { type DomRegistry, type RecomposeReport, projectionPlaceholder } from "./registry";
-import { type ContainerEntry, type MountContext, disposeEntry, mountContainer } from "./tree";
+import {
+  type ContainerEntry,
+  type MountContext,
+  disposeEntry,
+  elementOf,
+  malformedNodes,
+  mountContainer,
+} from "./tree";
 
 export interface DomRenderOptions {
   readonly projectionRuntime: ProjectionRuntime;
@@ -21,6 +28,8 @@ export interface DomRenderHandle {
    * Land a revised Blueprint on the live tree: widgets keyed by id, containers by ordinal and
    * type, the focused subtree never moved. Never throws — renderer failures come back in
    * `RecomposeReport.findings` with the failing widget already on its error placeholder.
+   * Not re-entrant: an `update` called from inside a renderer's `patch`/`update` during a pass
+   * is refused (a `re-entrant update` finding) and changes nothing.
    */
   update(next: Blueprint): RecomposeReport;
   dispose(): void;
@@ -77,22 +86,42 @@ export function renderBlueprintDom(
   element.append(root.el);
   host.appendChild(element);
 
-  const state = { current: blueprint, root, disposed: false };
+  const state = { current: blueprint, root, disposed: false, updating: false };
   return {
     element,
     update: (next) => {
-      const acc: Accumulator = { disposed: [], rebound: [], findings: [] };
-      // `compared: 0` is loom's own tell that nothing was compared, which is the truth when
-      // `next` is so malformed that walking it threw before the reconcile began.
-      let identity: IdentityReport = { ok: true, findings: [], added: [], compared: 0 };
+      // `compared: 0` is loom's own tell that nothing was compared: the truth for a refused call
+      // and for a `next` so malformed that walking it threw before the reconcile began.
+      const notCompared: IdentityReport = { ok: true, findings: [], added: [], compared: 0 };
+      const refused = (message: string): RecomposeReport => ({
+        identity: notCompared,
+        remounted: [],
+        rebound: [],
+        findings: [{ code: "patch-failed", nodeId: "", message }],
+      });
+      // Both checks come BEFORE anything reads `next`: a disposed handle says "disposed" however
+      // malformed the Blueprint it is handed, and a nested call must not walk a tree the outer
+      // pass is half-way through landing.
+      if (state.disposed) return refused("disposed");
+      if (state.updating) return refused("re-entrant update");
+      state.updating = true;
+      const acc: Accumulator = { disposed: [], rebound: [], findings: [], mounted: [] };
+      let identity = notCompared;
       try {
         identity = preservesBlueprintNodes(state.current, next);
-        if (state.disposed)
+        // Validate the WHOLE revised tree before touching the live one. loom's identity walk
+        // stops silently at an undefined node, so it cannot be relied on to have rejected it.
+        const bad = malformedNodes(next.layout);
+        if (bad.length > 0)
           return {
             identity,
             remounted: [],
             rebound: [],
-            findings: [{ code: "patch-failed", nodeId: "", message: "disposed" }],
+            findings: bad.map((path) => ({
+              code: "patch-failed" as const,
+              nodeId: "",
+              message: `malformed node at ${path}`,
+            })),
           };
         // The state map is the SAME Map instance the mount context holds — every widget's
         // resolution reads through it, so it is rewritten in place, never reassigned.
@@ -129,26 +158,48 @@ export function renderBlueprintDom(
         // matrix expects": a `ProjectionRuntime` or a Blueprint the adapter has never seen
         // comes back as a finding beside whatever the pass had already accomplished.
         // `state.current` is deliberately NOT advanced — a partial pass is not the new tree.
+        //
+        // Everything this pass MOUNTED is undone: until a container commits its `children`, a
+        // new entry lives only in the reconcile's locals, so leaving it would strand a
+        // subscribed widget in the DOM where `dispose()` can never reach it. Disposal is
+        // idempotent, so an entry that also made it into the tree is harmless to dispose here.
+        // What the pass did to KEPT entries (patched, remounted in place, dropped) stands.
+        const findings = [...acc.findings];
+        const cleanupFailed = (widgetId: string, err: unknown) =>
+          findings.push({
+            code: "mount-failed",
+            nodeId: widgetId,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        const undone = new Set(acc.mounted);
+        for (const m of acc.mounted) disposeEntry(m, cleanupFailed);
+        for (const m of acc.mounted) elementOf(m).remove();
+        // A container that committed a mounted child must forget it, or `dispose()` walks it.
+        const forget = (c: ContainerEntry): void => {
+          c.children = c.children.filter((k) => !undone.has(k));
+          for (const k of c.children) if (k.kind === "container") forget(k);
+        };
+        forget(state.root);
+        findings.push({
+          code: "patch-failed",
+          nodeId: "",
+          message: e instanceof Error ? e.message : String(e),
+        });
         return {
           identity,
           remounted: remountedOf(next, acc.disposed),
           rebound: acc.rebound,
-          findings: [
-            ...acc.findings,
-            {
-              code: "patch-failed" as const,
-              nodeId: "",
-              message: e instanceof Error ? e.message : String(e),
-            },
-          ],
+          findings,
         };
+      } finally {
+        state.updating = false;
       }
     },
     dispose: () => {
       state.disposed = true;
       const errors: unknown[] = [];
       try {
-        disposeEntry(state.root, errors);
+        disposeEntry(state.root, (_id, e) => errors.push(e));
       } finally {
         element.remove();
       }

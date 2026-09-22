@@ -41,7 +41,12 @@ export interface RecomposeFinding {
 /** What `DomRenderHandle.update(next)` did. `identity` is loom's report, not a second vocabulary. */
 export interface RecomposeReport {
   readonly identity: IdentityReport;
-  /** Kept their id but changed kind, or their renderer has no `patch`: disposed and mounted again. */
+  /**
+   * Present in both trees but disposed and mounted again: the kind changed, the renderer has no
+   * `patch`, OR the widget did not stay put WITHIN ITS CONTAINER — it moved to another container,
+   * its container's ordinal among container siblings shifted, or its container changed type
+   * (containers are keyed by ordinal + type, so each of those re-creates the container's widgets).
+   */
   readonly remounted: readonly string[];
   /** Binding changed: unsubscribed, re-subscribed, first slice pushed synchronously. */
   readonly rebound: readonly string[];

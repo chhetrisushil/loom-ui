@@ -16,6 +16,7 @@ import {
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { type DomWidgetRenderer, type RecomposeReport, renderBlueprintDom } from "./index";
+import { isWidgetNode } from "./tree";
 
 const bind = (handle: string): DataBinding => ({
   projectionId: HYDRATION_PROJECTION_ID,
@@ -90,8 +91,35 @@ const v1 = (): Blueprint =>
     }),
   });
 
-const setup = (bp: Blueprint = v1(), reg = recording()) => {
+/**
+ * Counts `subscribeSelector` calls and the subscriptions still live, by wrapping the runtime's
+ * own method — the adapter's only subscription path. `throwFor` makes a subscribe to that
+ * projection id throw AFTER the renderer ran, which is the one mid-pass throw a renderer cannot
+ * cause and `renderInto` does not catch.
+ */
+const countSubscriptions = (runtime: InMemoryProjectionRuntime, throwFor?: string) => {
+  const counts = { subscribes: 0, live: 0 };
+  const orig = runtime.subscribeSelector.bind(runtime);
+  runtime.subscribeSelector = ((...args: Parameters<typeof orig>) => {
+    if (args[0] === throwFor) throw new Error(`subscribe refused: ${throwFor}`);
+    counts.subscribes++;
+    counts.live++;
+    const off = orig(...args);
+    return () => {
+      counts.live--;
+      off();
+    };
+  }) as typeof runtime.subscribeSelector;
+  return counts;
+};
+
+const setup = (
+  bp: Blueprint = v1(),
+  reg = recording(),
+  wrap?: (runtime: InMemoryProjectionRuntime) => void
+) => {
   const runtime = new InMemoryProjectionRuntime();
+  wrap?.(runtime);
   const store = new HydrationStore(runtime, { experienceId: "e" });
   store.setValue("h-p99", 412, { state: "ready" });
   store.setValue("h-phase", "triage", { state: "ready" });
@@ -668,5 +696,277 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(r.findings).toEqual([{ code: "patch-failed", nodeId: "", message: "disposed" }]);
     expect(r.remounted).toEqual([]);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("renderBlueprintDom.update — a pass that cannot complete leaves nothing behind", () => {
+  it("a nested undefined child after a NEW sibling: a finding, no throw, live DOM untouched, nothing mounted or leaked", () => {
+    // loom's `blueprintNodeIds` stops silently at an undefined node, so the identity walk passes;
+    // the reconcile is what would have hit it — after the new sibling had already mounted.
+    let counts!: ReturnType<typeof countSubscriptions>;
+    const { host, handle, calls } = setup(v1(), recording(), (rt) => {
+      counts = countSubscriptions(rt);
+    });
+    const before = [...host.querySelectorAll("*")];
+    const liveBefore = counts.live;
+    calls.length = 0;
+    const next = v1();
+    const inner = (next.layout as { children: Array<{ node: { children: unknown[] } }> })
+      .children[2]!.node;
+    inner.children.push(
+      MetricCard({ id: "fresh", title: "Fresh", binding: bind("h-p99"), unit: "ms" }),
+      undefined
+    );
+    let r!: RecomposeReport;
+    expect(() => {
+      r = handle.update(next);
+    }).not.toThrow();
+    expect(r.findings).toEqual([
+      {
+        code: "patch-failed",
+        nodeId: "",
+        message: "malformed node at layout.children[2].children[2]",
+      },
+    ]);
+    expect(r.remounted).toEqual([]);
+    expect(r.rebound).toEqual([]);
+    const after = [...host.querySelectorAll("*")];
+    expect(after.length).toBe(before.length);
+    expect(after.every((n, i) => n === before[i])).toBe(true);
+    expect(host.querySelector("[data-widget-id='fresh']")).toBeNull();
+    expect(calls).toEqual([]); // rejected before anything mounted
+    expect(counts.live).toBe(liveBefore);
+    // Whatever the pass did mount, it disposed again: every mount is matched by a dispose.
+    const mounts = calls.filter((c) => c === "mount:fresh").length;
+    expect(calls.filter((c) => c === "dispose:fresh").length).toBe(mounts);
+    handle.dispose();
+    expect(counts.live).toBe(0);
+  });
+
+  it("isWidgetNode is total: undefined, null and primitives are simply not widgets", () => {
+    for (const n of [undefined, null, 0, "Widget", {}, { type: "stack", children: [] }])
+      expect(isWidgetNode(n as never)).toBe(false);
+    expect(isWidgetNode(note("x"))).toBe(true);
+  });
+
+  it("a throw the validation cannot foresee (a refused subscribe) disposes and removes everything the pass mounted", () => {
+    let counts!: ReturnType<typeof countSubscriptions>;
+    const { host, handle, calls } = setup(v1(), recording(), (rt) => {
+      counts = countSubscriptions(rt, "boom");
+    });
+    const before = [...host.querySelectorAll("*")];
+    const liveBefore = counts.live;
+    calls.length = 0;
+    const next = v1();
+    const g = next.layout as { children: unknown[] };
+    g.children.push(
+      cell(4, MetricCard({ id: "fresh", title: "Fresh", binding: bind("h-p99"), unit: "ms" })),
+      cell(
+        4,
+        MetricCard({
+          id: "doomed",
+          title: "Doomed",
+          binding: { projectionId: "boom", path: "x" },
+          unit: "ms",
+        })
+      )
+    );
+    (next as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "boom"];
+    let r!: RecomposeReport;
+    expect(() => {
+      r = handle.update(next);
+    }).not.toThrow();
+    expect(r.findings).toContainEqual({
+      code: "patch-failed",
+      nodeId: "",
+      message: "subscribe refused: boom",
+    });
+    // Both widgets the pass mounted were disposed and their hosts removed; `fresh`'s
+    // subscription is gone with it.
+    expect(calls.filter((c) => c.startsWith("mount:")).sort()).toEqual([
+      "mount:doomed",
+      "mount:fresh",
+    ]);
+    expect(calls.filter((c) => c.startsWith("dispose:")).sort()).toEqual([
+      "dispose:doomed",
+      "dispose:fresh",
+    ]);
+    expect(host.querySelector("[data-widget-id='fresh']")).toBeNull();
+    expect(host.querySelector("[data-widget-id='doomed']")).toBeNull();
+    expect(counts.live).toBe(liveBefore);
+    const after = [...host.querySelectorAll("*")];
+    expect(after.length).toBe(before.length);
+    expect(after.every((n, i) => n === before[i])).toBe(true);
+    calls.length = 0;
+    handle.dispose();
+    expect(counts.live).toBe(0);
+    expect(calls.filter((c) => c === "dispose:fresh")).toEqual([]); // never disposed twice
+  });
+
+  it("a mount a NESTED container already committed is undone too: the entry tree still mirrors the DOM", () => {
+    let counts!: ReturnType<typeof countSubscriptions>;
+    const { host, handle, calls, store, runtime } = setup(v1(), recording(), (rt) => {
+      counts = countSubscriptions(rt, "boom");
+    });
+    const liveBefore = counts.live;
+    const next = v1();
+    const g = next.layout as { children: Array<{ node: { children?: unknown[] } }> };
+    // The stack (3rd child) reconciles and COMMITS its new child before the root reaches `doomed`.
+    g.children[2]!.node.children!.push(
+      MetricCard({ id: "inner", title: "Inner", binding: bind("h-p99"), unit: "ms" })
+    );
+    (g.children as unknown[]).push(
+      cell(
+        4,
+        MetricCard({ id: "doomed", title: "D", binding: { projectionId: "boom", path: "x" } })
+      )
+    );
+    (next as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "boom"];
+    calls.length = 0;
+    const r = handle.update(next);
+    expect(r.findings.at(-1)?.message).toBe("subscribe refused: boom");
+    expect(calls.filter((c) => c === "dispose:inner")).toEqual(["dispose:inner"]);
+    expect(host.querySelector("[data-widget-id='inner']")).toBeNull();
+    expect(counts.live).toBe(liveBefore);
+    // The entry tree forgot `inner`: landing the same revision minus `doomed` MOUNTS it as the
+    // new widget it is — not a "remount" of a handle-less ghost entry the failed pass left behind.
+    const retry = v1();
+    (
+      retry.layout as { children: Array<{ node: { children?: unknown[] } }> }
+    ).children[2]!.node.children!.push(
+      MetricCard({ id: "inner", title: "Inner", binding: bind("h-p99"), unit: "ms" })
+    );
+    calls.length = 0;
+    const again = handle.update(retry);
+    expect(again.findings).toEqual([]);
+    expect(again.remounted).toEqual([]);
+    expect(again.identity.added).toEqual(["inner"]);
+    expect(calls).toEqual(["mount:inner"]);
+    expect(shape(handle.element)).toEqual(freshShape(retry, store, runtime));
+    handle.dispose();
+    expect(counts.live).toBe(0);
+  });
+
+  it("a re-entrant update (a renderer's patch calling handle.update) is refused without mutating; the outer pass completes", () => {
+    const reg = recording();
+    const ref: { h?: ReturnType<typeof renderBlueprintDom> } = {};
+    let nested: RecomposeReport | undefined;
+    const reentrant: DomWidgetRenderer = (host) => {
+      host.appendChild(document.createElement("span"));
+      return {
+        update: () => {},
+        patch: () => {
+          nested = ref.h?.update(v1());
+        },
+        dispose: () => {},
+      };
+    };
+    reg.registry.register("NoteInput", reentrant);
+    const s = setup(v1(), reg);
+    const h = s.handle;
+    ref.h = h;
+    const next = v1();
+    (next.layout as { children: Array<{ node: { title?: string } }> }).children[1]!.node.title =
+      "Note v2";
+    const r = h.update(next);
+    expect(nested).toEqual({
+      identity: { ok: true, findings: [], added: [], compared: 0 },
+      remounted: [],
+      rebound: [],
+      findings: [{ code: "patch-failed", nodeId: "", message: "re-entrant update" }],
+    });
+    expect(r.findings).toEqual([]);
+    expect(shape(h.element)).toEqual(freshShape(next, s.store, s.runtime, reg.registry));
+    // The guard is released: the next top-level update runs normally.
+    expect(h.update(next).findings).toEqual([]);
+    h.dispose();
+  });
+
+  it("update after dispose with a MALFORMED next still reports 'disposed' and touches no DOM", () => {
+    const { host, handle, calls } = setup();
+    const el = handle.element;
+    handle.dispose();
+    calls.length = 0;
+    const observer = new MutationObserver(() => {});
+    for (const n of [host, el])
+      observer.observe(n, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    const next = v1();
+    (next.layout as { children: unknown }).children = null;
+    const r = handle.update(next);
+    const r2 = handle.update(v1());
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(r.findings).toEqual([{ code: "patch-failed", nodeId: "", message: "disposed" }]);
+    expect(r2.findings).toEqual([{ code: "patch-failed", nodeId: "", message: "disposed" }]);
+    expect(records).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("an unchanged binding keeps the SAME subscription across a prop change: no subscribe, no unsubscribe", () => {
+    let counts!: ReturnType<typeof countSubscriptions>;
+    const { handle } = setup(v1(), recording(), (rt) => {
+      counts = countSubscriptions(rt);
+    });
+    const { subscribes, live } = counts;
+    const next = v1();
+    (next.layout as { children: Array<{ node: { title?: string } }> }).children[0]!.node.title =
+      "p99 v2";
+    const r = handle.update(next);
+    expect(r.rebound).toEqual([]);
+    expect(counts.subscribes).toBe(subscribes);
+    expect(counts.live).toBe(live);
+    handle.dispose();
+  });
+
+  it("a scrolled element inside a kept widget keeps its scrollTop across a patch and a reorder", () => {
+    // happy-dom keeps `scrollTop` even across a DOM move (a browser drops it with the layout
+    // box), so this row cannot prove that a MOVE preserves scroll — it proves the element is the
+    // same one (not re-created) and that neither the patch nor the reorder resets it. The move
+    // half is what the pinned-child/in-place-skip rules in `reorderChildren` are for.
+    const { host, handle } = setup();
+    const p99 = host.querySelector("[data-widget-id='p99']") as HTMLElement;
+    p99.scrollTop = 40;
+    const next = v1();
+    const g = next.layout as { children: unknown[] };
+    const [a, b, c] = g.children;
+    g.children = [c, b, a];
+    (a as { node: { title?: string } }).node.title = "p99 v2";
+    handle.update(next);
+    expect(host.querySelector("[data-widget-id='p99']")).toBe(p99);
+    expect(p99.scrollTop).toBe(40);
+    handle.dispose();
+  });
+
+  it("a dispose failure while a retyped container is swept out is reported against the WIDGET id", () => {
+    const reg = recording();
+    const throwing: DomWidgetRenderer = (host) => {
+      host.appendChild(document.createElement("span"));
+      return {
+        update: () => {},
+        dispose: () => {
+          throw new Error("dispose boom");
+        },
+      };
+    };
+    reg.registry.register("StatusBadge", throwing);
+    const { handle } = setup(v1(), reg);
+    const next = v1();
+    const g = next.layout as { children: Array<{ node: unknown }> };
+    const stackNode = g.children[2]!.node as { children: unknown[] };
+    g.children[2]!.node = flex({ children: stackNode.children as Widget[] });
+    const r = handle.update(next);
+    expect(r.findings).toEqual([
+      { code: "mount-failed", nodeId: "phase", message: "dispose boom" },
+    ]);
+    try {
+      handle.dispose();
+    } catch {
+      // the remounted `phase` throws again on the final dispose — not this row's concern
+    }
   });
 });
