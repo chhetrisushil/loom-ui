@@ -3,7 +3,7 @@
 loom-ui is a semantic UI framework for [loom](../loom). Its Experience Model **compiles to loom's
 `Blueprint`**, so loom's renderers draw what this framework composes. Design:
 `../loom/docs/requirements/2026-09-21-loom-ui-design.md`. The Blueprint contract it targets is
-versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime` (loom ADR 0096).
+versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.0.0 (loom ADRs 0096, 0097).
 
 ## How loom is consumed
 
@@ -39,6 +39,9 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.
+- A widget's status is a Blueprint concern (`binding.status.path`), never a projection read in an
+  adapter; spans are grid cells, never props; `source` says what a widget stands for and is never in
+  `props`.
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
