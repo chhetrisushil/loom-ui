@@ -112,9 +112,11 @@ export function renderBlueprintDom(
         // Validate the WHOLE revised tree before touching the live one. loom's identity walk
         // stops silently at an undefined node, so it cannot be relied on to have rejected it.
         const bad = malformedNodes(next.layout);
+        // The identity computed above is NOT returned for a rejected tree: loom's walk stopped
+        // at the first undefined node, so every id after it would read as "dropped".
         if (bad.length > 0)
           return {
-            identity,
+            identity: notCompared,
             remounted: [],
             rebound: [],
             findings: bad.map((path) => ({
