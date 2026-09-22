@@ -64,11 +64,17 @@ export abstract class LuWidget extends LitElement {
     return `${source.type}, shown as ${this.widget.kind}`;
   }
 
-  /** The degrade chain as `Type@version`, outermost first — absent when nothing was degraded. */
+  /**
+   * The degrade chain as `Type@version`, outermost first — absent when nothing was degraded.
+   * The separator is loom's ` › ` (U+203A), byte-identical to what its React `WidgetFrame` puts
+   * in `data-degraded` and what its terminal renderer prints after "degraded from": the chain is
+   * one fact about a widget, and a page (or a test, or a person reading two surfaces side by
+   * side) must not have to know which renderer drew it to read it.
+   */
   private get degradedChain(): string | undefined {
     const chain = this.widget?.source?.degradedFrom;
     if (!chain?.length) return undefined;
-    return chain.map((s) => `${s.type}@${s.version}`).join(" → ");
+    return chain.map((s) => `${s.type}@${s.version}`).join(" › ");
   }
 
   // The verdict is a pure function of (value, status), and `render()`, `label()` and every
