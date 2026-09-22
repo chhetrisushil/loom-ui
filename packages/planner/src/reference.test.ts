@@ -1,4 +1,11 @@
-import { type Operation, genesis, isContainer, replay, validateExperience } from "@loom-ui/core";
+import {
+  type Operation,
+  defineSemanticCatalog,
+  genesis,
+  isContainer,
+  replay,
+  validateExperience,
+} from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
 import { describe, expect, it } from "vitest";
 import { planDecisionId } from "./decision";
@@ -129,6 +136,36 @@ describe("ReferencePlanner.compose", () => {
       result.findings.some((f) => f.code === "model-error" && f.message.includes("rate limited"))
     ).toBe(true);
   });
+  it("a catalogue that cannot resolve to a loom catalogue fails BEFORE the model is called — a catalogue defect is not the model's to fix", async () => {
+    // `binding: "none"` against builtin StreamingText, which hard-requires a binding: no draft
+    // the model could write satisfies both sides, so retrying it only burns calls.
+    const brokenCatalog = defineSemanticCatalog({
+      id: "test.broken.v1",
+      entries: [
+        {
+          name: "Note",
+          version: "1.0.0",
+          props: [],
+          binding: "none",
+          surfaces: { web: { kind: "StreamingText" }, terminal: { kind: "StreamingText" } },
+        },
+      ],
+    });
+    const model = scriptedModel([goodDraft]);
+    const planner = new ReferencePlanner({ model, modelId: "m", maxAttempts: 3 });
+    const result = await planner.compose(
+      { intent: intentFixture, catalog: brokenCatalog, capabilities: capabilitiesFixture },
+      recordingContext()
+    );
+    expect(model.calls).toBe(0);
+    expect(result.ops).toEqual([]);
+    expect(result.report.attempts).toEqual([]);
+    expect(result.report.firstAttemptValid).toBe(false);
+    expect(result.findings.map((f) => f.code)).toEqual([
+      "binding-contract-conflict",
+      "catalog-invalid",
+    ]);
+  });
   it("the recorded decision is JSON (no undefined-only fields, no functions)", async () => {
     const ctx = recordingContext();
     const planner = new ReferencePlanner({ model: scriptedModel([goodDraft]), modelId: "m" });
@@ -196,6 +233,7 @@ describe("ReferencePlanner.revise", () => {
       planDecisionId("revise", {
         versionHash: exp.versionHash,
         request: { text: "add an insight explaining the trend" },
+        catalog: planningCatalog,
         capabilities: capabilitiesFixture,
       })
     );

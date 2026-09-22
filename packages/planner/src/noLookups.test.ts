@@ -9,8 +9,8 @@ const FORBIDDEN = [
   "@loom/llm",
 ];
 
-describe("the planner fetches nothing", () => {
-  it("no source file imports an invoker, effect runtime, projection runtime or LLM provider", () => {
+describe("the planner's own sources import no invoker, runtime or LLM package", () => {
+  it("the planner's own sources import no invoker, runtime or LLM package (test files excluded: they may drive the real producer)", () => {
     const dir = join(__dirname);
     const offenders: string[] = [];
     for (const f of readdirSync(dir)) {

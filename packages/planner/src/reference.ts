@@ -4,6 +4,7 @@ import {
   type Intent,
   type Operation,
   genesis,
+  loomCatalogFor,
   replay,
   validateExperience,
 } from "@loom-ui/core";
@@ -80,8 +81,10 @@ export class ReferencePlanner implements Planner {
     const decisionId = planDecisionId("revise", {
       versionHash: input.experience.versionHash,
       request: input.request,
+      catalog: input.catalog,
       capabilities: input.capabilities,
       ...(input.context !== undefined && { context: input.context }),
+      ...(input.surface !== undefined && { surface: input.surface }),
     });
     if (input.experience.versionHash === "") {
       const report: PlanReport = {
@@ -139,8 +142,32 @@ export class ReferencePlanner implements Planner {
     },
     request: ReviseInput["request"] | undefined
   ): Promise<PlanResult> {
-    const schema = planSchema(input.catalog, input.capabilities);
     const surface = input.surface ?? "web";
+    // A catalogue whose entries cannot produce a loom widget catalogue for this surface is a
+    // DEFECT IN THE INPUT, not a bad draft: no reply the model could write would satisfy the
+    // contract, so calling it (and retrying it) only burns tokens to arrive at the same refusal.
+    // Checked once, before the first call, and returned without a single attempt.
+    const catalogFindings = loomCatalogFor(input.catalog, surface).findings.filter(
+      (f) => f.severity === "error"
+    );
+    if (catalogFindings.length > 0)
+      return {
+        ops: [],
+        findings: [
+          ...catalogFindings,
+          err(
+            "catalog-invalid",
+            `catalogue "${input.catalog.id}" does not resolve to a valid loom catalogue on "${surface}"; the model was not called`
+          ),
+        ],
+        report: {
+          decisionId,
+          attempts: [],
+          firstAttemptValid: false,
+          modelId: this.opts.modelId,
+        },
+      };
+    const schema = planSchema(input.catalog, input.capabilities);
     const attempts: AttemptTrace[] = [];
     let previous: PreviousError | undefined;
     let lastFindings: Finding[] = [];

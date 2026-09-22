@@ -24,6 +24,11 @@ const refuse = (code: string, message: string): Interpretation => ({
  * (a data-plane re-pin authored by a planner's revise or the app's durable repair, never a widget),
  * and the root (immutable from this surface). Who may EDIT the lineage otherwise is the app's
  * policy, applied after this returns.
+ *
+ * An inserted node's `binding.handle` is NOT checked against the experience's providers here:
+ * core treats a dangling handle as a WARN (`validateExperience`), not a refusal, and no click can
+ * introduce a `ProviderSpec` anyway — `remapProvider` is refused above — so the strongest thing a
+ * widget could do is bind to a handle that does not resolve, which the surface already reports.
  */
 export function interpretAction(exp: Experience, action: WidgetAction): Interpretation {
   if (action.type !== EXPERIENCE_OP_ACTION) return { kind: "business", action };
