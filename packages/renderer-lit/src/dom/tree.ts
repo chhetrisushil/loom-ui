@@ -64,8 +64,8 @@ const LAYOUT_TYPES = new Set(["grid", "flex", "stack"]);
  * Every node under `layout` that is neither a widget nor a walkable layout, as a path from the
  * root (`layout.children[2].children[0]`). Iterative, like loom's walkers: a deep tree must not
  * blow the stack. `update` runs this over the WHOLE revised tree before it mutates anything —
- * loom's `blueprintNodeIds` stops silently at an undefined node, so the identity walk does not
- * catch it, and a reconcile that met it half-way would already have mounted its siblings.
+ * loom's `blueprintNodeIds` skips malformed nodes without reporting them, so the identity walk
+ * does not catch it, and a reconcile that met it half-way would already have mounted its siblings.
  */
 export function malformedNodes(layout: unknown): string[] {
   const bad: string[] = [];

@@ -701,7 +701,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
 
 describe("renderBlueprintDom.update — a pass that cannot complete leaves nothing behind", () => {
   it("a nested undefined child after a NEW sibling: a finding, no throw, live DOM untouched, nothing mounted or leaked", () => {
-    // loom's `blueprintNodeIds` stops silently at an undefined node, so the identity walk passes;
+    // loom's `blueprintNodeIds` skips malformed nodes without reporting them, so the identity walk passes;
     // the reconcile is what would have hit it — after the new sibling had already mounted.
     let counts!: ReturnType<typeof countSubscriptions>;
     const { host, handle, calls } = setup(v1(), recording(), (rt) => {
@@ -728,8 +728,8 @@ describe("renderBlueprintDom.update — a pass that cannot complete leaves nothi
         message: "malformed node at layout.children[2].children[2]",
       },
     ]);
-    // Not loom's report over `next`: its walk stops at the undefined node, so any id after it
-    // would read as dropped. A rejected tree was not compared, and the report says so.
+    // Not loom's report over `next`: its walk skips the malformed node without reporting it.
+    // A rejected tree was not compared, and the report says so.
     expect(r.identity).toEqual({ ok: true, findings: [], added: [], compared: 0 });
     expect(r.remounted).toEqual([]);
     expect(r.rebound).toEqual([]);
