@@ -38,6 +38,12 @@ import type { HandleLoadResult } from "./scheduler";
 export interface DriftRecord {
   readonly kind: "input" | "output";
   readonly handle: string;
+  /**
+   * The step that drifted. Input drift: the step whose schema pin drifted (always present).
+   * Output drift: the terminal step whose output was reshaped, set only when the graph has
+   * exactly one terminal — with several terminals the raw sample is a record keyed by stepId, not
+   * one step's output, so no single step identity applies.
+   */
   readonly stepId?: string;
   readonly toolName?: string;
   readonly expected: string;
@@ -353,7 +359,7 @@ export async function executeProvider(
   }
 
   if (spec.outputCheck === "contract")
-    return checkContract(spec, shaped.value, raw, opts, drift, findings);
+    return checkContract(spec, shaped.value, raw, opts, drift, findings, terminals);
   if (spec.outputShapeHash === "") {
     findings.push({
       code: "output-shape-unpinned",
@@ -382,6 +388,7 @@ export async function executeProvider(
       handle: spec.handle,
       expected: spec.outputShapeHash,
       observed,
+      ...(terminals.length === 1 && { stepId: (terminals[0] as MCPToolNode).stepId }),
       ...observedShapes(shaped.value, raw),
       ...(opts.captureSample === true && {
         observedSample: tainted(raw, `provider:${spec.handle}`),
@@ -409,7 +416,8 @@ function checkContract(
   raw: unknown,
   opts: ExecuteOptions,
   drift: DriftRecord[],
-  findings: Finding[]
+  findings: Finding[],
+  terminals: readonly MCPToolNode[]
 ): ProviderOutcome {
   const kinds = [...new Set(opts.kinds ?? [])].sort();
   if (kinds.length === 0) {
@@ -444,6 +452,7 @@ function checkContract(
       expected: `contract:${kind}`,
       observed,
       contractKind: kind,
+      ...(terminals.length === 1 && { stepId: (terminals[0] as MCPToolNode).stepId }),
       ...observedShapes(value, raw),
       ...(opts.captureSample === true && {
         observedSample: tainted(raw, `provider:${spec.handle}`),

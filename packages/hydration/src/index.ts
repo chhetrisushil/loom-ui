@@ -20,6 +20,7 @@ export type { ReshapeResult, Reshaper, ReshaperRegistry } from "./reshape";
 export { DEFAULT_TIME_RANGE, checkParams } from "./params";
 export type { ArgumentHook, ArgumentHookContext, LoadParams } from "./params";
 export { executeProvider } from "./provider";
+export { terminalSteps } from "./plan";
 export type { DriftRecord, ExecuteOptions, InputDriftMode, ProviderOutcome } from "./provider";
 export { HydrationCache } from "./cache";
 export type { CacheVariant } from "./cache";

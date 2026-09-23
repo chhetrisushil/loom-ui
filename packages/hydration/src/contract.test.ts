@@ -100,6 +100,26 @@ describe("output check by contract", () => {
     expect(both).toEqual({ ok: true, value: 5, findings: [] });
   });
 
+  it("a multi-step provider's contract-drift record also carries the TERMINAL step's id (G4/P14)", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as { toolName: string };
+      return i.toolName === "db.list" ? { ids: ["a"] } : { series: "not-a-list" };
+    });
+    const spec = providerSpec(
+      "h",
+      [
+        mcpStep("list", "db.list"),
+        mcpStep("stats", "db.stats", { id: "{{steps.list.output.ids[0]}}" }, ["list"]),
+      ],
+      { outputCheck: "contract" }
+    );
+    const r = await executeProvider(spec, { invoker: inv, kinds: ["TimeSeries"] });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("output-contract-drift");
+    expect(r.drift[0]?.stepId).toBe("stats");
+  });
+
   it("refuses to check with no kinds: a contract over nothing would pass everything", async () => {
     const r = await executeProvider(contract(), { invoker: replying({ series: [] }) });
     expect(!r.ok && r.finding.code).toBe("output-contract-unbound");

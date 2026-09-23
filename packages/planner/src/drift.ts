@@ -1,5 +1,5 @@
-import { type Experience, experienceHandles } from "@loom-ui/core";
-import type { DriftRecord } from "@loom-ui/hydration";
+import { type Experience, type MCPToolNode, experienceHandles } from "@loom-ui/core";
+import { type DriftRecord, terminalSteps } from "@loom-ui/hydration";
 import { unwrapTainted } from "@loom/classify";
 import { canonicalJson } from "@loom/core";
 import type { CapabilityRef, DecideContext, PlanResult, Planner, ReviseInput } from "./spi";
@@ -80,6 +80,20 @@ const stepKey = (toolName: string, toolVersion: string, args: unknown): string =
   `${toolName}@${toolVersion}#${canonicalJson(args)}`;
 
 /**
+ * The step a drift record's sample was actually taken from — never `executionGraph[0]`. A
+ * provider inlines its dependencies as earlier steps and samples the TERMINAL step's output
+ * (`executeProvider`), so the first step is only right by accident for a single-step provider.
+ * `d.stepId` names it directly when the record carries one (set whenever the graph has exactly
+ * one terminal); with several terminals the record has none, and the raw sample is a
+ * stepId-keyed record rather than one tool's output, so no step can be resolved here either.
+ */
+function driftedStep(graph: readonly MCPToolNode[], d: DriftRecord): MCPToolNode | undefined {
+  if (d.stepId !== undefined) return graph.find((s) => s.stepId === d.stepId);
+  const terminals = terminalSteps(graph);
+  return terminals.length === 1 ? terminals[0] : undefined;
+}
+
+/**
  * Give the planner the observed sample to pin against: a drifted provider's capability gets the
  * UNWRAPPED RAW sample as its `sampleOutput` (the prompt re-fences it as data), because a
  * capability's `sampleOutput` is RAW by contract — `buildProviderSpec` reshapes it with the
@@ -101,7 +115,8 @@ export function driftCapabilities(
   const byTool = new Map<string, Map<string, unknown>>();
   for (const d of drift) {
     if (d.kind !== "output" || d.observedSample === undefined) continue;
-    const step = exp.providers[d.handle]?.executionGraph[0];
+    const graph = exp.providers[d.handle]?.executionGraph;
+    const step = graph && driftedStep(graph, d);
     if (!step) continue;
     const tool = `${step.toolName}@${step.toolVersion}`;
     const perStep = byTool.get(tool) ?? new Map<string, unknown>();
