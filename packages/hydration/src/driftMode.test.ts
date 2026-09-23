@@ -39,6 +39,56 @@ describe("inputDrift", () => {
     expect(pins(inv)).toEqual(["schema-t"]);
   });
 
+  it("a drift that is not proceeded past is the outcome's finding: schema-drift, not provider-failed", async () => {
+    const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), {
+      invoker: toolAt("v2"),
+    });
+    expect(!r.ok && r.finding.code).toBe("schema-drift");
+    expect(!r.ok && r.finding).toBe(r.findings.find((f) => f.code === "schema-drift"));
+  });
+
+  it("several drifted steps: the FIRST in graph order is the outcome's finding", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as McpIn;
+      throw new TypedFailure("schemaDrift", {
+        toolName: i.toolName,
+        expectedSchemaHash: i.expectedSchemaHash,
+        observedHash: "v2",
+      });
+    });
+    const r = await executeProvider(providerSpec("h", [mcpStep("a", "ta"), mcpStep("b", "tb")]), {
+      invoker: inv,
+    });
+    expect(!r.ok && r.finding.code).toBe("schema-drift");
+    expect(!r.ok && r.finding.message).toContain('step "a"');
+  });
+
+  it("a step skipped because a drifted step failed is a consequence: still schema-drift", async () => {
+    const r = await executeProvider(
+      providerSpec("h", [mcpStep("s", "t"), mcpStep("d", "u", {}, ["s"])]),
+      { invoker: toolAt("v2") }
+    );
+    expect(r.findings.map((f) => f.code)).toEqual(["schema-drift", "dependency-failed"]);
+    expect(!r.ok && r.finding.code).toBe("schema-drift");
+  });
+
+  it("drift mixed with any other failure stays provider-failed", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as McpIn;
+      if (i.toolName === "ta")
+        throw new TypedFailure("schemaDrift", {
+          toolName: i.toolName,
+          expectedSchemaHash: i.expectedSchemaHash,
+          observedHash: "v2",
+        });
+      throw new Error("down");
+    });
+    const r = await executeProvider(providerSpec("h", [mcpStep("a", "ta"), mcpStep("b", "tb")]), {
+      invoker: inv,
+    });
+    expect(!r.ok && r.finding.code).toBe("provider-failed");
+  });
+
   it("'report-and-proceed' records the drift, retries ONCE with the observed pin and publishes", async () => {
     const inv = toolAt("v2");
     const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), {

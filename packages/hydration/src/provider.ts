@@ -307,6 +307,23 @@ export async function executeProvider(
     if (f) findings.push(f);
   }
   if (failed.size > 0) {
+    // A provider that failed ONLY because of input drift (every step that failed on its own
+    // drifted; the rest were skipped as its dependents) answers with the first drift in graph
+    // order, so the surface says "waiting for a repair" rather than a generic failure. Any other
+    // failure alongside it keeps the generic `provider-failed`.
+    let firstDrift: Finding | undefined;
+    let onlyDrift = true;
+    for (const step of steps) {
+      const f = failed.get(step.stepId);
+      if (f === undefined || f.code === "dependency-failed") continue;
+      if (f.code !== "schema-drift") {
+        onlyDrift = false;
+        break;
+      }
+      firstDrift ??= f;
+    }
+    if (onlyDrift && firstDrift !== undefined)
+      return { ok: false, finding: firstDrift, drift, findings };
     return {
       ok: false,
       finding: err(
