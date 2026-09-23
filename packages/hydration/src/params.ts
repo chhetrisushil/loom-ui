@@ -117,11 +117,42 @@ export function providerParams(spec: ProviderSpec): string[] {
  * The named params the set actually holds (own keys only), as a fresh, FROZEN object — this is
  * the object every step's `prepareArguments` call (and its argument hook) receives as `ctx.params`
  * for the whole load, so a hook mutating it would leak into every other step's view of the load.
+ * Reads `params[n]` once per name: on params that crossed a trust boundary, snapshot them first
+ * (`snapshotParams`) — a live accessor that answered safely for an earlier, separate check (e.g.
+ * `checkParams` alone) is free to answer differently by the time THIS read runs.
  */
 export function pickParams(params: LoadParams, names: readonly string[]): LoadParams {
   return Object.freeze(
     Object.fromEntries(names.filter((n) => Object.hasOwn(params, n)).map((n) => [n, params[n]]))
   );
+}
+
+/**
+ * ONE plain, detached copy of untrusted params — a JSON round-trip through `canonicalJson`, so a
+ * value it refuses (a function, bigint, non-finite number, a cycle, past the depth cap) is caught
+ * HERE, and `JSON.parse` builds the result from that already-captured string alone: nothing
+ * downstream (`checkParams`, `pickParams`, `relevantParams`) ever reads a property of the SOURCE
+ * object again. Required wherever params cross a trust boundary (`serveHandle(s)`) — validating a
+ * live accessor and then separately picking named keys off it re-reads it, and a hostile getter is
+ * free to answer only the validating read safely and answer a later, picking read with something
+ * else entirely (observed: a number for the first two reads, a function for the third).
+ */
+export function snapshotParams(
+  params: unknown
+): { ok: true; params: LoadParams } | { ok: false; finding: Finding } {
+  if (params === null || typeof params !== "object" || Array.isArray(params))
+    return { ok: false, finding: bad("invalid-params", "params must be a plain object") };
+  try {
+    return { ok: true, params: JSON.parse(canonicalJson(params)) as LoadParams };
+  } catch (e) {
+    return {
+      ok: false,
+      finding: bad(
+        "invalid-params",
+        `params cannot be represented as JSON: ${e instanceof Error ? e.message : String(e)}`
+      ),
+    };
+  }
 }
 
 /** The params this provider can use: everything else cannot change its answer. */

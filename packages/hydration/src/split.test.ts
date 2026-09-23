@@ -566,6 +566,49 @@ describe("serveHandle trusts nothing in the request", () => {
     );
     expect(r.state === "error" && r.finding.code).toBe("version-mismatch");
   });
+
+  it("params toctou: a getter answering safely twice and unsafely on a third read is read only twice — the unsafe answer never reaches a tool", async () => {
+    const exp = board();
+    const inv = toolServer();
+    let reads = 0;
+    // Answers "ridge" (a plain string `checkParams`/the copy would accept) for the first two
+    // reads, then a function for every read after — exactly what a hostile in-process caller
+    // could do once it has seen its own value pass validation.
+    const params = {
+      get station() {
+        reads++;
+        return reads <= 2 ? "ridge" : () => "smuggled";
+      },
+    };
+    const r = await serveHandle(
+      exp,
+      { ...req(exp, "latest"), params } as unknown as HandleLoadRequest,
+      { invoker: inv, now: NOW, outputKinds }
+    );
+    expect(r.state).toBe("ready");
+    expect(reads).toBeLessThanOrEqual(2);
+    expect((inv.calls[0]?.input as McpIn).args.station).toBe("ridge");
+    expect(typeof (inv.calls[0]?.input as McpIn).args.station).not.toBe("function");
+  });
+
+  it("params toctou: a value only unsafe on a later read is refused, not silently copied as unsafe, when the FIRST read is already unsafe", async () => {
+    const exp = board();
+    const inv = toolServer();
+    // The unsafe value shows up on read 1 already: `snapshotParams`'s own single pass must
+    // still refuse it (canonicalJson cannot represent a function), same as `checkParams` would.
+    const params = {
+      get station() {
+        return (() => "smuggled") as unknown as string;
+      },
+    };
+    const r = await serveHandle(
+      exp,
+      { ...req(exp, "latest"), params } as unknown as HandleLoadRequest,
+      { invoker: inv, now: NOW, outputKinds }
+    );
+    expect(r.state === "error" && r.finding.code).toBe("invalid-params");
+    expect(inv.calls).toHaveLength(0);
+  });
 });
 
 describe("serveHandles: one server pass per batch", () => {
@@ -1032,6 +1075,16 @@ describe("served findings are public: provider internals stay on the server", ()
     expect(f("reshape-hunter2")).toBe("reshape-failed");
     expect(f("tool-hunter2")).toBe("tool-failed");
     expect(f("tool-__proto__")).toBe("tool-failed");
+  });
+
+  it("reshape-unregistered gets its own public text, not the generic reshape fallback", () => {
+    const msg = (code: string) =>
+      publicFinding("h", { code, severity: "error", message: "m" }).message;
+    const unregistered = msg("reshape-unregistered");
+    expect(unregistered).toContain('"h"');
+    // A real loom-declared channel with no specific case still falls through to the generic text.
+    expect(unregistered).not.toBe(msg("reshape-scriptMissing"));
+    expect(unregistered).not.toBe(msg("reshape-failed"));
   });
 
   it("the declared channels are exactly the ones loom exports", () => {

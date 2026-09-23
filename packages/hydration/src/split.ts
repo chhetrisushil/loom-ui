@@ -23,6 +23,7 @@ import {
   pickParams,
   providerParams,
   relevantParams,
+  snapshotParams,
 } from "./params";
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type ExecuteOptions, executeProvider, outcomeResult } from "./provider";
@@ -274,10 +275,13 @@ function publicCode(finding: Finding): string {
   return finding.severity === "warn" ? "load-warning" : "load-failed";
 }
 
-/** What a client may be told about a finding: a fixed text keyed by its PUBLIC code. */
+/**
+ * What a client may be told about a finding: a fixed text keyed by its PUBLIC code. The fixed
+ * codes' own cases run FIRST, so one of them that happens to share a `tool-`/`reshape-` prefix
+ * with an allow-listed channel code (`reshape-unregistered`, a hydration-minted code, not a
+ * channel) gets its own text instead of the generic prefix fallback below.
+ */
 function publicText(code: string, severity: Finding["severity"]): string {
-  if (code.startsWith("tool-")) return "a tool call failed";
-  if (code.startsWith("reshape-")) return "the output could not be reshaped";
   switch (code) {
     case "schema-drift-proceeded":
       return "input schema changed; served with the observed schema";
@@ -293,6 +297,8 @@ function publicText(code: string, severity: Finding["severity"]): string {
       return "the output is served unchecked";
     case "output-contract-unbound":
       return "the output cannot be checked";
+    case "reshape-unregistered":
+      return "the output could not be reshaped: the named reshaper is not registered";
     case "param-not-overridable":
       return "a param was ignored";
     case "invalid-params":
@@ -314,9 +320,10 @@ function publicText(code: string, severity: Finding["severity"]): string {
       return "the experience cannot be served";
     case "hydration-internal":
       return "an internal error occurred";
-    default:
-      return severity === "warn" ? "loaded with a warning" : "could not be loaded";
   }
+  if (code.startsWith("tool-")) return "a tool call failed";
+  if (code.startsWith("reshape-")) return "the output could not be reshaped";
+  return severity === "warn" ? "loaded with a warning" : "could not be loaded";
 }
 
 /**
@@ -445,7 +452,10 @@ export async function serveHandles(
   return Promise.all(
     requests.map(async (r) => {
       // Snapshotted ONCE, inside a guard: a hostile getter or Proxy costs this request, not the
-      // batch, and every later check reads the same values (no getter answering differently twice).
+      // batch. `experienceId`/`versionHash`/`handle` are primitives, captured by value right here.
+      // `params`, an object, is NOT safe by the same copy — a field holding a live reference can
+      // still answer a later read differently — so `serveOne` takes its own single deep-copy-and-
+      // validate pass over it (`snapshotParams`) before anything reads a key of it twice.
       let snapshot: HandleLoadRequest | null;
       try {
         snapshot =
@@ -535,10 +545,12 @@ async function serveOne(
         : undefined;
     if (spec === undefined)
       return refuse("unknown-handle", `"${handle}" is not a handle this experience binds`);
-    const asked = request.params ?? {};
-    const bad = checkParams(asked);
-    if (bad) return { state: "error", finding: bad };
-    const params = relevantParams(spec, asked);
+    // ONE deep-copy-and-validate pass over the request's params (`snapshotParams`): the result is
+    // plain, detached data with no accessor of its own, so `relevantParams`/`pickParams` below can
+    // never re-trigger a caller-supplied getter that answered differently than the check just did.
+    const snap = snapshotParams(request.params ?? {});
+    if (!snap.ok) return { state: "error", finding: snap.finding };
+    const params = relevantParams(spec, snap.params);
     // As in-process: only a contract provider's value is answerable to a kind.
     const kinds = spec.outputCheck === "contract" ? (pass.kinds.get(handle) ?? []) : undefined;
     const variant = kinds === undefined ? { params } : { params, kinds };
