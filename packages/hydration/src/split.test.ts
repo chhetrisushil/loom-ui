@@ -784,6 +784,47 @@ describe("serveHandles: one server pass per batch", () => {
   });
 });
 
+describe("SplitHydrationController across a server-side recompose", () => {
+  it("a request still carrying the previous version is answered version-mismatch; the new inventory then loads", async () => {
+    const v1 = board();
+    const v2: Experience = { ...board(), versionHash: "sha256:board-v2" };
+    let served = v1;
+    let open: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const serveOpts: ServeOptions = { invoker: toolServer(), now: NOW, outputKinds };
+    const wire = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+    const loader: HandleLoader = {
+      async load(r) {
+        await gate;
+        return wire(await serveHandle(served, wire(r), serveOpts));
+      },
+      async loadMany(many) {
+        await gate;
+        return wire(await serveHandles(served, wire(many), serveOpts));
+      },
+    };
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "board" });
+    const clock = new ManualClock();
+    const ctl = new SplitHydrationController({ loader, store, setTimer: clock.setTimer });
+    ctl.load(inventoryOf(v1).inventory);
+    await flush();
+    // The server recomposes while the P0 request (versionHash v1) is still on the wire.
+    served = v2;
+    open();
+    await flush();
+    expect(store.status("latest")).toMatchObject({
+      state: "error",
+      finding: { code: "version-mismatch", severity: "error" },
+    });
+    // The app reloads with the new inventory: the errored handle is asked again, under v2.
+    ctl.load(inventoryOf(v2).inventory);
+    await flush();
+    expect(store.status("latest")?.state).toBe("ready");
+  });
+});
+
 describe("SplitHydrationController: a question changed inside the batch window", () => {
   it("replaces the queued P1 load: only the new question is requested, and a later change re-runs", async () => {
     const exp = board();
