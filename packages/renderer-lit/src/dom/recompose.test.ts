@@ -91,6 +91,24 @@ const v1 = (): Blueprint =>
     }),
   });
 
+/** v1's shape with explicit grid lines on its first two cells (Blueprint IR 2.1.0). */
+const placedV = (p99: { row?: number; column?: number }, memoRowSpan?: number): Blueprint =>
+  blueprint$({
+    id: "e@1",
+    title: "Board",
+    projections: [HYDRATION_PROJECTION_ID],
+    layout: grid({
+      columns: 12,
+      children: [
+        cell(4, MetricCard({ id: "p99", title: "p99", binding: bind("h-p99"), unit: "ms" }), p99),
+        cell(8, note("memo"), memoRowSpan !== undefined ? { rowSpan: memoRowSpan } : {}),
+        stack({
+          children: [StatusBadge({ id: "phase", title: "Phase", binding: bind("h-phase") })],
+        }),
+      ],
+    }),
+  });
+
 /**
  * Counts `subscribeSelector` calls and the subscriptions still live, by wrapping the runtime's
  * own method — the adapter's only subscription path. `throwFor` makes a subscribe to that
@@ -165,7 +183,7 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     const before = [...host.querySelectorAll("*")];
     calls.length = 0;
     // Literally zero, not merely invisible: an attribute rewritten to the value it already holds
-    // is a real MutationRecord, and `styleContainer`/`applySpan`/the root chrome run over every
+    // is a real MutationRecord, and `styleContainer`/`applyPlacement`/the root chrome run over every
     // node on every pass.
     const observer = new MutationObserver(() => {});
     observer.observe(host, {
@@ -696,6 +714,67 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     expect(r.findings).toEqual([{ code: "patch-failed", nodeId: "", message: "disposed" }]);
     expect(r.remounted).toEqual([]);
     expect(calls).toEqual([]);
+  });
+  it("IR 2.1.0: an identical PLACED blueprint makes zero DOM mutations", () => {
+    const { host, handle, calls } = setup(placedV({ row: 2, column: 1 }, 2));
+    calls.length = 0;
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    handle.update(placedV({ row: 2, column: 1 }, 2));
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(calls).toEqual([]);
+    handle.dispose();
+  });
+  it("IR 2.1.0: a placement change is a style patch on the kept host — no remount, shape parity", () => {
+    const { host, handle, calls, store, runtime } = setup(placedV({ row: 1, column: 1 }));
+    const p99Host = host.querySelector("[data-widget-id='p99']") as HTMLElement;
+    const memoHost = host.querySelector("[data-widget-id='memo']") as HTMLElement;
+    expect([p99Host.style.gridColumn, p99Host.style.gridRow]).toEqual(["1 / span 4", "1 / span 1"]);
+    calls.length = 0;
+    const next = placedV({ row: 3, column: 9 }, 2);
+    const r = handle.update(next);
+    expect(host.querySelector("[data-widget-id='p99']")).toBe(p99Host);
+    expect([p99Host.style.gridColumn, p99Host.style.gridRow]).toEqual(["9 / span 4", "3 / span 1"]);
+    expect([memoHost.style.gridColumn, memoHost.style.gridRow]).toEqual(["span 8", "span 2"]);
+    expect(r.remounted).toEqual([]);
+    expect(r.findings).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    // Back to flow placement: the grid lines placement wrote are cleared; the span alone remains.
+    const flow = placedV({});
+    handle.update(flow);
+    expect([p99Host.style.gridColumn, p99Host.style.gridRow]).toEqual(["span 4", ""]);
+    expect(memoHost.style.gridRow).toBe("");
+    expect(calls).toEqual([]);
+    expect(shape(handle.element)).toEqual(freshShape(flow, store, runtime));
+    handle.dispose();
+  });
+  it("IR 2.1.0: a placed widget whose container stops being a grid loses its grid lines", () => {
+    const { host, handle } = setup(placedV({ row: 2, column: 5 }));
+    const p99Host = host.querySelector("[data-widget-id='p99']") as HTMLElement;
+    handle.update(
+      blueprint$({
+        id: "e@1",
+        title: "Board",
+        projections: [HYDRATION_PROJECTION_ID],
+        layout: stack({
+          children: [
+            MetricCard({ id: "p99", title: "p99", binding: bind("h-p99"), unit: "ms" }),
+            note("memo"),
+          ],
+        }),
+      })
+    );
+    expect(host.querySelector("[data-widget-id='p99']")).toBe(p99Host);
+    expect([p99Host.style.gridColumn, p99Host.style.gridRow]).toEqual(["", ""]);
+    handle.dispose();
   });
 });
 

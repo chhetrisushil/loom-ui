@@ -353,4 +353,43 @@ describe("renderBlueprintDom", () => {
     await Promise.resolve();
     expect(calls).not.toContain("update:phase");
   });
+  it("IR 2.1.0: a placed cell's grid lines land on the child's own element; an unplaced span-1 cell writes none", () => {
+    const placedBp = blueprint$({
+      id: "e@p",
+      title: "Dash",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: grid({
+        columns: 12,
+        children: [
+          cell(4, MetricCard({ id: "p99", title: "p99", binding: bind("h-p99") }), {
+            row: 2,
+            column: 5,
+          }),
+          cell(1, StatusBadge({ id: "phase", title: "Phase", binding: bind("h-phase") }), {
+            rowSpan: 2,
+          }),
+          cell(6, stack({ children: [] }), { row: 1, column: 7 }),
+          MetricCard({ id: "flow", title: "flow", binding: bind("h-flow") }),
+        ],
+      }),
+    });
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, placedBp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+    });
+    const el = (sel: string) => host.querySelector(sel) as HTMLElement;
+    const lines = (sel: string) => [el(sel).style.gridColumn, el(sel).style.gridRow];
+    expect(lines("[data-widget-id='p99']")).toEqual(["5 / span 4", "2 / span 1"]);
+    // Placed ⇒ written even at span 1, exactly as loom's React renderer wraps a placed span-1 cell.
+    expect(lines("[data-widget-id='phase']")).toEqual(["span 1", "span 2"]);
+    expect(lines("[data-layout='stack']")).toEqual(["7 / span 6", "1 / span 1"]);
+    expect(lines("[data-widget-id='flow']")).toEqual(["", ""]);
+    // Still no wrapper: the grid item is the widget's own host.
+    expect(el("[data-widget-id='p99']").parentElement).toBe(el("[data-layout='grid']"));
+    handle.dispose();
+  });
 });
