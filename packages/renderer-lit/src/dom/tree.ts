@@ -4,12 +4,21 @@ import {
   type Widget,
   type WidgetAction,
   asCell,
+  isLayoutRole,
   isWidget,
   resolveWidgetStatus,
   resolveWidgetValue,
 } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
-import { type DomRegistry, type DomWidgetHandle, placeholderFor } from "./registry";
+import { deepEqual } from "./deepEqual";
+import {
+  type DomContainerChild,
+  type DomContainerHandle,
+  type DomContainerRegistry,
+  type DomRegistry,
+  type DomWidgetHandle,
+  placeholderFor,
+} from "./registry";
 
 // ── The entry tree ────────────────────────────────────────────────────────────
 // The adapter mounts a blueprint into a tree of ENTRIES that mirrors the DOM one-for-one: a
@@ -19,6 +28,8 @@ import { type DomRegistry, type DomWidgetHandle, placeholderFor } from "./regist
 
 export interface MountContext {
   readonly registry: DomRegistry;
+  /** Container renderers keyed by role (IR 2.2.0); absent ⇒ every container is plain. */
+  readonly containers?: DomContainerRegistry;
   readonly projectionRuntime: ProjectionRuntime;
   readonly executionId: string;
   /** Every projection the blueprint declares → its state; rebuilt by the caller before each mount/update. */
@@ -36,18 +47,38 @@ export interface WidgetEntry {
 }
 export interface ContainerEntry {
   readonly kind: "container";
-  /** `<div data-layout>` — carries the layout style and holds the children. */
+  /** `<div data-layout>` — carries the layout style and holds the children (a renderer's `body`). */
   readonly el: HTMLElement;
   /**
-   * The element that sits in the PARENT: `el` itself, or — for a layout with a non-empty `title`
-   * (IR 2.1.0) — the `<section aria-label>` wrapping `<h2>` and `el`. Grid placement lands here.
+   * What a title wraps: `el`, or — while a container renderer's chrome is live (IR 2.2.0) — the
+   * `<div data-container-role>` role host holding the chrome and `el`.
+   */
+  inner: HTMLElement;
+  /**
+   * The element that sits in the PARENT: `inner` itself, or — for a layout with a non-empty
+   * `title` (IR 2.1.0) — the `<section aria-label>` wrapping `<h2>` and `inner`. Grid placement
+   * lands here.
    */
   outer: HTMLElement;
   /** The `<h2>` while the layout is titled. */
   heading: HTMLElement | undefined;
   layout: Layout;
+  /**
+   * The well-formed role this entry was mounted under (`roleKey`), part of its reconcile key:
+   * containers match by ordinal + type + role (loom ADR 0099 D3). Fixed for the entry's life.
+   */
+  readonly role: string | undefined;
+  /** The live container renderer, if the role has one and it has not failed. */
+  chrome: Chrome | undefined;
   /** Document order — the i-th entry is the i-th child element of `el`. */
   children: Entry[];
+}
+export interface Chrome {
+  /** `<div data-container-role=R>` — chrome plus `el`. */
+  readonly host: HTMLElement;
+  readonly handle: DomContainerHandle;
+  /** The child list the renderer was last handed — what the next pass compares against. */
+  children: readonly DomContainerChild[];
 }
 export type Entry = WidgetEntry | ContainerEntry;
 export interface ChildSpec {
@@ -177,6 +208,16 @@ export function styleContainer(el: HTMLElement, layout: Layout): void {
   setStyle(el, "gap", layout.gap !== undefined ? `${layout.gap}px` : "");
 }
 
+/**
+ * The role a layout is keyed and looked up under: a well-formed role (loom's `isLayoutRole`,
+ * ADR 0099 D2), else none. A malformed role is exactly an absent one here — the renderer never
+ * throws on it and never half-honours it — so `"Stepped"` or `"__proto__"` can reach no registry.
+ */
+export function roleKey(layout: Layout): string | undefined {
+  const role = (layout as { role?: unknown }).role;
+  return isLayoutRole(role) ? role : undefined;
+}
+
 /** A layout's heading: a NON-EMPTY string title, or none — the rule loom's React and terminal renderers apply (ADR 0098 D4). */
 export function titleOf(layout: Layout): string | undefined {
   return typeof layout.title === "string" && layout.title !== "" ? layout.title : undefined;
@@ -184,7 +225,8 @@ export function titleOf(layout: Layout): string | undefined {
 
 /**
  * A titled layout renders as loom's React renderer draws it (ADR 0098 D4):
- * `<section aria-label=T><h2>T</h2>` + the layout element. The layout style stays on the inner
+ * `<section aria-label=T><h2>T</h2>` + the layout element (or, under a container renderer, its
+ * role host — so the heading names chrome and body alike). The layout style stays on the inner
  * element, so the heading is never a grid item; the SECTION is what sits in the parent (and
  * carries the parent's grid lines). Always `h2`: the blueprint title is the `h1`. `aria-label`
  * names the region — a `<section>` does not take its accessible name from its heading.
@@ -200,7 +242,8 @@ export function titleOf(layout: Layout): string | undefined {
  */
 export function applyTitle(entry: ContainerEntry, layout: Layout): void {
   const title = titleOf(layout);
-  const { el } = entry;
+  // The element the section wraps: the layout element, or its role host while chrome is live.
+  const el = entry.inner;
   if (title !== undefined && entry.heading !== undefined) {
     if (entry.heading.textContent !== title) entry.heading.textContent = title;
     if (entry.outer.getAttribute("aria-label") !== title)
@@ -457,11 +500,16 @@ export function mountWidget(
   return entry;
 }
 
+/**
+ * Mount `layout`. `path` names it from the blueprint root (`layout.children[1]`) — used only in a
+ * container renderer's failure message, since a layout has no id to blame.
+ */
 export function mountContainer(
   layout: Layout,
   ctx: MountContext,
   onFail: (f: { nodeId: string; message: string }) => void,
-  track?: TrackMount
+  track?: TrackMount,
+  path = "layout"
 ): ContainerEntry {
   const el = document.createElement("div");
   styleContainer(el, layout);
@@ -469,33 +517,202 @@ export function mountContainer(
   const entry: ContainerEntry = {
     kind: "container",
     el,
+    inner: el,
     outer: el,
     heading: undefined,
     layout,
+    role: roleKey(layout),
+    chrome: undefined,
     children: [],
   };
-  applyTitle(entry, layout);
   track?.(entry);
-  for (const spec of childSpecs(layout)) {
+  childSpecs(layout).forEach((spec, i) => {
     const { node } = spec;
     const child = isWidgetNode(node)
       ? mountWidget(node, ctx, onFail, track)
-      : mountContainer(node, ctx, onFail, track);
+      : mountContainer(node, ctx, onFail, track, `${path}.children[${i}]`);
     const childEl = elementOf(child);
     applyPlacement(childEl, spec, inGrid);
     el.appendChild(childEl);
     entry.children.push(child);
-  }
+  });
+  // Chrome after the children (the renderer is handed them), the title after the chrome (the
+  // section wraps the role host, so the heading names chrome and body alike).
+  mountChrome(entry, ctx, onFail, path);
+  applyTitle(entry, layout);
   return entry;
 }
 
+// ── Container renderers (IR 2.2.0 `Layout.role`, loom ADR 0099) ─────────────────────────────
+
+/** The children a container renderer is handed: document order, each element with its node. */
+export function containerChildren(entry: ContainerEntry): DomContainerChild[] {
+  return entry.children.map((c) => ({
+    element: elementOf(c),
+    node: c.kind === "widget" ? c.widget : c.layout,
+  }));
+}
+
+const withoutChildren = (layout: Layout): Omit<Layout, "children"> => {
+  const { children: _children, ...own } = layout;
+  return own;
+};
+
+/** A layout's OWN fields — everything but `children` (type, columns, direction, gap, title, role). */
+export function ownFieldsEqual(a: Layout, b: Layout): boolean {
+  return deepEqual(withoutChildren(a), withoutChildren(b));
+}
+
 /**
- * Unsubscribe and dispose every widget under `entry`, reporting each failure against the WIDGET
- * id it came from (a container has no id of its own to blame). Leaves the DOM in place.
+ * Whether a container renderer must hear about `next`: a child element added, removed, replaced
+ * or reordered, or a child's own fields changed (a widget node, or a child layout's own fields —
+ * a step's title is a label the chrome shows). Children's SUBTREES are not compared: what moves
+ * inside a step is the adapter's business alone.
+ */
+export function childrenChanged(
+  prev: readonly DomContainerChild[],
+  next: readonly DomContainerChild[]
+): boolean {
+  if (prev.length !== next.length) return true;
+  for (let i = 0; i < prev.length; i++) {
+    const a = prev[i] as DomContainerChild;
+    const b = next[i] as DomContainerChild;
+    if (a.element !== b.element) return true;
+    if (a.node === b.node) continue;
+    const aw = isWidgetNode(a.node);
+    if (aw !== isWidgetNode(b.node)) return true;
+    if (aw ? !deepEqual(a.node, b.node) : !ownFieldsEqual(a.node as Layout, b.node as Layout))
+      return true;
+  }
+  return false;
+}
+
+/**
+ * Undo what an app may have set on a child to hide it. Called when chrome is dropped after a
+ * failure: the plain container that replaces it shows every child, so a child the chrome had
+ * hidden must not stay hidden with nothing left to show it again.
+ */
+function unhide(children: readonly DomContainerChild[]): void {
+  for (const { element } of children)
+    for (const attr of ["hidden", "inert", "aria-hidden"])
+      if (element.hasAttribute(attr)) element.removeAttribute(attr);
+}
+
+const failureMessage = (role: string, path: string, e: unknown): string =>
+  `container renderer for role "${role}" at ${path} failed: ${e instanceof Error ? e.message : String(e)}`;
+
+/**
+ * Run the container renderer registered for the entry's role, if any, around the fresh `el`. A
+ * renderer that throws, or returns no handle with `update` and `dispose`, is reported through
+ * `onFail` and the container stays plain — `el` never left the adapter's hands.
+ */
+function mountChrome(
+  entry: ContainerEntry,
+  ctx: MountContext,
+  onFail: (f: { nodeId: string; message: string }) => void,
+  path: string
+): void {
+  const role = entry.role;
+  if (role === undefined) return;
+  const renderer = ctx.containers?.get(role);
+  if (renderer === undefined) return;
+  const host = document.createElement("div");
+  host.dataset.containerRole = role;
+  host.append(entry.el);
+  const children = containerChildren(entry);
+  try {
+    const handle = renderer(host, { layout: entry.layout, body: entry.el, children });
+    if (
+      !handle ||
+      typeof handle.update !== "function" ||
+      typeof (handle as { dispose?: unknown }).dispose !== "function"
+    ) {
+      try {
+        (handle as { dispose?: () => void } | undefined)?.dispose?.();
+      } catch {
+        // Refused either way.
+      }
+      throw new Error("the renderer returned no handle with update() and dispose()");
+    }
+    entry.chrome = { host, handle, children };
+    entry.inner = host;
+    entry.outer = host;
+  } catch (e) {
+    entry.el.remove(); // out of the discarded role host; the parent places it
+    unhide(children);
+    onFail({ nodeId: "", message: failureMessage(role, path, e) });
+  }
+}
+
+/**
+ * Hand a live chrome the container's current state, iff anything it is told about changed
+ * (`ownFieldsEqual`, `childrenChanged`) — an identical Blueprint calls nothing. A throwing
+ * `update` drops the chrome (`dropChrome`) and returns the failure message.
+ */
+export function updateChrome(
+  entry: ContainerEntry,
+  prevLayout: Layout,
+  path: string
+): string | undefined {
+  const chrome = entry.chrome;
+  if (chrome === undefined) return undefined;
+  const children = containerChildren(entry);
+  if (ownFieldsEqual(prevLayout, entry.layout) && !childrenChanged(chrome.children, children))
+    return undefined;
+  try {
+    chrome.handle.update({ layout: entry.layout, body: entry.el, children });
+    chrome.children = children;
+    return undefined;
+  } catch (e) {
+    dropChrome(entry);
+    return failureMessage(entry.role ?? "", path, e);
+  }
+}
+
+/**
+ * Fall back from a failed chrome to the plain container, in place: dispose the handle, move `el`
+ * to where the role host stood (inside the section when titled, else in the parent), drop the
+ * host, un-hide every child. Children stay mounted and subscribed; focus inside is kept. The
+ * entry keeps its role (its KEY), so the same role is not retried until the container remounts.
+ */
+function dropChrome(entry: ContainerEntry): void {
+  const chrome = entry.chrome;
+  if (chrome === undefined) return;
+  entry.chrome = undefined;
+  try {
+    chrome.handle.dispose();
+  } catch {
+    // Already failing: the chrome is dropped either way.
+  }
+  const { host } = chrome;
+  const restore = focusWithin(host);
+  const parent = host.parentNode;
+  if (parent !== null) moveInto(parent, entry.el, host);
+  else entry.el.remove();
+  host.remove();
+  unhide(containerChildren(entry));
+  if (entry.outer === host) entry.outer = entry.el;
+  entry.inner = entry.el;
+  restore();
+}
+
+/**
+ * Unsubscribe and dispose every widget under `entry` — and every container renderer's chrome —
+ * reporting each failure against the WIDGET id it came from (`""` for chrome: a container has no
+ * id of its own to blame). Leaves the DOM in place.
  * Idempotent: a disposed widget has no handle or subscription left to dispose again.
  */
 export function disposeEntry(entry: Entry, onError: (widgetId: string, e: unknown) => void): void {
   if (entry.kind === "container") {
+    // A container renderer's chrome goes first (it wraps the children); a throw is blamed on "",
+    // since a layout has no id. Dropped from the entry so a second dispose does not repeat it.
+    const chrome = entry.chrome;
+    entry.chrome = undefined;
+    try {
+      chrome?.handle.dispose();
+    } catch (e) {
+      onError("", e);
+    }
     for (const c of entry.children) disposeEntry(c, onError);
     return;
   }
@@ -517,6 +734,6 @@ export function widgetIdsOf(entry: Entry): string[] {
   return entry.kind === "widget" ? [entry.widget.id] : entry.children.flatMap(widgetIdsOf);
 }
 
-/** The element an entry puts in its parent: a widget's host, or a container's `outer` (its section when titled). */
+/** The element an entry puts in its parent: a widget's host, or a container's `outer` (its section when titled, else its role host under chrome, else `el`). */
 export const elementOf = (entry: Entry): HTMLElement =>
   entry.kind === "widget" ? entry.host : entry.outer;

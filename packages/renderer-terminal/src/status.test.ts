@@ -158,3 +158,39 @@ describe("renderExperience — placement and section titles (Blueprint IR 2.1.0)
     expect(renderExperience(board(false), store())).toContain("Today\n─────\nB: 2\nA: 1\nC: 3\n");
   });
 });
+
+describe("renderExperience — layout roles (Blueprint IR 2.2.0, loom ADR 0099 D5)", () => {
+  // No container-renderer seam on the terminal: a role is an interaction hint, a one-shot text
+  // surface has none, and every child under the title in reading order is the whole content.
+  const board = (role?: string) =>
+    blueprint$({
+      id: "r@v",
+      title: "Onboarding",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: stack({
+        ...(role !== undefined && { role }),
+        title: "Steps",
+        children: ["a", "b", "c"].map((id) =>
+          stack({
+            title: `Step ${id}`,
+            children: [MetricCard({ id, title: id.toUpperCase(), binding: bound(`h${id}`) })],
+          })
+        ),
+      }),
+    });
+  const store = () => {
+    const s = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "r" });
+    s.setValue("ha", 1, { state: "ready" });
+    s.setValue("hb", 2, { state: "ready" });
+    s.setValue("hc", 3, { state: "ready" });
+    return s;
+  };
+
+  it("a roled container prints byte-identically to the unroled one — every step, in order", () => {
+    const plain = renderExperience(board(), store());
+    expect(plain).toContain("A: 1");
+    expect(plain.indexOf("A: 1")).toBeLessThan(plain.indexOf("C: 3"));
+    for (const role of ["stepped", "tabbed", "Malformed"])
+      expect(renderExperience(board(role), store()), role).toBe(plain);
+  });
+});

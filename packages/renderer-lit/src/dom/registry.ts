@@ -1,6 +1,7 @@
 import type {
   BindingStatus,
   IdentityReport,
+  Layout,
   RendererRegistry,
   Widget,
   WidgetAction,
@@ -31,7 +32,55 @@ export interface DomWidgetHandle {
 export type DomWidgetRenderer = (host: HTMLElement, props: DomWidgetProps) => DomWidgetHandle;
 export type DomRegistry = RendererRegistry<DomWidgetRenderer>;
 
-/** One adapter-side failure during `update`; the widget is already on its error placeholder. */
+// ── The container renderer contract (Blueprint IR 2.2.0 `Layout.role`, loom ADR 0099) ─────────
+// A layout whose `role` names a renderer in `DomRenderOptions.containers` is drawn with that
+// renderer's CHROME around the adapter's own container. The adapter keeps everything it owns for
+// a plain container — the `body` element (`data-layout`, the layout style), the children's
+// mount / keyed reconcile / reorder / placement / subscriptions, the focus pin, the section
+// wrap. The app owns only what it mounts in `host` outside `body`, and which of the children it
+// is handed are visible (`hidden`, `inert`, `aria-*`, `role`, `id`, `class` on those elements).
+// It never adds, removes, reorders or restyles `body`'s children.
+
+/** One child of a roled container, in document order. `node` is there for labels (a step's title). */
+export interface DomContainerChild {
+  /** The element the adapter put in `body`: a widget's host, or a child container's outermost element. */
+  readonly element: HTMLElement;
+  readonly node: Widget | Layout;
+}
+export interface DomContainerProps {
+  /** The layout being drawn, `role` included. */
+  readonly layout: Layout;
+  /** The adapter's container element: the children's parent. Chrome goes beside it in `host`, never in it. */
+  readonly body: HTMLElement;
+  readonly children: readonly DomContainerChild[];
+}
+export interface DomContainerHandle {
+  /**
+   * The layout's own fields (type, columns, direction, gap, title, role), its child element list
+   * or order, or a child's own fields changed. REQUIRED — chrome never owns a child, so there is
+   * nothing a remount would buy. Not called for an identical Blueprint.
+   */
+  update(props: DomContainerProps): void;
+  /** The container is being swept out, remounted, or the handle disposed. Remove your chrome. */
+  dispose(): void;
+}
+/**
+ * Mounts chrome into `host` — a `<div data-container-role="R">` that already holds `props.body`
+ * — and returns its handle. A renderer that throws (here or in `update`) is disposed and the
+ * container falls back to plain, children intact: chrome can never lose a child.
+ */
+export type DomContainerRenderer = (
+  host: HTMLElement,
+  props: DomContainerProps
+) => DomContainerHandle;
+/** Container renderers keyed by ROLE (loom's registry: `.register`, `.merge`; there is no default). */
+export type DomContainerRegistry = RendererRegistry<DomContainerRenderer>;
+
+/**
+ * One adapter-side failure during `update`; the widget is already on its error placeholder. A
+ * container renderer's failure has `nodeId: ""` (a layout has no id) and names the role and the
+ * layout's path; that container is already drawn plain.
+ */
 export interface RecomposeFinding {
   readonly code: "patch-failed" | "mount-failed";
   readonly nodeId: string;
@@ -44,8 +93,9 @@ export interface RecomposeReport {
   /**
    * Present in both trees but disposed and mounted again: the kind changed, the renderer has no
    * `patch`, OR the widget did not stay put WITHIN ITS CONTAINER — it moved to another container,
-   * its container's ordinal among container siblings shifted, or its container changed type
-   * (containers are keyed by ordinal + type, so each of those re-creates the container's widgets).
+   * its container's ordinal among container siblings shifted, or its container changed type or
+   * role (containers are keyed by ordinal + type + role, so each of those re-creates the
+   * container's widgets).
    */
   readonly remounted: readonly string[];
   /** Binding changed: unsubscribed, re-subscribed, first slice pushed synchronously. */

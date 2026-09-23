@@ -8,6 +8,11 @@ export { renderBlueprintDom } from "./renderBlueprintDom";
 export type { DomRenderHandle, DomRenderOptions } from "./renderBlueprintDom";
 export { placeholderFor, projectionPlaceholder } from "./registry";
 export type {
+  DomContainerChild,
+  DomContainerHandle,
+  DomContainerProps,
+  DomContainerRegistry,
+  DomContainerRenderer,
   DomRegistry,
   DomWidgetHandle,
   DomWidgetProps,
