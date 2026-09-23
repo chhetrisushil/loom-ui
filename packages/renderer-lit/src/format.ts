@@ -1,4 +1,4 @@
-import type { SemanticFormat } from "@loom-ui/core";
+import { type SemanticFormat, semanticNumberFormatOptions } from "@loom-ui/core";
 import { formattingLocale } from "./i18n";
 
 // One declaration of what a number means, in `@loom-ui/core` beside the value contracts that
@@ -54,17 +54,11 @@ export function effectiveFormat(
   return format ?? formatFromUnit(unit);
 }
 
+// The semantics→Intl.NumberFormat-options mapping lives once, in @loom-ui/core, so this DOM
+// renderer and the terminal renderer (which cannot import this ESM/lit package) apply identical
+// rounding/grouping/currency rules instead of each re-deriving them from the contract.
 function numberFormat(f: SemanticFormat, locale: string): Intl.NumberFormat {
-  const opts: Intl.NumberFormatOptions = {};
-  if (f.notation) opts.notation = f.notation;
-  if (f.maximumFractionDigits !== undefined) opts.maximumFractionDigits = f.maximumFractionDigits;
-  if (f.semanticType === "integer") opts.maximumFractionDigits = 0;
-  if (f.semanticType === "percentage") opts.style = "percent";
-  if (f.semanticType === "currency") {
-    opts.style = "currency";
-    opts.currency = f.currency ?? "USD";
-  }
-  return new Intl.NumberFormat(locale, opts);
+  return new Intl.NumberFormat(locale, semanticNumberFormatOptions(f));
 }
 
 export function measure(value: number, format?: SemanticFormat): string {
