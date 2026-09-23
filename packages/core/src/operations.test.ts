@@ -754,4 +754,25 @@ describe("placement-out-of-range is refused by every op that could create it", (
     ).toBe("placement-out-of-range@m1");
     must(apply(base, { type: "moveNode", nodeId: "m1", newParentId: "grid2", newOrder: "b" }));
   });
+  it("every out-of-range refusal names the remedy for the op that raised it", () => {
+    const message = (r: ReturnType<typeof apply>) => (r.ok ? "ok" : r.finding.message);
+    expect(
+      message(apply(withM1(), { type: "setPlacement", nodeId: "m1", column: 10, span: 6 }))
+    ).toMatch(/; choose a column and span that fit the grid$/);
+    expect(
+      message(
+        apply(g, { type: "insertNode", parentId: "root", node: { ...node("m2"), column: 11 } })
+      )
+    ).toMatch(/; insert it without row\/rowSpan\/column$/);
+    const flowed = must(
+      replay(g, [
+        { type: "insertNode", parentId: "root", node: container("flow", "row") },
+        { type: "insertNode", parentId: "root", node: node("m1") },
+        { type: "setPlacement", nodeId: "m1", column: 2 },
+      ])
+    );
+    expect(
+      message(apply(flowed, { type: "moveNode", nodeId: "m1", newParentId: "flow", newOrder: "b" }))
+    ).toMatch(/; clear it first with setPlacement \(row, column and rowSpan null\)$/);
+  });
 });
