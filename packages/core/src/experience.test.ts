@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Experience, experienceArtifact, genesis } from "./experience";
+import { Experience, ProviderSpec, experienceArtifact, genesis } from "./experience";
 import { mintVersionHash, seal } from "./log";
 import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 
@@ -141,5 +141,41 @@ describe("placement and titles in the content address (Blueprint IR 2.1.0)", () 
     const root = seal(placed).root as ContainerNode;
     expect(root.children[0]).toMatchObject({ row: 1, column: 1 });
     expect(root.children[1]).toMatchObject({ title: { key: "c.title", fallback: "C" } });
+  });
+});
+
+// A provider exactly as every Experience stored before slice 6 spelled it. The schema may only
+// GROW by optional, default-less fields: parse must hand back exactly this object (no key added,
+// none removed), because `mintVersionHash` hashes the PARSED providers — a default would re-key
+// every sealed Experience.
+const legacyStep = {
+  stepId: "s",
+  toolName: "readings.current",
+  toolVersion: "1.0.0",
+  toolSchemaHash: "sha256:pin",
+  arguments: { station: "ridge" },
+  dependsOn: [],
+  idempotent: true,
+};
+const legacy = {
+  handle: "h",
+  executionGraph: [legacyStep],
+  reshaping: { engine: "JSONPath", scriptRef: "" },
+  outputShapeHash: "",
+  cachePolicy: { ttlSeconds: 60, scope: "global" },
+};
+
+describe("ProviderSpec grows additively", () => {
+  it("a provider written before the new fields parses to exactly itself, so its hash is unchanged", () => {
+    expect(ProviderSpec.parse(legacy)).toStrictEqual(legacy);
+  });
+
+  it("accepts outputCheck 'contract' and 'shape', and refuses anything else", () => {
+    expect(ProviderSpec.parse({ ...legacy, outputCheck: "contract" })).toStrictEqual({
+      ...legacy,
+      outputCheck: "contract",
+    });
+    expect(ProviderSpec.parse({ ...legacy, outputCheck: "shape" }).outputCheck).toBe("shape");
+    expect(ProviderSpec.safeParse({ ...legacy, outputCheck: "exact" }).success).toBe(false);
   });
 });

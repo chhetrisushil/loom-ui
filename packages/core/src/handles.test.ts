@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
-import { experienceHandles } from "./handles";
+import { experienceHandles, handleKinds } from "./handles";
 import type { ContainerNode, ExperienceNode, SemanticNode } from "./node";
+import { testCatalog } from "./testCatalog.test-support";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
 const sem = (
@@ -47,5 +48,26 @@ describe("experienceHandles", () => {
   });
   it("returns [] for an experience with no bindings", () => {
     expect(experienceHandles(exp([sem("a", undefined)]))).toEqual([]);
+  });
+});
+
+describe("handleKinds", () => {
+  it("resolves every binding node on ONE surface, follows degrades, dedupes and sorts", () => {
+    const trend: SemanticNode = { ...sem("t", "h1", "P0"), type: "Trend" };
+    const e = exp([sem("a", "h1"), trend, sem("b", "h2"), sem("c", undefined)]);
+    expect(Object.fromEntries(handleKinds(e, testCatalog, "web"))).toEqual({
+      h1: ["MetricCard", "TimeSeries"],
+      h2: ["MetricCard"],
+    });
+    // On the terminal a Trend degrades to Collection → DataTable: same handle, other kinds.
+    expect(Object.fromEntries(handleKinds(e, testCatalog, "terminal"))).toEqual({
+      h1: ["DataTable", "MetricCard"],
+      h2: ["MetricCard"],
+    });
+  });
+
+  it("a node whose type does not resolve on the surface contributes no kind", () => {
+    const ghost: SemanticNode = { ...sem("g", "h3"), type: "Nope" };
+    expect(handleKinds(exp([ghost]), testCatalog, "web").size).toBe(0);
   });
 });

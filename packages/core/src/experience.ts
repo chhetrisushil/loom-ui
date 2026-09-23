@@ -39,6 +39,19 @@ export const ProviderSpec = z.object({
    */
   reshaping: z.object({ engine: z.enum(["JSONPath", "QuickJS"]), scriptRef: z.string() }),
   outputShapeHash: z.string(),
+  /**
+   * How the reshaped value is checked before it is published.
+   * - absent or `"shape"`: its structural shape hash must equal `outputShapeHash` (`""` = unchecked,
+   *   reported as a warning).
+   * - `"contract"`: it must satisfy the value contract (`checkKindValue`) of EVERY kind the
+   *   handle's bound nodes resolve to on the surface being hydrated (`handleKinds`); the caller
+   *   supplies those kinds, and `outputShapeHash` is not read. A shape hash tells `[]` from
+   *   `[{…}]` and `null` from a number, so under `"shape"` an empty result set or a null cell
+   *   reads as drift; under `"contract"` drift is a value the widget cannot render.
+   * Input drift (a tool's schema pin) is checked the same way under both.
+   * Optional with no default: an Experience written before this field hashes the same.
+   */
+  outputCheck: z.enum(["shape", "contract"]).optional(),
   cachePolicy: z.object({ ttlSeconds: z.number(), scope: z.enum(["principal", "global"]) }),
 });
 export type ProviderSpec = z.infer<typeof ProviderSpec>;
