@@ -13,6 +13,7 @@ import {
   normalize,
   rebuild,
   treeDepth,
+  walk,
 } from "./node";
 
 // ── Operations, not diffs ─────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ import {
 // and a `prompt` op carries BOTH the intent text and the primitives it materialised — so replay
 // folds the primitives and never re-invokes a planner. There is deliberately NO operation over
 // `intent`: a new intent is a new lineage.
+// A provider is retired by `removeProvider`, refused while any node still binds its handle.
 
 export const Provenance = z.object({
   source: z.enum(["user", "agent", "application", "system"]),
@@ -44,6 +46,7 @@ export type Operation =
       sensitivity?: DataClass;
     }
   | { type: "remapProvider"; handle: string; spec: z.infer<typeof ProviderSpec> }
+  | { type: "removeProvider"; handle: string }
   | { type: "prompt"; text: string; scopeNodeIds?: string[]; materialized: Operation[] };
 
 export const Operation: z.ZodType<Operation> = z.lazy(() =>
@@ -66,6 +69,7 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       sensitivity: Sensitivity.optional(),
     }),
     z.object({ type: z.literal("remapProvider"), handle: z.string().min(1), spec: ProviderSpec }),
+    z.object({ type: z.literal("removeProvider"), handle: z.string().min(1) }),
     z.object({
       type: z.literal("prompt"),
       text: z.string(),
@@ -117,6 +121,15 @@ function depthOfNode(root: ExperienceNode, id: string): number | undefined {
       for (const child of top.node.children) stack.push({ node: child, depth: top.depth + 1 });
   }
   return undefined;
+}
+
+/** Ids of every semantic node (at any depth) whose binding names `handle`, in tree order. */
+function bindersOf(root: ExperienceNode, handle: string): string[] {
+  const ids: string[] = [];
+  walk(root, (n) => {
+    if (n.kind === "semantic" && n.binding?.handle === handle) ids.push(n.id);
+  });
+  return ids;
 }
 
 export function apply(base: Experience, rawOp: Operation): OpResult<Experience> {
@@ -234,6 +247,27 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         ok: true,
         value: next(base, { providers: { ...base.providers, [op.handle]: op.spec } }),
       };
+    }
+    case "removeProvider": {
+      // `hasOwnProperty`, not `in`: `providers` is a plain record, so `toString` or
+      // `__proto__` would otherwise "exist" and be removed as a no-op.
+      if (!Object.prototype.hasOwnProperty.call(base.providers, op.handle))
+        return refuse("missing-provider", `provider "${op.handle}" not found`);
+      // A binder with no provider renders a permanently empty widget (`unknown-handle`), so
+      // the order is fixed: unbind or remove every binder first, then retire the provider.
+      const binders = bindersOf(base.root, op.handle);
+      if (binders.length > 0)
+        return refuse(
+          "provider-still-bound",
+          `provider "${op.handle}" is still bound by ${binders.map((id) => `"${id}"`).join(", ")}; remove or rebind them first`,
+          binders[0]
+        );
+      // Rebuilt, not `delete`d: the base is never mutated, and `fromEntries` keeps even a
+      // `__proto__` handle an own key.
+      const providers = Object.fromEntries(
+        Object.entries(base.providers).filter(([h]) => h !== op.handle)
+      );
+      return { ok: true, value: next(base, { providers }) };
     }
     case "prompt":
       // Replay path: fold the materialised primitives. Re-invoking the planner is never core's job.
