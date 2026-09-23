@@ -265,8 +265,9 @@ function focusWithin(root: HTMLElement): () => void {
   if (!(top instanceof HTMLElement) || !root.contains(top)) return () => {};
   let active: Element = top;
   while (active.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
-  if (!(active instanceof HTMLElement)) return () => {};
-  const deep = active;
+  // A deep control that is not an HTMLElement (a focused SVG in a shadow root) cannot be
+  // restored through this path; refocus its top-level host instead of dropping focus.
+  const deep = active instanceof HTMLElement ? active : top;
   const field =
     deep instanceof HTMLTextAreaElement || deep instanceof HTMLInputElement ? deep : undefined;
   let range: [number | null, number | null, "forward" | "backward" | "none" | null] = [
@@ -280,7 +281,8 @@ function focusWithin(root: HTMLElement): () => void {
     // Input types without a selection (number, date, …) throw here; focus alone is restored.
   }
   return () => {
-    if (deepActive() !== deep) deep.focus({ preventScroll: true });
+    if (deep === top ? document.activeElement !== top : deepActive() !== deep)
+      deep.focus({ preventScroll: true });
     const [start, end, direction] = range;
     if (field && start !== null && end !== null) {
       try {

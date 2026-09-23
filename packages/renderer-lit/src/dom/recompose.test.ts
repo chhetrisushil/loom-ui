@@ -932,6 +932,58 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     handle.dispose();
   });
 
+  it("IR 2.1.0: a focused non-HTML control (an SVG) inside a shadow root falls back to refocusing its host across a title wrap/unwrap", () => {
+    const base = recording();
+    const svgNote: DomWidgetRenderer = (host, props) => {
+      const el = document.createElement("div");
+      el.dataset.svgNote = props.widget.id;
+      el.tabIndex = 0;
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("tabindex", "0");
+      el.attachShadow({ mode: "open" }).appendChild(svg);
+      host.appendChild(el);
+      return { update: () => {}, patch: () => {}, dispose: () => {} };
+    };
+    const noop: DomWidgetRenderer = (host) => {
+      host.appendChild(document.createElement("span"));
+      return { update: () => {}, patch: () => {}, dispose: () => {} };
+    };
+    const registry = new RendererRegistry<DomWidgetRenderer>()
+      .register("MetricCard", noop)
+      .register("StatusBadge", noop)
+      .register("NoteInput", svgNote);
+    const { host, handle } = setup(sectioned(), { registry, calls: base.calls });
+    const shadowHost = host.querySelector("[data-svg-note='memo']") as HTMLElement;
+    const svg = shadowHost.shadowRoot?.querySelector("svg") as SVGElement;
+    svg.focus();
+    expect(document.activeElement).toBe(shadowHost);
+    expect(shadowHost.shadowRoot?.activeElement).toBe(svg);
+    const focused: EventTarget[] = [];
+    const orig = shadowHost.focus.bind(shadowHost);
+    shadowHost.focus = (o?: FocusOptions) => {
+      focused.push(shadowHost);
+      orig(o);
+    };
+    // Simulate the platform blur a plain move causes, so the restore has something to do.
+    const blur = () => (document.activeElement as HTMLElement | null)?.blur();
+    const origInsert = Node.prototype.insertBefore;
+    Node.prototype.insertBefore = function <T extends Node>(this: Node, n: T, c: Node | null): T {
+      const r = origInsert.call(this, n, c) as T;
+      if (n instanceof HTMLElement && n.contains(shadowHost)) blur();
+      return r;
+    };
+    try {
+      handle.update(sectioned("Notes"));
+      expect(document.activeElement).toBe(shadowHost);
+      handle.update(sectioned());
+      expect(document.activeElement).toBe(shadowHost);
+    } finally {
+      Node.prototype.insertBefore = origInsert;
+    }
+    expect(focused.length).toBeGreaterThan(0);
+    handle.dispose();
+  });
+
   it("IR 2.1.0: where the platform has `moveBefore`, a title wrap/unwrap moves the layout element with it (the state-preserving move)", () => {
     const { host, handle } = setup(sectioned());
     const stackEl = host.querySelector("[data-layout='stack']") as HTMLElement;
