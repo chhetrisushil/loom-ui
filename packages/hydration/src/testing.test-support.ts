@@ -86,7 +86,11 @@ export const providerSpec = (
   ...over,
 });
 
-/** Settle all pending promise callbacks (a few microtask turns). */
+/**
+ * Settle every pending promise callback: one macrotask turn runs only after the microtask queue
+ * is empty, so the number of promise hops between a call and its publish (wrappers, the
+ * scheduler) can never make a test flaky. Timers stay manual (`ManualClock`); this is not one.
+ */
 export const flush = async (): Promise<void> => {
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
 };

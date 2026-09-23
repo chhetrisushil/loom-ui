@@ -20,6 +20,7 @@ import {
 } from "./params";
 import { terminalSteps, topoWaves } from "./plan";
 import { type ReshaperRegistry, outputShapeHashOf, reshape, safeStringify } from "./reshape";
+import type { HandleLoadResult } from "./scheduler";
 
 // ── Executing one provider ────────────────────────────────────────────────────
 // The transient interpreter (ADRs 0060–0066): walk the graph in waves, invoke `mcp.invoke` per
@@ -442,4 +443,19 @@ function checkContract(
       message: `provider "${spec.handle}" feeds only kinds with no value contract (${kinds.join(", ")}); the value is unchecked`,
     });
   return okOutcome(value, findings, drift);
+}
+
+/**
+ * What an outcome publishes — the ONE mapping both the in-process controller and `serveHandle`
+ * use, so split and in-process hydration cannot disagree: a value is `ready` (carrying the first
+ * warning, e.g. a proceeded drift), a failure with drift is `stale`, any other failure `error`.
+ */
+export function outcomeResult(outcome: ProviderOutcome): HandleLoadResult {
+  if (outcome.ok) {
+    const warn = outcome.findings.find((f) => f.severity === "warn");
+    return warn === undefined
+      ? { state: "ready", value: outcome.value }
+      : { state: "ready", value: outcome.value, finding: warn };
+  }
+  return { state: outcome.drift.length > 0 ? "stale" : "error", finding: outcome.finding };
 }
