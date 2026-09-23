@@ -120,7 +120,15 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   from the spec. A provider never reaches a browser: split hydration ships `handleInventory` and answers with
   `serveHandle`. Every new `ProviderSpec`/`MCPToolNode` field is optional with no default, so sealed
   Experiences keep their hashes (`experience.test.ts` guards it).
-- A planner returns OPERATIONS, never an Experience, and every model call runs inside `ctx.decide` so
+- A handle's status is `pending` | `ready` | `stale` | `error` | `empty` (`HandleState`). `empty` (loom
+  ADR 0100) is ONLY a dependent step whose `{{steps.…}}` path indexes past the end of a real upstream
+  array (`walkPath`'s `out-of-range`) — finding `upstream-empty`, a warn. Every other path miss stays
+  `unresolved-step-reference` (an error), and a bad path anywhere in the step wins. `empty` carries no
+  value (the projection fold drops it — `HYDRATION_PROJECTION_VERSION` 1.1.0), is never cached, never
+  drift and never repaired; `outcomeResult` maps it for both the controller and `serveHandle`, and
+  `upstream-empty` is in the split server's public code vocabulary (`FIXED_CODES` + `publicText`). A new
+  hydration finding code a client may see goes into BOTH, or it is served as `load-failed`/`load-warning`.
+, and every model call runs inside `ctx.decide` so
   replay never re-calls a model. `@loom-ui/planner` imports no invoker, effect runtime, projection
   runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
 - Anything tool-authored that will be shown to a model (samples, observed drift values) is wrapped with
