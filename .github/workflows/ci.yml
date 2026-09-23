@@ -11,7 +11,7 @@ on:
 env:
   # the loom commit this repo is built and tested against; bump deliberately after rebuilding
   # ../loom at that commit and re-running the suite
-  LOOM_REF: 2a244b615381f7257fc2db3ec3faa44e030f44f2
+  LOOM_REF: d5d7126d9f580f000fac14f35287551cf8c1aa40
 jobs:
   ci:
     runs-on: ubuntu-latest

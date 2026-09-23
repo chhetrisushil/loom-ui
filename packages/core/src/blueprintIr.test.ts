@@ -11,12 +11,14 @@ import { describe, expect, it } from "vitest";
 // optional `title` on every `Layout`; compile.ts emits both from the Experience's node placement
 // and container titles. 2.2.0 (loom ADR 0099) added an optional `role` on every `Layout` — the
 // open, app-defined key a container renderer is registered under; compile.ts emits it from a
-// container node's `role`. A further bump means reading the next ADR and deciding again.
+// container node's `role`. 2.3.0 (loom ADR 0100) added `empty` to `BindingState` — a status, not
+// a Blueprint field, so compile.ts emits nothing new; hydration publishes it for a dependent
+// binding over an empty upstream (`upstream-empty`) and the Lit base draws it. A further bump means reading the next ADR and deciding again.
 describe("the loom Blueprint IR this compiler targets", () => {
   it("is the version compile.ts was written against", () => {
     expect(
       BLUEPRINT_IR_VERSION,
       "loom's Blueprint IR changed — review compile.ts and bump deliberately"
-    ).toBe("2.2.0");
+    ).toBe("2.3.0");
   });
 });
