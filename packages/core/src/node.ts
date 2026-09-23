@@ -140,6 +140,9 @@ const show = (v: unknown): string => JSON.stringify(v) ?? String(v);
  * `1..columns`, a `column + span - 1` past the last column. The overflow test runs only for a
  * valid span, so an invalid span is reported once (by loom, as `span-out-of-range`). Tolerates
  * unparsed input: every field is read as `unknown`.
+ *
+ * Width-parametric, like loom's predicate: `columns` defaults to `GRID_COLUMNS` (the width
+ * `compile` targets), and a composer may pass any other grid width to check against.
  */
 export function placementProblems(n: ExperienceNode, columns: number = GRID_COLUMNS): string[] {
   const { row, rowSpan, column, span } = n as {

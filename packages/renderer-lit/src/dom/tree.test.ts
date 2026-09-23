@@ -3,10 +3,8 @@ import { type ChildSpec, applyPlacement } from "./tree";
 
 // IR 2.1.0 placement, unit-level: `applyPlacement` must write the exact `gridColumn` /
 // `gridRow` strings loom's React renderer's `cellStyle` writes (plugins/renderer-react's
-// `renderContainer.tsx`) — carried over from Task 5's review, which shipped the formula on
-// blueprint-shaped fixtures (`placedV` in `recompose.test.ts`) but never pinned the raw strings
-// for a cell that sets row, rowSpan AND column together, or for a column-only / row-only cell in
-// isolation.
+// `renderContainer.tsx`). This file pins the raw grid-line strings for all-three / column-only /
+// row-only cells; `recompose.test.ts` covers the same formula through blueprint-shaped fixtures.
 
 const spec = (over: Partial<ChildSpec>): ChildSpec => ({
   node: over.node as never,
