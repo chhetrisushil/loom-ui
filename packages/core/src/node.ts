@@ -13,7 +13,16 @@ export const NodeId = z.string().min(1);
 export const OrderKey = z.string().regex(/^[0-9A-Za-z]+$/);
 export const Priority = z.enum(["P0", "P1", "P2"]);
 export type Priority = z.infer<typeof Priority>;
-export const Span = z.number().int().min(1).max(12);
+/**
+ * The column count of every grid `compile` emits (`grid({ columns: GRID_COLUMNS })`) — the range a
+ * node's `span` and `column` are checked against.
+ */
+export const GRID_COLUMNS = 12;
+export const Span = z.number().int().min(1).max(GRID_COLUMNS);
+/** A 1-based grid line or extent — a node's `row` or `rowSpan` (loom ADR 0098 D1). No upper bound: a grid grows implicit rows. */
+export const GridLine = z.number().int().min(1);
+/** A start column, 1-based, inside the grid: the node occupies `column..column+span-1`. */
+export const GridColumn = z.number().int().min(1).max(GRID_COLUMNS);
 /**
  * A binding's confidentiality class, `@loom/classify`'s vocabulary. DECLARED here and carried onto
  * the compiled `DataBinding.sensitivity` (loom ADR 0097 D4) so an audience check downstream reads
@@ -30,6 +39,14 @@ export interface ContainerNode {
   kind: "container";
   direction: "row" | "column" | "grid";
   span: number;
+  /** Start row in the PARENT grid, 1-based (loom ADR 0098 D1). Absent ⇒ flow placement. */
+  row?: number;
+  /** Rows occupied in the parent grid; default 1. */
+  rowSpan?: number;
+  /** Start column in the parent grid, 1-based; the node occupies `column..column+span-1`. */
+  column?: number;
+  /** A section heading, resolved at compile through `resolveLabel` like a node label. */
+  title?: LocalizedText;
   gap?: number;
   children: ExperienceNode[];
 }
@@ -41,6 +58,12 @@ export interface SemanticNode {
   type: string;
   typeVersion: string;
   span: number;
+  /** Start row in the PARENT grid, 1-based (loom ADR 0098 D1). Absent ⇒ flow placement. */
+  row?: number;
+  /** Rows occupied in the parent grid; default 1. */
+  rowSpan?: number;
+  /** Start column in the parent grid, 1-based; the node occupies `column..column+span-1`. */
+  column?: number;
   label?: LocalizedText;
   props: Record<string, unknown>;
   binding?: { handle: string; priority: Priority; sensitivity?: DataClass };
@@ -56,6 +79,10 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
       kind: z.literal("container"),
       direction: z.enum(["row", "column", "grid"]),
       span: Span,
+      row: GridLine.optional(),
+      rowSpan: GridLine.optional(),
+      column: GridColumn.optional(),
+      title: LocalizedText.optional(),
       gap: z.number().optional(),
       children: z.array(ExperienceNode),
     }),
@@ -66,6 +93,9 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
       type: z.string().min(1),
       typeVersion: z.string().min(1),
       span: Span,
+      row: GridLine.optional(),
+      rowSpan: GridLine.optional(),
+      column: GridColumn.optional(),
       label: LocalizedText.optional(),
       props: z.record(z.unknown()),
       binding: z
@@ -81,6 +111,55 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
 
 export function isContainer(n: ExperienceNode): n is ContainerNode {
   return n.kind === "container";
+}
+
+/** A node's explicit grid position (loom ADR 0098 D1): the keys it sets, and no others. */
+export type Placement = Pick<SemanticNode, "row" | "rowSpan" | "column">;
+
+/** The placement keys `n` sets — never a present-and-undefined key, so it spreads into `cell()` as-is. */
+export function placementOf(n: ExperienceNode): Placement {
+  return {
+    ...(n.row !== undefined && { row: n.row }),
+    ...(n.rowSpan !== undefined && { rowSpan: n.rowSpan }),
+    ...(n.column !== undefined && { column: n.column }),
+  };
+}
+
+/** True iff the node sets any of `row`, `rowSpan`, `column`. */
+export function isPlaced(n: ExperienceNode): boolean {
+  return n.row !== undefined || n.rowSpan !== undefined || n.column !== undefined;
+}
+
+const isPositiveInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1;
+const show = (v: unknown): string => JSON.stringify(v) ?? String(v);
+
+/**
+ * Why `n`'s placement cannot be laid out in a `columns`-wide grid — empty when it can. The same
+ * predicate, and the same wording, as loom's `validateBlueprint` `placement-out-of-range`
+ * (ADR 0098 D5): a `row`/`rowSpan` that is not a positive integer, a `column` outside
+ * `1..columns`, a `column + span - 1` past the last column. The overflow test runs only for a
+ * valid span, so an invalid span is reported once (by loom, as `span-out-of-range`). Tolerates
+ * unparsed input: every field is read as `unknown`.
+ */
+export function placementProblems(n: ExperienceNode, columns: number = GRID_COLUMNS): string[] {
+  const { row, rowSpan, column, span } = n as {
+    row?: unknown;
+    rowSpan?: unknown;
+    column?: unknown;
+    span?: unknown;
+  };
+  const out: string[] = [];
+  if (row !== undefined && !isPositiveInt(row))
+    out.push(`row ${show(row)} is not a positive integer`);
+  if (rowSpan !== undefined && !isPositiveInt(rowSpan))
+    out.push(`rowSpan ${show(rowSpan)} is not a positive integer`);
+  if (column !== undefined) {
+    if (!isPositiveInt(column) || column > columns)
+      out.push(`column ${show(column)} is outside 1..${columns}`);
+    else if (isPositiveInt(span) && span <= columns && column + span - 1 > columns)
+      out.push(`column ${column} + span ${span} overflows the ${columns}-column grid`);
+  }
+  return out;
 }
 
 /**

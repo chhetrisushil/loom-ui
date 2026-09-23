@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
-import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
+import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode, findNode } from "./node";
 import { Operation, apply, replay } from "./operations";
 
 const meta = { author: "alice", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
@@ -263,5 +263,40 @@ describe("replay", () => {
     ]);
     expect(r.ok && r.value.parents).toEqual(["sha256:base"]);
     expect(r.ok && r.value.versionHash).toBe("");
+  });
+});
+
+describe("insertNode keeps placement and titles (Blueprint IR 2.1.0)", () => {
+  it("the op's schema parse does not strip a node's grid lines or a container's title", () => {
+    const r = apply(g, {
+      type: "insertNode",
+      parentId: "root",
+      node: {
+        id: "sec",
+        order: "V",
+        kind: "container",
+        direction: "grid",
+        span: 12,
+        row: 2,
+        column: 1,
+        title: { key: "sec.title", fallback: "Section" },
+        children: [{ ...node("m"), row: 1, rowSpan: 2, column: 5 }],
+      },
+    });
+    if (!r.ok) throw new Error(r.finding.message);
+    expect(findNode(r.value.root, "sec")).toMatchObject({
+      row: 2,
+      column: 1,
+      title: { key: "sec.title", fallback: "Section" },
+    });
+    expect(findNode(r.value.root, "m")).toMatchObject({ row: 1, rowSpan: 2, column: 5 });
+  });
+
+  it("refuses grid lines off the grid as an invalid operation", () => {
+    for (const bad of [{ column: 13 }, { row: 0 }, { rowSpan: 0 }]) {
+      const r = apply(g, { type: "insertNode", parentId: "root", node: { ...node("m"), ...bad } });
+      expect(r.ok, JSON.stringify(bad)).toBe(false);
+      if (!r.ok) expect(r.finding.code).toBe("invalid-operation");
+    }
   });
 });
