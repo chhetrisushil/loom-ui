@@ -8,11 +8,17 @@ import {
   defineSemanticCatalog,
   genesis,
 } from "@loom-ui/core";
+import type { Finding } from "@loom-ui/core";
 import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { specFingerprint } from "./cache";
+import {
+  type HydrationCache,
+  HydrationCache as HydrationCacheImpl,
+  specFingerprint,
+} from "./cache";
 import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
 import type { HandleLoadResult } from "./scheduler";
@@ -20,6 +26,7 @@ import {
   type HandleInventory,
   type HandleLoadRequest,
   type HandleLoader,
+  type ServeOptions,
   SplitHydrationController,
   handleInventory,
   serveHandle,
@@ -147,14 +154,20 @@ const req = (
  * The trust boundary: requests and results cross as JSON, exactly as over HTTP. `load` answers one
  * request with `serveHandle`; `loadMany` answers a whole group with ONE `serveHandles` pass.
  */
-const boundary = (exp: Experience, inv: FakeInvoker, drifts: DriftReport[] = []) => {
+const boundary = (
+  exp: Experience,
+  inv: FakeInvoker,
+  drifts: DriftReport[] = [],
+  extra: Partial<ServeOptions> = {}
+) => {
   const requests: HandleLoadRequest[] = [];
   const batches: string[][] = [];
-  const serveOpts = {
+  const serveOpts: ServeOptions = {
     invoker: inv,
     now: NOW,
     outputKinds,
     onDrift: (r: DriftReport) => drifts.push(r),
+    ...extra,
   };
   const wire = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
   const loader: Required<HandleLoader> = {
@@ -174,12 +187,16 @@ const boundary = (exp: Experience, inv: FakeInvoker, drifts: DriftReport[] = [])
   return { loader, requests, batches };
 };
 
-const splitRig = (exp: Experience, inv: FakeInvoker = toolServer()) => {
+const splitRig = (
+  exp: Experience,
+  inv: FakeInvoker = toolServer(),
+  extra: Partial<ServeOptions> = {}
+) => {
   const clock = new ManualClock();
   const store = new HydrationStore(new InMemoryProjectionRuntime(), {
     experienceId: exp.experienceId,
   });
-  const { loader, requests, batches } = boundary(exp, inv);
+  const { loader, requests, batches } = boundary(exp, inv, [], extra);
   const ctl = new SplitHydrationController({ loader, store, setTimer: clock.setTimer });
   return { clock, store, ctl, requests, batches, inv };
 };
@@ -846,5 +863,277 @@ describe("the inventory revision is keyed on the server", () => {
     });
     await flush();
     expect(requests.map((r) => r.handle)).toEqual(["latest", "latest"]);
+  });
+});
+
+describe("served findings are public: provider internals stay on the server", () => {
+  const SECRETS = [
+    "hidden.tool",
+    "deep.path.nowhere",
+    "schema-hidden.tool",
+    "sha256:",
+    "secret-arg",
+    "pinned-shape",
+    "exception-text",
+    "sandbox-payload",
+    "stepId",
+  ];
+  /** One P0 handle "h" over a tool whose name, argument, schema and reshaping are all secrets. */
+  const one = (over: Partial<ProviderSpec> = {}): Experience => {
+    const g = genesis({
+      experienceId: "one",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    return {
+      ...g,
+      versionHash: "v1",
+      root: { ...(g.root as ContainerNode), children: [widget("n", "Reading", "h", "P0")] },
+      providers: {
+        h: providerSpec(
+          "h",
+          [mcpStep("stepId-secret", "hidden.tool", { key: "secret-arg" })],
+          over
+        ),
+      },
+    };
+  };
+  const serve = async (exp: Experience, inv: FakeInvoker, extra: Partial<ServeOptions> = {}) => {
+    const internal: Array<[string, Finding]> = [];
+    const r = await serveHandle(exp, req(exp, "h"), {
+      invoker: inv,
+      now: NOW,
+      onFinding: (h, f) => internal.push([h, f]),
+      ...extra,
+    });
+    const wire = JSON.stringify(r);
+    for (const secret of SECRETS) expect(wire).not.toContain(secret);
+    expect(r.finding?.message).toContain('"h"');
+    return { r, internal };
+  };
+  const answering = (fn: (input: McpIn) => unknown) =>
+    new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => fn(input as McpIn));
+
+  it("(a) a JSONPath reshape failure", async () => {
+    const { r, internal } = await serve(
+      one({ reshaping: { engine: "JSONPath", scriptRef: "deep.path.nowhere" } }),
+      answering(() => ({ n: 1 }))
+    );
+    expect(r).toMatchObject({
+      state: "error",
+      finding: { code: "reshape-failed", severity: "error" },
+    });
+    expect(internal.some(([h, f]) => h === "h" && f.message.includes("deep.path.nowhere"))).toBe(
+      true
+    );
+  });
+
+  it("(b) a proceeded input drift", async () => {
+    const { r, internal } = await serve(
+      one(),
+      answering((i) => {
+        if (i.expectedSchemaHash !== "sha256:observed")
+          throw new TypedFailure("schemaDrift", {
+            toolName: i.toolName,
+            expectedSchemaHash: i.expectedSchemaHash,
+            observedHash: "sha256:observed",
+          });
+        return { n: 1 };
+      }),
+      { inputDrift: "report-and-proceed" }
+    );
+    expect(r).toMatchObject({
+      state: "ready",
+      value: { n: 1 },
+      finding: { code: "schema-drift-proceeded", severity: "warn" },
+    });
+    expect(
+      internal.some(
+        ([, f]) => f.code === "schema-drift-proceeded" && f.message.includes("hidden.tool")
+      )
+    ).toBe(true);
+  });
+
+  it("(c) a sandbox reshape failure", async () => {
+    const inv = answering(() => ({ n: 1 })).on(SANDBOX_TOOL_ID, () => {
+      throw new TypedFailure("scriptError", { detail: "sandbox-payload exception-text" });
+    });
+    const { r, internal } = await serve(
+      one({ reshaping: { engine: "QuickJS", scriptRef: "sha256:script" } }),
+      inv
+    );
+    expect(r).toMatchObject({ state: "error", finding: { code: "reshape-scriptError" } });
+    expect(internal.some(([, f]) => f.message.includes("sandbox-payload"))).toBe(true);
+  });
+
+  it("(d) an output-shape drift", async () => {
+    const { r, internal } = await serve(
+      one({ outputShapeHash: "pinned-shape" }),
+      answering(() => ({ n: 1 }))
+    );
+    expect(r).toMatchObject({ state: "stale", finding: { code: "output-shape-drift" } });
+    expect(internal.some(([, f]) => f.message.includes("pinned-shape"))).toBe(true);
+  });
+
+  it("(e) an internal throw", async () => {
+    const cache = {
+      get: () => {
+        throw new Error("exception-text from hidden.tool");
+      },
+    } as unknown as HydrationCache;
+    const { r, internal } = await serve(
+      one(),
+      answering(() => ({ n: 1 })),
+      { cache }
+    );
+    expect(r).toMatchObject({ state: "error", finding: { code: "hydration-internal" } });
+    expect(internal.map(([, f]) => f.message)).toEqual(["exception-text from hidden.tool"]);
+  });
+
+  it("a request refusal is public too, and a throwing onFinding changes nothing", async () => {
+    const exp = one();
+    const r = await serveHandle(exp, req(exp, "nope"), {
+      invoker: answering(() => ({ n: 1 })),
+      now: NOW,
+      onFinding: () => {
+        throw new Error("hook");
+      },
+    });
+    expect(r).toMatchObject({ state: "error", finding: { code: "unknown-handle" } });
+  });
+
+  it("every result the board serves passes the secret audit", async () => {
+    const exp = board();
+    const out = await serveHandles(
+      exp,
+      ["latest", "alerts", "archive"].map((h) => req(exp, h)),
+      { invoker: toolServer(), now: NOW, outputKinds }
+    );
+    const wire = JSON.stringify(out);
+    for (const secret of [
+      "readings",
+      'archive"',
+      "scriptRef",
+      "schema-",
+      "ridge",
+      "$now",
+      "kpi",
+      "table",
+    ])
+      expect(wire).not.toContain(secret);
+  });
+});
+
+describe("minor guards", () => {
+  it("revisionOf may not answer an empty revision", () => {
+    expect(() => handleInventory(board(), { revisionOf: () => "" })).toThrow(TypeError);
+  });
+
+  it("maxBatch must be a positive integer", async () => {
+    const exp = pair();
+    for (const maxBatch of [Number.NaN, -1, 0, 1.5])
+      await expect(
+        serveHandles(exp, [req(exp, "first")], { invoker: feedServer(), maxBatch })
+      ).rejects.toThrow(TypeError);
+  });
+
+  it("two principals served through ONE shared cache never see each other's values", async () => {
+    const exp = pair();
+    const spec = exp.providers.first;
+    if (spec === undefined) throw new Error("fixture");
+    const scoped: Experience = {
+      ...exp,
+      providers: {
+        ...exp.providers,
+        first: { ...spec, cachePolicy: { ttlSeconds: 60, scope: "principal" } },
+      },
+    };
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => ({
+      rows: [[String((opts?.principal as { actor?: string } | undefined)?.actor)]],
+    }));
+    const cache = new HydrationCacheImpl(() => NOW);
+    const as = async (actor: string) =>
+      serveHandle(scoped, req(scoped, "first"), {
+        invoker: inv,
+        now: NOW,
+        cache,
+        principal: { tenant: "t", actor },
+        principalId: actor,
+      });
+    expect(await as("p1")).toMatchObject({ value: [["p1"]] });
+    expect(await as("p2")).toMatchObject({ value: [["p2"]] });
+    expect(await as("p1")).toMatchObject({ value: [["p1"]] });
+    expect(inv.calls).toHaveLength(2);
+  });
+});
+
+describe("split vs in-process parity when things go wrong", () => {
+  const parity = async (
+    exp: Experience,
+    inv: () => FakeInvoker,
+    extra: Partial<ServeOptions> = {}
+  ) => {
+    const inProc = new HydrationStore(new InMemoryProjectionRuntime(), {
+      experienceId: exp.experienceId,
+    });
+    const local = new HydrationController({
+      invoker: inv(),
+      store: inProc,
+      clock: () => NOW,
+      setTimer: new ManualClock().setTimer,
+      ...(extra.inputDrift !== undefined && { inputDrift: extra.inputDrift }),
+    });
+    local.load(exp);
+    const split = splitRig(exp, inv(), extra);
+    split.ctl.load(inventoryOf(exp).inventory);
+    await flush();
+    const view = (s: HydrationStore) =>
+      Object.fromEntries(
+        Object.entries(s.state().status).map(([h, st]) => [h, [st.state, st.finding?.code]])
+      );
+    expect(view(split.store)).toEqual(view(inProc));
+    expect(split.store.state().values).toEqual(inProc.state().values);
+    return view(inProc);
+  };
+  const single = (): Experience => {
+    const g = genesis({
+      experienceId: "single",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    return {
+      ...g,
+      versionHash: "v1",
+      root: { ...(g.root as ContainerNode), children: [widget("n", "Reading", "h", "P0")] },
+      providers: { h: providerSpec("h", [mcpStep("s", "t")]) },
+    };
+  };
+
+  it("a failing tool is the same error either way", async () => {
+    const view = await parity(single(), () =>
+      new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => {
+        throw new TypedFailure("unavailable", { why: "down" });
+      })
+    );
+    expect(view.h?.[0]).toBe("error");
+  });
+
+  it("an input drift under report-and-proceed is the same ready value and warning either way", async () => {
+    const view = await parity(
+      single(),
+      () =>
+        new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+          const i = input as McpIn;
+          if (i.expectedSchemaHash !== "v2")
+            throw new TypedFailure("schemaDrift", {
+              toolName: i.toolName,
+              expectedSchemaHash: i.expectedSchemaHash,
+              observedHash: "v2",
+            });
+          return { n: 1 };
+        }),
+      { inputDrift: "report-and-proceed" }
+    );
+    expect(view.h).toEqual(["ready", "schema-drift-proceeded"]);
   });
 });

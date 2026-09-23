@@ -107,7 +107,9 @@ const reservedFinding = (handle: string): Finding => ({
  * It must be KEYED: an unkeyed function of the fingerprint lets a client confirm a guessed provider
  * (tool, arguments) offline. In production use an HMAC over a server secret, e.g.
  * `createHmac("sha256", secret).update(handle + "\u0000" + fingerprint).digest("hex")`. It must be
- * deterministic for as long as clients hold inventories (a rotated key re-asks every handle once).
+ * deterministic for as long as clients hold inventories (a rotated key re-asks every handle once),
+ * and it must move with the fingerprint: a per-handle constant cannot be detected here, and it
+ * defeats re-asking — a client never learns that the provider behind a handle changed.
  */
 export type RevisionFn = (handle: string, fingerprint: string) => string;
 
@@ -117,7 +119,7 @@ export interface InventoryOptions {
 
 /**
  * What a client may know about an experience's data plane: never a provider. Throws `TypeError`
- * without a `revisionOf`, or when it returns a non-string or the fingerprint itself.
+ * without a `revisionOf`, or when it returns a non-string, an empty string or the fingerprint.
  */
 export function handleInventory(
   exp: Experience,
@@ -173,9 +175,9 @@ export function handleInventory(
 function publicRevision(revisionOf: RevisionFn, handle: string, spec: ProviderSpec): string {
   const fingerprint = specFingerprint(spec);
   const revision = revisionOf(handle, fingerprint);
-  if (typeof revision !== "string")
+  if (typeof revision !== "string" || revision === "")
     throw new TypeError(
-      `handleInventory: revisionOf returned a ${typeof revision} for "${handle}"`
+      `handleInventory: revisionOf returned ${revision === "" ? "an empty string" : `a ${typeof revision}`} for "${handle}"`
     );
   if (revision.includes(fingerprint))
     throw new TypeError(
@@ -194,6 +196,12 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
   /** Keys a `principal`-scoped cache entry; without it such a provider is never cached. */
   readonly principalId?: string;
   readonly onDrift?: (report: DriftReport) => void;
+  /**
+   * Every finding a load produced, IN FULL (tool, step, script, hashes, exception text), for the
+   * server's own logs. What the client receives is only its public form (`publicFinding`). A
+   * throw here is swallowed: a logging hook never changes what a client is answered.
+   */
+  readonly onFinding?: (handle: string, finding: Finding) => void;
   /** At most this many transient calls in flight across the whole batch. Default: unbounded. */
   readonly maxConcurrentCalls?: number;
   /** A batch longer than this is refused whole (`batch-too-large`). Default `DEFAULT_MAX_BATCH`. */
@@ -207,6 +215,97 @@ const refuse = (code: string, message: string): HandleLoadResult => ({
 
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** What a client may be told about a finding: a fixed text keyed by its code, never its message. */
+function publicText(finding: Finding): string {
+  const { code } = finding;
+  if (code.startsWith("tool-")) return "a tool call failed";
+  if (code.startsWith("reshape-")) return "the output could not be reshaped";
+  switch (code) {
+    case "schema-drift-proceeded":
+      return "input schema changed; served with the observed schema";
+    case "schema-drift":
+      return "input schema changed; waiting for a repair";
+    case "output-shape-drift":
+    case "output-shape-unhashable":
+    case "output-contract-drift":
+    case "value-contract":
+      return "the output no longer matches what it declares; waiting for a repair";
+    case "output-shape-unpinned":
+    case "output-contract-unchecked":
+      return "the output is served unchecked";
+    case "output-contract-unbound":
+      return "the output cannot be checked";
+    case "param-not-overridable":
+      return "a param was ignored";
+    case "invalid-params":
+    case "invalid-time-token":
+      return "the params were refused";
+    case "aborted":
+      return "the load was aborted";
+    case "invalid-request":
+      return "the request is malformed";
+    case "version-mismatch":
+      return "the request is for another version of the experience";
+    case "invalid-handle":
+      return "the handle is reserved";
+    case "unknown-handle":
+      return "not a handle this experience binds";
+    case "batch-too-large":
+      return "the batch is too large";
+    case "tree-too-deep":
+      return "the experience cannot be served";
+    case "hydration-internal":
+      return "an internal error occurred";
+    default:
+      return finding.severity === "warn" ? "loaded with a warning" : "could not be loaded";
+  }
+}
+
+/**
+ * The public form of a finding: `code` and `severity` kept, the message a code-keyed template
+ * naming only the (client-supplied) handle — never a node, step, tool, script, hash, argument or
+ * exception text.
+ */
+export function publicFinding(handle: string | undefined, finding: Finding): Finding {
+  const text = publicText(finding);
+  return {
+    code: finding.code,
+    severity: finding.severity,
+    message:
+      handle === undefined ? text : `handle ${JSON.stringify(handle.slice(0, 128))}: ${text}`,
+  };
+}
+
+type Report = (finding: Finding) => void;
+
+/** Hands each finding to `onFinding` once, in full; a throwing hook is swallowed. */
+function reporter(opts: ServeOptions, handle: string): Report {
+  const seen = new Set<Finding>();
+  return (finding) => {
+    if (seen.has(finding)) return;
+    seen.add(finding);
+    try {
+      opts.onFinding?.(handle, finding);
+    } catch {
+      // A logging hook must never change what the client is answered.
+    }
+  };
+}
+
+/** Report the result's finding in full, and answer the client with its public form. */
+function publicResult(
+  handle: string | undefined,
+  result: HandleLoadResult,
+  report: Report
+): HandleLoadResult {
+  if (result.finding === undefined) return result;
+  report(result.finding);
+  const finding = publicFinding(handle, result.finding);
+  return result.state === "ready"
+    ? { state: "ready", value: result.value, finding }
+    : { state: result.state, finding };
+}
+
 /** What one batch shares: computed once, whatever the batch asks. */
 interface ServePass {
   readonly exec: ExecuteOptions;
@@ -219,40 +318,69 @@ interface ServePass {
  * clock read (`opts.now`, else `Date.now()` once), one step memo in front of one call cap
  * (`maxConcurrentCalls`), so identical steps across the batch's providers run once. The memo is
  * keyed by principal too, and one call serves one principal (`opts.principal`), so two viewers
- * never share a call. Total: every failure, a malformed request included, is a result, one per
- * request in request order (a batch that is not a list gets one `invalid-request`).
+ * never share a call. Every failure, a malformed request included, is a result, one per request
+ * in request order (a batch that is not a list gets one `invalid-request`) — and every finding a
+ * client receives is its PUBLIC form (`publicFinding`); the full one goes to `onFinding`. Rejects
+ * with `TypeError` only for a server misconfiguration (`maxBatch`, `maxConcurrentCalls`).
  */
 export async function serveHandles(
   exp: Experience,
   requests: readonly HandleLoadRequest[],
   opts: ServeOptions
 ): Promise<HandleLoadResult[]> {
-  if (!Array.isArray(requests))
-    return [refuse("invalid-request", "a batch load is a list of load requests")];
+  // Server configuration, not client input: a bad bound is a programming error, and loud.
   const max = opts.maxBatch ?? DEFAULT_MAX_BATCH;
+  if (!Number.isInteger(max) || max < 1)
+    throw new TypeError(`serveHandles: maxBatch must be a positive integer, got ${String(max)}`);
+  const cap = opts.maxConcurrentCalls;
+  if (cap !== undefined && (!Number.isInteger(cap) || cap < 1))
+    throw new TypeError(
+      `serveHandles: maxConcurrentCalls must be a positive integer, got ${String(cap)}`
+    );
+  const batch = reporter(opts, "");
+  if (!Array.isArray(requests))
+    return [
+      publicResult(
+        undefined,
+        refuse("invalid-request", "a batch load is a list of load requests"),
+        batch
+      ),
+    ];
   if (requests.length > max) {
-    const tooMany = refuse(
-      "batch-too-large",
-      `a batch of ${requests.length} requests exceeds the bound of ${max}`
+    const tooMany = publicResult(
+      undefined,
+      refuse(
+        "batch-too-large",
+        `a batch of ${requests.length} requests exceeds the bound of ${max}`
+      ),
+      batch
     );
     return requests.map(() => tooMany);
   }
   // Checked before anything walks the tree for handles or kinds.
   if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
-    const deep: HandleLoadResult = {
-      state: "error",
-      finding: tooDeep(exp.experienceId, MAX_TREE_DEPTH),
-    };
+    const deep = publicResult(
+      undefined,
+      { state: "error", finding: tooDeep(exp.experienceId, MAX_TREE_DEPTH) },
+      batch
+    );
     return requests.map(() => deep);
   }
   let pass: ServePass;
   try {
     pass = openPass(exp, opts);
   } catch (e) {
-    const failed = refuse("hydration-internal", errorMessage(e));
+    const failed = publicResult(undefined, refuse("hydration-internal", errorMessage(e)), batch);
     return requests.map(() => failed);
   }
-  return Promise.all(requests.map((r) => serveOne(exp, r, opts, pass)));
+  return Promise.all(
+    requests.map(async (r) => {
+      const handle =
+        r !== null && typeof r === "object" && typeof r.handle === "string" ? r.handle : undefined;
+      const report = reporter(opts, handle ?? "");
+      return publicResult(handle, await serveOne(exp, r, opts, pass, report), report);
+    })
+  );
 }
 
 /**
@@ -298,7 +426,8 @@ async function serveOne(
   exp: Experience,
   request: HandleLoadRequest,
   opts: ServeOptions,
-  pass: ServePass
+  pass: ServePass,
+  report: Report
 ): Promise<HandleLoadResult> {
   try {
     if (request === null || typeof request !== "object" || typeof request.handle !== "string")
@@ -331,6 +460,8 @@ async function serveOne(
       params,
       ...(kinds !== undefined && { kinds }),
     });
+    for (const f of outcome.findings) report(f);
+    if (!outcome.ok) report(outcome.finding);
     if (outcome.ok) opts.cache?.set(spec, opts.principalId, outcome.value, variant);
     const drift = outcome.drift ?? [];
     if (drift.length > 0)
