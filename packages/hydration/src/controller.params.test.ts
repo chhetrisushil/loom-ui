@@ -10,6 +10,7 @@ import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
+import { HydrationCache } from "./cache";
 import { type ControllerOptions, type DriftReport, HydrationController } from "./controller";
 import { DEFAULT_TIME_RANGE } from "./params";
 import { HydrationStore } from "./projection";
@@ -203,6 +204,105 @@ describe("HydrationController call budget", () => {
     expect(inv.calls).toHaveLength(1);
     expect(store.value("count")).toBe(2);
     expect(store.value("names")).toEqual(["n1", "n2"]);
+  });
+});
+
+describe("HydrationController passes, the cap and principals", () => {
+  const sharing = () =>
+    expWith([node("a", "count"), node("b", "names")], {
+      count: providerSpec("count", [mcpStep("s", "list", { region: "north" })], {
+        reshaping: { engine: "JSONPath", scriptRef: "count" },
+      }),
+      names: providerSpec("names", [mcpStep("s", "list", { region: "north" })], {
+        reshaping: { engine: "JSONPath", scriptRef: "names" },
+      }),
+    });
+
+  it("the call cap holds across passes: a later pass's call waits for an earlier pass's slot", async () => {
+    const release: Array<() => void> = [];
+    const { inv, ctl, clock, store } = rig(
+      () => new Promise((resolve) => release.push(() => resolve({ ok: true }))),
+      { maxConcurrentCalls: 1 }
+    );
+    ctl.load(
+      expWith([node("a", "x", "P0"), node("b", "y", "P1")], {
+        x: providerSpec("x", [mcpStep("s", "tx")]),
+        y: providerSpec("y", [mcpStep("s", "ty")]),
+      })
+    );
+    await flush();
+    clock.advance(50); // the P1 batch: a second pass
+    await flush();
+    expect(inv.calls).toHaveLength(1);
+    release.shift()?.();
+    await flush();
+    expect(inv.calls).toHaveLength(2);
+    release.shift()?.();
+    await flush();
+    expect(["x", "y"].map((h) => store.status(h)?.state)).toEqual(["ready", "ready"]);
+  });
+
+  it("a new pass gets a fresh memo: after invalidate the shared step is invoked again, once", async () => {
+    const { inv, ctl, store } = rig(() => ({ count: 2, names: ["n1", "n2"] }));
+    ctl.load(sharing());
+    await flush();
+    expect(inv.calls).toHaveLength(1);
+    ctl.invalidate();
+    await flush();
+    expect(inv.calls).toHaveLength(2);
+    expect(store.value("names")).toEqual(["n1", "n2"]);
+  });
+
+  it("two principals never share a call, even concurrently over one invoker and one cache", async () => {
+    const release: Array<() => void> = [];
+    const inv = new FakeInvoker().on(
+      MCP_INVOKE_TOOL_ID,
+      () => new Promise((resolve) => release.push(() => resolve({ count: 1, names: [] })))
+    );
+    const cache = new HydrationCache(() => NOW);
+    const runtime = new InMemoryProjectionRuntime();
+    const viewer = (id: string) =>
+      new HydrationController({
+        invoker: inv,
+        store: new HydrationStore(runtime, { experienceId: "exp-1", principalId: id }),
+        cache,
+        clock: () => NOW,
+        principal: { id, chain: { tenant: "t", actor: id } },
+      });
+    const exp = sharing();
+    const scoped: Experience = {
+      ...exp,
+      providers: Object.fromEntries(
+        Object.entries(exp.providers).map(([h, p]) => [
+          h,
+          { ...p, cachePolicy: { ttlSeconds: 60, scope: "principal" as const } },
+        ])
+      ),
+    };
+    viewer("p1").load(scoped);
+    viewer("p2").load(scoped);
+    await flush();
+    expect(inv.calls.map((c) => c.opts?.principal)).toEqual([
+      { tenant: "t", actor: "p1" },
+      { tenant: "t", actor: "p2" },
+    ]);
+    for (const r of release) r();
+    await flush();
+  });
+
+  it("scoped params set before a load, for a handle it does not bind, are forgotten at bind", async () => {
+    const { ctl, store } = rig(echo);
+    ctl.setParams({ station: "harbour" }, { handle: "h2" });
+    ctl.load(expWith([node("a", "h1")], { h1: providerSpec("h1", [ranged("t1")]) }));
+    await flush();
+    ctl.recompose(
+      expWith([node("a", "h1"), node("b", "h2")], {
+        h1: providerSpec("h1", [ranged("t1")]),
+        h2: providerSpec("h2", [ranged("t2")]),
+      })
+    );
+    await flush();
+    expect(store.value("h2")).toMatchObject({ station: "ridge" });
   });
 });
 

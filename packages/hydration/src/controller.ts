@@ -46,9 +46,9 @@ import {
 // providers runs once. The memo sits IN FRONT of the one controller-wide call cap
 // (`maxConcurrentCalls`), so a memo hit never takes a slot; beneath both, every call is bound to
 // the controller's lifetime, so `dispose` cancels each upstream call at once (a memo defers the
-// cancel of a call only its own callers abandoned by a microtask — see invokers.ts). A lazy (P2) handle whose question
-// changes (new params, `invalidate`) waits for its next `markVisible`, keeping its last value on
-// screen until then.
+// cancel of a call only its own callers abandoned by a microtask — see invokers.ts). A lazy (P2)
+// handle whose question changes (new params, `invalidate`) waits for its next `markVisible`,
+// keeping its last value on screen until then.
 
 export interface DriftReport {
   readonly experienceId: string;
@@ -209,18 +209,17 @@ export class HydrationController {
     // one exactly as it was, not half-torn-down between two experiences.
     if (treeDepth(next.root) > MAX_TREE_DEPTH)
       return { findings: [tooDeep(next.experienceId, MAX_TREE_DEPTH)] };
-    const keep = new Set(experienceHandles(next).map((h) => h.handle));
-    this.sched.retain(keep);
-    for (const handle of [...this.scopedParams.keys()])
-      if (!keep.has(handle)) this.scopedParams.delete(handle);
+    this.sched.retain(new Set(experienceHandles(next).map((h) => h.handle)));
     return this.bind(next);
   }
 
   /**
    * Replace the global params (no `scope.handle`) or one handle's scoped params, then re-ask
-   * every bound handle whose question changed — only those. `{}` clears. Refused, with nothing
-   * changed, for params `checkParams` refuses or a reserved handle. A lazy (P2) handle whose
-   * question changed waits for its next `markVisible`.
+   * every bound handle whose question changed — only those, so a handle that ended on `error`
+   * with an unchanged question is NOT retried here (`invalidate` retries it). `{}` clears.
+   * Refused, with nothing changed, for params `checkParams` refuses or a reserved handle. A lazy
+   * (P2) handle whose question changed waits for its next `markVisible`. Params scoped to a handle
+   * the experience does not bind are kept only until the next bind, which forgets them.
    */
   setParams(params: LoadParams, scope: { readonly handle?: string } = {}): { findings: Finding[] } {
     if (this.sched.isDisposed) return { findings: [disposedFinding("setParams")] };
@@ -273,6 +272,8 @@ export class HydrationController {
     this.sched.dispose();
     this.lifetime.abort();
     this.current = undefined;
+    this.globalParams = {};
+    this.scopedParams.clear();
   }
 
   private bind(exp: Experience): { findings: Finding[] } {
@@ -283,6 +284,11 @@ export class HydrationController {
       this.opts.outputKinds === undefined
         ? new Map()
         : handleKinds(exp, this.opts.outputKinds.catalog, this.opts.outputKinds.surface);
+    // Scoped params outlive a bind only for handles it binds (set before a load, or kept across
+    // a recompose); the rest are forgotten, so they never resurface on a later experience.
+    const bound = new Set(experienceHandles(exp).map((h) => h.handle));
+    for (const handle of [...this.scopedParams.keys()])
+      if (!bound.has(handle)) this.scopedParams.delete(handle);
     const { jobs, findings, missing } = this.plan(exp);
     for (const m of missing)
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
