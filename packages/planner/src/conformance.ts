@@ -16,8 +16,10 @@ import type {
   DecideContext,
   PlanReport,
   Planner,
+  PlannerUsage,
   ReviseInput,
 } from "./spi";
+import { isPlannerUsage, totalUsage } from "./usage";
 
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
@@ -43,7 +45,8 @@ const err = (code: string, message: string): Finding => ({ code, severity: "erro
  * on, so it is part of the contract, not decoration. Three claims must hold or the numbers lie:
  * at least one attempt was made (a plan nobody attempted is not a plan), the model is NAMED, and
  * `firstAttemptValid` agrees with the attempts it summarises — it means "clean on the first call",
- * which is exactly "there was one attempt and every attempt parsed".
+ * which is exactly "there was one attempt and every attempt parsed". When `usage` is present it
+ * must be two non-negative integers and, if any attempt reports usage, their sum.
  */
 function reportFindings(label: string, report: PlanReport): Finding[] {
   const findings: Finding[] = [];
@@ -59,8 +62,32 @@ function reportFindings(label: string, report: PlanReport): Finding[] {
         `${label}: firstAttemptValid is ${report.firstAttemptValid} but ${report.attempts.length} attempt(s) ${report.attempts.every((a) => a.parsed) ? "all parsed" : "did not all parse"}`
       )
     );
+  if (report.usage !== undefined) {
+    if (!isPlannerUsage(report.usage))
+      findings.push(
+        err("report-invalid", `${label}: report.usage is not two non-negative integer token counts`)
+      );
+    else {
+      const sum = totalUsage(report.attempts);
+      if (
+        sum !== undefined &&
+        (sum.inputTokens !== report.usage.inputTokens ||
+          sum.outputTokens !== report.usage.outputTokens)
+      )
+        findings.push(
+          err(
+            "report-invalid",
+            `${label}: report.usage (${report.usage.inputTokens}/${report.usage.outputTokens}) is not the sum of its attempts' usage (${sum.inputTokens}/${sum.outputTokens})`
+          )
+        );
+    }
+  }
   return findings;
 }
+
+/** A comparable key that never throws (canonicalJson would, on a NaN a planner might return). */
+const usageKey = (u: PlannerUsage | undefined): string =>
+  u === undefined ? "none" : isPlannerUsage(u) ? `${u.inputTokens}/${u.outputTokens}` : "invalid";
 
 /** True when calling into the planner itself threw instead of returning a `PlanResult`. */
 async function safely<T>(
@@ -141,6 +168,15 @@ export async function checkPlannerConformance(
       err(
         "replay-recalled-model",
         "a second compose on the same recording context called the model again"
+      )
+    );
+  // Usage is part of the DECIDED value: a replay that serves the ops but re-derives (or drops)
+  // the report would give a caller two different token totals for one plan.
+  if (usageKey(second.report.usage) !== usageKey(first.report.usage))
+    findings.push(
+      err(
+        "usage-not-replayed",
+        `a second compose on the same recording context reported usage ${usageKey(second.report.usage)}, the first ${usageKey(first.report.usage)}; record usage inside the decision`
       )
     );
 
