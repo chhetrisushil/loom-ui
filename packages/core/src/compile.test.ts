@@ -6,6 +6,8 @@ import {
   type Layout,
   RendererRegistry,
   type Widget,
+  blueprintLayoutIds,
+  isLayoutId,
   validateBlueprint,
 } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
@@ -24,6 +26,7 @@ import {
   type ContainerNode,
   type ExperienceNode,
   MAX_TREE_DEPTH,
+  NodeId,
   type SemanticNode,
   walk,
 } from "./node";
@@ -167,8 +170,11 @@ describe("compile", () => {
     expect(blueprint.title).toBe("Investigate checkout latency");
     expect(blueprint.projections).toEqual(["hydration"]);
     expect(blueprint.projectionVersions).toEqual({ hydration: "1.0.0" });
+    // IR 2.4.0 (loom ADR 0101): every container's node id rides on its layout — a deliberate
+    // change to the compiled bytes; the Experience's own address does not move (hashStability).
     expect(blueprint.layout).toEqual({
       type: "grid",
+      id: "root",
       columns: 12,
       gap: 8,
       children: [
@@ -192,6 +198,7 @@ describe("compile", () => {
           span: 12,
           node: {
             type: "flex",
+            id: "row",
             direction: "row",
             children: [
               {
@@ -720,6 +727,104 @@ describe("compile — layout roles (Blueprint IR 2.2.0, loom ADR 0099)", () => {
   it("is deterministic — the same roled experience compiles byte-identically", () => {
     expect(JSON.stringify(compile(withRoot(exp, roled), opts).blueprint)).toBe(
       JSON.stringify(compile(withRoot(exp, roled), opts).blueprint)
+    );
+  });
+});
+
+describe("compile — container ids (Blueprint IR 2.4.0, loom ADR 0101)", () => {
+  const sectioned: ContainerNode = {
+    id: "root",
+    order: "V",
+    kind: "container",
+    direction: "grid",
+    span: 12,
+    children: [
+      {
+        id: "account",
+        order: "A",
+        kind: "container",
+        direction: "column",
+        span: 12,
+        children: [sem("m", "Metric")],
+      },
+      {
+        id: "payment",
+        order: "B",
+        kind: "container",
+        direction: "row",
+        span: 12,
+        children: [
+          {
+            id: "inner",
+            order: "A",
+            kind: "container",
+            direction: "column",
+            span: 12,
+            children: [sem("n", "Metric")],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("every container's node id lands on its compiled layout, root included", () => {
+    const r = compile(withRoot(exp, sectioned), opts);
+    expect(r.findings).toEqual([]);
+    const layout = r.blueprint.layout as GridLayout;
+    expect(layout.id).toBe("root");
+    expect(layout.children.map((c) => (c.node as Layout).id)).toEqual(["account", "payment"]);
+    const payment = layout.children[1]?.node as FlexLayout;
+    expect((payment.children[0] as FlexLayout).id).toBe("inner");
+    expect(blueprintLayoutIds(r.blueprint)).toEqual(["root", "account", "payment", "inner"]);
+  });
+
+  it("loom-ui's node id rule is loom's layout id rule: every id the Experience schema accepts is a layout id", () => {
+    // `NodeId` is `z.string().min(1)`; `isLayoutId` is "a non-empty string" (ADR 0101 D1). Pinned
+    // on the edge cases a stricter rule would reject — compile must never drop an id core accepts.
+    for (const id of ["a", "0", "__proto__", "x".repeat(10_000), "with space", "ü"]) {
+      expect(NodeId.safeParse(id).success).toBe(true);
+      expect(isLayoutId(id)).toBe(true);
+    }
+    expect(NodeId.safeParse("").success).toBe(false);
+    expect(isLayoutId("")).toBe(false);
+  });
+
+  it("the compiled blueprint passes loom's validateBlueprint with no layout-id or duplicate finding", () => {
+    const r = compile(withRoot(exp, sectioned), opts);
+    const report = validateBlueprint(r.blueprint, loomCatalogFor(testCatalog, "web").catalog);
+    expect(report.ok).toBe(true);
+    expect(report.findings).toEqual([]);
+  });
+
+  it("a container id colliding with a widget id is ONE semantic duplicate-node-id — never loom's repeat", () => {
+    const clash: ContainerNode = {
+      ...sectioned,
+      children: [
+        { ...(sectioned.children[0] as ContainerNode), id: "n" },
+        sectioned.children[1] as ContainerNode,
+      ],
+    };
+    const r = compile(withRoot(exp, clash), opts);
+    expect(r.ok).toBe(false);
+    expect(r.findings.map((f) => [f.code, f.severity, f.nodeId])).toEqual([
+      ["duplicate-node-id", "error", "n"],
+    ]);
+  });
+
+  it("a malformed (hand-built, schema-bypassing) container id is not emitted: the layout is keyed positionally, and compile does not throw", () => {
+    const bad: ContainerNode = {
+      ...sectioned,
+      children: [{ ...(sectioned.children[0] as ContainerNode), id: "" }],
+    };
+    const r = compile(withRoot(exp, bad), opts);
+    const first = (r.blueprint.layout as GridLayout).children[0]?.node as FlexLayout;
+    expect("id" in first).toBe(false);
+    expect(r.findings.filter((f) => f.code.startsWith("loom:"))).toEqual([]);
+  });
+
+  it("is deterministic — the same experience compiles byte-identically, ids included", () => {
+    expect(JSON.stringify(compile(withRoot(exp, sectioned), opts).blueprint)).toBe(
+      JSON.stringify(compile(withRoot(exp, sectioned), opts).blueprint)
     );
   });
 });
