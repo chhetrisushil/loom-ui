@@ -1,4 +1,4 @@
-import { FRAMEWORK_KINDS } from "@loom-ui/core";
+import { FRAMEWORK_KINDS, type SemanticFormat, formatSemanticNumber } from "@loom-ui/core";
 import { builtinCatalog, catalogCoverage, customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { loomUiTerminalRegistry, terminalRegistry } from "./registry";
@@ -48,6 +48,9 @@ describe("terminal registry", () => {
   });
   it("Kpi: formatted value, delta arrow and label", () => {
     const r = loomUiTerminalRegistry.get("Kpi");
+    // A "USD" unit is an ISO 4217 code, so `effectiveFormat` reads it as currency, the same as
+    // the DOM renderer: the web's own symbol ("$1,234.50"), not the brief's original ISO-code
+    // suffix ("1234.5 USD") — full numeric parity with the web (review round 1).
     expect(
       r?.(customWidget$({ kind: "Kpi", title: "Revenue", binding: b }), {
         value: 1234.5,
@@ -55,7 +58,7 @@ describe("terminal registry", () => {
         deltaPct: -0.034,
         label: "vs last week",
       })
-    ).toBe("Revenue: 1234.5 USD  ▼ 3.4% (vs last week)");
+    ).toBe("Revenue: $1,234.50  ▼ 3.4% (vs last week)");
     expect(
       r?.(customWidget$({ kind: "Kpi", title: "Share", binding: b }), {
         value: 0.25,
@@ -63,6 +66,15 @@ describe("terminal registry", () => {
       })
     ).toBe("Share: 25%");
     expect(r?.(customWidget$({ kind: "Kpi", title: "K", binding: b }), 5)).toMatch(/^✗ K: /);
+  });
+  it("Kpi: delta rounds to one decimal via the shared DELTA_FORMAT, like the web ('3.5%', not '3.46%')", () => {
+    const r = loomUiTerminalRegistry.get("Kpi");
+    expect(
+      r?.(customWidget$({ kind: "Kpi", title: "Errors", binding: b }), {
+        value: 1,
+        deltaPct: -0.03456,
+      })
+    ).toBe("Errors: 1  ▼ 3.5%");
   });
   it("Table: aligned heading and rows, — for a missing cell, and a count past 20 rows", () => {
     const r = loomUiTerminalRegistry.get("Table");
@@ -94,10 +106,51 @@ describe("terminal registry", () => {
       ],
     })?.split("\n");
     // An `integer` column rounds AND groups digits, like the web's own Intl.NumberFormat —
-    // "1,234", never the unrounded, ungrouped "1234.4".
+    // "1,234", never the unrounded, ungrouped "1234.4". Percentage and currency print exactly
+    // what the web's `measure()` would — "26%" (percent style defaults to 0 fraction digits) and
+    // "€12.00" (the web's own currency symbol, not an ISO-code suffix) — full numeric parity
+    // (review round 1).
     expect(out?.[1]).toBe("    count  share  price");
-    expect(out?.[2]).toBe("    1,234  25.6%  12 EUR");
+    expect(out?.[2]).toBe("    1,234  26%    €12.00");
     expect(out?.[3]).toMatch(/^\s+—\s+—\s+—\s*$/);
+  });
+  it("Table: currency prints the web's own symbol and groups thousands, not an ISO-code suffix", () => {
+    const r = loomUiTerminalRegistry.get("Table");
+    const w = customWidget$({ kind: "Table", title: "Ledger", binding: b });
+    const out = r?.(w, {
+      columns: [{ label: "total", format: { semanticType: "currency", currency: "EUR" } }],
+      rows: [[1234567.891]],
+    })?.split("\n");
+    expect(out?.[2]).toBe("    €1,234,567.89");
+  });
+  it("Table: an unformatted number groups and keeps up to three decimals, like the web", () => {
+    const r = loomUiTerminalRegistry.get("Table");
+    const w = customWidget$({ kind: "Table", title: "Raw", binding: b });
+    const out = r?.(w, {
+      columns: ["value"],
+      rows: [[1234567.891]],
+    })?.split("\n");
+    expect(out?.[2]).toBe("    1,234,567.891");
+  });
+  it("Table cells match @loom-ui/core's formatSemanticNumber exactly, for every SemanticFormat", () => {
+    const r = loomUiTerminalRegistry.get("Table");
+    const w = customWidget$({ kind: "Table", title: "Mixed", binding: b });
+    const cases: ReadonlyArray<{ value: number; format?: SemanticFormat }> = [
+      { value: 1234.4, format: { semanticType: "integer" } },
+      { value: 0.256, format: { semanticType: "percentage" } },
+      { value: 12, format: { semanticType: "currency", currency: "EUR" } },
+      { value: 1234567.891 },
+    ];
+    const out = r?.(w, {
+      columns: cases.map((c, i) => ({ label: `c${i}`, ...(c.format ? { format: c.format } : {}) })),
+      rows: [cases.map((c) => c.value)],
+    })
+      ?.split("\n")[2]
+      ?.trim()
+      .split(/\s+/);
+    cases.forEach((c, i) => {
+      expect(out?.[i]).toBe(formatSemanticNumber(c.value, c.format, "en-US"));
+    });
   });
   it("StatusCard: level, headline and detail", () => {
     const r = loomUiTerminalRegistry.get("StatusCard");

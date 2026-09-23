@@ -1,5 +1,6 @@
 import {
   type BarChartValue,
+  DELTA_FORMAT,
   type KpiValue,
   LocalizedText,
   type SemanticFormat,
@@ -8,6 +9,7 @@ import {
   type TableValue,
   type TimeSeriesValue,
   checkKindValue,
+  effectiveFormat,
   formatSemanticNumber,
   tableColumnFormat,
   tableColumnLabel,
@@ -23,25 +25,31 @@ const title = (w: Widget): string => w.title ?? w.kind;
 const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s.padEnd(n));
 const num = (v: number): string => (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "—");
 
+/** One fixed, deterministic locale for every terminal number: the same grouping/rounding/currency
+ * rules the DOM renderer's `measure()` applies for its reader, without varying with the host's
+ * own locale. */
+const LOCALE = "en-US";
+
 /**
- * A number in its semantics, deterministically (no locale): a fraction as a percentage, a
- * currency with its ISO code, else the unit as a suffix ("%" hugs the number). An `integer`
- * column rounds AND groups digits — "1,234", not "1234.4" — via `@loom-ui/core`'s
- * `formatSemanticNumber`, the same Intl.NumberFormat-options mapping the DOM renderer's
- * `measure()` uses (renderer-lit is an ESM/lit-DOM package this CommonJS one cannot import, so
- * the shared, DOM-free part of that logic lives in core instead of being re-derived here).
+ * A number exactly as the web's `measure()` would print it for the same value, format and unit —
+ * full numeric parity, not merely the same shape: an explicit `format` (or, absent one, a legacy
+ * `unit` read as semantics via `effectiveFormat`, the same "$"/"€"/"%"/ISO-4217 lookup the DOM
+ * renderer uses) goes through `@loom-ui/core`'s `formatSemanticNumber`, so a `currency` prints
+ * the web's own symbol ("€1,234,567.89"), never an ISO-code suffix, and a plain number groups and
+ * rounds exactly as `Intl.NumberFormat` does for the DOM renderer. Only when nothing resolves a
+ * format does the raw `unit` still show, as a literal suffix — the same case in which the DOM
+ * renderer shows it as a separate span. (renderer-lit is an ESM/lit-DOM package this CommonJS one
+ * cannot import, so this DOM-free part of its formatting logic lives in core instead of being
+ * re-derived here.)
  */
 function formatted(
   v: number,
   format: SemanticFormat | undefined,
   unit: string | undefined
 ): string {
-  if (!Number.isFinite(v)) return "—";
-  if (format?.semanticType === "percentage") return `${num(v * 100)}%`;
-  if (format?.semanticType === "currency") return `${num(v)} ${format.currency ?? "USD"}`;
-  if (format?.semanticType === "integer") return formatSemanticNumber(v, format, "en-US");
-  if (unit === undefined || unit === "") return num(v);
-  return unit === "%" ? `${num(v)}%` : `${num(v)} ${unit}`;
+  const fmt = effectiveFormat(format, unit);
+  const text = formatSemanticNumber(v, fmt, LOCALE);
+  return fmt === undefined && unit ? `${text} ${unit}` : text;
 }
 
 /**
@@ -114,7 +122,10 @@ const kpi = guarded("Kpi", (w, v) => {
   const k = v as KpiValue;
   const props = w.props as { unit?: string; format?: SemanticFormat };
   const delta = k.deltaPct ?? null;
-  const change = delta === null ? "" : `  ${delta >= 0 ? "▲" : "▼"} ${num(Math.abs(delta) * 100)}%`;
+  const change =
+    delta === null
+      ? ""
+      : `  ${delta >= 0 ? "▲" : "▼"} ${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, LOCALE)}`;
   const label = k.label !== undefined ? ` (${k.label})` : "";
   return `${title(w)}: ${formatted(k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}${label}`;
 });
