@@ -1,10 +1,11 @@
 import type { MCPToolNode } from "@loom-ui/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyParams,
   checkParams,
   paramsKey,
+  pickParams,
   prepareArguments,
   providerParams,
   resolveTimeToken,
@@ -170,6 +171,73 @@ describe("prepareArguments", () => {
     });
     expect(!array.ok && array.finding.code).toBe("argument-hook-failed");
   });
+
+  it("an async hook (a thenable) fails the step cleanly — no await, no unhandled rejection", async () => {
+    const node = mcpStep("s", "t");
+    const resolves = prepareArguments(node, new Map(), {
+      handle: "h",
+      params: {},
+      now: NOW,
+      hook: (async (args: Record<string, unknown>) => args) as unknown as (
+        args: Record<string, unknown>
+      ) => Record<string, unknown>,
+    });
+    expect(!resolves.ok && resolves.finding.code).toBe("argument-hook-failed");
+
+    let unhandled: unknown;
+    const onUnhandled = (reason: unknown): void => {
+      unhandled = reason;
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const rejects = prepareArguments(node, new Map(), {
+        handle: "h",
+        params: {},
+        now: NOW,
+        hook: (() => Promise.reject(new Error("boom"))) as unknown as (
+          args: Record<string, unknown>
+        ) => Record<string, unknown>,
+      });
+      expect(!rejects.ok && rejects.finding.code).toBe("argument-hook-failed");
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(unhandled).toBeUndefined();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+});
+
+describe("pickParams freezes its copy", () => {
+  it("the object a hook receives as ctx.params cannot be mutated by the hook", () => {
+    const picked = pickParams({ from: "$now-1d", to: "$now" }, ["from", "to"]);
+    expect(Object.isFrozen(picked)).toBe(true);
+    expect(() => {
+      (picked as Record<string, unknown>).from = "hijacked";
+    }).toThrow(TypeError);
+  });
+
+  it("a hook that tries to mutate ctx.params throws (frozen) — its own step fails, and it never leaks to another step sharing the same params object", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => (input as McpIn).args);
+    const seenByB: unknown[] = [];
+    const spec = providerSpec("h", [
+      { ...mcpStep("a", "ta", {}), overridable: ["x"] },
+      { ...mcpStep("b", "tb", {}), overridable: ["x"] },
+    ]);
+    const r = await executeProvider(spec, {
+      invoker: inv,
+      now: NOW,
+      params: { x: "orig" },
+      argumentHook: (args, ctx) => {
+        if (ctx.stepId === "a")
+          (ctx.params as Record<string, unknown>).x = "hijacked"; // frozen: throws
+        else seenByB.push(ctx.params.x);
+        return args;
+      },
+    });
+    expect(!r.ok && r.finding.code).toBe("provider-failed");
+    expect(r.findings.some((f) => f.code === "argument-hook-failed")).toBe(true);
+    expect(seenByB).toEqual(["orig"]);
+  });
 });
 
 describe("executeProvider with params", () => {
@@ -213,6 +281,43 @@ describe("executeProvider with params", () => {
       }),
     });
     expect((inv.calls[0]?.input as McpIn).args.bucket).toBe("5m");
+  });
+
+  it("with no `now` injected, the instant is read once for the whole load, even across waves", async () => {
+    const seen: number[] = [];
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => {
+      const t = 1_000 + seen.length * 60_000;
+      seen.push(t);
+      return t;
+    });
+    try {
+      const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => (input as McpIn).args);
+      // "b" depends on "a": two waves, so a second `Date.now()` read would give "b" a later instant.
+      const spec = providerSpec("h", [
+        mcpStep("a", "ta", { at: "$now" }),
+        mcpStep("b", "tb", { at: "$now" }, ["a"]),
+      ]);
+      await executeProvider(spec, { invoker: inv });
+      expect(seen).toEqual([1_000]);
+      expect((inv.calls[0]?.input as McpIn).args.at).toBe((inv.calls[1]?.input as McpIn).args.at);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a tool output containing the literal string "$now-1d", substituted through a {{steps.…}} template, stays literal', async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as McpIn;
+      if (i.toolName === "producer") return { label: "$now-1d" };
+      return i.args;
+    });
+    const spec = providerSpec("h", [
+      mcpStep("p", "producer"),
+      mcpStep("c", "consumer", { label: "{{steps.p.output.label}}" }, ["p"]),
+    ]);
+    const r = await executeProvider(spec, { invoker: inv, now: NOW });
+    expect(r.ok).toBe(true);
+    expect((inv.calls[1]?.input as McpIn).args.label).toBe("$now-1d");
   });
 });
 
