@@ -9,6 +9,7 @@ import {
   isContainer,
   nodeIds,
   orderKeyAfterAll,
+  replay,
   walk,
 } from "@loom-ui/core";
 import { jsonPathSelect, outputShapeHashOf } from "@loom-ui/hydration";
@@ -118,6 +119,36 @@ export function buildProviderSpec(
 const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b);
 
 /**
+ * The providers a plan ORPHANS: every handle the base declares AND some base node binds, that no
+ * node binds once `ops` apply. Computed EXACTLY, not approximated per op-type: `ops` is folded
+ * onto `base` with core's own `replay` (the same apply semantics core uses to actually commit a
+ * plan), and the resulting tree is walked once for its bound handles — so a `moveNode` that
+ * relocates a binder, a subtree removed two containers deep, a node rebound twice, or an op
+ * nested inside a `prompt`'s `materialized` all resolve the same way core itself would resolve
+ * them, with no op-type-specific case to fall out of sync with `apply`. One `removeProvider`
+ * each, sorted by handle, so replaying `[...ops, ...orphaned]` orphans exactly this set and never
+ * trips `provider-still-bound`. A provider the base declared with no binder is not this plan's to
+ * retire: the app may hold it on purpose. If `ops` do not replay cleanly onto `base`, the plan is
+ * invalid and will be refused on its own; there is nothing here to orphan.
+ */
+export function orphanedProviders(base: Experience, ops: readonly Operation[]): Operation[] {
+  const before = new Set<string>();
+  walk(base.root, (n) => {
+    if (n.kind === "semantic" && n.binding !== undefined) before.add(n.binding.handle);
+  });
+  const after = replay(base, ops);
+  if (!after.ok) return [];
+  const bound = new Set<string>();
+  walk(after.value.root, (n) => {
+    if (n.kind === "semantic" && n.binding !== undefined) bound.add(n.binding.handle);
+  });
+  return [...before]
+    .filter((h) => !bound.has(h) && Object.prototype.hasOwnProperty.call(base.providers, h))
+    .sort()
+    .map((handle) => ({ type: "removeProvider", handle }));
+}
+
+/**
  * Draft → operations by DIFFING against `base.root`'s direct children. Compose is the special
  * case where the base is an empty genesis. The reference planner authors a FLAT list under the
  * root (nested containers are the app's, untouched here); a draft id that names a container is
@@ -141,42 +172,6 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
  * op. Only a type the catalogue marks `model-may-set` gets those warns; everywhere else the class
  * is the caller's and the model never saw it.
  */
-/**
- * The providers a plan ORPHANS: every handle the base declares AND some base node binds, that
- * no node binds once `ops` apply (a `removeNode` drops its whole subtree's bindings; a
- * `bindProvider` moves a node to another handle; an `insertNode` adds its subtree's). One
- * `removeProvider` each, sorted by handle — so they replay AFTER the ops that orphaned them.
- * A provider the base declared with no binder is not this plan's to retire: the app may hold
- * it on purpose.
- */
-export function orphanedProviders(base: Experience, ops: readonly Operation[]): Operation[] {
-  const removed = new Set<string>();
-  const rebound = new Map<string, string>();
-  const after = new Set<string>();
-  for (const op of ops) {
-    if (op.type === "removeNode") removed.add(op.nodeId);
-    else if (op.type === "bindProvider") rebound.set(op.nodeId, op.handle);
-    else if (op.type === "insertNode")
-      walk(op.node, (n) => {
-        if (n.kind === "semantic" && n.binding !== undefined) after.add(n.binding.handle);
-      });
-  }
-  const before = new Set<string>();
-  walk(base.root, (n, parent) => {
-    // Parent before children, so a removed container's descendants are marked on the way down.
-    if (parent !== null && removed.has(parent.id)) removed.add(n.id);
-    if (n.kind !== "semantic") return;
-    if (n.binding !== undefined) before.add(n.binding.handle);
-    if (removed.has(n.id)) return;
-    const handle = rebound.get(n.id) ?? n.binding?.handle;
-    if (handle !== undefined) after.add(handle);
-  });
-  return [...before]
-    .filter((h) => !after.has(h) && Object.prototype.hasOwnProperty.call(base.providers, h))
-    .sort()
-    .map((handle) => ({ type: "removeProvider", handle }));
-}
-
 export function materialize(
   draft: PlanDraft,
   base: Experience,
