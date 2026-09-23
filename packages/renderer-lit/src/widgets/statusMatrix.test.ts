@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import "./index";
 
 // ── The status matrix, Lit side ───────────────────────────────────────────────
-// The SAME eight rows are asserted against the terminal surface in
+// The SAME ten rows are asserted against the terminal surface in
 // `@loom-ui/renderer-terminal`'s `src/statusMatrix.test.ts`. The two tables are the contract
 // that the two surfaces render one decision table; edit neither alone.
 
@@ -12,7 +12,7 @@ interface MatrixRow {
   readonly status: BindingStatus | undefined;
   readonly value: unknown;
   /** The `data-state` the widget's root carries. */
-  readonly state: "loading" | "pending" | "stale" | "error" | "ready";
+  readonly state: "loading" | "pending" | "stale" | "error" | "empty" | "ready";
   /** The marker glyph, or null when the state carries none. */
   readonly marker: "~" | "⋯" | null;
   /** Did the value renderer run? */
@@ -28,6 +28,11 @@ const stale: BindingStatus = {
   state: "stale",
   seq: 2,
   finding: { code: "output-shape-drift", message: "drifted" },
+};
+const empty: BindingStatus = {
+  state: "empty",
+  seq: 5,
+  finding: { code: "upstream-empty", message: "no data for this view" },
 };
 const pending: BindingStatus = { state: "pending", seq: 3 };
 const ready: BindingStatus = { state: "ready", seq: 4 };
@@ -46,6 +51,23 @@ const MATRIX: readonly MatrixRow[] = [
     status: err,
     value: undefined,
     state: "error",
+    marker: null,
+    showsValue: false,
+  },
+  // loom ADR 0100: "no data", ranked right after error. A value beside it is ignored.
+  {
+    name: "empty + value",
+    status: empty,
+    value: 412,
+    state: "empty",
+    marker: null,
+    showsValue: false,
+  },
+  {
+    name: "empty + no value",
+    status: empty,
+    value: undefined,
+    state: "empty",
     marker: null,
     showsValue: false,
   },
@@ -132,7 +154,7 @@ describe("status matrix (Lit)", () => {
   }
 
   it("stale with no value states the reason and says there is no value", async () => {
-    const el = await mount(MATRIX[3] as MatrixRow);
+    const el = await mount(MATRIX[5] as MatrixRow);
     expect(text(el)).toContain("drifted");
     expect(text(el)).toContain("no value");
   });
@@ -141,6 +163,31 @@ describe("status matrix (Lit)", () => {
     const el = await mount(MATRIX[0] as MatrixRow);
     expect(text(el)).toContain("tool down");
     expect(text(el)).not.toContain("412");
+  });
+
+  it("empty draws 'No data' as a polite live region (role=status, as loom's React marker), never an alert", async () => {
+    for (const row of [MATRIX[2], MATRIX[3]] as MatrixRow[]) {
+      const el = await mount(row);
+      const root = el.shadowRoot?.querySelector("[data-state]");
+      expect(root?.getAttribute("role")).toBe("status");
+      expect(root?.getAttribute("aria-label")).toBe("p99: No data");
+      expect(root?.getAttribute("title")).toBe("no data for this view");
+      expect(text(el)).toBe("p99: No data");
+      expect(el.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
+    }
+  });
+
+  it("empty is checked before the value contract: a value that would fail it is ignored", async () => {
+    const el = await mount({
+      name: "empty + bad value",
+      status: empty,
+      value: "oops",
+      state: "empty",
+      marker: null,
+      showsValue: false,
+    });
+    expect(el.shadowRoot?.querySelector("[data-state]")?.getAttribute("data-state")).toBe("empty");
+    expect(text(el)).not.toContain("contract");
   });
 
   it("a contract violation outranks stale and pending", async () => {
@@ -161,11 +208,11 @@ describe("status matrix (Lit)", () => {
   });
 
   it("pending speaks as loading and stale speaks as stale", async () => {
-    const p = await mount(MATRIX[4] as MatrixRow);
+    const p = await mount(MATRIX[6] as MatrixRow);
     expect(p.shadowRoot?.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe(
       "p99: loading"
     );
-    const s = await mount(MATRIX[2] as MatrixRow);
+    const s = await mount(MATRIX[4] as MatrixRow);
     expect(s.shadowRoot?.querySelector("[aria-label]")?.getAttribute("aria-label")).toBe(
       "p99: stale"
     );

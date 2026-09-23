@@ -2,10 +2,16 @@ import { checkKindValue } from "@loom-ui/core";
 import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
-import { describeValue, errorStateText, loadingStateText, staleStateText } from "../a11y";
+import {
+  describeValue,
+  emptyStateText,
+  errorStateText,
+  loadingStateText,
+  staleStateText,
+} from "../a11y";
 import { localized } from "../i18n";
 
-export type WidgetState = "loading" | "pending" | "stale" | "error" | "ready";
+export type WidgetState = "loading" | "pending" | "stale" | "error" | "empty" | "ready";
 
 /** What one (value, status) pair renders as, plus the finding that explains a non-ready state. */
 export interface WidgetVerdict {
@@ -17,23 +23,27 @@ export interface WidgetVerdict {
 //
 // ONE decision table, over the `BindingStatus` loom resolves from the widget's binding, and the
 // terminal surface implements the SAME one in `@loom-ui/renderer-terminal`. Both are pinned by
-// an identical eight-row table-driven test (`statusMatrix.test.ts` in each package) so the two
+// an identical ten-row table-driven test (`statusMatrix.test.ts` in each package) so the two
 // surfaces cannot drift into disagreeing about what a binding's state means:
 //
 //   1. status "error"                  → error, showing the STATUS finding. The value renderer
 //                                        never runs: a live "provider timed out" is a more
 //                                        specific diagnosis than anything the last-known value
 //                                        could produce.
-//   2. checkKindValue fails            → error, showing the CONTRACT finding.
-//   3. status "stale" + value          → stale marker "~" + the normal rendering.
+//   2. status "empty"                  → "No data" (loom ADR 0100): the upstream answered with no
+//                                        such row. The value renderer never runs and a value
+//                                        beside it is ignored; the contract is not checked —
+//                                        there is no value to check.
+//   3. checkKindValue fails            → error, showing the CONTRACT finding.
+//   4. status "stale" + value          → stale marker "~" + the normal rendering.
 //      status "stale", no value        → stale marker, NO value renderer — "we know this is
 //                                        stale AND we have nothing to show" is a third fact,
 //                                        not a spinner.
-//   4. status "pending" + value        → pending marker "⋯" + the normal rendering (the old
+//   5. status "pending" + value        → pending marker "⋯" + the normal rendering (the old
 //                                        value is still the best answer while the next loads).
 //      status "pending", no value      → loading.
-//   5. value undefined                 → loading.
-//   6. otherwise                       → ready.
+//   6. value undefined                 → loading.
+//   7. otherwise                       → ready.
 
 /** Common shape: widget + value + status in, the matrix out. Subclasses implement `renderReady`. */
 export abstract class LuWidget extends LitElement {
@@ -111,6 +121,7 @@ export abstract class LuWidget extends LitElement {
   private computeVerdict(): WidgetVerdict {
     const status = this.status;
     if (status?.state === "error") return withFinding("error", status.finding?.message);
+    if (status?.state === "empty") return withFinding("empty", status.finding?.message);
     const check = checkKindValue(this.kind, this.value);
     if (!check.ok) return { state: "error", finding: check.finding.message };
     if (status?.state === "stale") return withFinding("stale", status.finding?.message);
@@ -133,6 +144,7 @@ export abstract class LuWidget extends LitElement {
     if (s.state === "loading" || s.state === "pending") return loadingStateText(this.title_);
     if (s.state === "error") return errorStateText(this.title_);
     if (s.state === "stale") return staleStateText(this.title_);
+    if (s.state === "empty") return `${this.title_}: ${emptyStateText()}`;
     return describeValue(this.kind, this.value, this.title_, this.widget?.props);
   }
 
@@ -149,6 +161,18 @@ export abstract class LuWidget extends LitElement {
         title=${s.finding ?? ""}
       >
         ${this.title_}: ${s.finding ?? "error"}
+      </div>`;
+    // "No data" is a result, not a failure: a POLITE live region (`role="status"`), exactly as
+    // loom's React marker (ADR 0100 D3) — never `role="alert"`, and never the value renderer.
+    if (s.state === "empty")
+      return html`<div
+        role="status"
+        aria-label=${this.label()}
+        data-state="empty"
+        class="state empty"
+        title=${s.finding ?? ""}
+      >
+        ${this.title_}: ${emptyStateText()}
       </div>`;
     // Stale with nothing to show: the marker, the reason, and an explicit "no value" — never
     // `renderReady()`, which would be handed `undefined` and read it as a value.
