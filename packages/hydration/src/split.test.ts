@@ -29,6 +29,7 @@ import {
   type ServeOptions,
   SplitHydrationController,
   handleInventory,
+  publicFinding,
   serveHandle,
   serveHandles,
 } from "./split";
@@ -956,13 +957,16 @@ describe("served findings are public: provider internals stay on the server", ()
 
   it("(c) a sandbox reshape failure", async () => {
     const inv = answering(() => ({ n: 1 })).on(SANDBOX_TOOL_ID, () => {
-      throw new TypedFailure("scriptError", { detail: "sandbox-payload exception-text" });
+      throw new TypedFailure("limitExceeded", {
+        kind: "cpu",
+        detail: "sandbox-payload exception-text",
+      });
     });
     const { r, internal } = await serve(
       one({ reshaping: { engine: "QuickJS", scriptRef: "sha256:script" } }),
       inv
     );
-    expect(r).toMatchObject({ state: "error", finding: { code: "reshape-scriptError" } });
+    expect(r).toMatchObject({ state: "error", finding: { code: "reshape-limitExceeded" } });
     expect(internal.some(([, f]) => f.message.includes("sandbox-payload"))).toBe(true);
   });
 
@@ -988,6 +992,89 @@ describe("served findings are public: provider internals stay on the server", ()
     );
     expect(r).toMatchObject({ state: "error", finding: { code: "hydration-internal" } });
     expect(internal.map(([, f]) => f.message)).toEqual(["exception-text from hidden.tool"]);
+  });
+
+  it("a reshape or tool failure on a channel loom does not declare is served generically", async () => {
+    const secretChannel = "hidden.tool: secret-arg=hunter2";
+    const sandbox = answering(() => ({ n: 1 })).on(SANDBOX_TOOL_ID, () => {
+      throw new TypedFailure(secretChannel, {});
+    });
+    const a = await serve(
+      one({ reshaping: { engine: "QuickJS", scriptRef: "sha256:script" } }),
+      sandbox
+    );
+    expect(a.r).toMatchObject({ state: "error", finding: { code: "reshape-failed" } });
+    expect(JSON.stringify(a.r)).not.toContain("hunter2");
+    expect(a.internal.some(([, f]) => f.code === `reshape-${secretChannel}`)).toBe(true);
+    const tool = answering(() => {
+      throw new TypedFailure(secretChannel, {});
+    });
+    const b = await serve(one(), tool);
+    expect(b.r).toMatchObject({ state: "error" });
+    expect(JSON.stringify(b.r)).not.toContain("hunter2");
+    expect(b.internal.some(([, f]) => f.message.includes("hunter2"))).toBe(true);
+    const known = await serve(
+      one(),
+      answering(() => {
+        throw new TypedFailure("toolNotFound", { toolName: "hidden.tool" });
+      })
+    );
+    expect(JSON.stringify(known.internal)).toContain("tool-toolNotFound");
+  });
+
+  it("the code of a served finding is a tool or reshape code only for loom's declared channels", () => {
+    const f = (code: string) => publicFinding("h", { code, severity: "error", message: "m" }).code;
+    expect(f("reshape-scriptMissing")).toBe("reshape-scriptMissing");
+    expect(f("reshape-limitExceeded")).toBe("reshape-limitExceeded");
+    expect(f("reshape-shapeMismatch")).toBe("reshape-shapeMismatch");
+    expect(f("tool-toolNotFound")).toBe("tool-toolNotFound");
+    expect(f("tool-schemaDrift")).toBe("tool-schemaDrift");
+    expect(f("reshape-hunter2")).toBe("reshape-failed");
+    expect(f("tool-hunter2")).toBe("tool-failed");
+    expect(f("tool-__proto__")).toBe("tool-failed");
+  });
+
+  it("an async onFinding that rejects never becomes an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const probe = (e: unknown) => unhandled.push(e);
+    process.on("unhandledRejection", probe);
+    try {
+      const exp = one();
+      const r = await serveHandle(exp, req(exp, "nope"), {
+        invoker: answering(() => ({ n: 1 })),
+        now: NOW,
+        onFinding: async () => {
+          throw new Error("async hook");
+        },
+      });
+      expect(r.state).toBe("error");
+      await flush();
+      await flush();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", probe);
+    }
+  });
+
+  it("a request whose handle cannot even be read is one invalid-request; the rest are served", async () => {
+    const exp = one();
+    const hostile = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error("hostile getter");
+        },
+      }
+    ) as HandleLoadRequest;
+    const out = await serveHandles(exp, [hostile, req(exp, "h")], {
+      invoker: answering(() => ({ n: 1 })),
+      now: NOW,
+    });
+    expect(out.map((r) => r.state === "ready" || r.finding.code)).toEqual([
+      "invalid-request",
+      true,
+    ]);
+    expect(JSON.stringify(out)).not.toContain("hostile getter");
   });
 
   it("a request refusal is public too, and a throwing onFinding changes nothing", async () => {
@@ -1027,6 +1114,14 @@ describe("served findings are public: provider internals stay on the server", ()
 describe("minor guards", () => {
   it("revisionOf may not answer an empty revision", () => {
     expect(() => handleInventory(board(), { revisionOf: () => "" })).toThrow(TypeError);
+  });
+
+  it("maxConcurrentCalls must be a positive integer", async () => {
+    const exp = pair();
+    for (const maxConcurrentCalls of [Number.NaN, -1, 0, 1.5])
+      await expect(
+        serveHandles(exp, [req(exp, "first")], { invoker: feedServer(), maxConcurrentCalls })
+      ).rejects.toThrow(TypeError);
   });
 
   it("maxBatch must be a positive integer", async () => {
@@ -1112,7 +1207,7 @@ describe("split vs in-process parity when things go wrong", () => {
   it("a failing tool is the same error either way", async () => {
     const view = await parity(single(), () =>
       new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => {
-        throw new TypedFailure("unavailable", { why: "down" });
+        throw new TypedFailure("toolNotFound", { toolName: "t" });
       })
     );
     expect(view.h?.[0]).toBe("error");

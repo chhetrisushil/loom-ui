@@ -199,9 +199,10 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
   /**
    * Every finding a load produced, IN FULL (tool, step, script, hashes, exception text), for the
    * server's own logs. What the client receives is only its public form (`publicFinding`). A
-   * throw here is swallowed: a logging hook never changes what a client is answered.
+   * throw here, or a rejection of the promise it returns, is swallowed: a logging hook never
+   * changes what a client is answered.
    */
-  readonly onFinding?: (handle: string, finding: Finding) => void;
+  readonly onFinding?: (handle: string, finding: Finding) => unknown;
   /** At most this many transient calls in flight across the whole batch. Default: unbounded. */
   readonly maxConcurrentCalls?: number;
   /** A batch longer than this is refused whole (`batch-too-large`). Default `DEFAULT_MAX_BATCH`. */
@@ -215,9 +216,67 @@ const refuse = (code: string, message: string): HandleLoadResult => ({
 
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-/** What a client may be told about a finding: a fixed text keyed by its code, never its message. */
-function publicText(finding: Finding): string {
+/**
+ * The failure channels loom itself declares (ADR 0060) — `mcp.invoke`'s and the sandbox's. A
+ * `tool-<channel>` / `reshape-<channel>` code is built from whatever channel the (pluggable)
+ * invoker threw, which is arbitrary text; only these are served as they are.
+ */
+const TOOL_CHANNELS: ReadonlySet<string> = new Set(["schemaDrift", "toolNotFound"]);
+const RESHAPE_CHANNELS: ReadonlySet<string> = new Set([
+  "scriptMissing",
+  "limitExceeded",
+  "shapeMismatch",
+]);
+
+/**
+ * Every other code a served finding may carry: the fixed codes hydration and the server mint
+ * themselves. Anything else is replaced (`load-failed` / `load-warning`) — the code is a fixed
+ * vocabulary, never text a provider or an invoker chose.
+ */
+const FIXED_CODES: ReadonlySet<string> = new Set([
+  "tool-failed",
+  "reshape-failed",
+  "reshape-unregistered",
+  "schema-drift",
+  "schema-drift-proceeded",
+  "output-shape-drift",
+  "output-shape-unhashable",
+  "output-shape-unpinned",
+  "output-contract-drift",
+  "output-contract-unchecked",
+  "output-contract-unbound",
+  "param-not-overridable",
+  "param-templated",
+  "param-template-refused",
+  "invalid-params",
+  "invalid-time-token",
+  "argument-hook-failed",
+  "unresolved-step-reference",
+  "dependency-failed",
+  "provider-failed",
+  "empty-graph",
+  "graph-cycle",
+  "aborted",
+  "invalid-request",
+  "version-mismatch",
+  "invalid-handle",
+  "unknown-handle",
+  "batch-too-large",
+  "tree-too-deep",
+  "hydration-internal",
+]);
+
+function publicCode(finding: Finding): string {
   const { code } = finding;
+  if (FIXED_CODES.has(code)) return code;
+  if (code.startsWith("tool-")) return TOOL_CHANNELS.has(code.slice(5)) ? code : "tool-failed";
+  if (code.startsWith("reshape-"))
+    return RESHAPE_CHANNELS.has(code.slice(8)) ? code : "reshape-failed";
+  return finding.severity === "warn" ? "load-warning" : "load-failed";
+}
+
+/** What a client may be told about a finding: a fixed text keyed by its PUBLIC code. */
+function publicText(code: string, severity: Finding["severity"]): string {
   if (code.startsWith("tool-")) return "a tool call failed";
   if (code.startsWith("reshape-")) return "the output could not be reshaped";
   switch (code) {
@@ -257,19 +316,22 @@ function publicText(finding: Finding): string {
     case "hydration-internal":
       return "an internal error occurred";
     default:
-      return finding.severity === "warn" ? "loaded with a warning" : "could not be loaded";
+      return severity === "warn" ? "loaded with a warning" : "could not be loaded";
   }
 }
 
 /**
- * The public form of a finding: `code` and `severity` kept, the message a code-keyed template
- * naming only the (client-supplied) handle — never a node, step, tool, script, hash, argument or
+ * The public form of a finding: `severity` kept; the code kept when it is one of the fixed codes
+ * or a loom-declared channel (otherwise the generic `tool-failed` / `reshape-failed` /
+ * `load-failed` / `load-warning`); the message a template keyed by that code, naming only the
+ * (client-supplied) handle — never a node, step, tool, script, hash, argument, channel or
  * exception text.
  */
 export function publicFinding(handle: string | undefined, finding: Finding): Finding {
-  const text = publicText(finding);
+  const code = publicCode(finding);
+  const text = publicText(code, finding.severity);
   return {
-    code: finding.code,
+    code,
     severity: finding.severity,
     message:
       handle === undefined ? text : `handle ${JSON.stringify(handle.slice(0, 128))}: ${text}`,
@@ -285,9 +347,17 @@ function reporter(opts: ServeOptions, handle: string): Report {
     if (seen.has(finding)) return;
     seen.add(finding);
     try {
-      opts.onFinding?.(handle, finding);
+      const ret: unknown = opts.onFinding?.(handle, finding);
+      // An async hook's rejection is its own: never an unhandled rejection in the server.
+      if (
+        ret !== null &&
+        typeof ret === "object" &&
+        typeof (ret as PromiseLike<unknown>).then === "function"
+      )
+        Promise.resolve(ret).catch(() => {});
     } catch {
-      // A logging hook must never change what the client is answered.
+      // A logging hook must never change what the client is answered (nor, if its `then`
+      // getter throws, what the server does).
     }
   };
 }
@@ -375,10 +445,30 @@ export async function serveHandles(
   }
   return Promise.all(
     requests.map(async (r) => {
-      const handle =
-        r !== null && typeof r === "object" && typeof r.handle === "string" ? r.handle : undefined;
+      // Snapshotted ONCE, inside a guard: a hostile getter or Proxy costs this request, not the
+      // batch, and every later check reads the same values (no getter answering differently twice).
+      let snapshot: HandleLoadRequest | null;
+      try {
+        snapshot =
+          r !== null && typeof r === "object"
+            ? {
+                experienceId: r.experienceId,
+                versionHash: r.versionHash,
+                handle: r.handle,
+                params: r.params,
+              }
+            : null;
+      } catch {
+        const report = reporter(opts, "");
+        return publicResult(
+          undefined,
+          refuse("invalid-request", "the request cannot be read"),
+          report
+        );
+      }
+      const handle = typeof snapshot?.handle === "string" ? snapshot.handle : undefined;
       const report = reporter(opts, handle ?? "");
-      return publicResult(handle, await serveOne(exp, r, opts, pass, report), report);
+      return publicResult(handle, await serveOne(exp, snapshot, opts, pass, report), report);
     })
   );
 }
@@ -424,7 +514,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
 
 async function serveOne(
   exp: Experience,
-  request: HandleLoadRequest,
+  request: HandleLoadRequest | null,
   opts: ServeOptions,
   pass: ServePass,
   report: Report
