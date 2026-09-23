@@ -13,12 +13,15 @@ import { describe, expect, it } from "vitest";
 // open, app-defined key a container renderer is registered under; compile.ts emits it from a
 // container node's `role`. 2.3.0 (loom ADR 0100) added `empty` to `BindingState` — a status, not
 // a Blueprint field, so compile.ts emits nothing new; hydration publishes it for a dependent
-// binding over an empty upstream (`upstream-empty`) and the Lit base draws it. A further bump means reading the next ADR and deciding again.
+// binding over an empty upstream (`upstream-empty`) and the Lit base draws it. 2.4.0 (loom ADR
+// 0101) added an optional `id` on every `Layout`, in the one node-id namespace widget ids share;
+// compile.ts emits each container node's `id` on its layout, the root included, so a renderer can
+// keep a container across a recompose. A further bump means reading the next ADR and deciding again.
 describe("the loom Blueprint IR this compiler targets", () => {
   it("is the version compile.ts was written against", () => {
     expect(
       BLUEPRINT_IR_VERSION,
       "loom's Blueprint IR changed — review compile.ts and bump deliberately"
-    ).toBe("2.3.0");
+    ).toBe("2.4.0");
   });
 });
