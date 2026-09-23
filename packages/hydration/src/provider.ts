@@ -28,8 +28,11 @@ import { outputShapeHashOf, reshape, safeStringify } from "./reshape";
 // the arguments the step declares overridable, relative-time tokens against ONE instant per
 // call, `{{steps.…}}` templates, then the host's argument hook. The output is checked by its
 // shape pin (`outputCheck` absent or "shape") or by the value contracts of the kinds it feeds
-// ("contract"). A pin that drifts is REPORTED, never re-run with the observed hash — the durable
-// repair is the app's, and `remapOperation` (repair.ts) builds its operation.
+// ("contract"). A pin that drifts is REPORTED. By default the step fails and the handle goes
+// stale; under `inputDrift: "report-and-proceed"` (a read-only viewer, which cannot persist a
+// repair) the step is retried ONCE with the observed hash and the value is published — the drift
+// is still returned, so the app can repair it. The durable repair is always the app's, and
+// `remapOperation` (repair.ts) builds its operation. Output drift is never proceeded past.
 
 export interface DriftRecord {
   readonly kind: "input" | "output";
@@ -66,8 +69,12 @@ export interface DriftRecord {
 }
 
 export type ProviderOutcome =
-  | { ok: true; value: unknown; findings: Finding[] }
+  /** `drift` only when an input drift was proceeded past (`inputDrift: "report-and-proceed"`). */
+  | { ok: true; value: unknown; findings: Finding[]; drift?: DriftRecord[] }
   | { ok: false; finding: Finding; drift: DriftRecord[]; findings: Finding[] };
+
+/** What a load does on an input-schema drift: go stale (`report`), or record it and retry once with the observed pin. */
+export type InputDriftMode = "report" | "report-and-proceed";
 
 export interface ExecuteOptions {
   readonly invoker: TransientInvoker;
@@ -92,6 +99,8 @@ export interface ExecuteOptions {
   readonly now?: number;
   /** The host's last word on each step's arguments (after params, tokens, templates). */
   readonly argumentHook?: ArgumentHook;
+  /** On an input-schema drift. Default `"report"`. */
+  readonly inputDrift?: InputDriftMode;
 }
 
 async function mapLimit<T, R>(
@@ -150,6 +159,10 @@ function observedShapes(
   }
   return out;
 }
+
+/** A published value; carries `drift` only when an input drift was proceeded past. */
+const okOutcome = (value: unknown, findings: Finding[], drift: DriftRecord[]): ProviderOutcome =>
+  drift.length > 0 ? { ok: true, value, findings, drift } : { ok: true, value, findings };
 
 export async function executeProvider(
   spec: ProviderSpec,
@@ -232,33 +245,52 @@ export async function executeProvider(
         return;
       }
       for (const f of args.findings) warn(node.stepId, f);
-      try {
-        const out = await opts.invoker.invokeTransient(
+      const call = (expectedSchemaHash: string): Promise<unknown> =>
+        opts.invoker.invokeTransient(
           MCP_INVOKE_TOOL_ID,
-          { toolName: node.toolName, args: args.args, expectedSchemaHash: node.toolSchemaHash },
+          { toolName: node.toolName, args: args.args, expectedSchemaHash },
           invokeOpts
         );
-        outputs.set(node.stepId, out);
+      try {
+        outputs.set(node.stepId, await call(node.toolSchemaHash));
       } catch (e) {
-        if (e instanceof TypedFailure && e.channel === "schemaDrift") {
-          const p = e.payload as { observedHash?: string } | undefined;
-          drift.push({
-            kind: "input",
-            handle: spec.handle,
-            stepId: node.stepId,
-            toolName: node.toolName,
-            expected: node.toolSchemaHash,
-            observed: p?.observedHash ?? "",
-          });
+        if (!(e instanceof TypedFailure && e.channel === "schemaDrift")) {
+          failed.set(node.stepId, stepFailure(node, e, opts.signal));
+          return;
+        }
+        const observed = (e.payload as { observedHash?: string } | undefined)?.observedHash;
+        drift.push({
+          kind: "input",
+          handle: spec.handle,
+          stepId: node.stepId,
+          toolName: node.toolName,
+          expected: node.toolSchemaHash,
+          observed: observed ?? "",
+        });
+        const proceed =
+          opts.inputDrift === "report-and-proceed" &&
+          observed !== undefined &&
+          observed !== "" &&
+          observed !== node.toolSchemaHash;
+        if (!proceed) {
           failed.set(
             node.stepId,
             err(
               "schema-drift",
-              `step "${node.stepId}" (${node.toolName}) input schema drifted from ${node.toolSchemaHash} to ${p?.observedHash ?? "?"}`
+              `step "${node.stepId}" (${node.toolName}) input schema drifted from ${node.toolSchemaHash} to ${observed ?? "?"}`
             )
           );
-        } else {
-          failed.set(node.stepId, stepFailure(node, e, opts.signal));
+          return;
+        }
+        try {
+          outputs.set(node.stepId, await call(observed));
+          warn(node.stepId, {
+            code: "schema-drift-proceeded",
+            severity: "warn",
+            message: `step "${node.stepId}" (${node.toolName}) input schema drifted from ${node.toolSchemaHash} to ${observed}; loaded once with the observed pin — the provider still needs its repair`,
+          });
+        } catch (retry) {
+          failed.set(node.stepId, stepFailure(node, retry, opts.signal));
         }
       }
     });
@@ -307,7 +339,7 @@ export async function executeProvider(
       severity: "warn",
       message: `provider "${spec.handle}" declares no outputShapeHash; the value is unchecked`,
     });
-    return { ok: true, value: shaped.value, findings };
+    return okOutcome(shaped.value, findings, drift);
   }
   // The shaped value is tool-authored: `shapeHash` refuses a nest past its depth cap (and any
   // value it cannot walk). An unhashable value is an UNVERIFIABLE one — reported as a failure,
@@ -341,7 +373,7 @@ export async function executeProvider(
     findings.push(f);
     return { ok: false, finding: f, drift, findings };
   }
-  return { ok: true, value: shaped.value, findings };
+  return okOutcome(shaped.value, findings, drift);
 }
 
 /**
@@ -406,5 +438,5 @@ function checkContract(
       severity: "warn",
       message: `provider "${spec.handle}" feeds only kinds with no value contract (${kinds.join(", ")}); the value is unchecked`,
     });
-  return { ok: true, value, findings };
+  return okOutcome(value, findings, drift);
 }
