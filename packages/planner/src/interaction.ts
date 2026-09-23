@@ -20,15 +20,17 @@ const refuse = (code: string, message: string): Interpretation => ({
  * loom's ordinary effect path untouched — the framework authorises nothing there. An `experience.op`
  * is admitted only when its payload parses as an Operation, is not a `prompt` (a planner's op, not a
  * user's click), does not touch the root, and names a node that exists. Three refusals are
- * structural rather than app policy: `prompt` (a planner's op, not a user's click), `remapProvider`
- * (a data-plane re-pin authored by a planner's revise or the app's durable repair, never a widget),
- * and the root (immutable from this surface). Who may EDIT the lineage otherwise is the app's
- * policy, applied after this returns.
+ * structural rather than app policy: `prompt` (a planner's op, not a user's click), the provider
+ * ops `remapProvider` and `removeProvider` (the data plane is authored by a planner's revise or
+ * the app's repair, never a widget), and the root (immutable from this surface). `setPlacement`
+ * and `setTitle` ARE admitted: resizing a widget and renaming a section are direct manipulation
+ * that editors in unrelated apps offer, the same classes as `moveNode` and `setLabel`, and touch
+ * no data. Who may EDIT the lineage otherwise is the app's policy, applied after this returns.
  *
  * An inserted node's `binding.handle` is NOT checked against the experience's providers here:
  * core treats a dangling handle as a WARN (`validateExperience`), not a refusal, and no click can
- * introduce a `ProviderSpec` anyway — `remapProvider` is refused above — so the strongest thing a
- * widget could do is bind to a handle that does not resolve, which the surface already reports.
+ * introduce a `ProviderSpec` anyway — both provider ops are refused above — so the strongest thing
+ * a widget could do is bind to a handle that does not resolve, which the surface already reports.
  */
 export function interpretAction(exp: Experience, action: WidgetAction): Interpretation {
   if (action.type !== EXPERIENCE_OP_ACTION) return { kind: "business", action };
@@ -44,10 +46,12 @@ export function interpretAction(exp: Experience, action: WidgetAction): Interpre
       "prompt-not-interactive",
       "a prompt op is authored by a planner, not by a widget action"
     );
-  if (op.type === "remapProvider")
+  if (op.type === "remapProvider" || op.type === "removeProvider")
     return refuse(
       "provider-op-not-interactive",
-      "a provider re-pin is authored by a planner or the app's repair path, not by a widget action"
+      op.type === "remapProvider"
+        ? "a provider re-pin is authored by a planner or the app's repair path, not by a widget action"
+        : "retiring a provider is authored by a planner or the app, not by a widget action"
     );
   const nodeId = "nodeId" in op ? op.nodeId : op.type === "insertNode" ? op.parentId : undefined;
   if (nodeId === exp.root.id && op.type !== "insertNode")
