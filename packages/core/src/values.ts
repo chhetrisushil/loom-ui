@@ -37,6 +37,10 @@ export const SemanticFormat = z
       f.minimumFractionDigits <= f.maximumFractionDigits,
     { message: "minimumFractionDigits must not exceed maximumFractionDigits" }
   )
+  // A generic framework assumes no currency: the code is what the format means.
+  .refine((f) => f.semanticType !== "currency" || f.currency !== undefined, {
+    message: "a currency format needs its ISO 4217 `currency` code — no currency is assumed",
+  })
   // An integer is whole by definition: asking it for fraction digits is a contradiction, refused
   // here rather than silently overridden at format time.
   .refine(

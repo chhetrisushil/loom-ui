@@ -287,6 +287,18 @@ describe("lu-kpi: unit, flat delta, caption", () => {
   });
 });
 
+describe("lu-kpi: a non-finite delta", () => {
+  it("shows — with no arrow", async () => {
+    const el = await mount("lu-kpi", {
+      widget: customWidget$({ kind: "Kpi", id: "kinf", title: "Growth", binding: b }),
+      value: { value: 3, deltaPct: Number.POSITIVE_INFINITY },
+    });
+    const badge = el.shadowRoot?.querySelector(".delta");
+    expect(badge?.getAttribute("data-direction")).toBe("none");
+    expect(badge?.textContent?.trim()).toBe("—");
+  });
+});
+
 describe("lu-note without a widget", () => {
   it("renders nothing instead of throwing, like every other LuWidget", async () => {
     const el = document.createElement("lu-note") as Mounted;

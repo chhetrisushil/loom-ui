@@ -81,7 +81,28 @@ describe("unitSuffix", () => {
   });
 });
 
+describe("currency needs its code", () => {
+  it("a currency format with no code is never formatted as some assumed currency", () => {
+    const opts = semanticNumberFormatOptions({ semanticType: "currency" });
+    expect(opts.style).toBeUndefined();
+    expect(opts.currency).toBeUndefined();
+    expect(formatSemanticNumber(12, { semanticType: "currency" })).toBe("12");
+  });
+});
+
+describe("an explicit format beats a % unit", () => {
+  it("decimal + unit '%' is the number as given with the unit beside it, not a fraction", () => {
+    const fmt = { semanticType: "decimal" } as const;
+    expect(`${formatSemanticNumber(25, fmt)} ${unitSuffix(fmt, "%")}`).toBe("25 %");
+  });
+});
+
 describe("deltaDirection", () => {
+  it("a non-finite delta has no direction at all — neither an arrow nor 'unchanged'", () => {
+    expect(deltaDirection(Number.NaN)).toBe("none");
+    expect(deltaDirection(Number.POSITIVE_INFINITY)).toBe("none");
+    expect(deltaDirection(Number.NEGATIVE_INFINITY)).toBe("none");
+  });
   it("up, down, or flat — a zero change is neither", () => {
     expect(deltaDirection(0.12)).toBe("up");
     expect(deltaDirection(-0.034)).toBe("down");

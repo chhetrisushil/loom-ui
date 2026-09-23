@@ -313,6 +313,15 @@ describe("terminal registry", () => {
       })
     ).toMatch(/a.*7 ms$/);
   });
+  it("Kpi: a non-finite delta prints — with no arrow", () => {
+    const r = loomUiTerminalRegistry.get("Kpi");
+    expect(
+      r?.(customWidget$({ kind: "Kpi", title: "Growth", binding: b }), {
+        value: 3,
+        deltaPct: Number.POSITIVE_INFINITY,
+      })
+    ).toBe("Growth: 3  —");
+  });
   it("Kpi: a zero delta is flat — no arrow", () => {
     const r = loomUiTerminalRegistry.get("Kpi");
     expect(

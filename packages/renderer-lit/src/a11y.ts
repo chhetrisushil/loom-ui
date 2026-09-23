@@ -67,7 +67,7 @@ export function describeValue(
       const delta = v.deltaPct ?? null;
       const direction = delta === null ? undefined : deltaDirection(delta);
       const change =
-        delta === null || direction === undefined
+        delta === null || direction === undefined || direction === "none"
           ? ""
           : direction === "flat"
             ? `, ${t("unchanged")}`

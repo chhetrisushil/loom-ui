@@ -137,6 +137,11 @@ describe("describeValue", () => {
     expect(spy.mock.calls.map(([k]) => k)).toContain("unchanged");
     spy.mockRestore();
   });
+  it("a non-finite delta is spoken as no direction — neither up/down nor 'unchanged'", () => {
+    setLocale("en-US");
+    const spoken = describeValue("Kpi", { value: 3, deltaPct: Number.NEGATIVE_INFINITY }, "Growth");
+    expect(spoken).toBe("Growth: 3");
+  });
   it("speaks a Kpi's label as a caption after the title", () => {
     setLocale("en-US");
     expect(

@@ -134,8 +134,11 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
     expect(checkKindValue("SandboxView", 7)).toEqual({ ok: true });
   });
   it("SemanticFormat is the set the renderers honour — five number types — and refuses a malformed currency", () => {
-    for (const semanticType of ["number", "integer", "decimal", "percentage", "currency"])
+    for (const semanticType of ["number", "integer", "decimal", "percentage"])
       expect(SemanticFormat.safeParse({ semanticType }).success).toBe(true);
+    expect(SemanticFormat.safeParse({ semanticType: "currency", currency: "JPY" }).success).toBe(
+      true
+    );
     // A type no renderer honours is refused rather than silently drawn as a plain number: a
     // consumer with richer semantics maps to these five at its own boundary.
     for (const semanticType of ["duration", "datetime", "measurement", "country"])
@@ -186,6 +189,16 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
         maximumFractionDigits: 0,
       }).success
     ).toBe(true);
+  });
+  it("SemanticFormat: a currency without its ISO code is refused — no currency is assumed", () => {
+    const r = SemanticFormat.safeParse({ semanticType: "currency" });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.message).toMatch(
+      /currency format needs its ISO 4217 `currency` code/
+    );
+    expect(SemanticFormat.safeParse({ semanticType: "currency", currency: "EUR" }).success).toBe(
+      true
+    );
   });
   it("tableColumnLabel / tableColumnFormat read either column form", () => {
     expect(tableColumnLabel("db")).toBe("db");
