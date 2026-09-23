@@ -60,6 +60,25 @@ describe("Named reshaping", () => {
     }
   });
 
+  it("a raw output structuredClone cannot represent is refused, not passed through live", async () => {
+    const seen: unknown[] = [];
+    const reshapers = defineReshapers({
+      identity: (x) => {
+        seen.push(x);
+        return x;
+      },
+    });
+    const raw: { tag: string; fn?: () => void } = { tag: "raw" };
+    raw.fn = () => {};
+    const r = await reshape({ engine: "Named", scriptRef: "identity" }, raw, {
+      invoker: new FakeInvoker(),
+      reshapers,
+    });
+    expect(!r.ok && r.finding.code).toBe("reshape-failed");
+    expect(!r.ok && r.finding.message).toContain("not cloneable");
+    expect(seen).toHaveLength(0); // the reshaper never runs on the live, unclonable reference
+  });
+
   it("executeProvider threads the registry to its terminal reshape", async () => {
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ rows: [{ t: 1 }, { t: 2 }] }));
     const spec = providerSpec("h", [mcpStep("s", "t")], {

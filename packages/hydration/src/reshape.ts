@@ -36,15 +36,16 @@ export function defineReshapers(entries: Readonly<Record<string, Reshaper>>): Re
  * A Named reshaper runs in-process, trusted like host code — but the RAW terminal output is also
  * read by callers after `reshape` returns (output-shape hashing, drift sampling): a reshaper that
  * mutates its input in place must never corrupt what those later readers see, so it gets a copy,
- * never the original reference. Best-effort: a raw value `structuredClone` cannot represent (a
- * function, a class instance) is passed through as-is rather than failing the reshape — those are
- * not shapes a tool/MCP terminal output takes.
+ * never the original reference. A raw value `structuredClone` cannot represent (a function, a
+ * class instance) is REFUSED rather than handed to the reshaper live — that would let the
+ * reshaper corrupt what later readers see, exactly what the copy exists to prevent. Throws;
+ * `runNamed` turns that into a `reshape-failed` finding before the reshaper ever runs.
  */
 function cloneForReshaper(raw: unknown): unknown {
   try {
     return structuredClone(raw);
   } catch {
-    return raw;
+    throw new Error("input is not cloneable");
   }
 }
 
@@ -66,8 +67,21 @@ async function runNamed(
             : `no reshaper is registered under "${name}"`,
       },
     };
+  let cloned: unknown;
   try {
-    return { ok: true, value: await fn(cloneForReshaper(raw)) };
+    cloned = cloneForReshaper(raw);
+  } catch (err) {
+    return {
+      ok: false,
+      finding: {
+        code: "reshape-failed",
+        severity: "error",
+        message: `reshaper "${name}": ${err instanceof Error ? err.message : String(err)}`,
+      },
+    };
+  }
+  try {
+    return { ok: true, value: await fn(cloned) };
   } catch (err) {
     return {
       ok: false,
