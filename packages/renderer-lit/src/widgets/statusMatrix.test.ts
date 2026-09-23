@@ -177,6 +177,28 @@ describe("status matrix (Lit)", () => {
     }
   });
 
+  // Intended difference from the terminal (README, "Empty upstream"): the Lit base always SAYS
+  // "No data" and keeps the finding's message in `title`; the terminal prints the message itself
+  // as the row text (loom ADR 0100 D1/D2). In-process the message is the full hydration one; split,
+  // the public "no data for this view".
+  it("empty with an in-process finding message: still 'No data', the message only in title", async () => {
+    const message =
+      'step "detail" references "top" at path "rows[0].sku": the upstream has no such row';
+    const el = await mount({
+      name: "empty (in-process message)",
+      status: { state: "empty", seq: 6, finding: { code: "upstream-empty", message } },
+      value: undefined,
+      state: "empty",
+      marker: null,
+      showsValue: false,
+    });
+    const root = el.shadowRoot?.querySelector("[data-state]");
+    expect(root?.getAttribute("data-state")).toBe("empty");
+    expect(text(el)).toBe("p99: No data");
+    expect(root?.getAttribute("title")).toBe(message);
+    expect(root?.getAttribute("aria-label")).toBe("p99: No data");
+  });
+
   it("empty is checked before the value contract: a value that would fail it is ignored", async () => {
     const el = await mount({
       name: "empty + bad value",

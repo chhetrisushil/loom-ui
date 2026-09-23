@@ -104,6 +104,23 @@ describe("status matrix (terminal)", () => {
     expect(line?.trim()).toBe("○ p99: no data");
   });
 
+  // Intended difference from Lit (README, "Empty upstream"): the terminal row IS the finding's
+  // message (loom ADR 0100 D2), so in-process it reads the full hydration message; split, the
+  // public "no data for this view". Lit always says "No data" and keeps the message in `title`.
+  it("empty with an in-process finding message prints that message as the row", () => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
+    const message =
+      'step "detail" references "top" at path "rows[0].sku": the upstream has no such row';
+    store.setStatus("h", {
+      state: "empty",
+      finding: { code: "upstream-empty", severity: "warn", message },
+    });
+    const line = renderExperience(bp, store)
+      .split("\n")
+      .find((l) => l.includes("p99"));
+    expect(line?.trim()).toBe(`○ p99: ${message}`);
+  });
+
   it("an empty status never reaches the contract check, even over a value that would fail it", () => {
     expect(render({ state: "empty", value: "oops" as unknown as number })).toBe(
       "○ p99: no data for this view"
