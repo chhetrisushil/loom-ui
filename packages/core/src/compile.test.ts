@@ -631,4 +631,24 @@ describe("compile — placement and section titles (Blueprint IR 2.1.0, loom ADR
     const flexRow = (r.blueprint.layout as GridLayout).children[0]?.node as FlexLayout;
     expect(flexRow.children.map((w) => ("_tag" in w ? w.id : w.type))).toEqual(["y"]);
   });
+
+  it("a node that DEGRADES on this surface still carries its own placement into the compiled cell", () => {
+    // Placement lives on the NODE (loom ADR 0098 D1), not on whatever kind the surface resolves
+    // it to — a degrade chain must not lose it. Same degrade as "resolves a degrade chain per
+    // surface" (Trend → DataTable on terminal), with row/rowSpan/column added.
+    const e = withRoot(exp, {
+      ...root,
+      children: [sem("t", "Trend", { props: { series: ["a"] }, row: 2, rowSpan: 2, column: 5 })],
+    });
+    const term = compile(e, { ...opts, surface: "terminal" });
+    expect(term.ok).toBe(true);
+    expect((nodes(term)[0] as Widget).kind).toBe("DataTable");
+    const [cell] = cells(term);
+    expect(cell && { span: cell.span, row: cell.row, rowSpan: cell.rowSpan, column: cell.column }).toEqual({
+      span: 6,
+      row: 2,
+      rowSpan: 2,
+      column: 5,
+    });
+  });
 });
