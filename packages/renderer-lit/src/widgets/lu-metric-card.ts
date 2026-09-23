@@ -1,6 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
-import { type SemanticFormat, effectiveFormat, measure } from "../format";
+import { type SemanticFormat, effectiveFormat, measure, unitSuffix } from "../format";
 import { LuWidget } from "./base";
 
 @customElement("lu-metric-card")
@@ -38,9 +38,9 @@ export class LuMetricCard extends LuWidget {
     const v = this.value as number;
     const props = this.widget.props as { unit?: string; format?: SemanticFormat };
     const fmt = effectiveFormat(props.format, props.unit);
-    // A currency/percent/unit format already renders its own symbol, so the legacy `unit`
-    // suffix would double it up ("$1,234.50 $").
-    const suffix = fmt === undefined ? props.unit : undefined;
+    // A currency/percent format already renders its own symbol, so the `unit` suffix would
+    // double it up ("$1,234.50 $"); any other format keeps the unit beside the figure.
+    const suffix = unitSuffix(fmt, props.unit);
     return html`<div aria-hidden="true">
         <span class="value">${measure(v, fmt)}</span>
         ${suffix ? html`<span class="unit">${suffix}</span>` : nothing}

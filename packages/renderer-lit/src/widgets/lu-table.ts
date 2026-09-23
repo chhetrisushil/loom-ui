@@ -8,7 +8,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
-import { t } from "../i18n";
+import { formattingLocale, t } from "../i18n";
 import { LuWidget } from "./base";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
@@ -25,8 +25,12 @@ function compareCells(a: TableCell, b: TableCell): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   // At least one cell is a string (a column may legitimately mix types): compare as text but
   // numeric-aware, so "9" sorts before "10" instead of by character code, and a numeric-looking
-  // string compares sanely against an actual number in the same column.
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  // string compares sanely against an actual number in the same column. The collation is the
+  // FORMATTING locale's (the one the cells are drawn in), never the host's own.
+  return String(a).localeCompare(String(b), formattingLocale(), {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 // A columnar table: headings (string or {label, format}) and rows of cells in column order,
@@ -119,6 +123,18 @@ export class LuTable extends LuWidget {
       padding: 8px 10px;
       color: var(--lu-text-dim, #8b949e);
       font-size: 11px;
+    }
+    .more button {
+      background: rgba(99, 102, 241, 0.12);
+      color: var(--lu-text, #e6edf3);
+      border: 1px solid var(--lu-border, #30363d);
+      border-radius: 6px;
+      padding: 3px 8px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .more button:hover {
+      background: rgba(99, 102, 241, 0.22);
     }
   `;
 

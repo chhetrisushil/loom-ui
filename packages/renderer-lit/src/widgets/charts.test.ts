@@ -132,3 +132,85 @@ describe("lu-bar-chart: value-level format", () => {
     expect(barTicks(byProps).join(" ")).toContain("€");
   });
 });
+
+describe("unit beside a non-symbol format", () => {
+  const unitFmt = { semanticType: "decimal" } as const;
+  it("lu-bar-chart's hover label keeps the unit under a decimal format; currency/percent never double", async () => {
+    setLocale("en-US");
+    const hoverLabel = async (id: string, value: Record<string, unknown>) => {
+      const el = await mount("lu-bar-chart", {
+        widget: customWidget$({ kind: "BarChart", id, title: "Lat", binding: b }),
+        value,
+      });
+      el.shadowRoot?.querySelector("rect.bar")?.dispatchEvent(new Event("pointerenter"));
+      await (el as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+      return el.shadowRoot?.querySelector("text.val")?.textContent ?? "";
+    };
+    expect(
+      await hoverLabel("u1", { unit: "ms", format: unitFmt, bars: [{ label: "a", value: 7 }] })
+    ).toBe("7 ms");
+    expect(
+      await hoverLabel("u2", {
+        unit: "USD",
+        format: { semanticType: "currency", currency: "USD" },
+        bars: [{ label: "a", value: 12 }],
+      })
+    ).toBe("$12.00");
+    expect(
+      await hoverLabel("u3", {
+        unit: "%",
+        format: { semanticType: "percentage" },
+        bars: [{ label: "a", value: 0.25 }],
+      })
+    ).toBe("25%");
+  });
+  it("lu-timeseries' tooltip keeps the unit under a decimal format, and falls back to props.unit", async () => {
+    setLocale("en-US");
+    const tooltipFor = async (id: string, value: unknown, props: Record<string, unknown> = {}) => {
+      const el = await mount("lu-timeseries", {
+        widget: customWidget$({ kind: "TimeSeries", id, title: "Lat", binding: b, props }),
+        value,
+      });
+      el.shadowRoot
+        ?.querySelector("svg")
+        ?.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 0 }));
+      const tip = document.querySelector("[data-lu-tooltip]");
+      return (tip?.textContent ?? "").replace(/\s+/g, " ");
+    };
+    expect(
+      await tooltipFor("t1", {
+        series: [{ label: "p99", unit: "ms", format: unitFmt, points: pts([7, 8]) }],
+      })
+    ).toContain("p99: 7 ms");
+    // The widget's own unit is the fallback, exactly as the spoken form and the terminal read it.
+    expect(
+      await tooltipFor("t2", { series: [{ label: "p99", points: pts([7, 8]) }] }, { unit: "ms" })
+    ).toContain("p99: 7 ms");
+    const cur = await tooltipFor("t3", {
+      series: [
+        {
+          label: "rev",
+          unit: "USD",
+          format: { semanticType: "currency", currency: "USD" },
+          points: pts([12, 13]),
+        },
+      ],
+    });
+    expect(cur).toContain("rev: $12.00");
+    expect(cur).not.toContain("USD");
+  });
+  it("lu-metric-card keeps props.unit under a decimal props.format", async () => {
+    setLocale("en-US");
+    const el = await mount("lu-metric-card", {
+      widget: customWidget$({
+        kind: "MetricCard",
+        id: "m1",
+        title: "p99",
+        binding: b,
+        props: { unit: "ms", format: unitFmt },
+      }),
+      value: 7,
+    });
+    expect(el.shadowRoot?.querySelector(".unit")?.textContent).toBe("ms");
+  });
+});

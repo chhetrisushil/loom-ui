@@ -1,4 +1,4 @@
-import { DELTA_FORMAT, checkKindValue } from "@loom-ui/core";
+import { DELTA_FORMAT, checkKindValue, deltaDirection, unitSuffix } from "@loom-ui/core";
 import type {
   BarChartValue,
   KpiValue,
@@ -27,8 +27,7 @@ export function describeValue(
   switch (kind) {
     case "MetricCard": {
       const fmt = effectiveFormat(p?.format, p?.unit);
-      const suffix = fmt === undefined && p?.unit ? ` ${p.unit}` : "";
-      return `${title}: ${measure(value as number, fmt)}${suffix}`;
+      return `${title}: ${measure(value as number, fmt)}${spokenUnit(fmt, p?.unit)}`;
     }
     case "ProgressBar":
       return `${title}: ${measure(value as number)}`;
@@ -48,8 +47,7 @@ export function describeValue(
         const last = s.points[s.points.length - 1];
         const fmt = effectiveFormat(s.format ?? p?.format, s.unit ?? p?.unit);
         const unit = s.unit ?? p?.unit;
-        const suffix = fmt === undefined && unit ? ` ${unit}` : "";
-        return `${s.label} ${last ? measure(last.value, fmt) : "—"}${suffix}`;
+        return `${s.label} ${last ? measure(last.value, fmt) : "—"}${spokenUnit(fmt, unit)}`;
       });
       return `${title}: ${parts.join(", ")}`;
     }
@@ -57,8 +55,7 @@ export function describeValue(
       const v = value as BarChartValue;
       const unit = v.unit ?? p?.unit;
       const fmt = effectiveFormat(v.format ?? p?.format, unit);
-      const suffix = fmt === undefined && unit ? ` ${unit}` : "";
-      return `${title}: ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${suffix}`;
+      return `${title}: ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${spokenUnit(fmt, unit)}`;
     }
     case "Kpi": {
       const v = value as KpiValue;
@@ -67,13 +64,17 @@ export function describeValue(
       // the semantics.
       const unit = v.unit ?? p?.unit;
       const fmt = effectiveFormat(v.format ?? p?.format, unit);
-      const suffix = fmt === undefined && unit ? ` ${unit}` : "";
       const delta = v.deltaPct ?? null;
+      const direction = delta === null ? undefined : deltaDirection(delta);
       const change =
-        delta === null
+        delta === null || direction === undefined
           ? ""
-          : `, ${delta >= 0 ? t("up") : t("down")} ${measure(Math.abs(delta), DELTA_FORMAT)}`;
-      return `${title}: ${measure(v.value, fmt)}${suffix}${change}`;
+          : direction === "flat"
+            ? `, ${t("unchanged")}`
+            : `, ${t(direction)} ${measure(Math.abs(delta), DELTA_FORMAT)}`;
+      // The label is a caption beside the title, heard with it — never in its place.
+      const name = v.label ? `${title}, ${v.label}` : title;
+      return `${name}: ${measure(v.value, fmt)}${spokenUnit(fmt, unit)}${change}`;
     }
     case "Table":
       return `${title}: ${t("table with")} ${(value as TableValue).rows.length} ${t("rows")}`;
@@ -84,6 +85,11 @@ export function describeValue(
     default:
       return title;
   }
+}
+/** The unit as spoken after a figure: core's `unitSuffix` rule, so it matches what is shown. */
+function spokenUnit(fmt: SemanticFormat | undefined, unit: string | undefined): string {
+  const suffix = unitSuffix(fmt, unit);
+  return suffix === undefined ? "" : ` ${suffix}`;
 }
 export function emptyStateText(): string {
   return t("No data");

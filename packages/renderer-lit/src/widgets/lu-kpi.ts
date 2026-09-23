@@ -1,11 +1,12 @@
-import { DELTA_FORMAT, type KpiValue } from "@loom-ui/core";
+import { DELTA_FORMAT, type KpiValue, deltaDirection, unitSuffix } from "@loom-ui/core";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { type SemanticFormat, effectiveFormat, measure } from "../format";
 import { LuWidget } from "./base";
 
-// A value in its own semantics, a ▲/▼ change badge, and the value's own label (the widget
-// title when it has none) — richer than loom's MetricCard, which stays a bare number.
+// A value in its own semantics, a ▲/▼ change badge (none when flat), and the widget title with
+// the value's own label as a caption beside it — richer than loom's MetricCard, which stays a
+// bare number.
 @customElement("lu-kpi")
 export class LuKpi extends LuWidget {
   readonly kind = "Kpi";
@@ -47,10 +48,18 @@ export class LuKpi extends LuWidget {
       color: var(--lu-delta-down, #f87171);
       background: var(--lu-delta-down-bg, rgba(248, 113, 113, 0.12));
     }
+    .flat {
+      color: var(--lu-delta-flat, #8b949e);
+      background: var(--lu-delta-flat-bg, rgba(139, 148, 158, 0.12));
+    }
     .label {
       font-size: 12px;
       color: var(--lu-text-dim, #8b949e);
       margin-top: 2px;
+    }
+    .caption {
+      margin-inline-start: 6px;
+      opacity: 0.8;
     }
   `;
 
@@ -59,22 +68,25 @@ export class LuKpi extends LuWidget {
     const props = this.widget.props as { unit?: string; format?: SemanticFormat };
     const unit = v.unit ?? props.unit;
     const fmt = effectiveFormat(v.format ?? props.format, unit);
-    // A currency/percent format renders its own symbol; the unit suffix would double it.
-    const suffix = fmt === undefined ? unit : undefined;
+    // A currency/percent format renders its own symbol; any other keeps the unit beside it.
+    const suffix = unitSuffix(fmt, unit);
     const delta = v.deltaPct ?? null;
-    const direction = delta !== null && delta >= 0 ? "up" : "down";
+    const direction = delta === null ? undefined : deltaDirection(delta);
+    const arrow = direction === "up" ? "▲ " : direction === "down" ? "▼ " : "";
     return html`<div aria-hidden="true">
         <span class="value">${measure(v.value, fmt)}</span>
         ${suffix ? html`<span class="unit">${suffix}</span>` : nothing}
         ${
-          delta !== null
+          delta !== null && direction !== undefined
             ? html`<span class="delta ${direction}" data-direction=${direction}
-                >${direction === "up" ? "▲" : "▼"} ${measure(Math.abs(delta), DELTA_FORMAT)}</span
+                >${arrow}${measure(Math.abs(delta), DELTA_FORMAT)}</span
               >`
             : nothing
         }
       </div>
-      <div class="label">${v.label ?? this.title_}</div>`;
+      <div class="label">
+        ${this.title_}${v.label ? html`<span class="caption">${v.label}</span>` : nothing}
+      </div>`;
   }
 }
 

@@ -9,10 +9,12 @@ import {
   type TableValue,
   type TimeSeriesValue,
   checkKindValue,
+  deltaDirection,
   effectiveFormat,
   formatSemanticNumber,
   tableColumnFormat,
   tableColumnLabel,
+  unitSuffix,
 } from "@loom-ui/core";
 import { RendererRegistry, type Widget } from "@loom/blueprint-runtime";
 import {
@@ -35,9 +37,9 @@ const LOCALE = "en-US";
  * `unit` read as semantics via `effectiveFormat`, the same "$"/"€"/"%"/ISO-4217 lookup the DOM
  * renderer uses) goes through `@loom-ui/core`'s `formatSemanticNumber`, so a `currency` prints
  * the web's own symbol ("€1,234,567.89"), never an ISO-code suffix, and a plain number groups and
- * rounds exactly as `Intl.NumberFormat` does for the DOM renderer. Only when nothing resolves a
- * format does the raw `unit` still show, as a literal suffix — the same case in which the DOM
- * renderer shows it as a separate span. (renderer-lit is an ESM/lit-DOM package this CommonJS one
+ * rounds exactly as `Intl.NumberFormat` does for the DOM renderer. The raw `unit` shows as a
+ * literal suffix unless the format draws its own symbol (currency, percentage) — core's
+ * `unitSuffix`, the same rule by which the DOM renderer shows it as a separate span. (renderer-lit is an ESM/lit-DOM package this CommonJS one
  * cannot import, so this DOM-free part of its formatting logic lives in core instead of being
  * re-derived here.)
  */
@@ -48,7 +50,8 @@ function formatted(
 ): string {
   const fmt = effectiveFormat(format, unit);
   const text = formatSemanticNumber(v, fmt, LOCALE);
-  return fmt === undefined && unit ? `${text} ${unit}` : text;
+  const suffix = unitSuffix(fmt, unit);
+  return suffix === undefined ? text : `${text} ${suffix}`;
 }
 
 /**
@@ -94,13 +97,17 @@ const guarded =
 const timeSeries = guarded("TimeSeries", (w, v) => {
   const { series } = v as TimeSeriesValue;
   const props = w.props as { unit?: string; format?: SemanticFormat };
+  // Same rule as the web's lu-timeseries: a right axis exists only when some series is on the
+  // left to contrast it with; all-right falls back to one shared axis, so nothing is marked.
+  const splitAxes =
+    series.some((s) => s.axis !== "right") && series.some((s) => s.axis === "right");
   const lines = series.map((s) => {
     const values = s.points.map((p) => p.value);
     const last = values.length > 0 ? (values[values.length - 1] as number) : Number.NaN;
     // Same precedence as the web's `formatOf` (lu-timeseries.ts): this series' own format, else
     // the widget's; a unit resolves only when neither format does.
     const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
-    return `    ${pad(`${s.label}${s.axis === "right" ? " (R)" : ""}`, 12)} ${sparkline(values)}  ${text}`;
+    return `    ${pad(`${s.label}${splitAxes && s.axis === "right" ? " (R)" : ""}`, 12)} ${sparkline(values)}  ${text}`;
   });
   return [`${title(w)}:`, ...lines].join("\n");
 });
@@ -132,12 +139,15 @@ const kpi = guarded("Kpi", (w, v) => {
   const k = v as KpiValue;
   const props = w.props as { unit?: string; format?: SemanticFormat };
   const delta = k.deltaPct ?? null;
+  const direction = delta === null ? undefined : deltaDirection(delta);
+  const arrow = direction === "up" ? "▲ " : direction === "down" ? "▼ " : "";
   const change =
     delta === null
       ? ""
-      : `  ${delta >= 0 ? "▲" : "▼"} ${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, LOCALE)}`;
-  const label = k.label !== undefined ? ` (${k.label})` : "";
-  return `${title(w)}: ${formatted(k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}${label}`;
+      : `  ${arrow}${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, LOCALE)}`;
+  // The label is a caption beside the title, as on the web — the title stays.
+  const name = k.label ? `${title(w)} (${k.label})` : title(w);
+  return `${name}: ${formatted(k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}`;
 });
 
 /** Rows printed before the "… N more rows" line. */

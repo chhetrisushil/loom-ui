@@ -11,7 +11,7 @@ import {
   padDomain,
   timeTickIndices,
 } from "../charts/svg";
-import { effectiveFormat, tick as formatTick, measure, timeTick } from "../format";
+import { effectiveFormat, tick as formatTick, measure, timeTick, unitSuffix } from "../format";
 import { t } from "../i18n";
 import { dirFor } from "../rtl";
 import { hideTooltip, showTooltip } from "../tooltip";
@@ -108,10 +108,15 @@ export class LuTimeseries extends LuWidget {
     super.disconnectedCallback();
   }
 
+  /** The series' own unit, else the widget's — the same fallback the spoken form and terminal use. */
+  private unitOf(s: Series): string | undefined {
+    return s.unit ?? (this.widget.props as { unit?: string }).unit;
+  }
+
   /** value format › widget props.format › the series' (or widget's) unit. */
   private formatOf(s: Series): SemanticFormat | undefined {
-    const props = this.widget.props as { unit?: string; format?: SemanticFormat };
-    return effectiveFormat(s.format ?? props.format, s.unit ?? props.unit);
+    const props = this.widget.props as { format?: SemanticFormat };
+    return effectiveFormat(s.format ?? props.format, this.unitOf(s));
   }
 
   protected renderReady(): TemplateResult | typeof nothing {
@@ -248,7 +253,8 @@ export class LuTimeseries extends LuWidget {
       .map((s, i) => {
         const fmt = this.formatOf(s);
         const v = s.points[hover]?.value ?? 0;
-        const suffix = fmt === undefined && s.unit ? ` ${escapeHtml(s.unit)}` : "";
+        const unit = unitSuffix(fmt, this.unitOf(s));
+        const suffix = unit ? ` ${escapeHtml(unit)}` : "";
         return `<div style="color:${colorFor(i)}">${escapeHtml(s.label)}: ${escapeHtml(
           measure(v, fmt)
         )}${suffix}</div>`;

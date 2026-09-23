@@ -1,9 +1,11 @@
 import {
   DELTA_FORMAT,
   type SemanticFormat,
+  deltaDirection,
   effectiveFormat,
   formatFromUnit,
   semanticNumberFormatOptions,
+  unitSuffix,
 } from "@loom-ui/core";
 import { formattingLocale } from "./i18n";
 
@@ -12,7 +14,7 @@ import { formattingLocale } from "./i18n";
 // and the terminal renderer (which cannot import this ESM/lit package) read the same source
 // instead of each re-deriving it, so a KPI badge and its terminal line never drift apart.
 export type { SemanticFormat };
-export { DELTA_FORMAT, effectiveFormat, formatFromUnit };
+export { DELTA_FORMAT, deltaDirection, effectiveFormat, formatFromUnit, unitSuffix };
 
 /** An em dash, not "∞" and not "NaN": a missing figure, never an infinite one. */
 const NOT_A_NUMBER = "—";

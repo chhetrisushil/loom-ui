@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { describeValue } from "./a11y";
+import * as i18n from "./i18n";
 import { setLocale } from "./i18n";
 
 describe("describeValue", () => {
@@ -90,5 +91,60 @@ describe("describeValue", () => {
     expect(describeValue("Kpi", { value: 7, unit: "ms" }, "p99", { unit: "USD" })).toBe(
       "p99: 7 ms"
     );
+  });
+  it("keeps a unit beside a format that draws no symbol of its own, and never doubles one that does", () => {
+    setLocale("en-US");
+    const dec = { semanticType: "decimal" } as const;
+    expect(describeValue("Kpi", { value: 7, unit: "ms", format: dec }, "p99")).toBe("p99: 7 ms");
+    expect(describeValue("MetricCard", 7, "p99", { unit: "ms", format: dec })).toBe("p99: 7 ms");
+    expect(
+      describeValue(
+        "TimeSeries",
+        {
+          series: [
+            { label: "p99", unit: "ms", format: dec, points: [{ timestamp: "t", value: 7 }] },
+          ],
+        },
+        "Lat"
+      )
+    ).toBe("Lat: p99 7 ms");
+    expect(
+      describeValue(
+        "BarChart",
+        { unit: "ms", format: dec, bars: [{ label: "a", value: 7 }] },
+        "Lat"
+      )
+    ).toBe("Lat: a 7 ms");
+    expect(
+      describeValue(
+        "Kpi",
+        { value: 12, unit: "USD", format: { semanticType: "currency", currency: "USD" } },
+        "Rev"
+      )
+    ).toBe("Rev: $12.00");
+    expect(
+      describeValue(
+        "Kpi",
+        { value: 0.25, unit: "%", format: { semanticType: "percentage" } },
+        "Share"
+      )
+    ).toBe("Share: 25%");
+  });
+  it("a zero delta is spoken 'unchanged', through t()", () => {
+    setLocale("en-US");
+    const spy = vi.spyOn(i18n, "t");
+    expect(describeValue("Kpi", { value: 3, deltaPct: 0 }, "Errors")).toBe("Errors: 3, unchanged");
+    expect(spy.mock.calls.map(([k]) => k)).toContain("unchanged");
+    spy.mockRestore();
+  });
+  it("speaks a Kpi's label as a caption after the title", () => {
+    setLocale("en-US");
+    expect(
+      describeValue(
+        "Kpi",
+        { value: 1234.5, unit: "USD", deltaPct: 0.12, label: "vs last week" },
+        "Revenue"
+      )
+    ).toBe("Revenue, vs last week: $1,234.50, up 12%");
   });
 });
