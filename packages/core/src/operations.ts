@@ -2,6 +2,7 @@ import type { DataClass } from "@loom/classify";
 import { z } from "zod";
 import { type Experience, type Finding, ProviderSpec } from "./experience";
 import {
+  type ContainerNode,
   ExperienceNode,
   LocalizedText,
   MAX_TREE_DEPTH,
@@ -152,6 +153,45 @@ function bindersOf(root: ExperienceNode, handle: string): string[] {
   return ids;
 }
 
+/** The container that directly holds `id` in `root`, or undefined (root itself, or absent). ITERATIVE. */
+function parentOf(root: ExperienceNode, id: string): ContainerNode | undefined {
+  const stack: ExperienceNode[] = [root];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    if (top.kind !== "container") continue;
+    for (const child of top.children) {
+      if (child.id === id) return top;
+      stack.push(child);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The first node in `node`'s subtree (itself included) that carries grid placement under a
+ * parent that does not lay it out — `node` itself sits under `parent`. One ITERATIVE walk.
+ * Only a `grid` container lays out `row`/`rowSpan`/`column` (see `compile`).
+ */
+function placedOutsideGrid(
+  parent: ContainerNode,
+  node: ExperienceNode
+): { node: ExperienceNode; parent: ContainerNode } | undefined {
+  const stack: Array<{ node: ExperienceNode; parent: ContainerNode }> = [{ node, parent }];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    if (top.parent.direction !== "grid" && isPlaced(top.node)) return top;
+    if (top.node.kind === "container")
+      for (let i = top.node.children.length - 1; i >= 0; i--)
+        stack.push({ node: top.node.children[i] as ExperienceNode, parent: top.node });
+  }
+  return undefined;
+}
+
+const outsideGrid = (nodeId: string, parent: ContainerNode, fix: string): OpResult<never> =>
+  refuse(
+    "placement-outside-grid",
+    `"${nodeId}" carries grid placement but its parent "${parent.id}" is a ${parent.direction} container, which does not lay it out; ${fix}`,
+    nodeId
+  );
+
 type SetPlacement = Extract<Operation, { type: "setPlacement" }>;
 const PLACEMENT_KEYS = ["row", "rowSpan", "column"] as const;
 
@@ -212,6 +252,9 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         return refuse("missing-parent", `insert parent "${op.parentId}" not found`, op.parentId);
       if (parent.kind !== "container")
         return refuse("not-a-container", `parent "${op.parentId}" is not a container`, op.parentId);
+      const stray = placedOutsideGrid(parent, op.node);
+      if (stray)
+        return outsideGrid(stray.node.id, stray.parent, "insert it without row/rowSpan/column");
       const root = rebuild(base.root, (n) =>
         n.id === op.parentId && n.kind === "container"
           ? { ...n, children: [...n.children, normalize(op.node)] }
@@ -247,11 +290,7 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       // or stack container would leave a placement nothing honours — refused rather than silently
       // dropped, so the caller clears it first with `setPlacement` and the loss is explicit.
       if (dest.direction !== "grid" && isPlaced(moving))
-        return refuse(
-          "placement-outside-grid",
-          `"${op.nodeId}" carries grid placement and "${op.newParentId}" is a ${dest.direction} container, which does not lay it out; clear it first with setPlacement`,
-          op.nodeId
-        );
+        return outsideGrid(op.nodeId, dest, "clear it first with setPlacement");
       const detached: ExperienceNode = { ...normalize(moving), order: op.newOrder };
       let root = rebuild(base.root, (n) => (n.id === op.nodeId ? null : n));
       root = rebuild(root, (n) =>
@@ -276,6 +315,15 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           `setPlacement on "${op.nodeId}" names no field; an absent field means unchanged, so it would change nothing`,
           op.nodeId
         );
+      // Setting (not clearing) a placement key under a non-grid parent would create a placement
+      // nothing lays out; span-only changes and clears are always allowed.
+      const parent = parentOf(base.root, op.nodeId);
+      if (
+        parent !== undefined &&
+        parent.direction !== "grid" &&
+        PLACEMENT_KEYS.some((k) => typeof op[k] === "number")
+      )
+        return outsideGrid(op.nodeId, parent, "move it into a grid first, or set only span");
       const placed = place(target, op);
       // Validated exactly as `insertNode` validates a node — through the node schema, so every
       // bound the schema declares applies here with no second copy. A container is checked

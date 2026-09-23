@@ -546,3 +546,79 @@ describe("moveNode of a placed node", () => {
     });
   });
 });
+
+describe("placement-outside-grid is refused by every op that could create it", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const container = (
+    id: string,
+    direction: "row" | "column" | "grid",
+    children: ContainerNode["children"] = []
+  ): ContainerNode => ({ id, order: "a", kind: "container", direction, span: 12, children });
+  const refusal = (r: ReturnType<typeof apply>) =>
+    r.ok ? "ok" : `${r.finding.code}@${r.finding.nodeId ?? ""}`;
+  const withFlow = () =>
+    must(
+      replay(g, [
+        { type: "insertNode", parentId: "root", node: container("flow", "row", [node("m1")]) },
+      ])
+    );
+
+  it("setPlacement that SETS row, rowSpan or column under a non-grid parent is refused; the base is untouched", () => {
+    const base = withFlow();
+    const before = JSON.stringify(base);
+    const got = [{ row: 1 }, { rowSpan: 2 }, { column: 3 }].map((f) =>
+      refusal(apply(base, { type: "setPlacement", nodeId: "m1", ...f }))
+    );
+    expect(got).toEqual(Array(3).fill("placement-outside-grid@m1"));
+    expect(JSON.stringify(base)).toBe(before);
+  });
+  it("span-only and clearing ops under a non-grid parent are always allowed", () => {
+    const e = must(
+      replay(withFlow(), [
+        { type: "setPlacement", nodeId: "m1", span: 6 },
+        { type: "setPlacement", nodeId: "m1", row: null, rowSpan: null, column: null },
+      ])
+    );
+    expect(findNode(e.root, "m1")).toMatchObject({ span: 6 });
+  });
+  it("setPlacement under a grid parent (the root here) is allowed", () => {
+    const e = must(
+      replay(g, [
+        { type: "insertNode", parentId: "root", node: node("m1") },
+        { type: "setPlacement", nodeId: "m1", row: 1, column: 1 },
+      ])
+    );
+    expect(findNode(e.root, "m1")).toMatchObject({ row: 1, column: 1 });
+  });
+  it("insertNode of a placed node under a non-grid parent is refused, naming the placed node", () => {
+    const base = withFlow();
+    const r = apply(base, {
+      type: "insertNode",
+      parentId: "flow",
+      node: { ...node("m2"), column: 2 },
+    });
+    expect(refusal(r)).toBe("placement-outside-grid@m2");
+  });
+  it("insertNode of a subtree whose NESTED placed node sits under a non-grid container is refused", () => {
+    const r = apply(g, {
+      type: "insertNode",
+      parentId: "root",
+      node: container("c1", "grid", [container("c2", "column", [{ ...node("deep"), row: 1 }])]),
+    });
+    expect(refusal(r)).toBe("placement-outside-grid@deep");
+  });
+  it("insertNode of a placed subtree whose placements all sit in grids is allowed", () => {
+    const e = must(
+      apply(g, {
+        type: "insertNode",
+        parentId: "root",
+        node: { ...container("c1", "grid", [{ ...node("m1"), row: 2 }]), column: 1 },
+      })
+    );
+    expect(findNode(e.root, "m1")).toMatchObject({ row: 2 });
+    expect(findNode(e.root, "c1")).toMatchObject({ column: 1 });
+  });
+});
