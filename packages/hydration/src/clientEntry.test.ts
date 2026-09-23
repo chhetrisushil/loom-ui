@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { builtinModules, createRequire } from "node:module";
 import { dirname, relative, resolve } from "node:path";
 import { build } from "esbuild";
@@ -10,6 +10,15 @@ import { describe, expect, it } from "vitest";
 // the effect runtime, a node builtin, or hydration's own server-side modules. This walks the
 // `require` graph of the built `dist/client.js` — every file it can load, dependencies included —
 // the same graph a bundler would follow. It needs `pnpm build` first, like every consumer does.
+//
+// Two walks, because neither sees everything:
+// - `forbiddenReach` (regex over `require("…")`, resolved with Node's `require` conditions) sees
+//   CommonJS only: no ESM `import`, no dynamic `import()`, and a dependency whose
+//   `exports` map sends the `browser`/`import` condition somewhere else is resolved to its
+//   `require` target.
+// - The esbuild case bundles `dist/client.js` the way a browser bundler does — ESM and dynamic
+//   `import()` included, resolved under the `browser` and `import` conditions — and checks every
+//   input it pulled in against the same forbidden set.
 
 const DIST = resolve(__dirname, "../dist");
 const BUILTINS = new Set(builtinModules);
@@ -83,7 +92,19 @@ function forbiddenReach(entry: string): { violations: Reach[]; files: number } {
   return { violations, files: seen.size };
 }
 
+/** The real directories of the forbidden packages, as a bundler sees them (links resolved). */
+const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].map((name) =>
+  realpathSync(resolve(__dirname, "../node_modules", name))
+);
+
 describe("@loom-ui/hydration/client is browser-safe", () => {
+  it("dist carries no stale split.js to shadow split/index.js", () => {
+    // `split.ts` became `split/`; a dist built before that still holds `split.js`, which Node
+    // resolves for "./split" ahead of `split/index.js`. `build` removes it; this checks it did.
+    expect(existsSync(resolve(DIST, "split.js"))).toBe(false);
+    expect(load.resolve(resolve(DIST, "split"))).toBe(resolve(DIST, "split/index.js"));
+  });
+
   it("its built module graph reaches no server-only module", () => {
     const { violations, files } = forbiddenReach(resolve(DIST, "client.js"));
     expect(violations).toEqual([]);
@@ -153,17 +174,26 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       minify: true,
       platform: "browser",
       format: "esm",
+      // Explicit, though they are `platform: "browser"`'s defaults: resolve as a browser would.
+      conditions: ["browser", "import"],
       write: false,
-      outfile: resolve(DIST, "client.bundle.js"),
       logLevel: "silent",
       metafile: true,
     });
     expect(out.errors).toEqual([]);
-    const js = out.outputFiles.filter((f) => f.path.endsWith(".js"));
-    expect(js).toHaveLength(1);
-    expect(out.outputFiles.some((f) => f.path.endsWith(".wasm"))).toBe(false);
+    // Every input the bundler pulled in, resolved under the browser/import conditions.
+    const inputs = Object.keys(out.metafile.inputs).map((f) => realpathSync(resolve(f)));
+    const pulled = inputs.filter(
+      (f) =>
+        /quickjs/i.test(f) ||
+        FORBIDDEN_DIRS.some((d) => f.startsWith(`${d}/`)) ||
+        (f.startsWith(`${DIST}/`) && SERVER_FILES.has(relative(DIST, f)))
+    );
+    expect(pulled).toEqual([]);
+    expect(inputs.length).toBeGreaterThan(1);
+    expect(out.outputFiles).toHaveLength(1);
     // Budget: the client is a scheduler, a projection and param checks — tens of KB, not megabytes.
-    const bytes = js[0]?.contents.byteLength ?? Number.POSITIVE_INFINITY;
+    const bytes = out.outputFiles[0]?.contents.byteLength ?? Number.POSITIVE_INFINITY;
     console.info(`@loom-ui/hydration/client browser bundle (minified, esm): ${bytes} bytes`);
     expect(bytes).toBeLessThan(64 * 1024);
   });

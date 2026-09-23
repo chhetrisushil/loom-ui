@@ -13,7 +13,7 @@
     "*": { "client": ["./dist/client.d.ts"] }
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "rm -f dist/split.js dist/split.js.map dist/split.d.ts dist/split.d.ts.map && tsc --build",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest run",

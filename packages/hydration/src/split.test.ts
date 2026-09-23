@@ -33,7 +33,7 @@ import {
   publicFinding,
   serveHandle,
   serveHandles,
-} from "./split";
+} from "./split/index";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
 /** A deterministic stand-in for the server's keyed hash (production: an HMAC over a server secret). */

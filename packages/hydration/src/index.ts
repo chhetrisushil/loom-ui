@@ -35,7 +35,7 @@ export {
   publicFinding,
   serveHandle,
   serveHandles,
-} from "./split";
+} from "./split/index";
 export type {
   HandleInventory,
   HandleLoadRequest,
@@ -45,6 +45,6 @@ export type {
   RevisionFn,
   ServeOptions,
   SplitControllerOptions,
-} from "./split";
+} from "./split/index";
 export { SCHEMA_REPAIRED, remapOperation } from "./repair";
 export type { SchemaRepairedPayload } from "./repair";
