@@ -34,7 +34,11 @@ export interface SchedulerHooks<J extends ScheduledJob, G, R extends HandleLoadR
   cached?(job: J): { readonly value: unknown } | undefined;
   /** The result is current (not superseded, not aborted) and about to be published. */
   commit?(job: J, result: R): void;
-  /** The result was published. A throw here lands the handle on an error status. */
+  /**
+   * The result was published. A throw here is swallowed: the handle keeps the status just
+   * published (the load is no longer in flight, so it is not moved to an error status) and
+   * nothing rejects.
+   */
   published?(job: J, result: R): void;
 }
 
