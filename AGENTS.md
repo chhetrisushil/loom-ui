@@ -48,6 +48,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
+- A framework kind is added in all of these places in one change: its zod contract in `kindValueContracts` and its name in `FRAMEWORK_KINDS` (`@loom-ui/core`), its `lu-*` element, its `litRegistry` entry and its `frameworkKindContracts` entry (`@loom-ui/renderer-lit`), and its `loomUiTerminalRegistry` renderer (`@loom-ui/renderer-terminal`). The parity tests in `litRegistry.test.ts` and `registry.test.ts` fail when one is missing. loom's built-in contracts (`MetricCard`, `DataTable`, `StatusBadge`, …) are never widened: a different shape is a new framework kind.
+- Display text in a prop goes through the catalogue entry's `textProps`: a `LocalizedText` there resolves at compile via `resolveLabel`, like `label`. A renderer never looks a message key up.
 - `@loom-ui/renderer-lit` is ESM (Lit is ESM-only) and tests under happy-dom; the other packages are
   CommonJS.
 - Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
