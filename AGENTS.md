@@ -66,7 +66,12 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   CommonJS.
 - Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
   reported (`onDrift`), never repaired here; the app's durable execution applies `remapOperation`'s op and
-  emits `SCHEMA_REPAIRED`. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else.
+  emits `SCHEMA_REPAIRED` (`inputDrift: "report-and-proceed"` still reports; it only lets a read-only
+  viewer publish). Pin `outputShapeHash` with `outputShapeHashOf` — nothing else — or declare
+  `outputCheck: "contract"`, whose kinds come from the bound nodes at execution time (`handleKinds`), never
+  from the spec. A provider never reaches a browser: split hydration ships `handleInventory` and answers with
+  `serveHandle`. Every new `ProviderSpec`/`MCPToolNode` field is optional with no default, so sealed
+  Experiences keep their hashes (`experience.test.ts` guards it).
 - A planner returns OPERATIONS, never an Experience, and every model call runs inside `ctx.decide` so
   replay never re-calls a model. `@loom-ui/planner` imports no invoker, effect runtime, projection
   runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
