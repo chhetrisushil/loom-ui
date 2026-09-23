@@ -5,8 +5,13 @@ import {
   preservesBlueprintNodes,
 } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
-import { type Accumulator, reconcileContainer, remountedOf } from "./reconcile";
-import { type DomRegistry, type RecomposeReport, projectionPlaceholder } from "./registry";
+import { type Accumulator, reconcileRoot, remountedOf } from "./reconcile";
+import {
+  type DomContainerRegistry,
+  type DomRegistry,
+  type RecomposeReport,
+  projectionPlaceholder,
+} from "./registry";
 import {
   type ContainerEntry,
   type MountContext,
@@ -20,6 +25,15 @@ export interface DomRenderOptions {
   readonly projectionRuntime: ProjectionRuntime;
   readonly executionId: string;
   readonly registry: DomRegistry;
+  /**
+   * Container renderers keyed by ROLE (Blueprint IR 2.2.0 `Layout.role`, loom ADR 0099) — the
+   * container counterpart of `registry`. A layout whose well-formed role is registered here is
+   * drawn as `<div data-container-role=R>` holding the renderer's chrome and the adapter's own
+   * container element (`body`); the section wrap, when titled, goes around that host. Absent, or
+   * a role absent from it (or malformed) ⇒ the plain container, DOM-identical to no role. See
+   * `DomContainerRenderer` for who owns what. Fixed for the handle's lifetime, like `registry`.
+   */
+  readonly containers?: DomContainerRegistry;
   readonly onAction?: (action: WidgetAction) => void;
   /**
    * Whether the Blueprint's own title renders as the root `<h1>`. Default `"heading"` — today's
@@ -34,8 +48,8 @@ export interface DomRenderOptions {
 export interface DomRenderHandle {
   readonly element: HTMLElement;
   /**
-   * Land a revised Blueprint on the live tree: widgets keyed by id, containers by ordinal and
-   * type, the focused subtree never moved. Never throws — renderer failures come back in
+   * Land a revised Blueprint on the live tree: widgets keyed by id, containers by ordinal, type
+   * and role, the focused subtree never moved. Never throws — renderer failures come back in
    * `RecomposeReport.findings` with the failing widget already on its error placeholder.
    * Not re-entrant: an `update` called from inside a renderer's `patch`/`update` during a pass
    * is refused (a `re-entrant update` finding) and changes nothing.
@@ -80,6 +94,7 @@ export function renderBlueprintDom(
   );
   const ctx: MountContext = {
     registry: opts.registry,
+    ...(opts.containers && { containers: opts.containers }),
     projectionRuntime: opts.projectionRuntime,
     executionId: opts.executionId,
     stateMap,
@@ -140,7 +155,7 @@ export function renderBlueprintDom(
         const rebuilt = buildStateMap(next, opts.projectionRuntime, opts.executionId);
         ctx.stateMap.clear();
         for (const [k, v] of rebuilt.stateMap) ctx.stateMap.set(k, v);
-        reconcileContainer(state.root, next.layout, ctx, acc);
+        state.root = reconcileRoot(state.root, next.layout, ctx, acc);
         // Root chrome: title, id, projection placeholders (rebuilt from the new projection list).
         // Written only when they differ, like the container styles — an identical Blueprint must
         // not so much as replace the title's text node.

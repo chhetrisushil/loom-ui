@@ -22,15 +22,17 @@ import {
   mountContainer,
   mountWidget,
   renderInto,
+  roleKey,
   showError,
   styleContainer,
   subscribeEntry,
+  updateChrome,
   widgetIdsOf,
 } from "./tree";
 
 // ── The keyed reconcile ───────────────────────────────────────────────────────
 // Landing a revised Blueprint on the live entry tree. Widgets are keyed by id, containers by
-// ordinal-among-container-children AND type. Nothing is re-rendered for an unchanged node, and
+// ordinal-among-container-children, type AND role (IR 2.2.0, loom ADR 0099 D3). Nothing is re-rendered for an unchanged node, and
 // the ONE child whose subtree holds the focused element is never moved — its neighbours move
 // around it, because detaching a focused `<textarea>` costs the user their caret and selection.
 
@@ -179,14 +181,19 @@ function reconcileWidget(
 
 /**
  * Reconcile one container's children against `next`. Widgets match by id; containers match by
- * ordinal among the container children (the k-th container ↔ the k-th container) AND type.
+ * ordinal among the container children (the k-th container ↔ the k-th container), type AND role
+ * — a role change sweeps the container out and mounts it again, like a type change, because the
+ * chrome state its renderer holds (the current step) was built for that role. `path` names the
+ * layout from the blueprint root, for a container renderer's failure message.
  */
 export function reconcileContainer(
   entry: ContainerEntry,
   next: Layout,
   ctx: MountContext,
-  acc: Accumulator
+  acc: Accumulator,
+  path = "layout"
 ): void {
+  const prevLayout = entry.layout;
   styleContainer(entry.el, next);
   applyTitle(entry, next);
   const inGrid = next.type === "grid";
@@ -199,8 +206,11 @@ export function reconcileContainer(
   const nextChildren: Entry[] = [];
   const used = new Set<Entry>();
   let containerOrdinal = 0;
-  for (const spec of childSpecs(next)) {
+  const specs = childSpecs(next);
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i] as (typeof specs)[number];
     const { node } = spec;
+    const childPath = `${path}.children[${i}]`;
     let child: Entry;
     if (isWidgetNode(node)) {
       const kept = oldWidgets.get(node.id);
@@ -214,19 +224,19 @@ export function reconcileContainer(
     } else {
       const kept = oldContainers[containerOrdinal];
       containerOrdinal++;
-      if (kept && kept.layout.type === node.type) {
-        reconcileContainer(kept, node, ctx, acc);
+      if (kept && kept.layout.type === node.type && kept.role === roleKey(node)) {
+        reconcileContainer(kept, node, ctx, acc, childPath);
         child = kept;
       } else {
         if (kept) {
-          // Same ordinal, different type: the container is swept out whole and mounted again.
+          // Same ordinal, different type or role: the container is swept out whole and mounted again.
           // Its widget ids are DISPOSED, not necessarily remounted — the new tree decides.
           disposeEntry(kept, disposeFailed(acc));
           acc.disposed.push(...widgetIdsOf(kept));
           elementOf(kept).remove();
           used.add(kept);
         }
-        child = mountContainer(node, ctx, fail(acc, "mount-failed"), trackIn(acc));
+        child = mountContainer(node, ctx, fail(acc, "mount-failed"), trackIn(acc), childPath);
         entry.el.appendChild(elementOf(child));
       }
     }
@@ -245,6 +255,35 @@ export function reconcileContainer(
   reorderChildren(entry.el, targetEls, pinnedChild(targetEls));
   entry.layout = next;
   entry.children = nextChildren;
+  // Last, over the final child order: a container renderer hears about the pass only if its
+  // layout's own fields or its child list changed. A throw leaves the container plain.
+  const failed = updateChrome(entry, prevLayout, path);
+  if (failed !== undefined)
+    acc.findings.push({ code: "patch-failed", nodeId: "", message: failed });
+}
+
+/**
+ * Land `next` on the ROOT entry and return the root to keep. The root has no parent container to
+ * key it, so it is keyed here by role alone: the same role reconciles in place (a root type
+ * change restyles in place, as before IR 2.2.0), a different role mounts a fresh root, swaps it
+ * in, and disposes the old one — its widgets are reported remounted. The fresh root is mounted
+ * BEFORE the old one is touched, so a throw mid-mount leaves the old root live.
+ */
+export function reconcileRoot(
+  root: ContainerEntry,
+  next: Layout,
+  ctx: MountContext,
+  acc: Accumulator
+): ContainerEntry {
+  if (root.role === roleKey(next)) {
+    reconcileContainer(root, next, ctx, acc);
+    return root;
+  }
+  const fresh = mountContainer(next, ctx, fail(acc, "mount-failed"), trackIn(acc));
+  disposeEntry(root, disposeFailed(acc));
+  acc.disposed.push(...widgetIdsOf(root));
+  elementOf(root).replaceWith(elementOf(fresh));
+  return fresh;
 }
 
 /**
