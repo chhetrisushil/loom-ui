@@ -54,9 +54,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   off a grid or overflowing it no longer replays. `moveNode` of a placed node out of a grid is refused:
   clear it first with `setPlacement { row: null, column: null, rowSpan: null }`. A resize that makes a
   placed node overflow is refused (the interactive path never clamps); only the reference planner, on a
-  widening revision, clamps `column` to `GRID_COLUMNS − span + 1`. Other op-level refusals a consumer
-  must handle: `missing-provider`, `provider-still-bound`, `empty-placement`, `root-immutable`,
-  `not-container`. A container's `title`
+  widening revision, clamps `column` to `GRID_COLUMNS − span + 1` (every op-level refusal code is
+  listed in the next bullet). A container's `title`
   is a `LocalizedText`, resolved at compile like a label. `renderBlueprintDom` draws both the way loom's
   React renderer does (ADR 0098 D4): a cell's grid lines land on the child's OWN element — no wrapper —
   and a titled container renders as `<section aria-label><h2>` + the layout element, so the SECTION is
@@ -65,6 +64,23 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   grid auto-placement on the web and to row-then-column order in the terminal (loom's
   `renderBlueprintToString`, which `@loom-ui/renderer-terminal` reaches by delegation; loom ADR 0098
   D4/D6).
+- Op refusal codes — the complete list `apply` (and so `replay`) can return, by op; a new
+  `refuse("…")` in `operations.ts` fails `refusalCodesDocs.test.ts` until it is listed here and in the
+  README. Every op: `invalid-operation` (the op fails the `Operation` schema) and `tree-too-deep` (the
+  base, or the tree an `insertNode` would produce, nests past `MAX_TREE_DEPTH`). `insertNode`:
+  `duplicate-node-id`, `missing-parent`, `not-a-container` (the parent), and `placement-outside-grid`
+  / `placement-out-of-range` for any placed node in the inserted subtree. `removeNode`:
+  `root-immutable`, `missing-node`. `moveNode`: `root-immutable`, `missing-node`, `not-a-container`
+  (the destination is absent or not a container), `cyclic-move`, `placement-outside-grid` /
+  `placement-out-of-range`. `setPlacement`: `root-immutable`, `missing-node`, `empty-placement` (names
+  no field), `placement-outside-grid`, `invalid-operation` (the placed node fails the node schema),
+  `placement-out-of-range`. `setTitle`: `missing-node`, `not-container`. `setProps` / `setLabel` /
+  `bindProvider`: `missing-node`, `not-semantic`. `remapProvider`: `handle-mismatch` (`spec.handle` ≠
+  `handle`). `removeProvider`: `missing-provider`, `provider-still-bound`. `prompt`: whatever its
+  `materialized` ops return. Note `not-container` (`setTitle` on a semantic node) is a different code
+  from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `bindProvider`
+  does not check that the handle is declared; `validateExperience` reports a binder with no provider
+  as `unknown-handle`.
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
