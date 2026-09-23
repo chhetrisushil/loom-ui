@@ -2,6 +2,7 @@ import {
   type ContainerNode,
   type Experience,
   type Finding,
+  GRID_COLUMNS,
   type Operation,
   type ProviderSpec,
   type SemanticCatalog,
@@ -351,14 +352,23 @@ export function materialize(
       );
       if (setsSomething) ops.push({ type: "setProps", nodeId: n.id, patch: n.props });
     }
-    if (current.span !== n.span)
-      findings.push(
-        warn(
-          "span-unchanged",
-          `node "${n.id}": span is structural, not a prop; the planner cannot change it (${current.span} → ${n.span} ignored)`,
-          n.id
-        )
-      );
+    // Span is structural, not a prop, so it moves through `setPlacement`. Only `span` is named:
+    // the draft carries no grid placement, and an absent field is unchanged, so a row/column
+    // the user or app set survives the revision. Exception: `describeExperience` never shows the
+    // model a `column`, so a widening span on an already-placed node can overflow the grid —
+    // core refuses that at the op (`placement-out-of-range`), which would fail the whole plan for
+    // a change the model had no way to avoid. Pre-empt it: when the current column would overflow
+    // under the new span, clamp `column` down to the widest position the new span still fits, in
+    // the SAME op.
+    if (current.span !== n.span) {
+      const overflows = current.column !== undefined && current.column + n.span - 1 > GRID_COLUMNS;
+      ops.push({
+        type: "setPlacement",
+        nodeId: n.id,
+        span: n.span,
+        ...(overflows && { column: GRID_COLUMNS - n.span + 1 }),
+      });
+    }
     // The class the node ends up with. A model may RAISE a class (that is what `model-may-set`
     // admits) but never LOWER one: a draft is the least trusted input in the pipeline, and
     // "declassify this" is precisely the instruction a prompt injection would carry. The clamp
