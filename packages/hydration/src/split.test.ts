@@ -586,12 +586,13 @@ describe("serveHandle trusts nothing in the request", () => {
       { invoker: inv, now: NOW, outputKinds }
     );
     expect(r.state).toBe("ready");
+    // The count is incidental (canonicalJson's own reads); the load-bearing check is the tool input above.
     expect(reads).toBeLessThanOrEqual(2);
     expect((inv.calls[0]?.input as McpIn).args.station).toBe("ridge");
     expect(typeof (inv.calls[0]?.input as McpIn).args.station).not.toBe("function");
   });
 
-  it("params toctou: a value only unsafe on a later read is refused, not silently copied as unsafe, when the FIRST read is already unsafe", async () => {
+  it("params toctou: a getter unsafe from its first read is still refused (invalid-params), zero tool calls", async () => {
     const exp = board();
     const inv = toolServer();
     // The unsafe value shows up on read 1 already: `snapshotParams`'s own single pass must

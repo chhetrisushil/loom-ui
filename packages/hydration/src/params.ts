@@ -135,7 +135,7 @@ export function pickParams(params: LoadParams, names: readonly string[]): LoadPa
  * object again. Required wherever params cross a trust boundary (`serveHandle(s)`) — validating a
  * live accessor and then separately picking named keys off it re-reads it, and a hostile getter is
  * free to answer only the validating read safely and answer a later, picking read with something
- * else entirely (observed: a number for the first two reads, a function for the third).
+ * else entirely (observed: a plain value for the first two reads, a function for the third).
  */
 export function snapshotParams(
   params: unknown
