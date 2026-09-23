@@ -42,6 +42,7 @@ export type Operation =
   | { type: "moveNode"; nodeId: string; newParentId: string; newOrder: string }
   | { type: "setProps"; nodeId: string; patch: Record<string, unknown> }
   | { type: "setLabel"; nodeId: string; label: LocalizedText }
+  | { type: "setTitle"; nodeId: string; title: LocalizedText | null }
   | {
       type: "setPlacement";
       nodeId: string;
@@ -73,6 +74,9 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
     }),
     z.object({ type: z.literal("setProps"), nodeId: NodeId, patch: z.record(z.unknown()) }),
     z.object({ type: z.literal("setLabel"), nodeId: NodeId, label: LocalizedText }),
+    // `title` is REQUIRED — the op exists to change it; `null` clears (JSON keeps a null, it drops
+    // an undefined, so "clear" must be spelled null to survive a recorded replay).
+    z.object({ type: z.literal("setTitle"), nodeId: NodeId, title: LocalizedText.nullable() }),
     // Deliberately loose: the RANGE check is the node schema's (see `apply`), so a bad value is
     // refused with the node's id, exactly as an `insertNode` of that node would be.
     z.object({
@@ -377,6 +381,27 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         ok: true,
         value: next(base, { root: rebuild(base.root, (n) => (n.id === op.nodeId ? placed : n)) }),
       };
+    }
+    case "setTitle": {
+      const target = findNode(base.root, op.nodeId);
+      if (!target) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      if (target.kind !== "container")
+        return refuse(
+          "not-container",
+          `"${op.nodeId}" is a semantic node; setTitle applies to containers (a semantic node's heading is its label — setLabel)`,
+          op.nodeId
+        );
+      const title = op.title;
+      const root = rebuild(base.root, (n) => {
+        if (n.id !== op.nodeId || n.kind !== "container") return n;
+        // Cleared = key REMOVED (rebuilt, not deleted), so the container hashes as if never titled.
+        if (title === null)
+          return Object.fromEntries(
+            Object.entries(n).filter(([k]) => k !== "title")
+          ) as unknown as ExperienceNode;
+        return { ...n, title };
+      });
+      return { ok: true, value: next(base, { root }) };
     }
     case "setProps":
     case "setLabel":

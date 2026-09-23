@@ -478,6 +478,67 @@ describe("setPlacement", () => {
   });
 });
 
+describe("setTitle", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const section = (): ContainerNode => ({
+    id: "c1",
+    order: "a",
+    kind: "container",
+    direction: "grid",
+    span: 12,
+    children: [node("m1")],
+  });
+  const withSection = () =>
+    must(apply(g, { type: "insertNode", parentId: "root", node: section() }));
+  const title = { key: "c1.title", fallback: "Throughput" };
+  it("sets and replaces a container's title, and keeps its children", () => {
+    const e1 = must(apply(withSection(), { type: "setTitle", nodeId: "c1", title }));
+    expect(findNode(e1.root, "c1")).toMatchObject({ title });
+    const e2 = must(
+      apply(e1, { type: "setTitle", nodeId: "c1", title: { key: "c1.title", fallback: "Load" } })
+    );
+    expect(findNode(e2.root, "c1")).toMatchObject({ title: { fallback: "Load" } });
+    expect(findNode(e2.root, "m1")).toBeDefined();
+  });
+  it("titles the root — the whole view's heading", () => {
+    const e = must(apply(g, { type: "setTitle", nodeId: "root", title }));
+    expect(e.root).toMatchObject({ title });
+  });
+  it("null clears the title: the key is gone, so the container hashes as if never titled", () => {
+    const base = withSection();
+    const e = must(
+      replay(base, [
+        { type: "setTitle", nodeId: "c1", title },
+        { type: "setTitle", nodeId: "c1", title: null },
+      ])
+    );
+    const c = findNode(e.root, "c1");
+    expect(c && "title" in c).toBe(false);
+    expect(c).toEqual(findNode(base.root, "c1"));
+    expect(mintVersionHash({ ...e, parents: base.parents })).toBe(mintVersionHash(base));
+  });
+  it("a semantic node has no title (its heading is its label) — not-container; an unknown node is missing-node", () => {
+    const e = withSection();
+    const codes = [
+      apply(e, { type: "setTitle", nodeId: "m1", title }),
+      apply(e, { type: "setTitle", nodeId: "ghost", title }),
+    ].map((r) => (r.ok ? "ok" : `${r.finding.code}@${r.finding.nodeId ?? ""}`));
+    expect(codes).toEqual(["not-container@m1", "missing-node@ghost"]);
+  });
+  it("title is required — an op that omits it, or carries a malformed one, is invalid", () => {
+    const e = withSection();
+    const codes = [
+      apply(e, { type: "setTitle", nodeId: "c1" } as never),
+      apply(e, { type: "setTitle", nodeId: "c1", title: { key: "", fallback: "x" } }),
+      apply(e, { type: "setTitle", nodeId: "c1", title: "Throughput" } as never),
+    ].map((r) => (r.ok ? "ok" : r.finding.code));
+    expect(codes).toEqual(["invalid-operation", "invalid-operation", "invalid-operation"]);
+  });
+});
+
 describe("moveNode of a placed node", () => {
   const must = (r: ReturnType<typeof apply>) => {
     if (!r.ok) throw new Error(r.finding.message);

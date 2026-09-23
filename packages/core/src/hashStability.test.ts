@@ -73,4 +73,20 @@ describe("content addresses written before this branch do not move", () => {
     ];
     for (const op of recorded) expect(canonicalJson(Operation.parse(op))).toBe(canonicalJson(op));
   });
+  it("a title set and then cleared leaves the pinned address, and a recorded setTitle (null included) parses to itself", () => {
+    const r = replay(g, [
+      ...folded,
+      { type: "setTitle", nodeId: "c1", title: { key: "c1.title", fallback: "Section" } },
+      { type: "setTitle", nodeId: "c1", title: null },
+    ]);
+    if (!r.ok) throw new Error(r.finding.message);
+    expect(mintVersionHash(r.value)).toBe(
+      "sha256:3a50c6b88b05b4d2f04534a4c1dae56b4b8daf657a6bead48781efa7230b5354"
+    );
+    for (const op of [
+      { type: "setTitle", nodeId: "c1", title: { key: "c1.title", fallback: "Section" } },
+      { type: "setTitle", nodeId: "c1", title: null },
+    ] satisfies Operation[])
+      expect(canonicalJson(Operation.parse(op))).toBe(canonicalJson(op));
+  });
 });
