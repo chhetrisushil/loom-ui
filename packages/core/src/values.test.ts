@@ -78,7 +78,7 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
     expect(checkKindValue("Kpi", { value: 1234.5 })).toEqual({ ok: true });
     expect(
       checkKindValue("Kpi", {
-        type: "metric", // an unrecognized field is harmless; a non-strict object ignores it
+        extra: true, // an unrecognized field is harmless; a non-strict object ignores it
         value: 0.25,
         unit: "USD",
         format: { semanticType: "currency", currency: "USD" },
