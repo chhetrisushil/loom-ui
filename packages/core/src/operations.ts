@@ -158,13 +158,20 @@ function bindersOf(root: ExperienceNode, handle: string): string[] {
   return ids;
 }
 
-/** The container that directly holds `id` in `root`, or undefined (root itself, or absent). ITERATIVE. */
-function parentOf(root: ExperienceNode, id: string): ContainerNode | undefined {
+/**
+ * The node `id` in `root` and the container that directly holds it (undefined for root itself),
+ * or undefined when absent. ONE iterative walk, so an op that needs both pays for one.
+ */
+function locate(
+  root: ExperienceNode,
+  id: string
+): { node: ExperienceNode; parent: ContainerNode | undefined } | undefined {
+  if (root.id === id) return { node: root, parent: undefined };
   const stack: ExperienceNode[] = [root];
   for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
     if (top.kind !== "container") continue;
     for (const child of top.children) {
-      if (child.id === id) return top;
+      if (child.id === id) return { node: child, parent: top };
       stack.push(child);
     }
   }
@@ -182,7 +189,8 @@ const outsideGrid = (nodeId: string, parent: ContainerNode, fix: string): OpResu
  * Why `n`, sitting under `parent`, has a placement that cannot be laid out — the op-level twin of
  * `validateExperience`'s `checkPlacement`, with the same codes and the same predicate
  * (`placementProblems`): outside a grid a placement is `placement-outside-grid`; inside one it
- * must fit (`placement-out-of-range`). Undefined when `n` is unplaced or fits.
+ * must fit (`placement-out-of-range`). Undefined when `n` is unplaced or fits. `fix` is the
+ * calling op's remedy, appended to either refusal.
  */
 function placementRefusal(
   n: ExperienceNode,
@@ -195,7 +203,7 @@ function placementRefusal(
   return problems.length > 0
     ? refuse(
         "placement-out-of-range",
-        `"${n.id}": placement cannot be laid out — ${problems.join("; ")}`,
+        `"${n.id}": placement cannot be laid out — ${problems.join("; ")}; ${fix}`,
         n.id
       )
     : undefined;
@@ -323,7 +331,11 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       // would leave a placement nothing honours — refused rather than silently dropped, so the
       // caller fixes it first with `setPlacement` and the loss is explicit. Descendants keep
       // their own parents, so only the moved node is checked.
-      const misplaced = placementRefusal(moving, dest, "clear it first with setPlacement");
+      const misplaced = placementRefusal(
+        moving,
+        dest,
+        "clear it first with setPlacement (row, column and rowSpan null)"
+      );
       if (misplaced) return misplaced;
       const detached: ExperienceNode = { ...normalize(moving), order: op.newOrder };
       let root = rebuild(base.root, (n) => (n.id === op.nodeId ? null : n));
@@ -341,8 +353,9 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           "the root is not a grid cell; it has no placement",
           op.nodeId
         );
-      const target = findNode(base.root, op.nodeId);
-      if (!target) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      const found = locate(base.root, op.nodeId);
+      if (!found) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      const { node: target, parent } = found;
       if (op.span === undefined && PLACEMENT_KEYS.every((k) => op[k] === undefined))
         return refuse(
           "empty-placement",
@@ -351,7 +364,6 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         );
       // Setting (not clearing) a placement key under a non-grid parent would create a placement
       // nothing lays out; span-only changes and clears are always allowed.
-      const parent = parentOf(base.root, op.nodeId);
       if (
         parent !== undefined &&
         parent.direction !== "grid" &&
@@ -374,7 +386,11 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       // Under a grid the result must fit it — including after a span-only change to an
       // already-placed node. An unplaced node has nothing to overflow.
       if (parent?.direction === "grid") {
-        const overflow = placementRefusal(placed, parent, "");
+        const overflow = placementRefusal(
+          placed,
+          parent,
+          "choose a column and span that fit the grid"
+        );
         if (overflow) return overflow;
       }
       return {
