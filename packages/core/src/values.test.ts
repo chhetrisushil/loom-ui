@@ -173,6 +173,20 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
     expect(parsed.success).toBe(true);
     expect(parsed.data).toEqual({ semanticType: "decimal" });
   });
+  it("SemanticFormat: an integer with fraction digits is refused, not coerced", () => {
+    for (const digits of [{ minimumFractionDigits: 2 }, { maximumFractionDigits: 1 }]) {
+      const r = SemanticFormat.safeParse({ semanticType: "integer", ...digits });
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0]?.message).toMatch(/integer.*fraction digits/);
+    }
+    expect(
+      SemanticFormat.safeParse({
+        semanticType: "integer",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).success
+    ).toBe(true);
+  });
   it("tableColumnLabel / tableColumnFormat read either column form", () => {
     expect(tableColumnLabel("db")).toBe("db");
     expect(tableColumnFormat("db")).toBeUndefined();
