@@ -30,6 +30,7 @@ export {
   DEFAULT_MAX_BATCH,
   SplitHydrationController,
   handleInventory,
+  publicFinding,
   serveHandle,
   serveHandles,
 } from "./split";
