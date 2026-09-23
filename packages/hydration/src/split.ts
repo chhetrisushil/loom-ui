@@ -3,6 +3,7 @@ import {
   type Finding,
   MAX_TREE_DEPTH,
   type Priority,
+  type ProviderSpec,
   type SemanticCatalog,
   type Surface,
   experienceHandles,
@@ -39,10 +40,12 @@ import {
 // names, arguments, reshaping scripts). The CLIENT holds the compiled Blueprint plus a HANDLE
 // INVENTORY: per bound handle, its priority (the Blueprint carries none), the NAMES of the params
 // a load may override, and an opaque revision that moves when the provider behind the handle
-// changes — never the provider itself. `SplitHydrationController` schedules from the inventory
+// changes — never the provider itself, nor an unkeyed function of it: the server derives each
+// revision through its own `revisionOf` (a keyed hash), so a client cannot confirm a guessed
+// provider offline. `SplitHydrationController` schedules from the inventory
 // exactly as the in-process controller schedules from providers (the same `HandleScheduler`) and
 // loads through a `HandleLoader` — the app's transport. Loads the scheduler starts together (a
-// group: the P0s of one bind, a P1 batch) go out as ONE `loadMany` when the loader has it.
+// group: the P0s of one bind, a P1 batch) go out as ONE `loadMany`.
 //
 // The server answers with `serveHandles` (a batch) or `serveHandle` (one): `executeProvider` plus
 // the same publish mapping (`outcomeResult`), so split and in-process hydration cannot disagree.
@@ -56,7 +59,10 @@ export interface HandleRef {
   readonly priority: Priority;
   /** Argument names a load may override (the sorted union of the provider's `overridable`). */
   readonly params: readonly string[];
-  /** Opaque: changes when the provider behind the handle changes. Never the provider. */
+  /**
+   * Opaque: changes when the provider behind the handle changes. Never the provider, nor an
+   * unkeyed function of it — `InventoryOptions.revisionOf` derives it on the server.
+   */
   readonly revision: string;
   /** Set when the handle cannot load (no provider): published as an error, never requested. */
   readonly finding?: Finding;
@@ -80,12 +86,11 @@ export interface HandleLoadRequest {
 export interface HandleLoader {
   load(request: HandleLoadRequest, signal: AbortSignal): Promise<HandleLoadResult>;
   /**
-   * Several requests in ONE round trip, answered in request order (the server's `serveHandles`,
-   * so they share a pass). Optional: without it a group loads one `load` at a time, and handles
-   * sharing an upstream step no longer share the call. `signal` aborts once every request in the
-   * group has been abandoned.
+   * Several requests in ONE round trip, answered in request order — the server's `serveHandles`,
+   * so they share a pass and handles sharing an upstream step share the call. Required: that
+   * sharing is not optional. `signal` aborts once every request in the group has been abandoned.
    */
-  loadMany?(
+  loadMany(
     requests: readonly HandleLoadRequest[],
     signal: AbortSignal
   ): Promise<readonly HandleLoadResult[]>;
@@ -97,11 +102,33 @@ const reservedFinding = (handle: string): Finding => ({
   message: `handle "${handle}" is reserved`,
 });
 
-/** What a client may know about an experience's data plane: never a provider. */
-export function handleInventory(exp: Experience): {
+/**
+ * Derives a handle's public revision from the provider's content fingerprint (`specFingerprint`).
+ * It must be KEYED: an unkeyed function of the fingerprint lets a client confirm a guessed provider
+ * (tool, arguments) offline. In production use an HMAC over a server secret, e.g.
+ * `createHmac("sha256", secret).update(handle + "\u0000" + fingerprint).digest("hex")`. It must be
+ * deterministic for as long as clients hold inventories (a rotated key re-asks every handle once).
+ */
+export type RevisionFn = (handle: string, fingerprint: string) => string;
+
+export interface InventoryOptions {
+  readonly revisionOf: RevisionFn;
+}
+
+/**
+ * What a client may know about an experience's data plane: never a provider. Throws `TypeError`
+ * without a `revisionOf`, or when it returns a non-string or the fingerprint itself.
+ */
+export function handleInventory(
+  exp: Experience,
+  opts: InventoryOptions
+): {
   inventory: HandleInventory;
   findings: Finding[];
 } {
+  const revisionOf = opts?.revisionOf;
+  if (typeof revisionOf !== "function")
+    throw new TypeError("handleInventory: a revisionOf (a keyed hash) is required");
   const findings: Finding[] = [];
   const handles: HandleRef[] = [];
   if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
@@ -133,7 +160,7 @@ export function handleInventory(exp: Experience): {
         handle: use.handle,
         priority: use.priority,
         params: providerParams(spec),
-        revision: specFingerprint(spec),
+        revision: publicRevision(revisionOf, use.handle, spec),
       });
     }
   }
@@ -141,6 +168,20 @@ export function handleInventory(exp: Experience): {
     inventory: { experienceId: exp.experienceId, versionHash: exp.versionHash, handles },
     findings,
   };
+}
+
+function publicRevision(revisionOf: RevisionFn, handle: string, spec: ProviderSpec): string {
+  const fingerprint = specFingerprint(spec);
+  const revision = revisionOf(handle, fingerprint);
+  if (typeof revision !== "string")
+    throw new TypeError(
+      `handleInventory: revisionOf returned a ${typeof revision} for "${handle}"`
+    );
+  if (revision.includes(fingerprint))
+    throw new TypeError(
+      `handleInventory: revisionOf returned the provider fingerprint for "${handle}"; it must be keyed`
+    );
+  return revision;
 }
 
 /** The most requests one `serveHandles` call serves by default (`ServeOptions.maxBatch`). */
@@ -394,9 +435,9 @@ function isInventory(x: unknown): x is HandleInventory {
  * Client-side hydration across a trust boundary. Same scheduling as `HydrationController` (P0 now,
  * P1 batched, P2 on `markVisible`, once per question, supersede, dispose) over a `HandleInventory`,
  * loading through the injected `HandleLoader` — a group the scheduler starts together as ONE
- * `loadMany` when the loader has it — and publishing to a `HydrationStore`. A question is the
- * handle's revision plus its params (defaults < global < handle-scoped, filtered to the names the
- * inventory lists for it). No cache, no clock and no drift handling here: all three are the server's.
+ * `loadMany` — and publishing to a `HydrationStore`. A question is the handle's opaque revision
+ * plus its params (defaults < global < handle-scoped, filtered to the names the inventory lists
+ * for it). No cache, no clock and no drift handling here: all three are the server's.
  */
 export class SplitHydrationController {
   private readonly sched: HandleScheduler<RefJob, Group, HandleLoadResult>;
@@ -404,8 +445,14 @@ export class SplitHydrationController {
   private globalParams: LoadParams = {};
   private readonly scopedParams = new Map<string, LoadParams>();
 
-  /** Throws `RangeError` for unrepresentable `defaultParams`. */
+  /**
+   * Throws `TypeError` for a loader missing `load` or `loadMany`, `RangeError` for
+   * unrepresentable `defaultParams`.
+   */
   constructor(private readonly opts: SplitControllerOptions) {
+    const loader: Partial<HandleLoader> | null | undefined = opts.loader;
+    if (typeof loader?.load !== "function" || typeof loader.loadMany !== "function")
+      throw new TypeError("SplitHydrationController: the loader must implement load and loadMany");
     if (opts.defaultParams !== undefined) {
       const bad = checkParams(opts.defaultParams);
       if (bad) throw new RangeError(bad.message);
@@ -560,7 +607,7 @@ export class SplitHydrationController {
         q.resolve(refuse("aborted", `the load of "${q.job.handle}" was abandoned`));
       else live.push(q);
     }
-    if (live.length > 1 && typeof this.opts.loader.loadMany === "function") {
+    if (live.length > 1) {
       this.loadGroup(live).then((results) => {
         live.forEach((q, i) => q.resolve(results[i] ?? malformedResult(q.job.handle)));
       });
@@ -587,7 +634,7 @@ export class SplitHydrationController {
     };
     for (const q of live) q.signal.addEventListener("abort", onAbort, { once: true });
     try {
-      const answer: unknown = await this.opts.loader.loadMany?.(
+      const answer: unknown = await this.opts.loader.loadMany(
         live.map((q) => request(q.job)),
         ac.signal
       );
