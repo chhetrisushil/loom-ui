@@ -14,6 +14,7 @@ import {
   isContainer,
   isPlaced,
   normalize,
+  placementProblems,
   rebuild,
   treeDepth,
   walk,
@@ -166,31 +167,55 @@ function parentOf(root: ExperienceNode, id: string): ContainerNode | undefined {
   return undefined;
 }
 
-/**
- * The first node in `node`'s subtree (itself included) that carries grid placement under a
- * parent that does not lay it out — `node` itself sits under `parent`. One ITERATIVE walk.
- * Only a `grid` container lays out `row`/`rowSpan`/`column` (see `compile`).
- */
-function placedOutsideGrid(
-  parent: ContainerNode,
-  node: ExperienceNode
-): { node: ExperienceNode; parent: ContainerNode } | undefined {
-  const stack: Array<{ node: ExperienceNode; parent: ContainerNode }> = [{ node, parent }];
-  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
-    if (top.parent.direction !== "grid" && isPlaced(top.node)) return top;
-    if (top.node.kind === "container")
-      for (let i = top.node.children.length - 1; i >= 0; i--)
-        stack.push({ node: top.node.children[i] as ExperienceNode, parent: top.node });
-  }
-  return undefined;
-}
-
 const outsideGrid = (nodeId: string, parent: ContainerNode, fix: string): OpResult<never> =>
   refuse(
     "placement-outside-grid",
     `"${nodeId}" carries grid placement but its parent "${parent.id}" is a ${parent.direction} container, which does not lay it out; ${fix}`,
     nodeId
   );
+
+/**
+ * Why `n`, sitting under `parent`, has a placement that cannot be laid out — the op-level twin of
+ * `validateExperience`'s `checkPlacement`, with the same codes and the same predicate
+ * (`placementProblems`): outside a grid a placement is `placement-outside-grid`; inside one it
+ * must fit (`placement-out-of-range`). Undefined when `n` is unplaced or fits.
+ */
+function placementRefusal(
+  n: ExperienceNode,
+  parent: ContainerNode,
+  fix: string
+): OpResult<never> | undefined {
+  if (!isPlaced(n)) return undefined;
+  if (parent.direction !== "grid") return outsideGrid(n.id, parent, fix);
+  const problems = placementProblems(n);
+  return problems.length > 0
+    ? refuse(
+        "placement-out-of-range",
+        `"${n.id}": placement cannot be laid out — ${problems.join("; ")}`,
+        n.id
+      )
+    : undefined;
+}
+
+/**
+ * {@link placementRefusal} for the first offending node in `node`'s subtree (itself included,
+ * sitting under `parent`), in tree order. One ITERATIVE walk.
+ */
+function subtreePlacementRefusal(
+  parent: ContainerNode,
+  node: ExperienceNode,
+  fix: string
+): OpResult<never> | undefined {
+  const stack: Array<{ node: ExperienceNode; parent: ContainerNode }> = [{ node, parent }];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const refusal = placementRefusal(top.node, top.parent, fix);
+    if (refusal) return refusal;
+    if (top.node.kind === "container")
+      for (let i = top.node.children.length - 1; i >= 0; i--)
+        stack.push({ node: top.node.children[i] as ExperienceNode, parent: top.node });
+  }
+  return undefined;
+}
 
 type SetPlacement = Extract<Operation, { type: "setPlacement" }>;
 const PLACEMENT_KEYS = ["row", "rowSpan", "column"] as const;
@@ -252,9 +277,12 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         return refuse("missing-parent", `insert parent "${op.parentId}" not found`, op.parentId);
       if (parent.kind !== "container")
         return refuse("not-a-container", `parent "${op.parentId}" is not a container`, op.parentId);
-      const stray = placedOutsideGrid(parent, op.node);
-      if (stray)
-        return outsideGrid(stray.node.id, stray.parent, "insert it without row/rowSpan/column");
+      const stray = subtreePlacementRefusal(
+        parent,
+        op.node,
+        "insert it without row/rowSpan/column"
+      );
+      if (stray) return stray;
       const root = rebuild(base.root, (n) =>
         n.id === op.parentId && n.kind === "container"
           ? { ...n, children: [...n.children, normalize(op.node)] }
@@ -286,11 +314,13 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         );
       if (findNode(moving, op.newParentId))
         return refuse("cyclic-move", "cannot move a node into its own subtree", op.nodeId);
-      // Only a grid lays out `row`/`rowSpan`/`column` (see `compile`). Carrying them into a flow
-      // or stack container would leave a placement nothing honours — refused rather than silently
-      // dropped, so the caller clears it first with `setPlacement` and the loss is explicit.
-      if (dest.direction !== "grid" && isPlaced(moving))
-        return outsideGrid(op.nodeId, dest, "clear it first with setPlacement");
+      // Only a grid lays out `row`/`rowSpan`/`column` (see `compile`), and only a placement that
+      // fits it. Carrying one into a flow or stack container, or one that overflows the grid,
+      // would leave a placement nothing honours — refused rather than silently dropped, so the
+      // caller fixes it first with `setPlacement` and the loss is explicit. Descendants keep
+      // their own parents, so only the moved node is checked.
+      const misplaced = placementRefusal(moving, dest, "clear it first with setPlacement");
+      if (misplaced) return misplaced;
       const detached: ExperienceNode = { ...normalize(moving), order: op.newOrder };
       let root = rebuild(base.root, (n) => (n.id === op.nodeId ? null : n));
       root = rebuild(root, (n) =>
@@ -337,6 +367,12 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           `setPlacement on "${op.nodeId}": ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
           op.nodeId
         );
+      // Under a grid the result must fit it — including after a span-only change to an
+      // already-placed node. An unplaced node has nothing to overflow.
+      if (parent?.direction === "grid") {
+        const overflow = placementRefusal(placed, parent, "");
+        if (overflow) return overflow;
+      }
       return {
         ok: true,
         value: next(base, { root: rebuild(base.root, (n) => (n.id === op.nodeId ? placed : n)) }),

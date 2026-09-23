@@ -622,3 +622,75 @@ describe("placement-outside-grid is refused by every op that could create it", (
     expect(findNode(e.root, "c1")).toMatchObject({ column: 1 });
   });
 });
+
+describe("placement-out-of-range is refused by every op that could create it", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const container = (
+    id: string,
+    direction: "row" | "column" | "grid",
+    children: ContainerNode["children"] = []
+  ): ContainerNode => ({ id, order: "a", kind: "container", direction, span: 12, children });
+  const refusal = (r: ReturnType<typeof apply>) =>
+    r.ok ? "ok" : `${r.finding.code}@${r.finding.nodeId ?? ""}`;
+  const withM1 = () => must(apply(g, { type: "insertNode", parentId: "root", node: node("m1") }));
+
+  it("setPlacement whose column + span overflows the grid is refused; the base is untouched", () => {
+    const base = withM1();
+    const before = JSON.stringify(base);
+    const r = apply(base, { type: "setPlacement", nodeId: "m1", column: 10, span: 6 });
+    expect(refusal(r)).toBe("placement-out-of-range@m1");
+    expect(!r.ok && r.finding.message).toMatch(/overflows the 12-column grid/);
+    expect(JSON.stringify(base)).toBe(before);
+  });
+  it("a span-only change that makes an already-placed node overflow is refused", () => {
+    const e = must(apply(withM1(), { type: "setPlacement", nodeId: "m1", column: 10, span: 3 }));
+    expect(refusal(apply(e, { type: "setPlacement", nodeId: "m1", span: 12 }))).toBe(
+      "placement-out-of-range@m1"
+    );
+    // …while one that still fits, or a clear of the column, is allowed.
+    must(apply(e, { type: "setPlacement", nodeId: "m1", span: 2 }));
+    must(apply(e, { type: "setPlacement", nodeId: "m1", column: null, span: 12 }));
+  });
+  it("a span-only change on an UNPLACED node is always allowed", () => {
+    const e = must(apply(withM1(), { type: "setPlacement", nodeId: "m1", span: 12 }));
+    expect(findNode(e.root, "m1")).toMatchObject({ span: 12 });
+  });
+  it("insertNode of an overflowing node, or of a subtree with an overflowing NESTED node, is refused", () => {
+    const got = [
+      apply(g, { type: "insertNode", parentId: "root", node: { ...node("m2"), column: 11 } }),
+      apply(g, {
+        type: "insertNode",
+        parentId: "root",
+        node: container("c1", "grid", [container("c2", "grid", [{ ...node("deep"), column: 12 }])]),
+      }),
+    ].map(refusal);
+    expect(got).toEqual(["placement-out-of-range@m2", "placement-out-of-range@deep"]);
+  });
+  it("moveNode into a grid is refused when the node's placement overflows there", () => {
+    // A placed node under a grid it fits; the overflow is built by hand (no op can create it)
+    // to prove moveNode checks placement against the destination grid, not only its direction.
+    const base = must(
+      replay(g, [
+        { type: "insertNode", parentId: "root", node: container("grid2", "grid") },
+        { type: "insertNode", parentId: "root", node: node("m1") },
+        { type: "setPlacement", nodeId: "m1", column: 9 },
+      ])
+    );
+    const bad = {
+      ...base,
+      root: {
+        ...base.root,
+        children: (base.root as ContainerNode).children.map((c) =>
+          c.id === "m1" ? { ...c, span: 6 } : c
+        ),
+      },
+    } as typeof base;
+    expect(
+      refusal(apply(bad, { type: "moveNode", nodeId: "m1", newParentId: "grid2", newOrder: "b" }))
+    ).toBe("placement-out-of-range@m1");
+    must(apply(base, { type: "moveNode", nodeId: "m1", newParentId: "grid2", newOrder: "b" }));
+  });
+});
