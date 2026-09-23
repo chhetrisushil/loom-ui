@@ -66,9 +66,11 @@ export function semanticNumberFormatOptions(format: SemanticFormat): Intl.Number
   // The contract refuses an integer with fraction digits, so this only makes "whole" explicit.
   if (format.semanticType === "integer") opts.maximumFractionDigits = 0;
   if (format.semanticType === "percentage") opts.style = "percent";
-  if (format.semanticType === "currency") {
+  // No code, no currency style: the contract refuses a code-less currency, and an unchecked one
+  // (a widget prop, say) reads as a plain number rather than as some assumed currency.
+  if (format.semanticType === "currency" && format.currency !== undefined) {
     opts.style = "currency";
-    opts.currency = format.currency ?? "USD";
+    opts.currency = format.currency;
   }
   return opts;
 }
@@ -109,14 +111,16 @@ export function unitSuffix(
   return unit;
 }
 
-export type DeltaDirection = "up" | "down" | "flat";
+export type DeltaDirection = "up" | "down" | "flat" | "none";
 
 /**
  * Which way a `deltaPct` (a fraction) points, as every surface draws it: ▲/▼ on the web and in
  * the terminal, "up"/"down" when spoken. A change that reads as 0% at `DELTA_FORMAT`'s precision
- * is "flat" — no arrow, spoken "unchanged" — never "▲ 0%".
+ * is "flat" — no arrow, spoken "unchanged" — never "▲ 0%". A non-finite delta is "none": its
+ * figure is drawn "—", so it gets no arrow and is not spoken as a change at all.
  */
 export function deltaDirection(delta: number): DeltaDirection {
+  if (!Number.isFinite(delta)) return "none";
   const digits = DELTA_FORMAT.maximumFractionDigits ?? 0;
   // Percent points at the badge's precision: 0.0004 → 0.04% → rounds to 0.0%.
   if (Math.round(Math.abs(delta) * 100 * 10 ** digits) === 0) return "flat";
