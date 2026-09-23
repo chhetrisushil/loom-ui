@@ -36,6 +36,13 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `tsc --build` skip emit.
 - `@loom-ui/core` is pure and isomorphic. Anything needing Node (crypto, fs) lives behind the
   `@loom-ui/core/log` subpath.
+- `@loom-ui/hydration` has two entries. The root entry is server-side: it imports loom's sandbox
+  (QuickJS WASM) and MCP plugin. `@loom-ui/hydration/client` (`src/client.ts`) is the browser entry
+  for split hydration: the split controller, the loader contract, the store and param checks. Nothing it
+  imports may reach `@loom/plugin-sandbox`, `@loom/plugin-mcp`, `@loom/effect-runtime`, a node builtin
+  or a server module (`split/server.ts`, `provider.ts`, `controller.ts`, `invokers.ts`, `reshape.ts`,
+  `cache.ts`, `repair.ts`). Code both halves share goes in `split/shared.ts`. `clientEntry.test.ts`
+  walks the BUILT graph and fails on a violation.
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.

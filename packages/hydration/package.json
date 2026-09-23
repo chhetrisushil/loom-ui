@@ -5,7 +5,13 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./client": { "types": "./dist/client.d.ts", "default": "./dist/client.js" }
+  },
+  "typesVersions": {
+    "*": { "client": ["./dist/client.d.ts"] }
+  },
   "scripts": {
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
@@ -24,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "esbuild": "0.21.5",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
   }
