@@ -158,8 +158,20 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
     // which — because it was attached first — is always queued (and so runs) before this check,
     // even when the abort lands in the very same synchronous turn as the upstream settling.
     // Checking `hit.settled` synchronously right here would miss exactly that race.
+    //
+    // Both conditions below are RE-READ at that later point, not captured now, because either can
+    // change in the gap between "live just dropped to 0" and "the microtask actually runs": a
+    // fresh caller with no signal of its own can join in the very same synchronous turn (bumping
+    // `live` back above 0 before this ever executes), and the upstream can settle in that same
+    // window (flipping `settled` true). A snapshot taken at decrement time would race both ways —
+    // this is why the check happens here, once, right before the one place that acts on it.
+    //
+    // Invariant: the controller is aborted, and the entry deleted, AT MOST ONCE per entry — and
+    // only when, at the moment this specific check runs, `settled` is still false AND `live` is
+    // still <= 0 (no one re-joined). Either condition failing means someone still needs this call
+    // to keep going (or already has its answer), so it is left alone.
     queueMicrotask(() => {
-      if (hit.settled) return;
+      if (hit.settled || hit.live > 0) return;
       hit.controller.abort();
       if (memo.get(key) === hit) memo.delete(key);
     });
@@ -228,10 +240,19 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
       // would yet be subscribed to the resulting promise) risk an unhandled rejection.
       if (opts?.signal?.aborted === true) return Promise.reject(new Error("aborted"));
       const controller = new AbortController();
-      const promise = inner.invokeTransient<TIn, TOut>(toolId, input, {
-        ...opts,
-        signal: controller.signal,
-      });
+      let promise: Promise<TOut>;
+      try {
+        // `inner.invokeTransient` is typed to return a Promise, but a misbehaving implementation
+        // can still throw synchronously; the interface contract (and every caller of THIS
+        // function) requires a rejected promise instead, never a thrown exception. No entry is
+        // created for a call that never actually started.
+        promise = inner.invokeTransient<TIn, TOut>(toolId, input, {
+          ...opts,
+          signal: controller.signal,
+        });
+      } catch (e) {
+        return Promise.reject(e);
+      }
       const entry: SharedCall = { promise, controller, live: 1, settled: false };
       const onSettle = (): void => {
         entry.settled = true;
