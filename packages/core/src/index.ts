@@ -49,6 +49,7 @@ export type {
   SurfaceResolution,
 } from "./catalog";
 export { loomCatalogFor } from "./loomCatalog";
+export { formatSemanticNumber, semanticNumberFormatOptions } from "./format";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,
