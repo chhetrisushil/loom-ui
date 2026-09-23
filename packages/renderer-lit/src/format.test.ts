@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { effectiveFormat, formatFromUnit, measure, tick, timeTick } from "./format";
 import { setLocale } from "./i18n";
 
@@ -31,5 +31,27 @@ describe("semantic formatting", () => {
     expect(formatFromUnit("€")).toEqual({ semanticType: "currency", currency: "EUR" });
     expect(formatFromUnit("MPH")).toBeUndefined();
     expect(formatFromUnit("usd")).toBeUndefined();
+  });
+});
+
+describe("formatFromUnit without Intl.supportedValuesOf", () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+  it("still recognises the literal USD and EUR codes when the API is unavailable", async () => {
+    const original = Intl.supportedValuesOf;
+    try {
+      // Simulate a runtime that lacks this optional API; a fresh module import is required
+      // because `isCurrencyCode` caches its lookup on first call, in this same process.
+      // @ts-expect-error -- simulating an older runtime without this optional API
+      Intl.supportedValuesOf = undefined;
+      vi.resetModules();
+      const fresh = await import("./format");
+      expect(fresh.formatFromUnit("USD")).toEqual({ semanticType: "currency", currency: "USD" });
+      expect(fresh.formatFromUnit("EUR")).toEqual({ semanticType: "currency", currency: "EUR" });
+      expect(fresh.formatFromUnit("MPH")).toBeUndefined();
+    } finally {
+      Intl.supportedValuesOf = original;
+    }
   });
 });

@@ -27,7 +27,10 @@ function isCurrencyCode(value: string): boolean {
     try {
       currencyCodes = new Set(Intl.supportedValuesOf("currency"));
     } catch {
-      currencyCodes = new Set();
+      // `supportedValuesOf` is optional (older runtimes). Without it, still recognise the two
+      // codes this module already special-cases via `$` and `€`, so a bare "USD"/"EUR" unit
+      // doesn't silently fall back to a plain suffix on a runtime that lacks the full list.
+      currencyCodes = new Set(["USD", "EUR"]);
     }
   }
   return currencyCodes.has(value);
