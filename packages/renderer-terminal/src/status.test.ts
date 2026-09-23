@@ -1,6 +1,6 @@
 import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, blueprint$, customWidget$, stack } from "@loom/blueprint-runtime";
+import { MetricCard, blueprint$, cell, customWidget$, grid, stack } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { kindValueCheck, renderExperience } from "./status";
@@ -105,5 +105,56 @@ describe("kindValueCheck", () => {
   });
   it("says nothing about a value that satisfies its kind contract", () => {
     expect(kindValueCheck(widget, 412)).toBeUndefined();
+  });
+});
+
+describe("renderExperience — placement and section titles (Blueprint IR 2.1.0)", () => {
+  const board = (placed: boolean) =>
+    blueprint$({
+      id: "p@v",
+      title: "Board",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: stack({
+        children: [
+          grid({
+            columns: 12,
+            title: "Today",
+            children: [
+              cell(
+                6,
+                MetricCard({ id: "b", title: "B", binding: bound("hb") }),
+                placed ? { row: 1, column: 7 } : {}
+              ),
+              cell(
+                6,
+                MetricCard({ id: "a", title: "A", binding: bound("ha") }),
+                placed ? { row: 1, column: 1 } : {}
+              ),
+              cell(
+                12,
+                MetricCard({ id: "c", title: "C", binding: bound("hc") }),
+                placed ? { row: 2, column: 1 } : {}
+              ),
+            ],
+          }),
+        ],
+      }),
+    });
+  const store = () => {
+    const s = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "p" });
+    s.setValue("ha", 1, { state: "ready" });
+    s.setValue("hb", 2, { state: "ready" });
+    s.setValue("hc", 3, { state: "ready" });
+    return s;
+  };
+
+  it("prints a title as an underlined heading and placed cells in reading order: row, then column", () => {
+    expect(renderExperience(board(true), store())).toBe(
+      "════════════════════════\n  Board\n════════════════════════\nToday\n─────\nA: 1\nB: 2\nC: 3\n"
+    );
+  });
+
+  it("an unplaced grid keeps document order", () => {
+    expect(renderExperience(board(false), store())).toContain("Today\n─────\nB: 2\nA: 1\nC: 3\n");
   });
 });
