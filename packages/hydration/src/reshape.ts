@@ -36,10 +36,12 @@ export function defineReshapers(entries: Readonly<Record<string, Reshaper>>): Re
  * A Named reshaper runs in-process, trusted like host code — but the RAW terminal output is also
  * read by callers after `reshape` returns (output-shape hashing, drift sampling): a reshaper that
  * mutates its input in place must never corrupt what those later readers see, so it gets a copy,
- * never the original reference. A raw value `structuredClone` cannot represent (a function, a
- * class instance) is REFUSED rather than handed to the reshaper live — that would let the
- * reshaper corrupt what later readers see, exactly what the copy exists to prevent. Throws;
- * `runNamed` turns that into a `reshape-failed` finding before the reshaper ever runs.
+ * never the original reference. A raw value `structuredClone` cannot represent anywhere in its
+ * tree (a function; `structuredClone` throws) is REFUSED rather than handed to the reshaper live
+ * — that would let the reshaper corrupt what later readers see, exactly what the copy exists to
+ * prevent. (A class instance is not this case: `structuredClone` clones it fine, it just drops
+ * the prototype, so the copy is a plain object with the same own properties.) Throws; `runNamed`
+ * turns that into a `reshape-failed` finding before the reshaper ever runs.
  */
 function cloneForReshaper(raw: unknown): unknown {
   try {
