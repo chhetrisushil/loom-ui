@@ -48,16 +48,36 @@ export class HydrationCache {
   private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
   constructor(private readonly clock: () => number = Date.now) {}
 
-  private key(spec: ProviderSpec, principalId: string | undefined): string | undefined {
+  /**
+   * `outputCheck: "contract"` only: the sorted, deduplicated kinds a value was checked against
+   * are part of the key. A value that passed for `[Kpi]` was never checked against `MetricCard`
+   * — serving it for `[Kpi, MetricCard]` (a recompose that binds a second widget to the same
+   * handle, or a second surface with different resolved kinds sharing this cache) would publish
+   * a value no check ever cleared for the kind now reading it. Shape-mode keys are unaffected:
+   * `kinds` is not even read unless the spec checks by contract.
+   */
+  private key(
+    spec: ProviderSpec,
+    principalId: string | undefined,
+    kinds: readonly string[] | undefined
+  ): string | undefined {
     const fp = specFingerprint(spec);
-    if (spec.cachePolicy.scope === "global") return `g${SEP}${fp}${SEP}${spec.handle}`;
+    const kindsPart =
+      spec.outputCheck === "contract"
+        ? `${SEP}k:${[...new Set(kinds ?? [])].sort().join(",")}`
+        : "";
+    if (spec.cachePolicy.scope === "global") return `g${SEP}${fp}${kindsPart}${SEP}${spec.handle}`;
     return principalId === undefined
       ? undefined
-      : `p${SEP}${principalId}${SEP}${fp}${SEP}${spec.handle}`;
+      : `p${SEP}${principalId}${SEP}${fp}${kindsPart}${SEP}${spec.handle}`;
   }
 
-  get(spec: ProviderSpec, principalId: string | undefined): { value: unknown } | undefined {
-    const k = this.key(spec, principalId);
+  get(
+    spec: ProviderSpec,
+    principalId: string | undefined,
+    kinds?: readonly string[]
+  ): { value: unknown } | undefined {
+    const k = this.key(spec, principalId, kinds);
     if (k === undefined) return undefined;
     const e = this.entries.get(k);
     if (!e) return undefined;
@@ -68,8 +88,13 @@ export class HydrationCache {
     return { value: e.value };
   }
 
-  set(spec: ProviderSpec, principalId: string | undefined, value: unknown): void {
-    const k = this.key(spec, principalId);
+  set(
+    spec: ProviderSpec,
+    principalId: string | undefined,
+    value: unknown,
+    kinds?: readonly string[]
+  ): void {
+    const k = this.key(spec, principalId, kinds);
     if (k === undefined || spec.cachePolicy.ttlSeconds <= 0) return;
     this.entries.set(k, { value, expiresAt: this.clock() + spec.cachePolicy.ttlSeconds * 1000 });
   }

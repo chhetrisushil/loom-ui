@@ -6,9 +6,11 @@ import {
   defineSemanticCatalog,
   genesis,
 } from "@loom-ui/core";
+import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
+import { HydrationCache } from "./cache";
 import { HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
 import { executeProvider } from "./provider";
@@ -119,6 +121,30 @@ describe("output check by contract", () => {
     });
     expect(!r.ok && r.finding.code).toBe("output-contract-drift");
   });
+
+  it("input-schema drift under a contract spec is still a plain 'input' record — no contractKind (D15)", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => {
+      throw new TypedFailure("schemaDrift", {
+        toolName: "t",
+        expectedSchemaHash: "schema-t",
+        observedHash: "schema-v2",
+      });
+    });
+    const r = await executeProvider(contract(), { invoker: inv, kinds: ["Kpi"] });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.drift).toEqual([
+      {
+        kind: "input",
+        handle: "h",
+        stepId: "s",
+        toolName: "t",
+        expected: "schema-t",
+        observed: "schema-v2",
+      },
+    ]);
+    expect(r.drift[0]?.contractKind).toBeUndefined();
+  });
 });
 
 describe("HydrationController with output kinds", () => {
@@ -185,5 +211,175 @@ describe("HydrationController with output kinds", () => {
     await flush();
     expect(r.store.status("h")?.state).toBe("error");
     expect(r.store.status("h")?.finding?.code).toBe("output-contract-unbound");
+  });
+});
+
+describe("the cache key includes the checked kinds", () => {
+  // "Reading" resolves to Kpi on web and MetricCard on terminal; "Amount" resolves to MetricCard
+  // on web only — enough to widen one handle's kinds (web) or split them across two surfaces.
+  const catalog = defineSemanticCatalog({
+    id: "contract.cache.test.v1",
+    entries: [
+      {
+        name: "Reading",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: {
+          web: { kind: "Kpi", props: [], binding: "required" },
+          terminal: { kind: "MetricCard", props: [], binding: "required" },
+        },
+      },
+      {
+        name: "Amount",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: { web: { kind: "MetricCard", props: [], binding: "required" } },
+      },
+    ],
+  });
+  const node = (id: string, type: string): SemanticNode => ({
+    id,
+    order: id,
+    kind: "semantic",
+    type,
+    typeVersion: "1.0.0",
+    span: 4,
+    props: {},
+    binding: { handle: "h", priority: "P0" },
+  });
+  const expWith = (nodes: SemanticNode[], spec: ProviderSpec): Experience => {
+    const g = genesis({
+      experienceId: "exp-1",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    return {
+      ...g,
+      versionHash: "sha256:v1",
+      root: { ...(g.root as ContainerNode), children: nodes },
+      providers: { h: spec },
+    };
+  };
+
+  it("a warm cache checked against narrower kinds is not served after a recompose widens them", async () => {
+    // {value:3} satisfies Kpi (the only kind bound at first) and gets cached ttl 60, global.
+    const spec = contract();
+    const inv = replying({ value: 3 });
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const ctl = new HydrationController({
+      invoker: inv,
+      store,
+      outputKinds: { catalog, surface: "web" },
+    });
+    ctl.load(expWith([node("a", "Reading")], spec));
+    await flush();
+    expect(store.status("h")?.state).toBe("ready");
+    expect(inv.calls).toHaveLength(1);
+
+    // Recompose adds a MetricCard-bound node on the SAME handle and spec: kinds widen to
+    // [Kpi, MetricCard]. {value:3} is not a number, so MetricCard's contract fails it.
+    ctl.load(expWith([node("a", "Reading"), node("b", "Amount")], spec));
+    await flush();
+    expect(inv.calls).toHaveLength(2); // the cache MUST NOT have answered for the new kinds
+    expect(store.status("h")?.state).toBe("stale");
+    expect(store.status("h")?.finding?.code).toBe("output-contract-drift");
+  });
+
+  it("two controllers on different surfaces sharing one cache never serve each other's checked value", async () => {
+    const spec = contract();
+    const inv = replying({ value: 3 }); // satisfies Kpi (web), fails MetricCard (terminal)
+    const cache = new HydrationCache(() => 0);
+    const web = new HydrationController({
+      invoker: inv,
+      store: new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" }),
+      outputKinds: { catalog, surface: "web" },
+      cache,
+    });
+    const terminal = new HydrationController({
+      invoker: inv,
+      store: new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" }),
+      outputKinds: { catalog, surface: "terminal" },
+      cache,
+    });
+    web.load(expWith([node("a", "Reading")], spec));
+    await flush();
+    expect(inv.calls).toHaveLength(1); // web: Kpi accepts {value:3}, cached under kinds [Kpi]
+
+    terminal.load(expWith([node("a", "Reading")], spec));
+    await flush();
+    expect(inv.calls).toHaveLength(2); // terminal checks kinds [MetricCard]: a DIFFERENT cache entry
+  });
+});
+
+describe("a shape provider's fingerprint ignores kind changes", () => {
+  const catalog = defineSemanticCatalog({
+    id: "contract.shape.test.v1",
+    entries: [
+      {
+        name: "Reading",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: { web: { kind: "Kpi", props: [], binding: "required" } },
+      },
+      {
+        name: "Amount",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: { web: { kind: "MetricCard", props: [], binding: "required" } },
+      },
+    ],
+  });
+  const node = (id: string, type: string): SemanticNode => ({
+    id,
+    order: id,
+    kind: "semantic",
+    type,
+    typeVersion: "1.0.0",
+    span: 4,
+    props: {},
+    binding: { handle: "h", priority: "P0" },
+  });
+  const expWith = (nodes: SemanticNode[], spec: ProviderSpec): Experience => {
+    const g = genesis({
+      experienceId: "exp-1",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    return {
+      ...g,
+      versionHash: "sha256:v1",
+      root: { ...(g.root as ContainerNode), children: nodes },
+      providers: { h: spec },
+    };
+  };
+
+  it("a recompose that changes a shape provider's bound node kinds does not abort or restart it", async () => {
+    // outputCheck unset (shape mode); ttl 0 so the cache can never mask what's under test — the
+    // only thing that can stop a second run is `schedule`'s "same question already asked" check.
+    const spec = providerSpec("h", [mcpStep("s", "t")], {
+      cachePolicy: { ttlSeconds: 0, scope: "global" },
+    });
+    const inv = replying({ anything: 1 });
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const ctl = new HydrationController({
+      invoker: inv,
+      store,
+      outputKinds: { catalog, surface: "web" },
+    });
+    ctl.load(expWith([node("a", "Reading")], spec)); // kinds resolve to [Kpi]
+    await flush();
+    expect(store.status("h")?.state).toBe("ready");
+    expect(inv.calls).toHaveLength(1);
+
+    // The bound node's resolved kind changes ([Kpi] → [MetricCard]) but the SPEC is unchanged and
+    // is not checked by contract: the handle must not be treated as a new question.
+    ctl.load(expWith([node("a", "Amount")], spec));
+    await flush();
+    expect(inv.calls).toHaveLength(1); // no second run
+    expect(store.status("h")?.state).toBe("ready");
   });
 });
