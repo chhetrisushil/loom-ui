@@ -644,7 +644,9 @@ describe("compile — placement and section titles (Blueprint IR 2.1.0, loom ADR
     expect(term.ok).toBe(true);
     expect((nodes(term)[0] as Widget).kind).toBe("DataTable");
     const [cell] = cells(term);
-    expect(cell && { span: cell.span, row: cell.row, rowSpan: cell.rowSpan, column: cell.column }).toEqual({
+    expect(
+      cell && { span: cell.span, row: cell.row, rowSpan: cell.rowSpan, column: cell.column }
+    ).toEqual({
       span: 6,
       row: 2,
       rowSpan: 2,
