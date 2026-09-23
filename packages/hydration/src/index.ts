@@ -13,27 +13,15 @@ export type {
   HydrationScope,
   HydrationState,
 } from "./projection";
-export { STEP_TEMPLATE, resolveArguments, resolvePath, terminalSteps, topoWaves } from "./plan";
 export type { TransientInvoker } from "./invoker";
 export { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
-export { defineReshapers, jsonPathSelect, outputShapeHashOf, reshape } from "./reshape";
+export { defineReshapers, jsonPathSelect, outputShapeHashOf } from "./reshape";
 export type { ReshapeResult, Reshaper, ReshaperRegistry } from "./reshape";
-export {
-  DEFAULT_TIME_RANGE,
-  applyParams,
-  checkParams,
-  paramsKey,
-  pickParams,
-  prepareArguments,
-  providerParams,
-  relevantParams,
-  resolveTimeToken,
-  resolveTimeTokens,
-} from "./params";
-export type { ArgumentHook, ArgumentHookContext, LoadParams, PrepareContext } from "./params";
-export { executeProvider, outcomeResult } from "./provider";
+export { DEFAULT_TIME_RANGE, checkParams } from "./params";
+export type { ArgumentHook, ArgumentHookContext, LoadParams } from "./params";
+export { executeProvider } from "./provider";
 export type { DriftRecord, ExecuteOptions, InputDriftMode, ProviderOutcome } from "./provider";
-export { HydrationCache, specFingerprint } from "./cache";
+export { HydrationCache } from "./cache";
 export type { CacheVariant } from "./cache";
 export type { HandleLoadResult } from "./scheduler";
 export { HydrationController } from "./controller";
@@ -50,6 +38,8 @@ export type {
   HandleLoadRequest,
   HandleLoader,
   HandleRef,
+  InventoryOptions,
+  RevisionFn,
   ServeOptions,
   SplitControllerOptions,
 } from "./split";

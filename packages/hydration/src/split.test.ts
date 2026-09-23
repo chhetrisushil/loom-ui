@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import {
   type ContainerNode,
   type Experience,
@@ -11,6 +12,7 @@ import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { specFingerprint } from "./cache";
 import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
 import type { HandleLoadResult } from "./scheduler";
@@ -24,6 +26,14 @@ import {
   serveHandles,
 } from "./split";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
+
+/** A deterministic stand-in for the server's keyed hash (production: an HMAC over a server secret). */
+const keyed =
+  (secret: string) =>
+  (handle: string, fingerprint: string): string =>
+    createHmac("sha256", secret).update(`${handle}\u0000${fingerprint}`).digest("hex");
+const revisionOf = keyed("test-secret");
+const inventoryOf = (exp: Experience) => handleInventory(exp, { revisionOf });
 
 type McpIn = { toolName: string; args: Record<string, unknown>; expectedSchemaHash: string };
 const NOW = Date.UTC(2026, 8, 23, 12, 0, 0);
@@ -176,7 +186,7 @@ const splitRig = (exp: Experience, inv: FakeInvoker = toolServer()) => {
 
 describe("handleInventory", () => {
   it("lists handle, priority and overridable param names — and nothing of the provider", () => {
-    const { inventory, findings } = handleInventory(board());
+    const { inventory, findings } = inventoryOf(board());
     expect(findings).toEqual([]);
     expect(inventory.experienceId).toBe("board");
     expect(inventory.versionHash).toBe("sha256:board-v1");
@@ -201,9 +211,9 @@ describe("handleInventory", () => {
   });
 
   it("the revision moves when the provider behind a handle changes, and only then", () => {
-    const a = handleInventory(board()).inventory.handles;
-    const b = handleInventory(board()).inventory.handles;
-    const c = handleInventory(
+    const a = inventoryOf(board()).inventory.handles;
+    const b = inventoryOf(board()).inventory.handles;
+    const c = inventoryOf(
       board({
         alerts: contract("alerts", step("alerts", { station: "ridge" }, ["station"]), "table.rows"),
       })
@@ -216,7 +226,7 @@ describe("handleInventory", () => {
   it("a bound handle with no provider is listed with its finding, so the client can show the error", () => {
     const exp = board();
     const { archive: _dropped, ...rest } = exp.providers;
-    const { inventory, findings } = handleInventory({ ...exp, providers: rest });
+    const { inventory, findings } = inventoryOf({ ...exp, providers: rest });
     expect(findings.map((f) => f.code)).toEqual(["unknown-handle"]);
     expect(inventory.handles.find((r) => r.handle === "archive")?.finding?.code).toBe(
       "unknown-handle"
@@ -332,7 +342,7 @@ describe("SplitHydrationController", () => {
   it("P0 at once, P1 after the batch window, P2 on markVisible — every load through the loader", async () => {
     const exp = board();
     const { clock, store, ctl, requests } = splitRig(exp);
-    expect(ctl.load(handleInventory(exp).inventory).findings).toEqual([]);
+    expect(ctl.load(inventoryOf(exp).inventory).findings).toEqual([]);
     await flush();
     expect(requests.map((r) => r.handle)).toEqual(["latest"]);
     expect(store.status("alerts")?.state).toBe("pending");
@@ -360,7 +370,7 @@ describe("SplitHydrationController", () => {
   it("setParams re-requests only the handles that declare the param; handle-scoped params stay scoped", async () => {
     const exp = board();
     const { clock, store, ctl, requests } = splitRig(exp);
-    ctl.load(handleInventory(exp).inventory);
+    ctl.load(inventoryOf(exp).inventory);
     await flush();
     clock.advance(50);
     await flush();
@@ -385,7 +395,7 @@ describe("SplitHydrationController", () => {
     const { archive: _dropped, ...rest } = exp.providers;
     const broken = { ...exp, providers: rest };
     const { store, ctl, requests } = splitRig(broken);
-    const r = ctl.load(handleInventory(broken).inventory);
+    const r = ctl.load(inventoryOf(broken).inventory);
     expect(r.findings.map((f) => f.code)).toEqual(["unknown-handle"]);
     await flush();
     expect(store.status("archive")?.state).toBe("error");
@@ -394,14 +404,14 @@ describe("SplitHydrationController", () => {
 
   it("a loader that throws, or answers with something that is not a load result, is an error status", async () => {
     const exp = board();
-    const inventory: HandleInventory = handleInventory(exp).inventory;
+    const inventory: HandleInventory = inventoryOf(exp).inventory;
     for (const [answer, code] of [
       [() => Promise.reject(new Error("offline")), "load-failed"],
       [() => Promise.resolve({ state: "ready?" }), "load-malformed"],
       [() => Promise.resolve({ state: "error", finding: "nope" }), "load-malformed"],
     ] as const) {
       const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "board" });
-      const loader = { load: answer } as unknown as HandleLoader;
+      const loader = { load: answer, loadMany: answer } as unknown as HandleLoader;
       const ctl = new SplitHydrationController({
         loader,
         store,
@@ -416,7 +426,7 @@ describe("SplitHydrationController", () => {
   it("recompose drops handles the next inventory no longer lists; dispose is terminal", async () => {
     const exp = board();
     const { store, ctl } = splitRig(exp);
-    const inventory = handleInventory(exp).inventory;
+    const inventory = inventoryOf(exp).inventory;
     ctl.load(inventory);
     await flush();
     expect(store.status("latest")?.state).toBe("ready");
@@ -445,7 +455,7 @@ describe("split vs in-process hydration", () => {
     local.load(exp);
     local.markVisible("archive");
     const split = splitRig(exp);
-    split.ctl.load(handleInventory(exp).inventory);
+    split.ctl.load(inventoryOf(exp).inventory);
     split.ctl.markVisible("archive");
     await flush();
     clockA.advance(50);
@@ -497,7 +507,7 @@ const toolsCalled = (inv: FakeInvoker) => inv.calls.map((c) => (c.input as McpIn
 
 describe("handleInventory is all a client learns", () => {
   it("each ref carries only handle, priority, param names and an opaque revision", () => {
-    const { inventory } = handleInventory(board());
+    const { inventory } = inventoryOf(board());
     for (const ref of inventory.handles)
       expect(Object.keys(ref).sort()).toEqual(["handle", "params", "priority", "revision"]);
     expect(Object.keys(inventory).sort()).toEqual(["experienceId", "handles", "versionHash"]);
@@ -664,7 +674,7 @@ describe("SplitHydrationController batches a group through loadMany", () => {
     const exp = pair();
     const inv = feedServer();
     const { clock, store, ctl, batches } = splitRig(exp, inv);
-    ctl.load(handleInventory(exp).inventory);
+    ctl.load(inventoryOf(exp).inventory);
     clock.advance(50);
     await flush();
     expect(batches).toEqual([["first", "second", "third"]]);
@@ -673,31 +683,18 @@ describe("SplitHydrationController batches a group through loadMany", () => {
     expect(store.value("second")).toEqual(["day", "n"]);
   });
 
-  it("a loader without loadMany loads the group one request at a time", async () => {
-    const exp = pair();
-    const inv = feedServer();
-    const { loader, requests } = boundary(exp, inv);
+  it("a loader without loadMany is refused at construction: call sharing is not optional", () => {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "pair" });
-    const clock = new ManualClock();
-    const ctl = new SplitHydrationController({
-      loader: { load: loader.load },
-      store,
-      setTimer: clock.setTimer,
-    });
-    ctl.load(handleInventory(exp).inventory);
-    clock.advance(50);
-    await flush();
-    expect(requests.map((r) => r.handle)).toEqual(["first", "second", "third"]);
-    expect(["first", "second", "third"].map((h) => store.status(h)?.state)).toEqual([
-      "ready",
-      "ready",
-      "ready",
-    ]);
+    const { loader } = boundary(pair(), feedServer());
+    for (const bad of [{ load: loader.load }, { loadMany: loader.loadMany }, null])
+      expect(
+        () => new SplitHydrationController({ loader: bad as unknown as HandleLoader, store })
+      ).toThrow(TypeError);
   });
 
   it("a loadMany that rejects, or answers the wrong number of results, errors every member", async () => {
     const exp = pair();
-    const inventory = handleInventory(exp).inventory;
+    const inventory = inventoryOf(exp).inventory;
     for (const [loadMany, code] of [
       [() => Promise.reject(new Error("offline")), "load-failed"],
       [() => Promise.resolve([{ state: "ready", value: 1 }]), "load-malformed"],
@@ -734,7 +731,7 @@ describe("SplitHydrationController batches a group through loadMany", () => {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "pair" });
     const clock = new ManualClock();
     const ctl = new SplitHydrationController({ loader, store, setTimer: clock.setTimer });
-    const inventory = handleInventory(exp).inventory;
+    const inventory = inventoryOf(exp).inventory;
     ctl.load(inventory);
     clock.advance(50);
     await flush();
@@ -753,7 +750,7 @@ describe("SplitHydrationController params and inventory hygiene", () => {
       throw new Error("down");
     });
     const { clock, store, ctl, requests } = splitRig(exp, inv);
-    ctl.load(handleInventory(exp).inventory);
+    ctl.load(inventoryOf(exp).inventory);
     clock.advance(50);
     await flush();
     expect(store.status("latest")?.state).toBe("error");
@@ -770,7 +767,7 @@ describe("SplitHydrationController params and inventory hygiene", () => {
   it("scoped params for a handle the bound inventory does not list are forgotten at bind", async () => {
     const exp = board();
     const { clock, ctl, requests } = splitRig(exp);
-    const inventory = handleInventory(exp).inventory;
+    const inventory = inventoryOf(exp).inventory;
     ctl.setParams({ station: "harbour" }, { handle: "latest" });
     ctl.load({ ...inventory, handles: inventory.handles.filter((r) => r.handle !== "latest") });
     clock.advance(50);
@@ -783,7 +780,7 @@ describe("SplitHydrationController params and inventory hygiene", () => {
   it("an inventory that is not one is refused and the bound one is left exactly as it was", async () => {
     const exp = board();
     const { store, ctl } = splitRig(exp);
-    const inventory = handleInventory(exp).inventory;
+    const inventory = inventoryOf(exp).inventory;
     ctl.load(inventory);
     await flush();
     for (const bad of [
@@ -796,5 +793,58 @@ describe("SplitHydrationController params and inventory hygiene", () => {
         "invalid-inventory",
       ]);
     expect(store.status("latest")?.state).toBe("ready");
+  });
+});
+
+describe("the inventory revision is keyed on the server", () => {
+  it("is never the provider's fingerprint, and a different key gives a different revision", () => {
+    const exp = board();
+    const refs = inventoryOf(exp).inventory.handles;
+    for (const ref of refs) {
+      const spec = exp.providers[ref.handle];
+      if (spec === undefined) throw new Error("fixture");
+      expect(ref.revision).not.toBe(specFingerprint(spec));
+      expect(ref.revision).not.toContain(specFingerprint(spec));
+    }
+    const other = handleInventory(exp, { revisionOf: keyed("another-secret") }).inventory.handles;
+    expect(other.map((r) => r.revision)).not.toEqual(refs.map((r) => r.revision));
+  });
+
+  it("revisionOf receives the handle and the fingerprint, and must return something else", () => {
+    const seen: Array<[string, string]> = [];
+    handleInventory(board(), {
+      revisionOf: (h, fp) => {
+        seen.push([h, fp]);
+        return `r-${seen.length}`;
+      },
+    });
+    expect(seen.map(([h]) => h)).toEqual(["latest", "alerts", "archive"]);
+    expect(() => handleInventory(board(), { revisionOf: (_h, fp) => fp })).toThrow(TypeError);
+    expect(() => handleInventory(board(), { revisionOf: () => 7 as unknown as string })).toThrow(
+      TypeError
+    );
+    expect(() =>
+      handleInventory(board(), undefined as unknown as { revisionOf: () => string })
+    ).toThrow(TypeError);
+  });
+
+  it("the client schedules purely off the opaque revision", async () => {
+    const exp = board();
+    const { ctl, requests } = splitRig(exp);
+    const inventory = inventoryOf(exp).inventory;
+    ctl.load(inventory);
+    await flush();
+    expect(requests.map((r) => r.handle)).toEqual(["latest"]);
+    ctl.recompose({ ...inventory });
+    await flush();
+    expect(requests).toHaveLength(1); // same revision, same params: already answered
+    ctl.recompose({
+      ...inventory,
+      handles: inventory.handles.map((r) =>
+        r.handle === "latest" ? { ...r, revision: "moved" } : r
+      ),
+    });
+    await flush();
+    expect(requests.map((r) => r.handle)).toEqual(["latest", "latest"]);
   });
 });
