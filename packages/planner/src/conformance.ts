@@ -19,7 +19,7 @@ import type {
   PlannerUsage,
   ReviseInput,
 } from "./spi";
-import { isPlannerUsage, totalUsage } from "./usage";
+import { isPlannerUsage, snapshotUsage, totalUsage } from "./usage";
 
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
@@ -62,22 +62,51 @@ function reportFindings(label: string, report: PlanReport): Finding[] {
         `${label}: firstAttemptValid is ${report.firstAttemptValid} but ${report.attempts.length} attempt(s) ${report.attempts.every((a) => a.parsed) ? "all parsed" : "did not all parse"}`
       )
     );
+  // Each attempt's usage is read ONCE, inside a guard, and only a validated copy is summed: an
+  // adapter controls these values, and the kit's contract is that it never throws. A refusal
+  // names the attempt, never the value's content.
+  const attemptUsages: { usage?: PlannerUsage }[] = [];
+  let attemptsValid = true;
+  report.attempts.forEach((a, i) => {
+    let raw: unknown;
+    try {
+      raw = a.usage;
+    } catch {
+      raw = null; // a throwing `usage` getter is a malformed usage, not a crash
+    }
+    if (raw === undefined) {
+      attemptUsages.push({});
+      return;
+    }
+    const usage = snapshotUsage(raw);
+    if (usage === undefined) {
+      attemptsValid = false;
+      findings.push(
+        err(
+          "report-invalid",
+          `${label}: attempt #${i} usage is not two non-negative integer token counts`
+        )
+      );
+      return;
+    }
+    attemptUsages.push({ usage });
+  });
   if (report.usage !== undefined) {
-    if (!isPlannerUsage(report.usage))
+    const total = snapshotUsage(report.usage);
+    if (total === undefined)
       findings.push(
         err("report-invalid", `${label}: report.usage is not two non-negative integer token counts`)
       );
-    else {
-      const sum = totalUsage(report.attempts);
+    else if (attemptsValid) {
+      const sum = totalUsage(attemptUsages);
       if (
         sum !== undefined &&
-        (sum.inputTokens !== report.usage.inputTokens ||
-          sum.outputTokens !== report.usage.outputTokens)
+        (sum.inputTokens !== total.inputTokens || sum.outputTokens !== total.outputTokens)
       )
         findings.push(
           err(
             "report-invalid",
-            `${label}: report.usage (${report.usage.inputTokens}/${report.usage.outputTokens}) is not the sum of its attempts' usage (${sum.inputTokens}/${sum.outputTokens})`
+            `${label}: report.usage (${total.inputTokens}/${total.outputTokens}) is not the sum of its attempts' usage (${sum.inputTokens}/${sum.outputTokens})`
           )
         );
     }
