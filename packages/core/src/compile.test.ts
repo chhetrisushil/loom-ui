@@ -472,3 +472,40 @@ describe("hydrationPath / hydrationStatusPath", () => {
     expect(HYDRATION_VALUES_PREFIX).not.toBe(HYDRATION_STATUS_PREFIX);
   });
 });
+
+describe("text props", () => {
+  const textCatalog = defineSemanticCatalog({
+    id: "text.v1",
+    entries: [
+      {
+        name: "Callout",
+        version: "1.0.0",
+        props: ["text", "caption"],
+        textProps: ["text"],
+        binding: "none",
+        surfaces: { web: { kind: "Note", props: ["text", "caption"], binding: "none" } },
+      },
+    ],
+  });
+  const topts = { ...opts, catalog: textCatalog };
+  const callout = (props: Record<string, unknown>) =>
+    withRoot(exp, { ...root, children: [unbound(sem("c", "Callout", { props }))] });
+  const widget = (r: CompileResult) => nodes(r)[0] as Widget;
+
+  it("resolves a LocalizedText in a declared text prop through resolveLabel, like a label", () => {
+    const e = callout({ text: { key: "note.intro", fallback: "Hello" } });
+    const upper = compile(e, { ...topts, resolveLabel: (l) => l.key.toUpperCase() });
+    expect(upper.findings).toEqual([]);
+    expect(widget(upper).props.text).toBe("NOTE.INTRO");
+    expect(widget(compile(e, topts)).props.text).toBe("Hello");
+  });
+  it("passes a plain string through, and leaves a LocalizedText in an undeclared-as-text prop untouched", () => {
+    const r = compile(callout({ text: "Plain", caption: { key: "k", fallback: "f" } }), topts);
+    expect(r.ok).toBe(true);
+    expect(widget(r).props).toEqual({ caption: { key: "k", fallback: "f" }, text: "Plain" });
+  });
+  it("a compiled Blueprint never carries a message key for a text prop", () => {
+    const r = compile(callout({ text: { key: "secret.key", fallback: "Shown" } }), topts);
+    expect(JSON.stringify(r.blueprint)).not.toContain("secret.key");
+  });
+});

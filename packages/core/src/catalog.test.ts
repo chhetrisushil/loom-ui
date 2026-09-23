@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkFloor,
   compareVersions,
+  defineSemanticCatalog,
   findEntry,
   resolveSurface,
   validateExperience,
@@ -216,5 +217,35 @@ describe("tree depth", () => {
     const e = { ...exp([]), root: chain(200) };
     expect(validateExperience(e, testCatalog, "web").ok).toBe(true);
     expect(MAX_TREE_DEPTH).toBe(256);
+  });
+});
+
+describe("text props", () => {
+  const textCatalog = defineSemanticCatalog({
+    id: "text.v1",
+    entries: [
+      {
+        name: "Callout",
+        version: "1.0.0",
+        props: ["text"],
+        textProps: ["text"],
+        binding: "none",
+        surfaces: { web: { kind: "Note", props: ["text"], binding: "none" } },
+      },
+    ],
+  });
+  const callout = (text: unknown) => unbound(sem("c", "Callout", { props: { text } }));
+  it("accepts a string or a LocalizedText", () => {
+    for (const text of ["Plain", { key: "k", fallback: "f" }])
+      expect(validateExperience(exp([callout(text)]), textCatalog, "web").findings).toEqual([]);
+  });
+  it("refuses anything else in a text prop as text-prop-shape", () => {
+    for (const text of [7, { key: "k" }, ["a"]]) {
+      const v = validateExperience(exp([callout(text)]), textCatalog, "web");
+      expect(v.ok).toBe(false);
+      expect(v.findings).toEqual([
+        expect.objectContaining({ code: "text-prop-shape", severity: "error", nodeId: "c" }),
+      ]);
+    }
   });
 });

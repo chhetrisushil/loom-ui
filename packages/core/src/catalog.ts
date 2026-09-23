@@ -1,5 +1,5 @@
 import type { Experience, Finding, VocabularyFloor } from "./experience";
-import { MAX_TREE_DEPTH, type SemanticNode, treeDepth, walk } from "./node";
+import { LocalizedText, MAX_TREE_DEPTH, type SemanticNode, treeDepth, walk } from "./node";
 
 // ── The semantic catalogue ────────────────────────────────────────────────────
 // An entry is what a planner may NAME. It declares the props it accepts (an allow-list — `[]` is
@@ -25,6 +25,12 @@ export interface SemanticEntry {
   readonly version: string;
   readonly props: readonly string[];
   readonly binding: "required" | "optional" | "none";
+  /**
+   * Props whose value is display TEXT: a plain string, or a `LocalizedText`
+   * `{ key, fallback }` that `compile` resolves through `resolveLabel` exactly like a node label —
+   * so a compiled Blueprint carries display text, never a message key.
+   */
+  readonly textProps?: readonly string[];
   /**
    * Who may set a binding's confidentiality class on a node of this type: the caller composing
    * the experience (the default, `"caller"`), or a planner proposing one. Declarative only —
@@ -255,6 +261,18 @@ function checkSemantic(
         finding(
           "undeclared-prop",
           `prop "${key}" is not declared by "${n.type}@${n.typeVersion}"`,
+          n.id
+        )
+      );
+  }
+  for (const key of entry.textProps ?? []) {
+    if (!Object.hasOwn(n.props, key)) continue;
+    const value = n.props[key];
+    if (typeof value !== "string" && !LocalizedText.safeParse(value).success)
+      findings.push(
+        finding(
+          "text-prop-shape",
+          `prop "${key}" of "${n.type}@${n.typeVersion}" is text: a string or a { key, fallback } LocalizedText`,
           n.id
         )
       );

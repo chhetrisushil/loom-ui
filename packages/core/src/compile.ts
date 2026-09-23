@@ -25,7 +25,7 @@ import { loomCatalogFor } from "./loomCatalog";
 import {
   type ContainerNode,
   type ExperienceNode,
-  type LocalizedText,
+  LocalizedText,
   MAX_TREE_DEPTH,
   normalize,
   treeDepth,
@@ -233,7 +233,11 @@ function compileNode(
   // A prop that is not even declared by the node's own type is `validateExperience`'s territory
   // (`undeclared-prop`, an error) and is not reported twice here.
   const allowedProps = new Set(contract.props);
-  const ownProps = new Set(findEntry(opts.catalog, node.type, node.typeVersion)?.props ?? []);
+  const ownEntry = findEntry(opts.catalog, node.type, node.typeVersion);
+  const ownProps = new Set(ownEntry?.props ?? []);
+  // Text props the node's OWN type declares may hold a `LocalizedText`; they resolve here, at
+  // compile, exactly like `label` — the locale is a compile input, never a renderer lookup.
+  const textProps = new Set(ownEntry?.textProps ?? []);
   const filtered = Object.fromEntries(
     Object.entries(node.props).filter(([key]) => {
       if (allowedProps.has(key)) return true;
@@ -252,7 +256,8 @@ function compileNode(
   // experiences must compile to byte-identical blueprints — that is the whole claim of a
   // deterministic compiler — so the emitted props are rebuilt in sorted key order.
   const props: Record<string, unknown> = {};
-  for (const key of Object.keys(filtered).sort()) props[key] = filtered[key];
+  for (const key of Object.keys(filtered).sort())
+    props[key] = textProps.has(key) ? resolveText(filtered[key], resolveLabel) : filtered[key];
   // `via` starts with the node's OWN type key, so everything after it is the chain that had to be
   // walked to reach `r.kind` — outermost first, which is the order loom's `degradedFrom` declares.
   const degradedFrom = r.via.slice(1).map((key) => {
@@ -282,4 +287,10 @@ function compileNode(
       },
     }),
   };
+}
+
+/** A `LocalizedText` resolves through `resolveLabel`; anything else (a plain string) passes through. */
+function resolveText(value: unknown, resolveLabel: (l: LocalizedText) => string): unknown {
+  const parsed = LocalizedText.safeParse(value);
+  return parsed.success ? resolveLabel(parsed.data) : value;
 }
