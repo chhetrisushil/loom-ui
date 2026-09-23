@@ -137,4 +137,28 @@ describe("renderBlueprintDom + litRegistry + HydrationStore", () => {
     expect(text(card)).toContain("tool down");
     expect(text(card)).not.toContain("412");
   });
+
+  it("an empty status after a ready value draws 'No data' — the store dropped the value, nothing stale shows", async () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e3" });
+    store.setValue("h-a", 412, { state: "ready" });
+    const host = mountHost();
+    renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: litRegistry,
+    });
+    const card = el(host, "a", "lu-metric-card");
+    await card.updateComplete;
+    expect(text(card)).toContain("412");
+    store.setStatus("h-a", {
+      state: "empty",
+      finding: { code: "upstream-empty", severity: "warn", message: "no data for this view" },
+    });
+    await card.updateComplete;
+    expect(dataState(card)).toBe("empty");
+    expect(text(card)).toBe("p99: No data");
+    expect(store.value("h-a")).toBeUndefined();
+    expect(card.shadowRoot?.querySelector('[role="status"]')).not.toBeNull();
+  });
 });
