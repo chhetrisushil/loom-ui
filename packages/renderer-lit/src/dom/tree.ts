@@ -46,6 +46,10 @@ export type Entry = WidgetEntry | ContainerEntry;
 export interface ChildSpec {
   readonly node: Widget | Layout;
   readonly span: number;
+  /** IR 2.1.0 placement (loom ADR 0098 D1) — present only when the cell sets it. */
+  readonly row?: number;
+  readonly rowSpan?: number;
+  readonly column?: number;
 }
 export interface Slice {
   value: unknown;
@@ -96,12 +100,18 @@ export function malformedNodes(layout: unknown): string[] {
   return bad;
 }
 
-/** A layout's children with the span each one occupies: cells under a grid, 1 elsewhere. */
+/** A layout's children with the cell each one occupies: span and placement under a grid, span 1 elsewhere. */
 export function childSpecs(layout: Layout): ChildSpec[] {
   if (layout.type === "grid")
     return layout.children.map((c) => {
       const cell = asCell(c);
-      return { node: cell.node, span: cell.span ?? 1 };
+      return {
+        node: cell.node,
+        span: cell.span ?? 1,
+        ...(cell.row !== undefined && { row: cell.row }),
+        ...(cell.rowSpan !== undefined && { rowSpan: cell.rowSpan }),
+        ...(cell.column !== undefined && { column: cell.column }),
+      };
     });
   return layout.children.map((node) => ({ node, span: 1 }));
 }
@@ -116,10 +126,33 @@ const setStyle = (el: HTMLElement, prop: StyleProp, value: string): void => {
   if (el.style[prop] !== value) el.style[prop] = value;
 };
 
-/** IR 2.0.0: the span is the CELL's, and it lands on the child's own host — no wrapper element. */
-export function applySpan(host: HTMLElement, span: number, inGrid: boolean): void {
-  const value = inGrid && span > 1 ? `span ${span}` : "";
-  if (host.style.gridColumn !== value) host.style.gridColumn = value;
+/**
+ * IR 2.1.0: a cell's span AND placement land on the child's own element — no wrapper — as the
+ * CSS grid lines loom's React renderer writes on its cell wrapper (loom ADR 0098 D4):
+ * `grid-column` is `<column> / span <span>`, or `span <span>` for an unplaced span > 1 or any
+ * placed cell; `grid-row` is `<row> / span <rowSpan ?? 1>`, or `span <rowSpan>`, or nothing. An
+ * unplaced span-1 cell writes nothing (2.0.0's DOM, unchanged), and outside a grid both are
+ * cleared. Written only on change, so an unchanged cell costs zero mutations and a placement
+ * change is a style patch on the kept element, never a remount.
+ */
+export function applyPlacement(el: HTMLElement, spec: ChildSpec, inGrid: boolean): void {
+  const placed = spec.row !== undefined || spec.rowSpan !== undefined || spec.column !== undefined;
+  const column = !inGrid
+    ? ""
+    : spec.column !== undefined
+      ? `${spec.column} / span ${spec.span}`
+      : placed || spec.span > 1
+        ? `span ${spec.span}`
+        : "";
+  const row = !inGrid
+    ? ""
+    : spec.row !== undefined
+      ? `${spec.row} / span ${spec.rowSpan ?? 1}`
+      : spec.rowSpan !== undefined
+        ? `span ${spec.rowSpan}`
+        : "";
+  if (el.style.gridColumn !== column) el.style.gridColumn = column;
+  if (el.style.gridRow !== row) el.style.gridRow = row;
 }
 
 /** The container element's own styling, derived only from the layout node. Idempotent. */
@@ -299,12 +332,13 @@ export function mountContainer(
   const inGrid = layout.type === "grid";
   const entry: ContainerEntry = { kind: "container", el, layout, children: [] };
   track?.(entry);
-  for (const { node, span } of childSpecs(layout)) {
+  for (const spec of childSpecs(layout)) {
+    const { node } = spec;
     const child = isWidgetNode(node)
       ? mountWidget(node, ctx, onFail, track)
       : mountContainer(node, ctx, onFail, track);
     const childEl = elementOf(child);
-    applySpan(childEl, span, inGrid);
+    applyPlacement(childEl, spec, inGrid);
     el.appendChild(childEl);
     entry.children.push(child);
   }

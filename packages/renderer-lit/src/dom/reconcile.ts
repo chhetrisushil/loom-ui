@@ -13,7 +13,7 @@ import {
   type Entry,
   type MountContext,
   type WidgetEntry,
-  applySpan,
+  applyPlacement,
   childSpecs,
   disposeEntry,
   elementOf,
@@ -197,7 +197,8 @@ export function reconcileContainer(
   const nextChildren: Entry[] = [];
   const used = new Set<Entry>();
   let containerOrdinal = 0;
-  for (const { node, span } of childSpecs(next)) {
+  for (const spec of childSpecs(next)) {
+    const { node } = spec;
     let child: Entry;
     if (isWidgetNode(node)) {
       const kept = oldWidgets.get(node.id);
@@ -228,7 +229,7 @@ export function reconcileContainer(
       }
     }
     used.add(child);
-    applySpan(elementOf(child), span, inGrid);
+    applyPlacement(elementOf(child), spec, inGrid);
     nextChildren.push(child);
   }
   // Dropped: anything old that the new layout did not claim.
