@@ -61,7 +61,7 @@ describe("terminal registry", () => {
         deltaPct: -0.034,
         label: "vs last week",
       })
-    ).toBe("Revenue: $1,234.50  ▼ 3.4% (vs last week)");
+    ).toBe("Revenue (vs last week): $1,234.50  ▼ 3.4%");
     expect(
       r?.(customWidget$({ kind: "Kpi", title: "Share", binding: b }), {
         value: 0.25,
@@ -190,14 +190,6 @@ describe("terminal registry", () => {
       "Custom: [sandboxed component — rendered on the web]"
     );
   });
-  it("a right-axis series is marked (R)", () => {
-    const ts = loomUiTerminalRegistry.get("TimeSeries");
-    const out =
-      ts?.(customWidget$({ kind: "TimeSeries", title: "Load", binding: b }), {
-        series: [{ label: "bytes", axis: "right", points: [{ timestamp: "a", value: 1 }] }],
-      }) ?? "";
-    expect(out).toContain("bytes (R)");
-  });
   it("TimeSeries: a series-level format prints the web's currency symbol with grouping", () => {
     const ts = loomUiTerminalRegistry.get("TimeSeries");
     const out =
@@ -273,5 +265,58 @@ describe("terminal registry", () => {
         bars: [{ label: "a", value: 1234567.891 }],
       }) ?? "";
     expect(out).toContain("1,234,567.891");
+  });
+  it("a right-axis series is marked (R) only when some series is on the left, like the web", () => {
+    const ts = loomUiTerminalRegistry.get("TimeSeries");
+    const w = customWidget$({ kind: "TimeSeries", title: "Load", binding: b });
+    const mixed =
+      ts?.(w, {
+        series: [
+          { label: "rps", points: [{ timestamp: "a", value: 1 }] },
+          { label: "bytes", axis: "right", points: [{ timestamp: "a", value: 1 }] },
+        ],
+      }) ?? "";
+    expect(mixed).toContain("bytes (R)");
+    expect(mixed).not.toContain("rps (R)");
+    // All on the right: the web falls back to one shared left axis, so there is no "right" to mark.
+    const allRight =
+      ts?.(w, {
+        series: [
+          { label: "rps", axis: "right", points: [{ timestamp: "a", value: 1 }] },
+          { label: "bytes", axis: "right", points: [{ timestamp: "a", value: 1 }] },
+        ],
+      }) ?? "";
+    expect(allRight).not.toContain("(R)");
+  });
+  it("a unit stays beside a format that draws no symbol; currency and percent never double theirs", () => {
+    const dec = { semanticType: "decimal" } as const;
+    const kpi = loomUiTerminalRegistry.get("Kpi");
+    const k = (value: unknown) =>
+      kpi?.(customWidget$({ kind: "Kpi", title: "K", binding: b }), value);
+    expect(k({ value: 7, unit: "ms", format: dec })).toBe("K: 7 ms");
+    expect(
+      k({ value: 12, unit: "USD", format: { semanticType: "currency", currency: "USD" } })
+    ).toBe("K: $12.00");
+    expect(k({ value: 0.25, unit: "%", format: { semanticType: "percentage" } })).toBe("K: 25%");
+    const ts = loomUiTerminalRegistry.get("TimeSeries");
+    expect(
+      ts?.(customWidget$({ kind: "TimeSeries", title: "Lat", binding: b }), {
+        series: [{ label: "p99", unit: "ms", format: dec, points: [{ timestamp: "a", value: 7 }] }],
+      })
+    ).toMatch(/p99.*7 ms$/);
+    const bc = loomUiTerminalRegistry.get("BarChart");
+    expect(
+      bc?.(customWidget$({ kind: "BarChart", title: "Lat", binding: b }), {
+        unit: "ms",
+        format: dec,
+        bars: [{ label: "a", value: 7 }],
+      })
+    ).toMatch(/a.*7 ms$/);
+  });
+  it("Kpi: a zero delta is flat — no arrow", () => {
+    const r = loomUiTerminalRegistry.get("Kpi");
+    expect(
+      r?.(customWidget$({ kind: "Kpi", title: "Errors", binding: b }), { value: 3, deltaPct: 0 })
+    ).toBe("Errors: 3  0%");
   });
 });

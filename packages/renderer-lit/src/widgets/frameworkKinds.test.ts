@@ -239,8 +239,83 @@ describe("lu-kpi and lu-status-card colour tokens", () => {
     const cardCss = (LuStatusCard.styles as unknown as { cssText: string }).cssText;
     expect(kpiCss).toContain("var(--lu-delta-up, #4ade80)");
     expect(kpiCss).toContain("var(--lu-delta-down, #f87171)");
+    expect(kpiCss).toContain("var(--lu-delta-flat, #8b949e)");
     expect(cardCss).toContain("var(--lu-status-ok, #4ade80)");
     expect(cardCss).toContain("var(--lu-status-warning, #fbbf24)");
     expect(cardCss).toContain("var(--lu-status-critical, #f87171)");
+  });
+});
+
+describe("lu-kpi: unit, flat delta, caption", () => {
+  it("keeps a unit beside a decimal format; a currency or percent format never doubles its symbol", async () => {
+    setLocale("en-US");
+    const ms = await mount("lu-kpi", {
+      widget: customWidget$({ kind: "Kpi", id: "ku1", title: "p99", binding: b }),
+      value: { value: 7, unit: "ms", format: { semanticType: "decimal" } },
+    });
+    expect(ms.shadowRoot?.querySelector(".unit")?.textContent).toBe("ms");
+    const cur = await mount("lu-kpi", {
+      widget: customWidget$({ kind: "Kpi", id: "ku2", title: "Rev", binding: b }),
+      value: { value: 12, unit: "USD", format: { semanticType: "currency", currency: "USD" } },
+    });
+    expect(cur.shadowRoot?.querySelector(".unit")).toBeNull();
+    const pct = await mount("lu-kpi", {
+      widget: customWidget$({ kind: "Kpi", id: "ku3", title: "Share", binding: b }),
+      value: { value: 0.25, unit: "%", format: { semanticType: "percentage" } },
+    });
+    expect(pct.shadowRoot?.querySelector(".unit")).toBeNull();
+    expect(text(pct).match(/%/g)?.length).toBe(1);
+  });
+  it("a zero delta is flat: no arrow", async () => {
+    const el = await mount("lu-kpi", {
+      widget: customWidget$({ kind: "Kpi", id: "kf", title: "Errors", binding: b }),
+      value: { value: 3, deltaPct: 0 },
+    });
+    const badge = el.shadowRoot?.querySelector(".delta");
+    expect(badge?.getAttribute("data-direction")).toBe("flat");
+    expect(badge?.textContent).not.toMatch(/[▲▼]/);
+    expect(badge?.textContent?.trim()).toBe("0%");
+  });
+  it("the value's label is a caption beside the title — the title stays", async () => {
+    const el = await mount("lu-kpi", {
+      widget: customWidget$({ kind: "Kpi", id: "kc", title: "Revenue", binding: b }),
+      value: { value: 1, label: "vs last week" },
+    });
+    const label = el.shadowRoot?.querySelector(".label");
+    expect(label?.textContent).toContain("Revenue");
+    expect(label?.querySelector(".caption")?.textContent?.trim()).toBe("vs last week");
+  });
+});
+
+describe("lu-note without a widget", () => {
+  it("renders nothing instead of throwing, like every other LuWidget", async () => {
+    const el = document.createElement("lu-note") as Mounted;
+    document.body.appendChild(el);
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(text(el)).toBe("");
+  });
+});
+
+describe("lu-table: locale and chrome", () => {
+  it("sorts text by the formatting locale, not the host's", async () => {
+    setLocale("sv-SE");
+    const el = await mount("lu-table", {
+      widget: customWidget$({ kind: "Table", id: "t-sv", title: "Names", binding: b }),
+      value: { columns: ["name"], rows: [["z"], ["ä"], ["a"]] },
+    });
+    (el.shadowRoot?.querySelector("th button") as HTMLElement).click();
+    await el.updateComplete;
+    const cells = [...(el.shadowRoot?.querySelectorAll("tbody td") ?? [])].map((td) =>
+      (td.textContent ?? "").trim()
+    );
+    // Swedish: ä is its own letter AFTER z (English folds it into a).
+    expect(cells).toEqual(["ä", "z", "a"]);
+    setLocale("en-US");
+  });
+  it("styles its 'show more' button like lu-data-table's", async () => {
+    const { LuTable } = await import("./lu-table");
+    const css = (LuTable.styles as unknown as { cssText: string }).cssText;
+    expect(css).toContain(".more button");
+    expect(css).toContain(".more button:hover");
   });
 });

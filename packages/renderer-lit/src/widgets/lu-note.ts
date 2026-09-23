@@ -41,6 +41,8 @@ export class LuNote extends LuWidget {
   `;
 
   render(): TemplateResult | typeof nothing {
+    // Same guard as LuWidget's own accessors: before a widget is assigned there is nothing to draw.
+    if (!this.widget) return nothing;
     if (this.value !== undefined) return super.render();
     return this.renderReady();
   }
