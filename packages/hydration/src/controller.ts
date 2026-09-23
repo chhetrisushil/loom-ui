@@ -166,7 +166,11 @@ export class HydrationController {
         run: (job, signal, pass) => this.run(job, signal, pass),
         cached: (job) => this.cache.get(job.spec, principalId, variant(job)),
         commit: (job, r) => {
-          if (r.state === "ready") this.cache.set(job.spec, principalId, r.value, variant(job));
+          // A result that proceeded past an input drift (`report-and-proceed`) is never cached:
+          // the key does not carry the drift mode, so a controller sharing the cache under the
+          // default (`report`) would be served it as a clean `ready` — no stale, no `onDrift`.
+          if (r.state === "ready" && r.drift.length === 0)
+            this.cache.set(job.spec, principalId, r.value, variant(job));
         },
         published: (job, r) => {
           if (r.drift.length === 0) return;

@@ -563,8 +563,12 @@ async function serveOne(
     });
     for (const f of outcome.findings) report(f);
     if (!outcome.ok) report(outcome.finding);
-    if (outcome.ok) opts.cache?.set(spec, opts.principalId, outcome.value, variant);
     const drift = outcome.drift ?? [];
+    // Never cache a result that proceeded past an input drift (`report-and-proceed`): the key
+    // does not carry the drift mode, so a later request served under the default (`report`)
+    // would get it as a clean `ready` — no stale, no `onDrift`, no `onFinding`.
+    if (outcome.ok && drift.length === 0)
+      opts.cache?.set(spec, opts.principalId, outcome.value, variant);
     if (drift.length > 0)
       opts.onDrift?.({
         experienceId: exp.experienceId,
