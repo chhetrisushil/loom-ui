@@ -3,7 +3,7 @@
 loom-ui is a semantic UI framework for [loom](../loom). Its Experience Model **compiles to loom's
 `Blueprint`**, so loom's renderers draw what this framework composes. Design:
 `../loom/docs/requirements/2026-09-21-loom-ui-design.md`. The Blueprint contract it targets is
-versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.0.0 (loom ADRs 0096, 0097).
+versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.1.0 (loom ADRs 0096, 0097, 0098).
 
 ## How loom is consumed
 
@@ -45,6 +45,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `row`/`column` parent — a flex layout with no columns — it is not applicable and is dropped without
   a finding (loom ADR 0097 D5). That is why `genesis`' default root — the one the reference planner
   composes into — is a 12-column `grid`: the span the compose prompt asks the model for lands as a cell.
+- A node's `row` / `rowSpan` / `column` (1-based grid lines, loom ADR 0098) are, like `span`, a position
+  in its PARENT grid and compile into that `GridCell`. Unlike `span` they are never silently inapplicable:
+  under a `row`/`column` parent, or on the root, they are a `placement-outside-grid` error, and off the
+  12 columns a `placement-out-of-range` error (the cell then compiles unplaced). A container's `title`
+  is a `LocalizedText`, resolved at compile like a label; renderers draw it as a section heading.
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
