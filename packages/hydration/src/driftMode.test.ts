@@ -91,4 +91,47 @@ describe("inputDrift", () => {
     expect(!r.ok && r.finding.code).toBe("output-shape-drift");
     expect(!r.ok && r.drift.map((d) => d.kind)).toEqual(["input", "output"]);
   });
+
+  it("a downstream step's {{steps.…}} argument sees the RETRIED step's output, not the stale one", async () => {
+    // "src" drifts to "v2" on its first call, like `toolAt`, but "sink" (depending on "src")
+    // shares the same fake invoker/tool-id dispatch, so it needs its own toolName-keyed handler.
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as McpIn;
+      if (i.toolName === "src") {
+        if (i.expectedSchemaHash !== "v2")
+          throw new TypedFailure("schemaDrift", {
+            toolName: i.toolName,
+            expectedSchemaHash: i.expectedSchemaHash,
+            observedHash: "v2",
+          });
+        return { n: 9 };
+      }
+      return { got: i.args.ref };
+    });
+    const r = await executeProvider(
+      providerSpec("h", [
+        mcpStep("s", "src"),
+        mcpStep("d", "sink", { ref: "{{steps.s.output.n}}" }, ["s"]),
+      ]),
+      { invoker: inv, inputDrift: "report-and-proceed" }
+    );
+    // The step that drifted published the RETRIED value (9), so the downstream template — read
+    // from the same `outputs` map, in a later wave — resolves against that value, not the drifted
+    // call's (nonexistent) reply.
+    expect(r).toMatchObject({ ok: true, value: { got: 9 } });
+    expect(r.ok && r.drift).toEqual([
+      {
+        kind: "input",
+        handle: "h",
+        stepId: "s",
+        toolName: "src",
+        expected: "schema-src",
+        observed: "v2",
+      },
+    ]);
+    expect(r.ok && r.findings.map((f) => f.code)).toEqual([
+      "schema-drift-proceeded",
+      "output-shape-unpinned",
+    ]);
+  });
 });
