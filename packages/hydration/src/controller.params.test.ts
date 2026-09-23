@@ -306,6 +306,42 @@ describe("HydrationController passes, the cap and principals", () => {
   });
 });
 
+describe("HydrationController: a question changed inside the batch window", () => {
+  it("replaces the queued P1 load: only the new question is asked, and a later change re-runs", async () => {
+    const { clock, inv, ctl, store } = rig(echo);
+    ctl.load(
+      expWith([node("a", "h", "P1")], {
+        h: providerSpec("h", [{ ...mcpStep("s", "t", { x: 0 }), overridable: ["x"] }]),
+      })
+    );
+    ctl.setParams({ x: 1 });
+    clock.advance(50);
+    await flush();
+    expect(argsOf(inv)).toEqual([{ x: 1 }]);
+    expect(store.value("h")).toEqual({ x: 1 });
+    expect(store.status("h")?.state).toBe("ready");
+    ctl.setParams({ x: 2 });
+    clock.advance(50);
+    await flush();
+    expect(argsOf(inv)).toEqual([{ x: 1 }, { x: 2 }]);
+    expect(store.value("h")).toEqual({ x: 2 });
+  });
+
+  it("a queued P1 handle promoted to P0 by a recompose leaves the queue: it is asked once", async () => {
+    const { clock, inv, ctl, store } = rig(echo);
+    const spec = providerSpec("h", [mcpStep("s", "t", { x: 0 })], {
+      cachePolicy: { ttlSeconds: 0, scope: "global" },
+    });
+    ctl.load(expWith([node("a", "h", "P1")], { h: spec }));
+    ctl.recompose(expWith([node("a", "h", "P0")], { h: spec }));
+    await flush();
+    clock.advance(50);
+    await flush();
+    expect(argsOf(inv)).toEqual([{ x: 0 }]);
+    expect(store.status("h")?.state).toBe("ready");
+  });
+});
+
 describe("HydrationController inputDrift, Named and the argument hook", () => {
   const drifting = (input: unknown): unknown => {
     const i = input as McpIn;

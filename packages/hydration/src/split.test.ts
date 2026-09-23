@@ -784,6 +784,25 @@ describe("serveHandles: one server pass per batch", () => {
   });
 });
 
+describe("SplitHydrationController: a question changed inside the batch window", () => {
+  it("replaces the queued P1 load: only the new question is requested, and a later change re-runs", async () => {
+    const exp = board();
+    const { clock, store, ctl, requests } = splitRig(exp);
+    ctl.load(inventoryOf(exp).inventory);
+    ctl.setParams({ station: "harbour" });
+    clock.advance(50);
+    await flush();
+    const alerts = () => requests.filter((r) => r.handle === "alerts").map((r) => r.params);
+    expect(alerts()).toEqual([{ station: "harbour" }]);
+    expect(store.status("alerts")?.state).toBe("ready");
+    ctl.setParams({ station: "coast" });
+    clock.advance(50);
+    await flush();
+    expect(alerts()).toEqual([{ station: "harbour" }, { station: "coast" }]);
+    expect(store.status("alerts")?.state).toBe("ready");
+  });
+});
+
 describe("SplitHydrationController batches a group through loadMany", () => {
   it("a split load of N handles sharing an upstream step makes ONE upstream call", async () => {
     const exp = pair();
