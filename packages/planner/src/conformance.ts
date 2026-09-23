@@ -19,7 +19,7 @@ import type {
   PlannerUsage,
   ReviseInput,
 } from "./spi";
-import { isPlannerUsage, snapshotUsage, totalUsage } from "./usage";
+import { snapshotUsage, totalUsage } from "./usage";
 
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
@@ -48,7 +48,31 @@ const err = (code: string, message: string): Finding => ({ code, severity: "erro
  * which is exactly "there was one attempt and every attempt parsed". When `usage` is present it
  * must be two non-negative integers and, if any attempt reports usage, their sum.
  */
-function reportFindings(label: string, report: PlanReport): Finding[] {
+/** One read of a `usage` field: absent, a validated fresh copy, or invalid (by kind, never content). */
+type UsageRead =
+  | { readonly state: "none" }
+  | { readonly state: "valid"; readonly usage: PlannerUsage }
+  | { readonly state: "invalid" };
+
+/**
+ * Reads `holder.usage` exactly ONCE, inside a guard, and snapshots it: a throwing or changing
+ * getter cannot escape the kit or validate as one value and be compared as another. Callers use
+ * only the returned snapshot afterwards. Never throws.
+ */
+function readUsage(holder: { readonly usage?: PlannerUsage }): UsageRead {
+  let raw: unknown;
+  try {
+    raw = holder.usage;
+  } catch {
+    return { state: "invalid" };
+  }
+  if (raw === undefined) return { state: "none" };
+  const usage = snapshotUsage(raw);
+  return usage === undefined ? { state: "invalid" } : { state: "valid", usage };
+}
+
+/** `usage` is `report.usage` as already read once by {@link readUsage}; the report's own field is never re-read. */
+function reportFindings(label: string, report: PlanReport, usage: UsageRead): Finding[] {
   const findings: Finding[] = [];
   if (report.attempts.length < 1)
     findings.push(err("report-invalid", `${label}: report.attempts is empty`));
@@ -68,18 +92,8 @@ function reportFindings(label: string, report: PlanReport): Finding[] {
   const attemptUsages: { usage?: PlannerUsage }[] = [];
   let attemptsValid = true;
   report.attempts.forEach((a, i) => {
-    let raw: unknown;
-    try {
-      raw = a.usage;
-    } catch {
-      raw = null; // a throwing `usage` getter is a malformed usage, not a crash
-    }
-    if (raw === undefined) {
-      attemptUsages.push({});
-      return;
-    }
-    const usage = snapshotUsage(raw);
-    if (usage === undefined) {
+    const read = readUsage(a);
+    if (read.state === "invalid") {
       attemptsValid = false;
       findings.push(
         err(
@@ -89,34 +103,32 @@ function reportFindings(label: string, report: PlanReport): Finding[] {
       );
       return;
     }
-    attemptUsages.push({ usage });
+    attemptUsages.push(read.state === "valid" ? { usage: read.usage } : {});
   });
-  if (report.usage !== undefined) {
-    const total = snapshotUsage(report.usage);
-    if (total === undefined)
+  if (usage.state === "invalid")
+    findings.push(
+      err("report-invalid", `${label}: report.usage is not two non-negative integer token counts`)
+    );
+  else if (usage.state === "valid" && attemptsValid) {
+    const total = usage.usage;
+    const sum = totalUsage(attemptUsages);
+    if (
+      sum !== undefined &&
+      (sum.inputTokens !== total.inputTokens || sum.outputTokens !== total.outputTokens)
+    )
       findings.push(
-        err("report-invalid", `${label}: report.usage is not two non-negative integer token counts`)
+        err(
+          "report-invalid",
+          `${label}: report.usage (${total.inputTokens}/${total.outputTokens}) is not the sum of its attempts' usage (${sum.inputTokens}/${sum.outputTokens})`
+        )
       );
-    else if (attemptsValid) {
-      const sum = totalUsage(attemptUsages);
-      if (
-        sum !== undefined &&
-        (sum.inputTokens !== total.inputTokens || sum.outputTokens !== total.outputTokens)
-      )
-        findings.push(
-          err(
-            "report-invalid",
-            `${label}: report.usage (${total.inputTokens}/${total.outputTokens}) is not the sum of its attempts' usage (${sum.inputTokens}/${sum.outputTokens})`
-          )
-        );
-    }
   }
   return findings;
 }
 
-/** A comparable key that never throws (canonicalJson would, on a NaN a planner might return). */
-const usageKey = (u: PlannerUsage | undefined): string =>
-  u === undefined ? "none" : isPlannerUsage(u) ? `${u.inputTokens}/${u.outputTokens}` : "invalid";
+/** A comparable key for one {@link readUsage} snapshot. Pure: it reads nothing from the planner. */
+const usageKey = (u: UsageRead): string =>
+  u.state === "valid" ? `${u.usage.inputTokens}/${u.usage.outputTokens}` : u.state;
 
 /** True when calling into the planner itself threw instead of returning a `PlanResult`. */
 async function safely<T>(
@@ -159,7 +171,8 @@ export async function checkPlannerConformance(
   const firstAttempt = await safely("compose", () => planner.compose(composeInput, fx.ctx));
   if (!firstAttempt.ok) return [firstAttempt.finding];
   const first = firstAttempt.value;
-  findings.push(...reportFindings("compose", first.report));
+  const firstUsage = readUsage(first.report);
+  findings.push(...reportFindings("compose", first.report, firstUsage));
   first.ops.forEach((op, i) => {
     if (!Operation.safeParse(op).success)
       findings.push(err("op-invalid", `compose op #${i} is not an Operation`));
@@ -201,11 +214,13 @@ export async function checkPlannerConformance(
     );
   // Usage is part of the DECIDED value: a replay that serves the ops but re-derives (or drops)
   // the report would give a caller two different token totals for one plan.
-  if (usageKey(second.report.usage) !== usageKey(first.report.usage))
+  const secondKey = usageKey(readUsage(second.report));
+  const firstKey = usageKey(firstUsage);
+  if (secondKey !== firstKey)
     findings.push(
       err(
         "usage-not-replayed",
-        `a second compose on the same recording context reported usage ${usageKey(second.report.usage)}, the first ${usageKey(first.report.usage)}; record usage inside the decision`
+        `a second compose on the same recording context reported usage ${secondKey}, the first ${firstKey}; record usage inside the decision`
       )
     );
 
@@ -227,7 +242,7 @@ export async function checkPlannerConformance(
   );
   if (!reviseAttempt.ok) return [...findings, reviseAttempt.finding];
   const revised = reviseAttempt.value;
-  findings.push(...reportFindings("revise", revised.report));
+  findings.push(...reportFindings("revise", revised.report, readUsage(revised.report)));
   if (revised.ops.length !== 1 || revised.ops[0]?.type !== "prompt") {
     findings.push(
       err(
