@@ -191,10 +191,12 @@ export function titleOf(layout: Layout): string | undefined {
  *
  * Idempotent and change-guarded. A text change patches the heading and the label. Adding or
  * removing a title WRAPS or UNWRAPS the same layout element in place: its widgets stay mounted
- * (no dispose, no render), and because moving a subtree blurs a focused control inside it, that
- * control's focus and text selection are restored after the move. Placement styles are cleared
- * from the inner element on wrap; the parent's pass writes them on whichever element now sits in
- * the grid.
+ * (no dispose, no render). The move uses `moveBefore` where the platform has it (a
+ * state-preserving move: nothing is blurred); otherwise a plain move blurs a focused control
+ * inside the subtree, so that control's focus and text selection are captured before and
+ * restored after — the DEEP control, inside the widget's shadow root, not its host. Placement
+ * styles are cleared from the inner element on wrap; the parent's pass writes them on whichever
+ * element now sits in the grid.
  */
 export function applyTitle(entry: ContainerEntry, layout: Layout): void {
   const title = titleOf(layout);
@@ -214,44 +216,92 @@ export function applyTitle(entry: ContainerEntry, layout: Layout): void {
     heading.textContent = title;
     if (el.style.gridColumn !== "") el.style.gridColumn = "";
     if (el.style.gridRow !== "") el.style.gridRow = "";
-    el.replaceWith(section); // a no-op while `el` has no parent (a fresh mount)
-    section.append(heading, el);
+    // A fresh mount has no parent yet: the section is simply built around `el`.
+    el.parentNode?.insertBefore(section, el);
+    section.append(heading);
+    moveInto(section, el, null);
     entry.outer = section;
     entry.heading = heading;
   } else {
-    entry.outer.replaceWith(el);
+    const outer = entry.outer;
+    const parent = outer.parentNode;
+    if (parent !== null) moveInto(parent, el, outer);
+    else el.remove();
+    outer.remove();
     entry.outer = el;
     entry.heading = undefined;
   }
   restore();
 }
 
-/** Capture the focused control under `root` (and its text selection) so a DOM move can hand both back. */
+type MoveBefore = (node: Node, child: Node | null) => void;
+
+/**
+ * Move `node` under `parent` before `before`, state-preserving where the platform supports
+ * `moveBefore` (both ends connected to the same document); a plain insert otherwise.
+ */
+function moveInto(parent: ParentNode & Node, node: Node, before: Node | null): void {
+  const moveBefore = (parent as { moveBefore?: MoveBefore }).moveBefore;
+  if (typeof moveBefore === "function" && parent.isConnected && node.isConnected) {
+    try {
+      moveBefore.call(parent, node, before);
+      return;
+    } catch {
+      // A move the platform refuses (e.g. across roots) falls back to a plain insert.
+    }
+  }
+  parent.insertBefore(node, before);
+}
+
+/**
+ * Capture the focused control under `root` (and its text selection) so a DOM move can hand both
+ * back. Widgets render into shadow roots, where `document.activeElement` is only the HOST; the
+ * control that holds focus and selection is found by descending through each shadow root's own
+ * `activeElement`. Containment is checked on the top-level host (it is what sits under `root`);
+ * focus and selection are restored on the deep element.
+ */
 function focusWithin(root: HTMLElement): () => void {
-  const active = document.activeElement;
-  if (!(active instanceof HTMLElement) || !root.contains(active)) return () => {};
+  const top = document.activeElement;
+  if (!(top instanceof HTMLElement) || !root.contains(top)) return () => {};
+  let active: Element = top;
+  while (active.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  if (!(active instanceof HTMLElement)) return () => {};
+  const deep = active;
   const field =
-    active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
-      ? active
-      : undefined;
-  let range: [number | null, number | null] = [null, null];
+    deep instanceof HTMLTextAreaElement || deep instanceof HTMLInputElement ? deep : undefined;
+  let range: [number | null, number | null, "forward" | "backward" | "none" | null] = [
+    null,
+    null,
+    null,
+  ];
   try {
-    if (field) range = [field.selectionStart, field.selectionEnd];
+    if (field) range = [field.selectionStart, field.selectionEnd, field.selectionDirection];
   } catch {
     // Input types without a selection (number, date, …) throw here; focus alone is restored.
   }
   return () => {
-    if (document.activeElement !== active) active.focus({ preventScroll: true });
-    const [start, end] = range;
+    if (deepActive() !== deep) deep.focus({ preventScroll: true });
+    const [start, end, direction] = range;
     if (field && start !== null && end !== null) {
       try {
-        if (field.selectionStart !== start || field.selectionEnd !== end)
-          field.setSelectionRange(start, end);
+        if (
+          field.selectionStart !== start ||
+          field.selectionEnd !== end ||
+          (direction !== null && field.selectionDirection !== direction)
+        )
+          field.setSelectionRange(start, end, direction ?? undefined);
       } catch {
         // Same: a type without a selection API.
       }
     }
   };
+}
+
+/** The focused element, descended through every open shadow root on the way. */
+function deepActive(): Element | null {
+  let a = document.activeElement;
+  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+  return a;
 }
 
 // A bound widget's slice, resolved the way loom resolves it: value AND status both come from

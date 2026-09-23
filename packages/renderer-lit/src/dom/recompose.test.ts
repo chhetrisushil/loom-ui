@@ -871,6 +871,90 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     handle.dispose();
   });
 
+  it("IR 2.1.0: adding then removing a title keeps focus and selection on a control inside a widget's SHADOW root — the deep element, not just its host", () => {
+    // Every `lu-*` widget is a LitElement whose controls live in shadow DOM, so
+    // `document.activeElement` is the HOST; focusing the host after a move does not refocus
+    // the inner control. This renderer reproduces that shape without Lit.
+    const base = recording();
+    const calls = base.calls;
+    const shadowNote: DomWidgetRenderer = (host, props) => {
+      const el = document.createElement("div");
+      el.dataset.shadowNote = props.widget.id;
+      const root = el.attachShadow({ mode: "open" });
+      root.appendChild(document.createElement("textarea"));
+      host.appendChild(el);
+      calls.push(`mount:${props.widget.id}`);
+      return {
+        update: () => calls.push(`update:${props.widget.id}`),
+        patch: (w) => calls.push(`patch:${w.id}`),
+        dispose: () => calls.push(`dispose:${props.widget.id}`),
+      };
+    };
+    const noop: DomWidgetRenderer = (host) => {
+      host.appendChild(document.createElement("span"));
+      return { update: () => {}, patch: () => {}, dispose: () => {} };
+    };
+    const registry = new RendererRegistry<DomWidgetRenderer>()
+      .register("MetricCard", noop)
+      .register("StatusBadge", noop)
+      .register("NoteInput", shadowNote);
+    const { host, handle } = setup(sectioned(), { registry, calls });
+    const shadowHost = host.querySelector("[data-shadow-note='memo']") as HTMLElement;
+    const root = shadowHost.shadowRoot as ShadowRoot;
+    const ta = root.querySelector("textarea") as HTMLTextAreaElement;
+    ta.focus();
+    ta.value = "half-typed";
+    ta.setSelectionRange(2, 6, "backward");
+    expect(document.activeElement).toBe(shadowHost);
+    expect(root.activeElement).toBe(ta);
+    calls.length = 0;
+
+    const check = () => {
+      expect(host.querySelector("[data-shadow-note='memo']")).toBe(shadowHost);
+      expect(shadowHost.shadowRoot?.querySelector("textarea")).toBe(ta);
+      expect(document.activeElement).toBe(shadowHost);
+      expect(root.activeElement).toBe(ta);
+      expect(ta.value).toBe("half-typed");
+      expect([ta.selectionStart, ta.selectionEnd, ta.selectionDirection]).toEqual([
+        2,
+        6,
+        "backward",
+      ]);
+    };
+    const r = handle.update(sectioned("Notes"));
+    expect(host.querySelector("section[aria-label='Notes']")).not.toBeNull();
+    expect(r.remounted).toEqual([]);
+    check();
+    handle.update(sectioned());
+    expect(host.querySelector("section")).toBeNull();
+    check();
+    expect(calls).toEqual([]);
+    handle.dispose();
+  });
+
+  it("IR 2.1.0: where the platform has `moveBefore`, a title wrap/unwrap moves the layout element with it (the state-preserving move)", () => {
+    const { host, handle } = setup(sectioned());
+    const stackEl = host.querySelector("[data-layout='stack']") as HTMLElement;
+    const moved: Node[] = [];
+    const proto = Element.prototype as { moveBefore?: (n: Node, c: Node | null) => void };
+    const had = Object.hasOwn(proto, "moveBefore");
+    const original = proto.moveBefore;
+    proto.moveBefore = function (this: Element, n: Node, c: Node | null) {
+      moved.push(n);
+      this.insertBefore(n, c);
+    };
+    try {
+      handle.update(sectioned("Notes"));
+      handle.update(sectioned());
+    } finally {
+      if (had && original !== undefined) proto.moveBefore = original;
+      else Reflect.deleteProperty(proto, "moveBefore");
+    }
+    expect(moved).toEqual([stackEl, stackEl]);
+    expect(host.querySelector("section")).toBeNull();
+    handle.dispose();
+  });
+
   it("IR 2.1.0: the ROOT gains a title in place; projection placeholders stay before it", () => {
     const bp = sectioned();
     (bp as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost"];
