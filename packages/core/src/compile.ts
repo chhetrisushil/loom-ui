@@ -11,6 +11,7 @@ import {
   customWidget$,
   flex,
   grid,
+  isLayoutRole,
   validateBlueprint,
 } from "@loom/blueprint-runtime";
 import {
@@ -41,8 +42,9 @@ import {
 // that kind, and whose binding points at the hydration projection's `values.<handle>` with
 // `status.<handle>` as its status channel. A node's `span` — and, since Blueprint IR 2.1.0, its
 // `row`/`rowSpan`/`column` — ride in the `GridCell` its parent grid wraps it in, and a
-// container's `title` becomes its compiled layout's title (loom ADR 0098). Nothing semantic is
-// smuggled into props: the experience is the source of truth, the blueprint derived.
+// container's `title` becomes its compiled layout's title (loom ADR 0098), and its `role` its
+// layout's role (IR 2.2.0, loom ADR 0099). Nothing semantic is smuggled into props: the
+// experience is the source of truth, the blueprint derived.
 
 /**
  * The hydration projection's top-level key. A widget's binding path is `values.<handle>`, and the
@@ -192,11 +194,17 @@ function compileContainer(
   // renderer draws only a non-empty title (loom ADR 0098 D4) — so no key is emitted for it.
   const title = node.title !== undefined ? resolveLabel(node.title) : "";
   const titled = title !== "" ? { title } : {};
+  // A role (IR 2.2.0, loom ADR 0099) is copied as-is — it is a registry key, not display text, so
+  // nothing resolves it. A malformed one was reported against the node by `validateExperience`
+  // (`role-invalid`, warn) and is NOT emitted: every renderer would draw the plain container
+  // anyway, and loom's `validateBlueprint` would repeat the finding against "<layout>".
+  const roled = isLayoutRole(node.role) ? { role: node.role } : {};
   if (node.direction === "grid")
     return grid({
       columns: GRID_COLUMNS,
       ...(node.gap !== undefined && { gap: node.gap }),
       ...titled,
+      ...roled,
       // A placement `validateExperience` reported as off-grid is NOT emitted: the node still
       // renders, at flow placement, and the error is reported once, against the node. Emitting it
       // would hand every renderer a position it cannot draw and make loom's validateBlueprint
@@ -211,6 +219,7 @@ function compileContainer(
     direction: node.direction,
     ...(node.gap !== undefined && { gap: node.gap }),
     ...titled,
+    ...roled,
     children: compiled.map(({ child }) => child),
   });
 }

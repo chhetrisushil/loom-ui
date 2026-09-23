@@ -89,4 +89,15 @@ describe("content addresses written before this branch do not move", () => {
     ] satisfies Operation[])
       expect(canonicalJson(Operation.parse(op))).toBe(canonicalJson(op));
   });
+  it("a role set and then cleared leaves the pinned address — an absent role adds no key", () => {
+    const r = replay(g, [
+      ...folded,
+      { type: "setRole", nodeId: "c1", role: "stepped" },
+      { type: "setRole", nodeId: "c1", role: null },
+    ]);
+    if (!r.ok) throw new Error(r.finding.message);
+    expect(mintVersionHash(r.value)).toBe(
+      "sha256:3a50c6b88b05b4d2f04534a4c1dae56b4b8daf657a6bead48781efa7230b5354"
+    );
+  });
 });

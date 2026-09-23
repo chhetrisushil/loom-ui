@@ -150,4 +150,31 @@ describe("interpretAction", () => {
     });
     expect(root.kind === "refused" && root.finding.code).toBe("root-immutable");
   });
+  it("a widget may NOT set a container's role (role-op-not-interactive) — the app's presentation vocabulary, not direct manipulation", () => {
+    const withSection = apply(exp, {
+      type: "insertNode",
+      parentId: "root",
+      node: {
+        id: "sec",
+        order: "a",
+        kind: "container",
+        direction: "column",
+        span: 12,
+        children: [],
+      },
+    });
+    if (!withSection.ok) throw new Error(withSection.finding.message);
+    for (const role of ["stepped", null]) {
+      const r = interpretAction(withSection.value, {
+        type: EXPERIENCE_OP_ACTION,
+        widgetId: "sec",
+        payload: { type: "setRole", nodeId: "sec", role },
+      });
+      expect(r.kind === "refused" && r.finding.code).toBe("role-op-not-interactive");
+    }
+    // …while the same op, applied by the app or a planner, is an ordinary operation.
+    expect(apply(withSection.value, { type: "setRole", nodeId: "sec", role: "stepped" }).ok).toBe(
+      true
+    );
+  });
 });

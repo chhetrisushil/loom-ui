@@ -1,3 +1,4 @@
+import { isLayoutRole } from "@loom/blueprint-runtime";
 import type { DataClass } from "@loom/classify";
 import { z } from "zod";
 
@@ -30,6 +31,17 @@ export const GridColumn = z.number().int().min(1).max(GRID_COLUMNS);
  */
 export const Sensitivity = z.enum(["secret", "sensitive", "internal"]);
 
+/**
+ * A container's role (Blueprint IR 2.2.0, loom ADR 0099): the open, app-defined key a container
+ * renderer is registered under — what `Widget.kind` is for a widget. Checked with loom's own
+ * `isLayoutRole` (`/^[a-z][a-z0-9-]{0,63}$/`), the one spelling of the rule, so this schema and a
+ * renderer's lookup cannot drift apart. Never an ARIA role and never display text.
+ */
+export const LayoutRole = z.custom<string>(isLayoutRole, {
+  message:
+    "a layout role is a lowercase letter, then lowercase letters, digits or hyphens, at most 64 characters",
+});
+
 export const LocalizedText = z.object({ key: z.string().min(1), fallback: z.string() });
 export type LocalizedText = z.infer<typeof LocalizedText>;
 
@@ -47,6 +59,11 @@ export interface ContainerNode {
   column?: number;
   /** A section heading, resolved at compile through `resolveLabel` like a node label. */
   title?: LocalizedText;
+  /**
+   * What this container is to a renderer that knows it (`LayoutRole`, loom ADR 0099) — a stepped
+   * section, a tab set. Absent, or unknown to the renderer in use ⇒ the plain container.
+   */
+  role?: string;
   gap?: number;
   children: ExperienceNode[];
 }
@@ -83,6 +100,7 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
       rowSpan: GridLine.optional(),
       column: GridColumn.optional(),
       title: LocalizedText.optional(),
+      role: LayoutRole.optional(),
       gap: z.number().optional(),
       children: z.array(ExperienceNode),
     }),
@@ -163,6 +181,21 @@ export function placementProblems(n: ExperienceNode, columns: number = GRID_COLU
       out.push(`column ${column} + span ${span} overflows the ${columns}-column grid`);
   }
   return out;
+}
+
+/**
+ * Why `n`'s role is not a well-formed layout role — undefined when it is absent or well-formed.
+ * The same predicate (`isLayoutRole`) and the same bounded echo as loom's `validateBlueprint`
+ * `role-invalid` (ADR 0099 D4): the value is untrusted and can be any size. Tolerates unparsed input.
+ */
+export function roleProblem(n: ExperienceNode): string | undefined {
+  const role = (n as { role?: unknown }).role;
+  if (role === undefined || isLayoutRole(role)) return undefined;
+  const shown =
+    typeof role === "string"
+      ? `${JSON.stringify(role.slice(0, 64))}${role.length > 64 ? "…" : ""} (length ${role.length})`
+      : `of type ${role === null ? "null" : typeof role}`;
+  return `role ${shown} is not a well-formed role (a lowercase letter, then lowercase letters, digits or hyphens, at most 64 characters)`;
 }
 
 /**

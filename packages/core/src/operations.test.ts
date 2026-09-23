@@ -539,6 +539,107 @@ describe("setTitle", () => {
   });
 });
 
+describe("setRole (Blueprint IR 2.2.0 layout roles, loom ADR 0099)", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const section = (): ContainerNode => ({
+    id: "c1",
+    order: "a",
+    kind: "container",
+    direction: "column",
+    span: 12,
+    children: [node("m1")],
+  });
+  const withSection = () =>
+    must(apply(g, { type: "insertNode", parentId: "root", node: section() }));
+  it("sets and replaces a container's role, and keeps its children", () => {
+    const e1 = must(apply(withSection(), { type: "setRole", nodeId: "c1", role: "stepped" }));
+    expect(findNode(e1.root, "c1")).toMatchObject({ role: "stepped" });
+    const e2 = must(apply(e1, { type: "setRole", nodeId: "c1", role: "tabbed" }));
+    expect(findNode(e2.root, "c1")).toMatchObject({ role: "tabbed" });
+    expect(findNode(e2.root, "m1")).toBeDefined();
+  });
+  it("gives the root a role — the root is a container like any other", () => {
+    const e = must(apply(g, { type: "setRole", nodeId: "root", role: "paged" }));
+    expect(e.root).toMatchObject({ role: "paged" });
+  });
+  it("null clears the role: the key is gone, so the container hashes as if it never had one", () => {
+    const base = withSection();
+    const e = must(
+      replay(base, [
+        { type: "setRole", nodeId: "c1", role: "stepped" },
+        { type: "setRole", nodeId: "c1", role: null },
+      ])
+    );
+    const c = findNode(e.root, "c1");
+    expect(c && "role" in c).toBe(false);
+    expect(c).toEqual(findNode(base.root, "c1"));
+    expect(mintVersionHash({ ...e, parents: base.parents })).toBe(mintVersionHash(base));
+  });
+  it("a semantic node has no role (its kind is its renderer key) — not-container; an unknown node is missing-node", () => {
+    const e = withSection();
+    const codes = [
+      apply(e, { type: "setRole", nodeId: "m1", role: "stepped" }),
+      apply(e, { type: "setRole", nodeId: "ghost", role: "stepped" }),
+    ].map((r) => (r.ok ? "ok" : `${r.finding.code}@${r.finding.nodeId ?? ""}`));
+    expect(codes).toEqual(["not-container@m1", "missing-node@ghost"]);
+  });
+  it("role is required, and must be a well-formed role — loom's isLayoutRole, not merely non-empty", () => {
+    const e = withSection();
+    const bad: unknown[] = [
+      undefined,
+      "",
+      "Stepped",
+      "step_one",
+      "a.b",
+      "1st",
+      "-x",
+      "stepped\n",
+      " stepped",
+      "__proto__",
+      "x".repeat(65),
+      42,
+    ];
+    const codes = bad.map((role) => {
+      const r = apply(e, { type: "setRole", nodeId: "c1", role } as never);
+      return r.ok ? "ok" : `${r.finding.code}@${r.finding.nodeId ?? ""}`;
+    });
+    expect(codes.slice(0, 1)).toEqual(["invalid-operation@"]);
+    expect(codes.slice(1, -1)).toEqual(Array(10).fill("invalid-operation@c1"));
+    expect(codes.at(-1)).toBe("invalid-operation@");
+    // The widest and the oddest well-formed spellings are accepted (ADR 0099 D2).
+    for (const role of ["a", "x".repeat(64), "a-", "a--b", "step-2"])
+      expect(apply(e, { type: "setRole", nodeId: "c1", role }).ok, role).toBe(true);
+  });
+  it("insertNode refuses a container carrying a malformed role, through the node schema", () => {
+    const r = apply(g, {
+      type: "insertNode",
+      parentId: "root",
+      node: { ...section(), role: "Stepped" },
+    });
+    expect(r.ok ? "ok" : r.finding.code).toBe("invalid-operation");
+    const ok = apply(g, {
+      type: "insertNode",
+      parentId: "root",
+      node: { ...section(), role: "stepped" },
+    });
+    expect(ok.ok && findNode(ok.value.root, "c1")).toMatchObject({ role: "stepped" });
+  });
+  it("never mutates the base, and a recorded op (null included) parses to exactly itself", () => {
+    const base = withSection();
+    const before = JSON.stringify(base);
+    must(apply(base, { type: "setRole", nodeId: "c1", role: "stepped" }));
+    expect(JSON.stringify(base)).toBe(before);
+    for (const op of [
+      { type: "setRole", nodeId: "c1", role: "stepped" },
+      { type: "setRole", nodeId: "c1", role: null },
+    ] satisfies Operation[])
+      expect(canonicalJson(Operation.parse(op))).toBe(canonicalJson(op));
+  });
+});
+
 describe("moveNode of a placed node", () => {
   const must = (r: ReturnType<typeof apply>) => {
     if (!r.ok) throw new Error(r.finding.message);
