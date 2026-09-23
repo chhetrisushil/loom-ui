@@ -356,6 +356,59 @@ describe("serveHandle", () => {
   });
 });
 
+describe("serveHandle(s): a proceeded result is never cached", () => {
+  for (const [name, serve] of [
+    [
+      "serveHandle",
+      (exp: Experience, r: HandleLoadRequest, o: ServeOptions) => serveHandle(exp, r, o),
+    ],
+    [
+      "serveHandles",
+      async (exp: Experience, r: HandleLoadRequest, o: ServeOptions) =>
+        (await serveHandles(exp, [r], o))[0] as HandleLoadResult,
+    ],
+  ] as const)
+    it(`${name}: a head sharing the cache with a report-and-proceed viewer still goes stale and reports the drift`, async () => {
+      const exp = board();
+      const drifting = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+        const i = input as McpIn;
+        if (i.expectedSchemaHash !== "v2")
+          throw new TypedFailure("schemaDrift", {
+            toolName: i.toolName,
+            expectedSchemaHash: i.expectedSchemaHash,
+            observedHash: "v2",
+          });
+        return { kpi: { value: 1 } };
+      });
+      const cache = new HydrationCacheImpl(() => NOW);
+      const drifts: DriftReport[] = [];
+      const findings: string[][] = [[], []];
+      const viewer = await serve(exp, req(exp, "latest"), {
+        invoker: drifting,
+        now: NOW,
+        outputKinds,
+        cache,
+        inputDrift: "report-and-proceed",
+        onDrift: (d) => drifts.push(d),
+        onFinding: (_h, f) => findings[0]?.push(f.code),
+      });
+      expect(viewer.state).toBe("ready");
+      const head = await serve(exp, req(exp, "latest"), {
+        invoker: drifting,
+        now: NOW,
+        outputKinds,
+        cache,
+        onDrift: (d) => drifts.push(d),
+        onFinding: (_h, f) => findings[1]?.push(f.code),
+      });
+      expect(head.state).toBe("stale");
+      expect(drifts.map((d) => d.proceeded)).toEqual([true, false]);
+      expect(findings[1]).toContain("schema-drift");
+      // viewer: the pinned call + the retry; head: its own pinned call, not a cache hit.
+      expect(drifting.calls).toHaveLength(3);
+    });
+});
+
 describe("SplitHydrationController", () => {
   it("P0 at once, P1 after the batch window, P2 on markVisible — every load through the loader", async () => {
     const exp = board();

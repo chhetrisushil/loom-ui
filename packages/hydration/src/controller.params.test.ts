@@ -334,6 +334,24 @@ describe("HydrationController inputDrift, Named and the argument hook", () => {
     });
   });
 
+  it("a proceeded result is never cached: a head sharing the cache still goes stale and reports the drift", async () => {
+    const cache = new HydrationCache(() => NOW);
+    const viewer = rig(drifting, { inputDrift: "report-and-proceed", cache });
+    viewer.ctl.load(one());
+    await flush();
+    expect(viewer.store.status("h")?.state).toBe("ready");
+    expect(viewer.drifts.map((d) => d.proceeded)).toEqual([true]);
+    const head = rig(drifting, { cache });
+    head.ctl.load(one());
+    await flush();
+    expect(head.store.status("h")?.state).toBe("stale");
+    expect(head.store.value("h")).toBeUndefined();
+    expect(head.drifts.map((d) => d.proceeded)).toEqual([false]);
+    // The head asked the tool itself (once, on the pinned schema), not the viewer's cache entry.
+    expect(head.inv.calls).toHaveLength(1);
+    expect(viewer.inv.calls).toHaveLength(2);
+  });
+
   it("the default goes stale and reports the drift as not proceeded", async () => {
     const { ctl, store, drifts } = rig(drifting);
     ctl.load(one());
