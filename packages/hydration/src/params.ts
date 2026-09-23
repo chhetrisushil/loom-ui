@@ -30,6 +30,13 @@ const UNIT_MS: Readonly<Record<string, number>> = {
 const bad = (code: string, message: string): Finding => ({ code, severity: "error", message });
 const note = (code: string, message: string): Finding => ({ code, severity: "warn", message });
 
+/** An async argument hook returns one of these: `prepareArguments` never awaits it. */
+function isThenable(v: unknown): v is PromiseLike<unknown> {
+  return (
+    v !== null && typeof v === "object" && typeof (v as { then?: unknown }).then === "function"
+  );
+}
+
 /** `$now`, `$now-7d`, `$now+1h` (units s m h d w) as an ISO-8601 instant; `undefined` otherwise. */
 export function resolveTimeToken(token: string, now: number): string | undefined {
   const m = TIME_TOKEN.exec(token);
@@ -106,10 +113,14 @@ export function providerParams(spec: ProviderSpec): string[] {
   return [...names].sort();
 }
 
-/** The named params the set actually holds (own keys only), as a fresh object. */
+/**
+ * The named params the set actually holds (own keys only), as a fresh, FROZEN object — this is
+ * the object every step's `prepareArguments` call (and its argument hook) receives as `ctx.params`
+ * for the whole load, so a hook mutating it would leak into every other step's view of the load.
+ */
 export function pickParams(params: LoadParams, names: readonly string[]): LoadParams {
-  return Object.fromEntries(
-    names.filter((n) => Object.hasOwn(params, n)).map((n) => [n, params[n]])
+  return Object.freeze(
+    Object.fromEntries(names.filter((n) => Object.hasOwn(params, n)).map((n) => [n, params[n]]))
   );
 }
 
@@ -211,6 +222,21 @@ export function prepareArguments(
       finding: bad(
         "argument-hook-failed",
         `step "${node.stepId}": the argument hook threw: ${e instanceof Error ? e.message : String(e)}`
+      ),
+    };
+  }
+  if (isThenable(hooked)) {
+    // The step callback never awaits a hook (it is documented as synchronous): swallow whatever
+    // this thenable eventually does, so an async hook never surfaces as an unhandled rejection.
+    hooked.then(
+      () => {},
+      () => {}
+    );
+    return {
+      ok: false,
+      finding: bad(
+        "argument-hook-failed",
+        `step "${node.stepId}": the argument hook returned a thenable — hooks must return the arguments object synchronously, not a Promise`
       ),
     };
   }
