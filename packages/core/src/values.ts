@@ -131,6 +131,8 @@ export const FRAMEWORK_KINDS = [
   "Table",
   "StatusCard",
   "Note",
+  "A2UIView",
+  "SandboxView",
 ] as const;
 
 export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {

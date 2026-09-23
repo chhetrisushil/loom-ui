@@ -42,6 +42,10 @@ export const frameworkKindContracts: readonly CatalogEntry[] = [
   { kind: "StatusCard", props: [], binding: "required" },
   // Static text; declare `textProps: ["text"]` on the semantic entry to localize it at compile.
   { kind: "Note", props: ["text"], binding: "none" },
+  // The declarative component tree / the untrusted render code ride as declared props; the
+  // bound value is their data.
+  { kind: "A2UIView", props: ["view"], binding: "required" },
+  { kind: "SandboxView", props: ["code"], binding: "required" },
 ];
 
 export const litRegistry: DomRegistry = new RendererRegistry<DomWidgetRenderer>()
@@ -54,6 +58,8 @@ export const litRegistry: DomRegistry = new RendererRegistry<DomWidgetRenderer>(
   .register("Table", elementRenderer("lu-table"))
   .register("StatusCard", elementRenderer("lu-status-card"))
   .register("Note", elementRenderer("lu-note"))
+  .register("A2UIView", elementRenderer("lu-a2ui-widget"))
+  .register("SandboxView", elementRenderer("lu-sandbox-widget"))
   .register("ProgressBar", elementRenderer("lu-progress"))
   .register("AlertCard", elementRenderer("lu-alert"))
   .register("StreamingText", elementRenderer("lu-text"))

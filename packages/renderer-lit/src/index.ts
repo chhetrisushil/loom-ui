@@ -21,6 +21,7 @@ export {
 export { LuA2UIView } from "./widgets/lu-a2ui-view";
 export { LuBarChart } from "./widgets/lu-bar-chart";
 export { LuDataTable } from "./widgets/lu-data-table";
+export { LuA2UIWidget, LuSandboxWidget } from "./widgets/lu-embedded";
 export { LuKpi } from "./widgets/lu-kpi";
 export { LuLocalePicker } from "./widgets/lu-locale-picker";
 export { LuMetricCard } from "./widgets/lu-metric-card";

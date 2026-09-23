@@ -1,4 +1,11 @@
-import { FRAMEWORK_KINDS } from "@loom-ui/core";
+import {
+  type ContainerNode,
+  FRAMEWORK_KINDS,
+  type SemanticNode,
+  compile,
+  defineSemanticCatalog,
+  genesis,
+} from "@loom-ui/core";
 import { MetricCard, builtinCatalog, catalogCoverage } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import {
@@ -46,5 +53,73 @@ describe("litRegistry parity", () => {
     expect(host.firstElementChild).toBe(el); // same element instance
     handle.dispose();
     host.remove();
+  });
+});
+
+// A regression guard over the whole framework-kind set: not expected to fail before any change
+// here — it compiles one node per declared `frameworkKindContracts` entry against `litRegistry`
+// and asserts zero findings, so adding a framework kind without a matching Lit renderer (or a
+// contract that compile rejects) breaks this test rather than surfacing only in an app that
+// happens to use that kind.
+describe("framework kinds end to end", () => {
+  it("every framework kind compiles clean against its declared contract and has a Lit renderer", () => {
+    const catalog = defineSemanticCatalog({
+      id: "framework.v1",
+      entries: frameworkKindContracts.map((c) => ({
+        name: `Sem${c.kind}`,
+        version: "1.0.0",
+        props: [...c.props],
+        binding: c.binding,
+        surfaces: { web: { kind: c.kind, props: [...c.props], binding: c.binding } },
+      })),
+    });
+    const g = genesis({
+      experienceId: "fw",
+      intent: { objective: "every framework kind", source: "user" },
+      meta: { author: "t", createdAt: "2026-09-23T00:00:00Z", sourceKind: "prompt" },
+    });
+    const children: SemanticNode[] = frameworkKindContracts.map((c, i) => ({
+      id: `n${i}`,
+      order: String.fromCharCode(65 + i),
+      kind: "semantic",
+      type: `Sem${c.kind}`,
+      typeVersion: "1.0.0",
+      span: 6,
+      props: {},
+      ...(c.binding !== "none" && { binding: { handle: `h${i}`, priority: "P1" as const } }),
+    }));
+    // A plain loop, not Object.fromEntries over flatMap: that infers `(string | {…})[][]`, not
+    // entry tuples, and fails `typecheck:tests`.
+    const providers: Record<
+      string,
+      {
+        handle: string;
+        executionGraph: never[];
+        reshaping: { engine: "JSONPath"; scriptRef: string };
+        outputShapeHash: string;
+        cachePolicy: { ttlSeconds: number; scope: "global" };
+      }
+    > = {};
+    for (const n of children)
+      if (n.binding)
+        providers[n.binding.handle] = {
+          handle: n.binding.handle,
+          executionGraph: [],
+          reshaping: { engine: "JSONPath", scriptRef: "sha256:s" },
+          outputShapeHash: "sha256:o",
+          cachePolicy: { ttlSeconds: 60, scope: "global" },
+        };
+    const r = compile(
+      { ...g, root: { ...(g.root as ContainerNode), children }, providers },
+      {
+        surface: "web",
+        catalog,
+        hydrationProjectionId: "hydration",
+        hydrationProjectionVersion: "1.0.0",
+        registry: litRegistry,
+      }
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.ok).toBe(true);
   });
 });
