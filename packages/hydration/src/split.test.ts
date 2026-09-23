@@ -888,6 +888,20 @@ describe("SplitHydrationController: a question changed inside the batch window",
   });
 });
 
+describe("SplitHydrationController: invalidate inside the batch window", () => {
+  it("starts the queued P1 load once, not again at the timer", async () => {
+    const exp = board();
+    const { clock, store, ctl, requests } = splitRig(exp);
+    ctl.load(inventoryOf(exp).inventory);
+    ctl.invalidate("alerts");
+    await flush();
+    clock.advance(50);
+    await flush();
+    expect(requests.filter((r) => r.handle === "alerts")).toHaveLength(1);
+    expect(store.status("alerts")?.state).toBe("ready");
+  });
+});
+
 describe("SplitHydrationController batches a group through loadMany", () => {
   it("a split load of N handles sharing an upstream step makes ONE upstream call", async () => {
     const exp = pair();
