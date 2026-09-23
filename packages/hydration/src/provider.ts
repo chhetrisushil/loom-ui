@@ -169,6 +169,26 @@ function observedShapes(
   return out;
 }
 
+/**
+ * The first finding (graph order) when every step that failed ON ITS OWN failed with the same
+ * one of `schema-drift` / `upstream-empty` — the rest were skipped as its dependents
+ * (`dependency-failed`). `undefined` for anything else.
+ */
+function onlyFailure(
+  steps: readonly MCPToolNode[],
+  failed: ReadonlyMap<string, Finding>
+): Finding | undefined {
+  let first: Finding | undefined;
+  for (const step of steps) {
+    const f = failed.get(step.stepId);
+    if (f === undefined || f.code === "dependency-failed") continue;
+    if (f.code !== "schema-drift" && f.code !== "upstream-empty") return undefined;
+    if (first !== undefined && f.code !== first.code) return undefined;
+    first ??= f;
+  }
+  return first;
+}
+
 /** A published value; carries `drift` only when an input drift was proceeded past. */
 const okOutcome = (value: unknown, findings: Finding[], drift: DriftRecord[]): ProviderOutcome =>
   drift.length > 0 ? { ok: true, value, findings, drift } : { ok: true, value, findings };
@@ -315,21 +335,12 @@ export async function executeProvider(
   if (failed.size > 0) {
     // A provider that failed ONLY because of input drift (every step that failed on its own
     // drifted; the rest were skipped as its dependents) answers with the first drift in graph
-    // order, so the surface says "waiting for a repair" rather than a generic failure. Any other
-    // failure alongside it keeps the generic `provider-failed`.
-    let firstDrift: Finding | undefined;
-    let onlyDrift = true;
-    for (const step of steps) {
-      const f = failed.get(step.stepId);
-      if (f === undefined || f.code === "dependency-failed") continue;
-      if (f.code !== "schema-drift") {
-        onlyDrift = false;
-        break;
-      }
-      firstDrift ??= f;
-    }
-    if (onlyDrift && firstDrift !== undefined)
-      return { ok: false, finding: firstDrift, drift, findings };
+    // order, so the surface says "waiting for a repair" rather than a generic failure. The same
+    // rule for an EMPTY upstream (every step that failed on its own found no such row upstream,
+    // `upstream-empty`): the answer is the first one, published `empty` (loom ADR 0100). Any
+    // other failure alongside either — or the two mixed — keeps the generic `provider-failed`.
+    const only = onlyFailure(steps, failed);
+    if (only !== undefined) return { ok: false, finding: only, drift, findings };
     return {
       ok: false,
       finding: err(
@@ -474,7 +485,9 @@ function checkContract(
 /**
  * What an outcome publishes — the ONE mapping both the in-process controller and `serveHandle`
  * use, so split and in-process hydration cannot disagree: a value is `ready` (carrying the first
- * warning, e.g. a proceeded drift), a failure with drift is `stale`, any other failure `error`.
+ * warning, e.g. a proceeded drift); an `upstream-empty` failure is `empty` — checked FIRST, and
+ * carrying no value (loom ADR 0100: a producer MUST clear the value beside `empty`); a failure
+ * with drift is `stale`, any other failure `error`.
  */
 export function outcomeResult(outcome: ProviderOutcome): HandleLoadResult {
   if (outcome.ok) {
@@ -483,5 +496,7 @@ export function outcomeResult(outcome: ProviderOutcome): HandleLoadResult {
       ? { state: "ready", value: outcome.value }
       : { state: "ready", value: outcome.value, finding: warn };
   }
+  if (outcome.finding.code === "upstream-empty")
+    return { state: "empty", finding: outcome.finding };
   return { state: outcome.drift.length > 0 ? "stale" : "error", finding: outcome.finding };
 }

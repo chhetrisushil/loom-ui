@@ -181,6 +181,7 @@ const FIXED_CODES: ReadonlySet<string> = new Set([
   "invalid-time-token",
   "argument-hook-failed",
   "unresolved-step-reference",
+  "upstream-empty",
   "dependency-failed",
   "provider-failed",
   "empty-graph",
@@ -227,6 +228,8 @@ function publicText(code: string, severity: Finding["severity"]): string {
       return "the output cannot be checked";
     case "reshape-unregistered":
       return "the output could not be reshaped: the named reshaper is not registered";
+    case "upstream-empty":
+      return "no data for this view";
     case "param-not-overridable":
       return "a param was ignored";
     case "invalid-params":
@@ -507,7 +510,9 @@ async function serveOne(
         spec,
         drift,
         findings: outcome.findings,
-        proceeded: outcome.ok,
+        // Only a PROCEEDED input drift reaches here beside a delivered answer — a value, or an
+        // `empty` one (the retried upstream answered with no rows). `empty` itself is never drift.
+        proceeded: outcome.ok || outcome.finding.code === "upstream-empty",
       });
     return outcomeResult(outcome);
   } catch (e) {

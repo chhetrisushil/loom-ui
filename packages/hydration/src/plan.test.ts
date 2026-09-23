@@ -1,6 +1,6 @@
 import type { MCPToolNode } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
-import { resolveArguments, resolvePath, terminalSteps, topoWaves } from "./plan";
+import { resolveArguments, resolvePath, terminalSteps, topoWaves, walkPath } from "./plan";
 
 const step = (
   stepId: string,
@@ -81,5 +81,77 @@ describe("resolveArguments", () => {
     expect(!r.ok && r.finding.message).toMatch(/fetch.*nope/);
     const r2 = resolveArguments(step("x", ["ghost"], { id: "{{steps.ghost.output.a}}" }), outputs);
     expect(!r2.ok && r2.finding.code).toBe("unresolved-step-reference");
+  });
+});
+
+describe("walkPath — an index past the end of a real array is out-of-range; every other miss is absent", () => {
+  const o = { rows: [{ sku: "a" }, { sku: "b" }], none: [], obj: { 0: "x" }, nul: null };
+  it("resolves what exists, a present null included", () => {
+    expect(walkPath(o, "rows[1].sku")).toEqual({ ok: true, value: "b" });
+    expect(walkPath(o, "nul")).toEqual({ ok: true, value: null });
+  });
+  it("[i] over an array with i >= length is out-of-range — [0] over [] and [3] over two rows", () => {
+    expect(walkPath(o, "none[0].sku")).toEqual({ ok: false, cause: "out-of-range" });
+    expect(walkPath(o, "rows[3]")).toEqual({ ok: false, cause: "out-of-range" });
+    expect(walkPath(o, "rows[2].sku")).toEqual({ ok: false, cause: "out-of-range" });
+  });
+  it("a missing key, null mid-path, an index on a non-array, a malformed segment are absent", () => {
+    expect(walkPath(o, "rows[0].skuu")).toEqual({ ok: false, cause: "absent" });
+    expect(walkPath(o, "missing[0]")).toEqual({ ok: false, cause: "absent" });
+    expect(walkPath(o, "nul.x")).toEqual({ ok: false, cause: "absent" });
+    expect(walkPath(o, "obj[0]")).toEqual({ ok: false, cause: "absent" });
+    expect(walkPath(o, "rows[0].sku[0]")).toEqual({ ok: false, cause: "absent" });
+    expect(walkPath(o, "[0]")).toEqual({ ok: false, cause: "absent" });
+    expect(walkPath({}, "__proto__.polluted")).toEqual({ ok: false, cause: "absent" });
+  });
+  it("resolvePath is walkPath's value, or undefined", () => {
+    expect(resolvePath(o, "none[0].sku")).toBeUndefined();
+    expect(resolvePath(o, "rows[0].sku")).toBe("a");
+  });
+});
+
+describe("resolveArguments — upstream-empty vs a bad path", () => {
+  const outs = (rows: unknown) => new Map<string, unknown>([["top", { rows }]]);
+  it("an index past the end of the upstream's rows is upstream-empty, a WARN naming the step and path", () => {
+    const r = resolveArguments(
+      step("x", ["top"], { sku: "{{steps.top.output.rows[0].sku}}" }),
+      outs([])
+    );
+    expect(!r.ok && r.finding).toEqual({
+      code: "upstream-empty",
+      severity: "warn",
+      message: 'step "x" references "top" at path "rows[0].sku": the upstream has no such row',
+    });
+  });
+  it("rows[0].sku + rows[1].sku over ONE row is upstream-empty", () => {
+    const r = resolveArguments(
+      step("x", ["top"], {
+        a: "{{steps.top.output.rows[0].sku}}",
+        b: "{{steps.top.output.rows[1].sku}}",
+      }),
+      outs([{ sku: "a" }])
+    );
+    expect(!r.ok && r.finding.code).toBe("upstream-empty");
+  });
+  it("a bad path anywhere in the step wins over an out-of-range one, whichever comes first", () => {
+    for (const args of [
+      { a: "{{steps.top.output.rows[1].sku}}", b: "{{steps.top.output.rows[0].skuu}}" },
+      { b: "{{steps.top.output.rows[0].skuu}}", a: "{{steps.top.output.rows[1].sku}}" },
+    ]) {
+      const r = resolveArguments(step("x", ["top"], args), outs([{ sku: "a" }]));
+      expect(!r.ok && r.finding.code).toBe("unresolved-step-reference");
+      expect(!r.ok && r.finding.severity).toBe("error");
+    }
+  });
+  it("an index on an object, a missing key, and a step with no output stay unresolved-step-reference", () => {
+    for (const [args, rows] of [
+      [{ a: "{{steps.top.output.rows[0]}}" }, { 0: "x" }],
+      [{ a: "{{steps.top.output.rows[0].skuu}}" }, [{ sku: "a" }]],
+      [{ a: "{{steps.ghost.output.rows[0]}}" }, []],
+      [{ a: "{{steps.ghost.output}}" }, []],
+    ] as const) {
+      const r = resolveArguments(step("x", ["top"], args), outs(rows));
+      expect(!r.ok && r.finding.code).toBe("unresolved-step-reference");
+    }
   });
 });

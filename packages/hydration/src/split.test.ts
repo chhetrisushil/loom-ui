@@ -1496,4 +1496,96 @@ describe("split vs in-process parity when things go wrong", () => {
     );
     expect(view.h).toEqual(["ready", "schema-drift-proceeded"]);
   });
+
+  // loom ADR 0100: a dependent step over an upstream with no rows is `empty`, never an error.
+  const dependent = (path: string): Experience => ({
+    ...single(),
+    providers: {
+      h: providerSpec("h", [
+        mcpStep("top", "db.top"),
+        mcpStep("detail", "db.detail", { sku: `{{steps.top.output.${path}}}` }, ["top"]),
+      ]),
+    },
+  });
+  const rows = (r: unknown) => () =>
+    new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) =>
+      (input as McpIn).toolName === "db.top" ? { rows: r } : { ok: 1 }
+    );
+
+  it("an empty upstream is the same `empty` + upstream-empty either way, with no value", async () => {
+    const view = await parity(dependent("rows[0].sku"), rows([]));
+    expect(view.h).toEqual(["empty", "upstream-empty"]);
+  });
+
+  it("a misspelt path over a present row is the same error either way", async () => {
+    const view = await parity(dependent("rows[0].skuu"), rows([{ sku: "a" }]));
+    expect(view.h).toEqual(["error", "provider-failed"]);
+  });
+
+  it("serveHandle answers upstream-empty with its PUBLIC form, never cached and never drift", async () => {
+    const exp = dependent("rows[0].sku");
+    const cache = new HydrationCacheImpl(() => NOW);
+    const drifts: DriftReport[] = [];
+    const inv = rows([])();
+    const ask = () =>
+      serveHandle(
+        exp,
+        { experienceId: exp.experienceId, versionHash: exp.versionHash, handle: "h", params: {} },
+        { invoker: inv, now: NOW, cache, onDrift: (d) => drifts.push(d) }
+      );
+    const r = await ask();
+    expect(r).toEqual({
+      state: "empty",
+      finding: {
+        code: "upstream-empty",
+        severity: "warn",
+        message: 'handle "h": no data for this view',
+      },
+    });
+    await ask();
+    expect(inv.calls).toHaveLength(2); // nothing cached: the upstream is asked again
+    expect(drifts).toEqual([]);
+  });
+
+  it("the public vocabulary keeps upstream-empty and gives it a fixed text", () => {
+    expect(
+      publicFinding("h", {
+        code: "upstream-empty",
+        severity: "warn",
+        message:
+          'step "detail" references "top" at path "rows[0].sku": the upstream has no such row',
+      })
+    ).toEqual({
+      code: "upstream-empty",
+      severity: "warn",
+      message: 'handle "h": no data for this view',
+    });
+  });
+
+  it("a loader answer of `empty` is believed only with a finding", async () => {
+    const exp = single();
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), {
+      experienceId: exp.experienceId,
+    });
+    const finding: Finding = { code: "upstream-empty", severity: "warn", message: "none" };
+    const answers: unknown[] = [{ state: "empty", finding }, { state: "empty" }];
+    for (const answer of answers) {
+      const loader: HandleLoader = {
+        load: async () => answer as HandleLoadResult,
+        loadMany: async (reqs) => reqs.map(() => answer as HandleLoadResult),
+      };
+      const ctl = new SplitHydrationController({
+        loader,
+        store,
+        setTimer: new ManualClock().setTimer,
+      });
+      ctl.load(inventoryOf(exp).inventory);
+      await flush();
+      expect(store.status("h")?.state).toBe(answer === answers[0] ? "empty" : "error");
+      expect(store.status("h")?.finding?.code).toBe(
+        answer === answers[0] ? "upstream-empty" : "load-malformed"
+      );
+      ctl.dispose();
+    }
+  });
 });
