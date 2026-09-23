@@ -1,0 +1,94 @@
+import { TypedFailure } from "@loom/core";
+import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { describe, expect, it } from "vitest";
+import { executeProvider } from "./provider";
+import { outputShapeHashOf } from "./reshape";
+import { FakeInvoker, mcpStep, providerSpec } from "./testing.test-support";
+
+type McpIn = { toolName: string; args: Record<string, unknown>; expectedSchemaHash: string };
+
+/** A tool whose CURRENT input-schema hash is `current`: any other pin is a typed schemaDrift. */
+const toolAt = (current: string, reply: unknown = { n: 7 }) =>
+  new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+    const i = input as McpIn;
+    if (i.expectedSchemaHash !== current)
+      throw new TypedFailure("schemaDrift", {
+        toolName: i.toolName,
+        expectedSchemaHash: i.expectedSchemaHash,
+        observedHash: current,
+      });
+    return reply;
+  });
+const pins = (inv: FakeInvoker) => inv.calls.map((c) => (c.input as McpIn).expectedSchemaHash);
+
+describe("inputDrift", () => {
+  it("'report' (the default) records the drift, fails the step and never retries", async () => {
+    const inv = toolAt("v2");
+    const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), { invoker: inv });
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.drift).toEqual([
+      {
+        kind: "input",
+        handle: "h",
+        stepId: "s",
+        toolName: "t",
+        expected: "schema-t",
+        observed: "v2",
+      },
+    ]);
+    expect(pins(inv)).toEqual(["schema-t"]);
+  });
+
+  it("'report-and-proceed' records the drift, retries ONCE with the observed pin and publishes", async () => {
+    const inv = toolAt("v2");
+    const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), {
+      invoker: inv,
+      inputDrift: "report-and-proceed",
+    });
+    expect(r).toMatchObject({ ok: true, value: { n: 7 } });
+    expect(r.ok && r.drift).toEqual([
+      {
+        kind: "input",
+        handle: "h",
+        stepId: "s",
+        toolName: "t",
+        expected: "schema-t",
+        observed: "v2",
+      },
+    ]);
+    expect(r.findings.map((f) => f.code)).toEqual([
+      "schema-drift-proceeded",
+      "output-shape-unpinned",
+    ]);
+    expect(pins(inv)).toEqual(["schema-t", "v2"]);
+  });
+
+  it("a retry that drifts again is a failure, not a loop", async () => {
+    let n = 0;
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      n += 1;
+      throw new TypedFailure("schemaDrift", {
+        toolName: (input as McpIn).toolName,
+        expectedSchemaHash: (input as McpIn).expectedSchemaHash,
+        observedHash: `v${n + 1}`,
+      });
+    });
+    const r = await executeProvider(providerSpec("h", [mcpStep("s", "t")]), {
+      invoker: inv,
+      inputDrift: "report-and-proceed",
+    });
+    expect(!r.ok && r.finding.code).toBe("provider-failed");
+    expect(r.findings.map((f) => f.code)).toEqual(["tool-schemaDrift"]);
+    expect(inv.calls).toHaveLength(2);
+  });
+
+  it("output drift is never proceeded past: both drifts are reported", async () => {
+    const inv = toolAt("v2", { n: "seven" });
+    const r = await executeProvider(
+      providerSpec("h", [mcpStep("s", "t")], { outputShapeHash: outputShapeHashOf({ n: 7 }) }),
+      { invoker: inv, inputDrift: "report-and-proceed" }
+    );
+    expect(!r.ok && r.finding.code).toBe("output-shape-drift");
+    expect(!r.ok && r.drift.map((d) => d.kind)).toEqual(["input", "output"]);
+  });
+});
