@@ -58,10 +58,10 @@ describe("semanticNumberFormatOptions: fraction digits", () => {
       })
     ).toBe("7.00");
   });
-  it("an integer stays whole even when min fraction digits were asked for, never a RangeError", () => {
+  it("an integer passes minimumFractionDigits 0 through untouched — nothing is coerced", () => {
     expect(
-      formatSemanticNumber(1234.4, { semanticType: "integer", minimumFractionDigits: 2 })
-    ).toBe("1,234");
+      semanticNumberFormatOptions({ semanticType: "integer", minimumFractionDigits: 0 })
+    ).toEqual({ minimumFractionDigits: 0, maximumFractionDigits: 0 });
   });
 });
 

@@ -63,11 +63,8 @@ export function semanticNumberFormatOptions(format: SemanticFormat): Intl.Number
   if (format.maximumFractionDigits !== undefined) {
     opts.maximumFractionDigits = format.maximumFractionDigits;
   }
-  if (format.semanticType === "integer") {
-    // Whole, whatever else was asked: a min above the forced max would be a RangeError.
-    opts.maximumFractionDigits = 0;
-    if (opts.minimumFractionDigits !== undefined) opts.minimumFractionDigits = 0;
-  }
+  // The contract refuses an integer with fraction digits, so this only makes "whole" explicit.
+  if (format.semanticType === "integer") opts.maximumFractionDigits = 0;
   if (format.semanticType === "percentage") opts.style = "percent";
   if (format.semanticType === "currency") {
     opts.style = "currency";

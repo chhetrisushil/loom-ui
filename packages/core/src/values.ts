@@ -36,6 +36,17 @@ export const SemanticFormat = z
       f.maximumFractionDigits === undefined ||
       f.minimumFractionDigits <= f.maximumFractionDigits,
     { message: "minimumFractionDigits must not exceed maximumFractionDigits" }
+  )
+  // An integer is whole by definition: asking it for fraction digits is a contradiction, refused
+  // here rather than silently overridden at format time.
+  .refine(
+    (f) =>
+      f.semanticType !== "integer" ||
+      ((f.minimumFractionDigits ?? 0) === 0 && (f.maximumFractionDigits ?? 0) === 0),
+    {
+      message:
+        "an integer format takes no fraction digits (minimum/maximumFractionDigits must be 0)",
+    }
   );
 export type SemanticFormat = z.infer<typeof SemanticFormat>;
 
