@@ -25,9 +25,12 @@ import { loomCatalogFor } from "./loomCatalog";
 import {
   type ContainerNode,
   type ExperienceNode,
+  GRID_COLUMNS,
   LocalizedText,
   MAX_TREE_DEPTH,
   normalize,
+  placementOf,
+  placementProblems,
   treeDepth,
 } from "./node";
 
@@ -36,9 +39,10 @@ import {
 // Widget whose `id` IS the node id (so a WidgetAction maps straight back), whose `kind` is the
 // surface resolution, whose `source` records the semantic type and the degrade chain that reached
 // that kind, and whose binding points at the hydration projection's `values.<handle>` with
-// `status.<handle>` as its status channel. A node's `span` rides in the `GridCell` its parent grid
-// wraps it in (Blueprint IR 2.0.0). Nothing semantic is smuggled into props: the experience is the
-// source of truth, the blueprint derived.
+// `status.<handle>` as its status channel. A node's `span` — and, since Blueprint IR 2.1.0, its
+// `row`/`rowSpan`/`column` — ride in the `GridCell` its parent grid wraps it in, and a
+// container's `title` becomes its compiled layout's title (loom ADR 0098). Nothing semantic is
+// smuggled into props: the experience is the source of truth, the blueprint derived.
 
 /**
  * The hydration projection's top-level key. A widget's binding path is `values.<handle>`, and the
@@ -175,25 +179,38 @@ function compileContainer(
   findings: Finding[]
 ): Layout {
   // Each compiled child is paired with the SOURCE node it came from, because a grid needs the
-  // child's own `span` to wrap it in a `GridCell` and the compiled Widget/Layout no longer
-  // carries one. A child that compiled to `undefined` (unresolvable, no contract) is skipped —
-  // its finding was already recorded.
+  // child's own `span` and placement to wrap it in a `GridCell` and the compiled Widget/Layout no
+  // longer carries one. A child that compiled to `undefined` (unresolvable, no contract) is
+  // skipped — its finding was already recorded.
   const compiled: Array<{ from: ExperienceNode; child: Widget | Layout }> = [];
   for (const child of node.children) {
     const out = compileNode(child, opts, resolveLabel, catalogByKind, findings);
     if (out !== undefined) compiled.push({ from: child, child: out });
   }
+  // A container title resolves like a label: the locale is a compile input, and the blueprint
+  // carries display text, never a message key. An empty resolution is no heading at all — every
+  // renderer draws only a non-empty title (loom ADR 0098 D4) — so no key is emitted for it.
+  const title = node.title !== undefined ? resolveLabel(node.title) : "";
+  const titled = title !== "" ? { title } : {};
   if (node.direction === "grid")
     return grid({
-      columns: 12,
+      columns: GRID_COLUMNS,
       ...(node.gap !== undefined && { gap: node.gap }),
-      children: compiled.map(({ from, child }) => cell(from.span, child)),
+      ...titled,
+      // A placement `validateExperience` reported as off-grid is NOT emitted: the node still
+      // renders, at flow placement, and the error is reported once, against the node. Emitting it
+      // would hand every renderer a position it cannot draw and make loom's validateBlueprint
+      // repeat the finding against "<layout>" for a container cell.
+      children: compiled.map(({ from, child }) =>
+        cell(from.span, child, placementProblems(from).length === 0 ? placementOf(from) : {})
+      ),
     });
-  // Neither `flex` nor `stack` has columns for a span to occupy (loom ADR 0097 D5), so a child's
-  // span is simply not a fact about a flex row — it is not dropped, it does not apply.
+  // Neither `flex` nor `stack` has columns for a span or a placement to occupy (loom ADR 0097 D5).
+  // A span simply does not apply here; a placement is `placement-outside-grid` (validateExperience).
   return flex({
     direction: node.direction,
     ...(node.gap !== undefined && { gap: node.gap }),
+    ...titled,
     children: compiled.map(({ child }) => child),
   });
 }

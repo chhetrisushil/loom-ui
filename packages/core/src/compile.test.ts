@@ -1,5 +1,6 @@
 import {
   type Blueprint,
+  type FlexLayout,
   type GridCell,
   type GridLayout,
   type Layout,
@@ -536,5 +537,98 @@ describe("text props", () => {
     ]);
     expect(widget(r).props).toEqual({});
     expect(JSON.stringify(r.blueprint)).not.toContain("secret.key");
+  });
+});
+
+describe("compile — placement and section titles (Blueprint IR 2.1.0, loom ADR 0098)", () => {
+  const placedRoot: ContainerNode = {
+    id: "root",
+    order: "V",
+    kind: "container",
+    direction: "grid",
+    span: 12,
+    title: { key: "board.title", fallback: "Overview" },
+    children: [
+      { ...sem("b", "Metric", { span: 4, row: 1, column: 9 }), order: "A" },
+      { ...sem("a", "Metric", { span: 8, row: 1, rowSpan: 2, column: 1 }), order: "B" },
+      { ...sem("c", "Metric", { span: 6 }), order: "C" },
+      {
+        id: "sec",
+        order: "D",
+        kind: "container",
+        direction: "row",
+        span: 12,
+        row: 3,
+        column: 1,
+        title: { key: "board.detail", fallback: "Detail" },
+        children: [sem("d", "Status")],
+      },
+    ],
+  };
+
+  it("a cell carries exactly the grid lines its node sets; an unplaced cell carries its span only", () => {
+    const r = compile(withRoot(exp, placedRoot), opts);
+    expect(r.findings).toEqual([]);
+    const layout = r.blueprint.layout as GridLayout;
+    expect(layout.children.map(({ node: _node, ...edge }) => edge)).toStrictEqual([
+      { span: 4, row: 1, column: 9 },
+      { span: 8, row: 1, rowSpan: 2, column: 1 },
+      { span: 6 },
+      { span: 12, row: 3, column: 1 },
+    ]);
+  });
+
+  it("a container's title is resolved through resolveLabel onto its compiled layout, root included", () => {
+    const r = compile(withRoot(exp, placedRoot), opts);
+    const layout = r.blueprint.layout as GridLayout;
+    expect(layout.title).toBe("Overview");
+    const detail = layout.children[3]?.node as FlexLayout;
+    expect(detail.type).toBe("flex");
+    expect(detail.title).toBe("Detail");
+    const de = compile(withRoot(exp, placedRoot), {
+      ...opts,
+      resolveLabel: (l) => (l.key === "board.title" ? "Übersicht" : l.fallback),
+    });
+    expect((de.blueprint.layout as GridLayout).title).toBe("Übersicht");
+    expect(JSON.stringify(de.blueprint)).not.toContain("board.title");
+  });
+
+  it("a title that resolves to empty text emits no title key; an untitled container emits none either", () => {
+    const blank = { ...placedRoot, title: { key: "board.title", fallback: "" } };
+    const layout = compile(withRoot(exp, blank), opts).blueprint.layout as GridLayout;
+    expect("title" in layout).toBe(false);
+    expect("title" in (compile(exp, opts).blueprint.layout as GridLayout)).toBe(false);
+  });
+
+  it("an off-grid placement is ONE finding and compiles to an unplaced cell — never loom's duplicate", () => {
+    const off: ContainerNode = {
+      ...placedRoot,
+      children: [{ ...sem("x", "Metric", { span: 6, column: 10 }), order: "A" }],
+    };
+    const r = compile(withRoot(exp, off), opts);
+    expect(r.ok).toBe(false);
+    expect(r.findings.map((f) => [f.code, f.nodeId])).toEqual([["placement-out-of-range", "x"]]);
+    const cell = (r.blueprint.layout as GridLayout).children[0];
+    expect(cell && Object.keys(cell).sort()).toEqual(["node", "span"]);
+  });
+
+  it("placement under a row container is reported and the child still compiles into the flex row", () => {
+    const rowParent: ContainerNode = {
+      ...placedRoot,
+      children: [
+        {
+          id: "r",
+          order: "A",
+          kind: "container",
+          direction: "row",
+          span: 12,
+          children: [sem("y", "Metric", { row: 1 })],
+        },
+      ],
+    };
+    const r = compile(withRoot(exp, rowParent), opts);
+    expect(r.findings.map((f) => [f.code, f.nodeId])).toEqual([["placement-outside-grid", "y"]]);
+    const flexRow = (r.blueprint.layout as GridLayout).children[0]?.node as FlexLayout;
+    expect(flexRow.children.map((w) => ("_tag" in w ? w.id : w.type))).toEqual(["y"]);
   });
 });
