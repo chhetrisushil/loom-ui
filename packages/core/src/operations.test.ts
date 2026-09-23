@@ -300,3 +300,88 @@ describe("insertNode keeps placement and titles (Blueprint IR 2.1.0)", () => {
     }
   });
 });
+
+describe("removeProvider", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const bound = () =>
+    must(
+      replay(g, [
+        { type: "remapProvider", handle: "h1", spec },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: { ...node("m1"), binding: { handle: "h1", priority: "P1" } },
+        },
+      ])
+    );
+  it("removes a provider no node binds, as a new unsealed child, never mutating the base", () => {
+    const sealed = {
+      ...must(apply(g, { type: "remapProvider", handle: "h1", spec })),
+      versionHash: "sha256:base",
+    };
+    const r = apply(sealed, { type: "removeProvider", handle: "h1" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.providers).toEqual({});
+    expect(r.value.versionHash).toBe("");
+    expect(r.value.parents).toEqual(["sha256:base"]);
+    expect(sealed.providers.h1).toEqual(spec);
+  });
+  it("is refused while a node still binds the handle — a finding naming the binder, never a throw", () => {
+    const r = apply(bound(), { type: "removeProvider", handle: "h1" });
+    expect(!r.ok && r.finding).toEqual(
+      expect.objectContaining({ code: "provider-still-bound", severity: "error", nodeId: "m1" })
+    );
+  });
+  it("a binder nested inside a container still holds the provider", () => {
+    const e = must(
+      replay(g, [
+        { type: "remapProvider", handle: "h1", spec },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "c1",
+            order: "a",
+            kind: "container",
+            direction: "row",
+            span: 12,
+            children: [{ ...node("deep"), binding: { handle: "h1", priority: "P1" } }],
+          },
+        },
+      ])
+    );
+    const r = apply(e, { type: "removeProvider", handle: "h1" });
+    expect(!r.ok && r.finding.code).toBe("provider-still-bound");
+    expect(!r.ok && r.finding.nodeId).toBe("deep");
+  });
+  it("succeeds once the last binder is gone: removeNode, then removeProvider", () => {
+    const r = replay(bound(), [
+      { type: "removeNode", nodeId: "m1" },
+      { type: "removeProvider", handle: "h1" },
+    ]);
+    expect(r.ok && r.value.providers).toEqual({});
+  });
+  it("an unknown handle is missing-provider, including names only the prototype has", () => {
+    const e = bound();
+    const codes = ["ghost", "toString", "__proto__"].map((handle) => {
+      const r = apply(e, { type: "removeProvider", handle });
+      return r.ok ? "ok" : r.finding.code;
+    });
+    expect(codes).toEqual(["missing-provider", "missing-provider", "missing-provider"]);
+  });
+  it("an empty handle is an invalid operation", () => {
+    const r = apply(g, { type: "removeProvider", handle: "" });
+    expect(!r.ok && r.finding.code).toBe("invalid-operation");
+  });
+  it("remap then remove leaves the providers exactly as they were", () => {
+    const r = replay(g, [
+      { type: "remapProvider", handle: "h1", spec },
+      { type: "removeProvider", handle: "h1" },
+    ]);
+    expect(r.ok && r.value.providers).toEqual(g.providers);
+  });
+});
