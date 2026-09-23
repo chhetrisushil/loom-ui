@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatSemanticNumber, semanticNumberFormatOptions } from "./format";
+import {
+  deltaDirection,
+  formatSemanticNumber,
+  semanticNumberFormatOptions,
+  unitSuffix,
+} from "./format";
 
 describe("formatSemanticNumber", () => {
   it("rounds and groups an integer, deterministically, whatever the locale argument omitted", () => {
@@ -33,5 +38,59 @@ describe("semanticNumberFormatOptions", () => {
       currency: "JPY",
     });
     expect(semanticNumberFormatOptions({ semanticType: "number" })).toEqual({});
+  });
+});
+
+describe("semanticNumberFormatOptions: fraction digits", () => {
+  it("passes minimumFractionDigits through, so a decimal can pad to a fixed width", () => {
+    expect(
+      semanticNumberFormatOptions({
+        semanticType: "decimal",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    ).toEqual({ minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    expect(
+      formatSemanticNumber(7, {
+        semanticType: "decimal",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    ).toBe("7.00");
+  });
+  it("an integer stays whole even when min fraction digits were asked for, never a RangeError", () => {
+    expect(
+      formatSemanticNumber(1234.4, { semanticType: "integer", minimumFractionDigits: 2 })
+    ).toBe("1,234");
+  });
+});
+
+describe("unitSuffix", () => {
+  it("keeps the unit beside any format that does not draw its own symbol", () => {
+    expect(unitSuffix({ semanticType: "decimal" }, "ms")).toBe("ms");
+    expect(unitSuffix({ semanticType: "integer" }, "req/s")).toBe("req/s");
+    expect(unitSuffix(undefined, "ms")).toBe("ms");
+  });
+  it("drops it when the format renders its own symbol — never '$12.00 USD' or '25% %'", () => {
+    expect(unitSuffix({ semanticType: "currency", currency: "USD" }, "USD")).toBeUndefined();
+    expect(unitSuffix({ semanticType: "percentage" }, "%")).toBeUndefined();
+  });
+  it("no unit, no suffix", () => {
+    expect(unitSuffix({ semanticType: "decimal" }, undefined)).toBeUndefined();
+    expect(unitSuffix(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("deltaDirection", () => {
+  it("up, down, or flat — a zero change is neither", () => {
+    expect(deltaDirection(0.12)).toBe("up");
+    expect(deltaDirection(-0.034)).toBe("down");
+    expect(deltaDirection(0)).toBe("flat");
+    expect(deltaDirection(-0)).toBe("flat");
+  });
+  it("a change that reads as 0% at the delta's precision is flat, never '▲ 0%'", () => {
+    expect(deltaDirection(0.0001)).toBe("flat");
+    expect(deltaDirection(-0.0004)).toBe("flat");
+    expect(deltaDirection(0.0006)).toBe("up");
   });
 });

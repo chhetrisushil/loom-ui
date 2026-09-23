@@ -57,10 +57,17 @@ export function effectiveFormat(
 export function semanticNumberFormatOptions(format: SemanticFormat): Intl.NumberFormatOptions {
   const opts: Intl.NumberFormatOptions = {};
   if (format.notation) opts.notation = format.notation;
+  if (format.minimumFractionDigits !== undefined) {
+    opts.minimumFractionDigits = format.minimumFractionDigits;
+  }
   if (format.maximumFractionDigits !== undefined) {
     opts.maximumFractionDigits = format.maximumFractionDigits;
   }
-  if (format.semanticType === "integer") opts.maximumFractionDigits = 0;
+  if (format.semanticType === "integer") {
+    // Whole, whatever else was asked: a min above the forced max would be a RangeError.
+    opts.maximumFractionDigits = 0;
+    if (opts.minimumFractionDigits !== undefined) opts.minimumFractionDigits = 0;
+  }
   if (format.semanticType === "percentage") opts.style = "percent";
   if (format.semanticType === "currency") {
     opts.style = "currency";
@@ -86,4 +93,35 @@ export function formatSemanticNumber(
     locale,
     semanticNumberFormatOptions(format ?? { semanticType: "number" })
   ).format(value);
+}
+
+/**
+ * The unit to print beside a number formatted with `format` (the EFFECTIVE format — see
+ * `effectiveFormat`): the unit, unless the format renders its own symbol. A currency or a
+ * percentage already draws "$"/"€"/"%", so a unit beside it would double up ("$12.00 USD");
+ * every other format leaves the unit meaningful ("7 ms" stays "7 ms" under a `decimal` format).
+ * One rule, read by every renderer, so a unit is never shown on one surface and erased on another.
+ */
+export function unitSuffix(
+  format: SemanticFormat | undefined,
+  unit: string | undefined
+): string | undefined {
+  if (unit === undefined || unit === "") return undefined;
+  if (format?.semanticType === "currency" || format?.semanticType === "percentage")
+    return undefined;
+  return unit;
+}
+
+export type DeltaDirection = "up" | "down" | "flat";
+
+/**
+ * Which way a `deltaPct` (a fraction) points, as every surface draws it: ▲/▼ on the web and in
+ * the terminal, "up"/"down" when spoken. A change that reads as 0% at `DELTA_FORMAT`'s precision
+ * is "flat" — no arrow, spoken "unchanged" — never "▲ 0%".
+ */
+export function deltaDirection(delta: number): DeltaDirection {
+  const digits = DELTA_FORMAT.maximumFractionDigits ?? 0;
+  // Percent points at the badge's precision: 0.0004 → 0.04% → rounds to 0.0%.
+  if (Math.round(Math.abs(delta) * 100 * 10 ** digits) === 0) return "flat";
+  return delta > 0 ? "up" : "down";
 }
