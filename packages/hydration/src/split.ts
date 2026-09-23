@@ -290,7 +290,6 @@ function publicText(code: string, severity: Finding["severity"]): string {
     case "output-shape-drift":
     case "output-shape-unhashable":
     case "output-contract-drift":
-    case "value-contract":
       return "the output no longer matches what it declares; waiting for a repair";
     case "output-shape-unpinned":
     case "output-contract-unchecked":
