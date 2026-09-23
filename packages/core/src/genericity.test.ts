@@ -26,18 +26,6 @@ function withoutConsumersSection(md: string): string {
   return md.replace(/^## Consumers\n[\s\S]*?(?=^## |\s*$(?![\s\S]))/m, "");
 }
 
-// The genericity rule itself, in AGENTS.md's "## Rules" list, names genUI as the worked example
-// of "a consumer" while STATING the no-consumer-names rule — the same self-describing role
-// README's "## Consumers" section plays. It is the one line in AGENTS.md allowed to do this.
-function withoutGenericityRuleLine(md: string): string {
-  return md
-    .split("\n")
-    .filter(
-      (line) => !line.startsWith("- loom-ui is a generic UI framework on top of loom, for ANY app;")
-    )
-    .join("\n");
-}
-
 describe("the CONSUMER pattern matches a name, not a word that contains its letters", () => {
   it("does not flag 'genuinely', which contains genui but is not the consumer's name", () => {
     expect(
@@ -71,7 +59,6 @@ describe("loom-ui names no consumer", () => {
       if (f.endsWith("genericity.test.ts")) continue;
       let text = readFileSync(f, "utf8");
       if (f.endsWith("README.md")) text = withoutConsumersSection(text);
-      if (f.endsWith("AGENTS.md")) text = withoutGenericityRuleLine(text);
       text.split("\n").forEach((line, i) => {
         if (CONSUMER.test(line)) hits.push(`${relative(ROOT, f)}:${i + 1}: ${line.trim()}`);
       });
