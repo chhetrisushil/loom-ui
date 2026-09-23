@@ -3,6 +3,7 @@ import {
   type Layout,
   type Widget,
   blueprintNodeIds,
+  isLayoutId,
   resolveWidgetStatus,
   resolveWidgetValue,
 } from "@loom/blueprint-runtime";
@@ -19,6 +20,7 @@ import {
   disposeEntry,
   elementOf,
   isWidgetNode,
+  layoutNodeId,
   mountContainer,
   mountWidget,
   renderInto,
@@ -31,10 +33,12 @@ import {
 } from "./tree";
 
 // ── The keyed reconcile ───────────────────────────────────────────────────────
-// Landing a revised Blueprint on the live entry tree. Widgets are keyed by id, containers by
-// ordinal-among-container-children, type AND role (IR 2.2.0, loom ADR 0099 D3). Nothing is re-rendered for an unchanged node, and
-// the ONE child whose subtree holds the focused element is never moved — its neighbours move
-// around it, because detaching a focused `<textarea>` costs the user their caret and selection.
+// Landing a revised Blueprint on the live entry tree. Widgets are keyed by id; containers by
+// their layout id when they have one (IR 2.4.0, loom ADR 0101), else by ordinal among their
+// id-less container siblings — and in both cases by type AND role (IR 2.2.0, loom ADR 0099 D3).
+// Nothing is re-rendered for an unchanged node, and the ONE child whose subtree holds the focused
+// element is never moved — its neighbours move around it, because detaching a focused
+// `<textarea>` costs the user their caret and selection.
 
 export interface Accumulator {
   /**
@@ -180,10 +184,17 @@ function reconcileWidget(
 }
 
 /**
- * Reconcile one container's children against `next`. Widgets match by id; containers match by
- * ordinal among the container children (the k-th container ↔ the k-th container), type AND role
- * — a role change sweeps the container out and mounts it again, like a type change, because the
- * chrome state its renderer holds (the current step) was built for that role. `path` names the
+ * Reconcile one container's children against `next`. Widgets match by id. A container WITH a
+ * well-formed layout id (`isLayoutId`, IR 2.4.0) matches the old sibling with that id and nothing
+ * else — never positionally on a miss, which would re-attach another container's widgets under a
+ * new id. A container WITHOUT one matches by ordinal among the id-less container siblings (the
+ * k-th id-less ↔ the k-th id-less), so an id'd sibling inserted or moved shifts no id-less
+ * ordinal. An id'd container never matches an id-less one, either way round: the first recompose
+ * across the upgrade remounts once, and `remounted` says so. A match is kept only if unused and of
+ * the same type AND role — a role change sweeps the container out and mounts it again, like a type
+ * change, because the chrome state its renderer holds (the current step) was built for that role.
+ * A duplicate id in `next` is invalid data: the first occurrence claims the match, the second
+ * mounts fresh. A kept container is MOVED by the reorder, never re-created. `path` names the
  * layout from the blueprint root, for a container renderer's failure message.
  */
 export function reconcileContainer(
@@ -198,14 +209,18 @@ export function reconcileContainer(
   applyTitle(entry, next);
   const inGrid = next.type === "grid";
   const oldWidgets = new Map<string, WidgetEntry>();
-  const oldContainers: ContainerEntry[] = [];
+  // A `Map`, never an object: an id is any non-empty string, `__proto__` included (ADR 0101 D1).
+  const oldById = new Map<string, ContainerEntry>();
+  const oldUnkeyed: ContainerEntry[] = [];
   for (const c of entry.children) {
     if (c.kind === "widget") oldWidgets.set(c.widget.id, c);
-    else oldContainers.push(c);
+    else if (!isLayoutId(c.layout.id)) oldUnkeyed.push(c);
+    // A duplicate id in the OLD tree: the first keeps the key, the rest go unclaimed (dropped).
+    else if (!oldById.has(c.layout.id)) oldById.set(c.layout.id, c);
   }
   const nextChildren: Entry[] = [];
   const used = new Set<Entry>();
-  let containerOrdinal = 0;
+  let unkeyedOrdinal = 0;
   const specs = childSpecs(next);
   for (let i = 0; i < specs.length; i++) {
     const spec = specs[i] as (typeof specs)[number];
@@ -222,14 +237,14 @@ export function reconcileContainer(
         entry.el.appendChild(child.host); // position fixed by the reorder below
       }
     } else {
-      const kept = oldContainers[containerOrdinal];
-      containerOrdinal++;
+      const candidate = isLayoutId(node.id) ? oldById.get(node.id) : oldUnkeyed[unkeyedOrdinal++];
+      const kept = candidate !== undefined && !used.has(candidate) ? candidate : undefined;
       if (kept && kept.layout.type === node.type && kept.role === roleKey(node)) {
         reconcileContainer(kept, node, ctx, acc, childPath);
         child = kept;
       } else {
         if (kept) {
-          // Same ordinal, different type or role: the container is swept out whole and mounted again.
+          // Same key, different type or role: the container is swept out whole and mounted again.
           // Its widget ids are DISPOSED, not necessarily remounted — the new tree decides.
           disposeEntry(kept, disposeFailed(acc));
           acc.disposed.push(...widgetIdsOf(kept));
@@ -259,7 +274,7 @@ export function reconcileContainer(
   // layout's own fields or its child list changed. A throw leaves the container plain.
   const failed = updateChrome(entry, prevLayout, path);
   if (failed !== undefined)
-    acc.findings.push({ code: "patch-failed", nodeId: "", message: failed });
+    acc.findings.push({ code: "patch-failed", nodeId: layoutNodeId(next), message: failed });
 }
 
 /**

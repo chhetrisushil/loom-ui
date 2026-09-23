@@ -84,8 +84,9 @@ export type DomContainerRegistry = RendererRegistry<DomContainerRenderer>;
 
 /**
  * One adapter-side failure during `update`; the widget is already on its error placeholder. A
- * container renderer's failure has `nodeId: ""` (a layout has no id) and names the role and the
- * layout's path; that container is already drawn plain.
+ * container renderer's failure has the layout's id as `nodeId` when it has one (IR 2.4.0, loom
+ * ADR 0101), else `""`, and names the role and the layout's path; that container is already drawn
+ * plain.
  */
 export interface RecomposeFinding {
   readonly code: "patch-failed" | "mount-failed";
@@ -99,9 +100,11 @@ export interface RecomposeReport {
   /**
    * Present in both trees but disposed and mounted again: the kind changed, the renderer has no
    * `patch`, OR the widget did not stay put WITHIN ITS CONTAINER — it moved to another container,
-   * its container's ordinal among container siblings shifted, or its container changed type or
-   * role (containers are keyed by ordinal + type + role, so each of those re-creates the
-   * container's widgets).
+   * or its container was not kept. A container with a layout id (IR 2.4.0, loom ADR 0101) is kept
+   * by that id, type and role, so inserting or reordering id'd containers remounts nothing; one
+   * without an id is keyed by its ordinal among its id-less container siblings + type + role, so
+   * a shift in that ordinal re-creates its widgets. An id change, a type or role change, a move to
+   * another parent, and an id'd ↔ id-less crossing each re-create the container's widgets.
    */
   readonly remounted: readonly string[];
   /** Binding changed: unsubscribed, re-subscribed, first slice pushed synchronously. */

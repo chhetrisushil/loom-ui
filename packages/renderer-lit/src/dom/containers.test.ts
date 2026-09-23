@@ -144,6 +144,8 @@ const onboarding = (
     steps?: readonly string[];
     gap?: number;
     stepTitles?: Record<string, string>;
+    /** IR 2.4.0: give the roled column and every step a layout id (the step's name). */
+    ids?: boolean;
   } = {}
 ): Blueprint =>
   blueprint$({
@@ -157,12 +159,14 @@ const onboarding = (
         cell(
           8,
           flex({
+            ...(opts.ids && { id: "steps" }),
             direction: "column",
             ...(opts.role !== undefined && { role: opts.role }),
             ...(opts.title !== undefined && { title: opts.title }),
             ...(opts.gap !== undefined && { gap: opts.gap }),
             children: (opts.steps ?? ["account", "payment", "pickup"]).map((s) =>
               stack({
+                ...(opts.ids && { id: s }),
                 title: opts.stepTitles?.[s] ?? s,
                 children: [s === "payment" ? note(`${s}-note`) : metric(s)],
               })
@@ -728,5 +732,100 @@ describe("container renderers — dispose", () => {
     );
     expect(() => handle.dispose()).toThrow(AggregateError);
     expect(host.children.length).toBe(0);
+  });
+});
+
+describe("container renderers — containers keyed by id (IR 2.4.0, loom ADR 0101)", () => {
+  it("a step inserted ABOVE the focused, typed-in step: nothing remounted, chrome kept, update once, focus and value kept", () => {
+    const log: string[] = [];
+    const { host, handle } = setup(
+      onboarding({ role: "stepped", ids: true, steps: ["account", "payment"] }),
+      containersWith("stepped", stepped(log))
+    );
+    (host.querySelector("nav button:last-child") as HTMLButtonElement).click(); // → payment
+    const nav = host.querySelector("nav");
+    const ta = host.querySelector("textarea[data-note='payment-note']") as HTMLTextAreaElement;
+    const accountHost = host.querySelector("[data-widget-id='account']");
+    ta.focus();
+    ta.value = "card ending 42";
+    ta.setSelectionRange(5, 5);
+    const r = handle.update(
+      onboarding({ role: "stepped", ids: true, steps: ["account", "extra", "payment"] })
+    );
+    expect(r).toMatchObject({ remounted: [], findings: [] });
+    expect(r.identity.added).toEqual(["extra"]);
+    expect(log).toEqual(["mount:2", "update:3"]); // one update: the child list changed
+    expect(host.querySelector("nav")).toBe(nav);
+    expect(host.querySelector("[data-widget-id='account']")).toBe(accountHost);
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    expect(document.activeElement).toBe(ta);
+    expect(ta.value).toBe("card ending 42");
+    expect(ta.selectionStart).toBe(5);
+    expect(
+      stepEls(host).map((e) => e.querySelector("[data-widget-id]")?.getAttribute("data-widget-id"))
+    ).toEqual(["account", "extra", "payment-note"]);
+    handle.dispose();
+  });
+
+  it("steps REORDERED through a custom container: every step kept by id, update once, nothing remounted", () => {
+    const log: string[] = [];
+    const { host, handle } = setup(
+      onboarding({ role: "stepped", ids: true }),
+      containersWith("stepped", stepped(log))
+    );
+    const before = stepEls(host);
+    const r = handle.update(
+      onboarding({ role: "stepped", ids: true, steps: ["pickup", "payment", "account"] })
+    );
+    expect(r).toMatchObject({ remounted: [], findings: [] });
+    expect(log).toEqual(["mount:3", "update:3"]);
+    expect(stepEls(host)).toEqual([before[2], before[1], before[0]]);
+    handle.dispose();
+  });
+
+  it("an identical id'd blueprint makes ZERO DOM mutations and never calls the container's update", () => {
+    const log: string[] = [];
+    const { host, handle } = setup(
+      onboarding({ role: "stepped", ids: true }),
+      containersWith("stepped", stepped(log))
+    );
+    const done = observe(host);
+    const r = handle.update(onboarding({ role: "stepped", ids: true }));
+    expect(done()).toEqual([]);
+    expect(r).toMatchObject({ remounted: [], findings: [] });
+    expect(log).toEqual(["mount:3"]);
+    handle.dispose();
+  });
+
+  it("a container renderer's failure names the layout's id when it has one", () => {
+    const { handle } = setup(
+      onboarding({ role: "stepped", ids: true }),
+      containersWith("stepped", stepped([], { throwOnUpdate: true }))
+    );
+    const r = handle.update(onboarding({ role: "stepped", ids: true, gap: 4 }));
+    expect(r.findings).toEqual([
+      {
+        code: "patch-failed",
+        nodeId: "steps",
+        message: expect.stringContaining("chrome update exploded"),
+      },
+    ]);
+    handle.dispose();
+  });
+
+  it("a container renderer that throws mounting during update is mount-failed against the layout's id", () => {
+    const { handle } = setup(
+      onboarding({ ids: true }),
+      containersWith("stepped", stepped([], { throwOnMount: true }))
+    );
+    const r = handle.update(onboarding({ role: "stepped", ids: true }));
+    expect(r.findings).toEqual([
+      {
+        code: "mount-failed",
+        nodeId: "steps",
+        message: expect.stringContaining("chrome exploded"),
+      },
+    ]);
+    handle.dispose();
   });
 });
