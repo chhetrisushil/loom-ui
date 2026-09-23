@@ -21,4 +21,43 @@ describe("describeValue", () => {
     expect(describeValue("MetricCard", undefined, "p99")).toBe("p99: loading");
     expect(describeValue("MetricCard", "not a number", "p99")).toBe("p99: error");
   });
+  it("speaks a widget's props.format/props.unit when the value carries none, same as the display falls back to them", () => {
+    setLocale("en-US");
+    expect(
+      describeValue("MetricCard", 412, "Price", {
+        format: { semanticType: "currency", currency: "EUR" },
+      })
+    ).toContain("€412.00");
+    expect(describeValue("MetricCard", 412, "Speed", { unit: "mph" })).toBe("Speed: 412 mph");
+    expect(
+      describeValue(
+        "TimeSeries",
+        { series: [{ label: "rev", points: [{ timestamp: "t", value: 100 }] }] },
+        "Revenue",
+        { format: { semanticType: "currency", currency: "USD" } }
+      )
+    ).toContain("$100.00");
+    expect(
+      describeValue("BarChart", { bars: [{ label: "a", value: 0.5 }] }, "Share", {
+        format: { semanticType: "percentage" },
+      })
+    ).toBe("Share: a 50%");
+    // A series' own format still wins over the widget's props.
+    expect(
+      describeValue(
+        "TimeSeries",
+        {
+          series: [
+            {
+              label: "rev",
+              format: { semanticType: "currency", currency: "EUR" },
+              points: [{ timestamp: "t", value: 100 }],
+            },
+          ],
+        },
+        "Revenue",
+        { format: { semanticType: "currency", currency: "USD" } }
+      )
+    ).toContain("€100.00");
+  });
 });

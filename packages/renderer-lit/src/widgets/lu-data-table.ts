@@ -177,7 +177,7 @@ export class LuDataTable extends LuWidget {
     const shown = Math.min(this.visibleRows, total);
     const windowed = shown < total ? sorted.slice(0, shown) : sorted;
     return html`<table>
-        <caption class="sr-only">${describeValue("DataTable", rows, this.title_)}</caption>
+        <caption class="sr-only">${describeValue("DataTable", rows, this.title_, this.widget.props)}</caption>
         <thead>
           <tr>
             ${columns.map(

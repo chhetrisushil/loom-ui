@@ -61,6 +61,7 @@ export { experienceHandles } from "./handles";
 export type { HandleUse } from "./handles";
 export {
   BarChartValue,
+  ChartAxis,
   FRAMEWORK_KINDS,
   KpiValue,
   SemanticFormat,
