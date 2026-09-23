@@ -4,6 +4,7 @@ export {
   GRID_COLUMNS,
   GridColumn,
   GridLine,
+  LayoutRole,
   LocalizedText,
   MAX_TREE_DEPTH,
   NodeId,
@@ -19,6 +20,7 @@ export {
   placementOf,
   placementProblems,
   rebuild,
+  roleProblem,
   treeDepth,
   walk,
 } from "./node";

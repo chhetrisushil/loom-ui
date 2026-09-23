@@ -43,6 +43,7 @@ export type Operation =
   | { type: "setProps"; nodeId: string; patch: Record<string, unknown> }
   | { type: "setLabel"; nodeId: string; label: LocalizedText }
   | { type: "setTitle"; nodeId: string; title: LocalizedText | null }
+  | { type: "setRole"; nodeId: string; role: string | null }
   | {
       type: "setPlacement";
       nodeId: string;
@@ -77,6 +78,10 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
     // `title` is REQUIRED — the op exists to change it; `null` clears (JSON keeps a null, it drops
     // an undefined, so "clear" must be spelled null to survive a recorded replay).
     z.object({ type: z.literal("setTitle"), nodeId: NodeId, title: LocalizedText.nullable() }),
+    // `role` is REQUIRED and `null` clears, as for `setTitle`. Deliberately loose (any string): the
+    // SHAPE check is the node schema's `LayoutRole` (see `apply`), so a malformed role is refused
+    // with the node's id, exactly as an `insertNode` of that container would be.
+    z.object({ type: z.literal("setRole"), nodeId: NodeId, role: z.string().nullable() }),
     // Deliberately loose: the RANGE check is the node schema's (see `apply`), so a bad value is
     // refused with the node's id, exactly as an `insertNode` of that node would be.
     z.object({
@@ -417,6 +422,33 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           ) as unknown as ExperienceNode;
         return { ...n, title };
       });
+      return { ok: true, value: next(base, { root }) };
+    }
+    case "setRole": {
+      const target = findNode(base.root, op.nodeId);
+      if (!target) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      if (target.kind !== "container")
+        return refuse(
+          "not-container",
+          `"${op.nodeId}" is a semantic node; setRole applies to containers (a semantic node's renderer is chosen by the kind its type resolves to)`,
+          op.nodeId
+        );
+      const role = op.role;
+      // Cleared = key REMOVED (rebuilt, not deleted), so the container hashes as if never roled.
+      const { role: _prior, ...rest } = target;
+      const roled = role === null ? rest : { ...rest, role };
+      // Validated through the node schema (children elided: untouched and valid before), so the
+      // one role rule — loom's `isLayoutRole`, via `LayoutRole` — applies with no second copy.
+      if (role !== null) {
+        const checked = ExperienceNode.safeParse({ ...roled, children: [] });
+        if (!checked.success)
+          return refuse(
+            "invalid-operation",
+            `setRole on "${op.nodeId}": ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+            op.nodeId
+          );
+      }
+      const root = rebuild(base.root, (n) => (n.id === op.nodeId ? roled : n));
       return { ok: true, value: next(base, { root }) };
     }
     case "setProps":

@@ -654,3 +654,72 @@ describe("compile — placement and section titles (Blueprint IR 2.1.0, loom ADR
     });
   });
 });
+
+describe("compile — layout roles (Blueprint IR 2.2.0, loom ADR 0099)", () => {
+  const roled: ContainerNode = {
+    id: "root",
+    order: "V",
+    kind: "container",
+    direction: "grid",
+    span: 12,
+    role: "board",
+    children: [
+      {
+        id: "steps",
+        order: "A",
+        kind: "container",
+        direction: "column",
+        span: 12,
+        role: "stepped",
+        title: { key: "steps.title", fallback: "Onboarding" },
+        children: [sem("m", "Metric")],
+      },
+      {
+        id: "plain",
+        order: "B",
+        kind: "container",
+        direction: "row",
+        span: 12,
+        children: [sem("n", "Metric")],
+      },
+    ],
+  };
+
+  it("a container's role lands on its compiled layout, root included; an unroled container emits no key", () => {
+    const r = compile(withRoot(exp, roled), opts);
+    expect(r.findings).toEqual([]);
+    const layout = r.blueprint.layout as GridLayout;
+    expect(layout.role).toBe("board");
+    const steps = layout.children[0]?.node as FlexLayout;
+    expect(steps).toMatchObject({ type: "flex", direction: "column", role: "stepped" });
+    expect(steps.title).toBe("Onboarding");
+    expect("role" in (layout.children[1]?.node as FlexLayout)).toBe(false);
+    expect("role" in (compile(exp, opts).blueprint.layout as GridLayout)).toBe(false);
+  });
+
+  it("the compiled blueprint passes loom's validateBlueprint with no role finding", () => {
+    const r = compile(withRoot(exp, roled), opts);
+    const report = validateBlueprint(r.blueprint, loomCatalogFor(testCatalog, "web").catalog);
+    expect(report.findings.filter((f) => f.code === "role-invalid")).toEqual([]);
+  });
+
+  it("a malformed role is ONE warn against the container and is not emitted — never loom's '<layout>' duplicate", () => {
+    const bad: ContainerNode = {
+      ...roled,
+      children: [{ ...(roled.children[0] as ContainerNode), role: "Stepped" }],
+    };
+    const r = compile(withRoot(exp, bad), opts);
+    expect(r.ok).toBe(true);
+    expect(r.findings.map((f) => [f.code, f.severity, f.nodeId])).toEqual([
+      ["role-invalid", "warn", "steps"],
+    ]);
+    const steps = (r.blueprint.layout as GridLayout).children[0]?.node as FlexLayout;
+    expect("role" in steps).toBe(false);
+  });
+
+  it("is deterministic — the same roled experience compiles byte-identically", () => {
+    expect(JSON.stringify(compile(withRoot(exp, roled), opts).blueprint)).toBe(
+      JSON.stringify(compile(withRoot(exp, roled), opts).blueprint)
+    );
+  });
+});

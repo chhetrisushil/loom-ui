@@ -7,6 +7,7 @@ import {
   type SemanticNode,
   isPlaced,
   placementProblems,
+  roleProblem,
   treeDepth,
   walk,
 } from "./node";
@@ -221,7 +222,10 @@ export function validateExperience(
       findings.push(finding("duplicate-node-id", `node id "${n.id}" appears more than once`, n.id));
     ids.add(n.id);
     checkPlacement(n, parent, findings);
-    if (n.kind !== "semantic") return;
+    if (n.kind !== "semantic") {
+      checkRole(n, findings);
+      return;
+    }
     nodes++;
     checkSemantic(n, exp, catalog, surface, findings);
   });
@@ -269,6 +273,25 @@ function checkPlacement(
         n.id
       )
     );
+}
+
+/**
+ * A container's role (loom ADR 0099) must be a well-formed key or every renderer silently draws
+ * the plain container. loom's `validateBlueprint` reports that as `role-invalid` against
+ * `"<layout>"`; reported here with the same code and severity against the NODE, and `compile`
+ * then leaves the role off so loom's copy never fires. A WARN, as in loom (D4): nothing is lost
+ * but the custom rendering. A well-formed role no renderer knows is not a finding — which roles
+ * are registered is a fact about the renderer in use, not the experience.
+ */
+function checkRole(n: ContainerNode, findings: Finding[]): void {
+  const problem = roleProblem(n);
+  if (problem !== undefined)
+    findings.push({
+      code: "role-invalid",
+      severity: "warn",
+      message: `"${n.id}": ${problem} — renderers draw the plain container`,
+      nodeId: n.id,
+    });
 }
 
 function checkSemantic(

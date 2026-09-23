@@ -324,3 +324,41 @@ describe("validateExperience — placement (Blueprint IR 2.1.0)", () => {
     expect(codes(shifted)).toEqual([]);
   });
 });
+
+describe("validateExperience — layout roles (Blueprint IR 2.2.0, loom ADR 0099 D4)", () => {
+  const withRole = (role: unknown): Experience => {
+    const base = exp([]);
+    const section = {
+      id: "sec",
+      order: "B",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      role,
+      children: [],
+    } as unknown as ContainerNode;
+    return { ...base, root: { ...(base.root as ContainerNode), children: [section] } };
+  };
+
+  it("a well-formed role — known to some renderer or not — is no finding", () => {
+    for (const role of ["stepped", "a", "x".repeat(64), "a--b"])
+      expect(validateExperience(withRole(role), testCatalog, "web").findings, role).toEqual([]);
+  });
+
+  it("a malformed role is loom's role-invalid, a WARN against the container — ok stays true", () => {
+    for (const role of ["", "Stepped", "step_one", "stepped\n", "x".repeat(65), 7]) {
+      const v = validateExperience(withRole(role), testCatalog, "web");
+      expect(v.ok).toBe(true);
+      expect(v.findings).toEqual([
+        expect.objectContaining({ code: "role-invalid", severity: "warn", nodeId: "sec" }),
+      ]);
+    }
+  });
+
+  it("the message echoes a hostile role bounded, with its length", () => {
+    const huge = "Q".repeat(10_000);
+    const [f] = validateExperience(withRole(huge), testCatalog, "web").findings;
+    expect(f?.message.length).toBeLessThan(400);
+    expect(f?.message).toContain("10000");
+  });
+});
