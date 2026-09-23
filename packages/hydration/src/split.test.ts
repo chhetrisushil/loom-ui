@@ -23,6 +23,7 @@ import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
 import type { HandleLoadResult } from "./scheduler";
 import {
+  DEFAULT_MAX_CONCURRENT_CALLS,
   type HandleInventory,
   type HandleLoadRequest,
   type HandleLoader,
@@ -723,6 +724,49 @@ describe("serveHandles: one server pass per batch", () => {
     expect(inv.calls).toHaveLength(2);
     release.shift()?.();
     expect((await done).map((r) => r.state)).toEqual(["ready", "ready"]);
+  });
+
+  it("by default at most DEFAULT_MAX_CONCURRENT_CALLS (32) tool calls are in flight per batch", async () => {
+    expect(DEFAULT_MAX_CONCURRENT_CALLS).toBe(32);
+    const n = 40;
+    const g = genesis({
+      experienceId: "wide",
+      intent: { objective: "many widgets", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    const handles = Array.from({ length: n }, (_, i) => `h${i}`);
+    const exp: Experience = {
+      ...g,
+      versionHash: "sha256:wide-v1",
+      root: {
+        ...(g.root as ContainerNode),
+        children: handles.map((h) => widget(h, "Reading", h, "P1")),
+      },
+      providers: Object.fromEntries(
+        handles.map((h) => [h, providerSpec(h, [mcpStep("s", `tool-${h}`)])])
+      ),
+    };
+    const release: Array<() => void> = [];
+    const inv = new FakeInvoker().on(
+      MCP_INVOKE_TOOL_ID,
+      () => new Promise((resolve) => release.push(() => resolve({ n: 1 })))
+    );
+    const done = serveHandles(
+      exp,
+      handles.map((h) => req(exp, h)),
+      { invoker: inv, now: NOW }
+    );
+    await flush();
+    expect(inv.calls).toHaveLength(32);
+    release.shift()?.();
+    await flush();
+    expect(inv.calls).toHaveLength(33);
+    while (release.length > 0) {
+      for (const r of release.splice(0)) r();
+      await flush();
+    }
+    expect((await done).every((r) => r.state === "ready")).toBe(true);
+    expect(inv.calls).toHaveLength(n);
   });
 
   it("a bad entry is refused on its own; the rest of the batch still loads", async () => {

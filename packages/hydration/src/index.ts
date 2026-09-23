@@ -28,6 +28,7 @@ export { HydrationController } from "./controller";
 export type { ControllerOptions, DriftReport } from "./controller";
 export {
   DEFAULT_MAX_BATCH,
+  DEFAULT_MAX_CONCURRENT_CALLS,
   SplitHydrationController,
   handleInventory,
   publicFinding,

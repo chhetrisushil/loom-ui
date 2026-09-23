@@ -192,6 +192,12 @@ function publicRevision(revisionOf: RevisionFn, handle: string, spec: ProviderSp
 /** The most requests one `serveHandles` call serves by default (`ServeOptions.maxBatch`). */
 export const DEFAULT_MAX_BATCH = 256;
 
+/**
+ * The most transient calls one `serveHandles` batch has in flight by default
+ * (`ServeOptions.maxConcurrentCalls`): the batch is client-sized, so the server bounds its fan-out.
+ */
+export const DEFAULT_MAX_CONCURRENT_CALLS = 32;
+
 export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
   /** Kinds for `"contract"` providers: the nodes binding the handle, resolved on this surface. */
   readonly outputKinds?: { readonly catalog: SemanticCatalog; readonly surface: Surface };
@@ -206,9 +212,16 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
    * changes what a client is answered.
    */
   readonly onFinding?: (handle: string, finding: Finding) => unknown;
-  /** At most this many transient calls in flight across the whole batch. Default: unbounded. */
+  /**
+   * At most this many transient calls in flight across the whole batch. Default
+   * `DEFAULT_MAX_CONCURRENT_CALLS` (32): a client decides how many handles a batch carries, so
+   * the server bounds the upstream fan-out unless it is told otherwise.
+   */
   readonly maxConcurrentCalls?: number;
-  /** A batch longer than this is refused whole (`batch-too-large`). Default `DEFAULT_MAX_BATCH`. */
+  /**
+   * A batch longer than this is refused whole (`batch-too-large`). Default `DEFAULT_MAX_BATCH`.
+   * The refusal is still one result per request, so a transport should bound request bodies.
+   */
   readonly maxBatch?: number;
 }
 
@@ -391,9 +404,9 @@ interface ServePass {
 /**
  * The server half of split hydration: answer a BATCH of handle loads for `exp` in one pass — one
  * clock read (`opts.now`, else `Date.now()` once), one step memo in front of one call cap
- * (`maxConcurrentCalls`), so identical steps across the batch's providers run once. The memo is
- * keyed by principal too, and one call serves one principal (`opts.principal`), so two viewers
- * never share a call. Every failure, a malformed request included, is a result, one per request
+ * (`maxConcurrentCalls`, default 32), so identical steps across the batch's providers run once.
+ * The memo is keyed by principal too, and one call serves one principal (`opts.principal`), so
+ * two viewers never share a call. Every failure, a malformed request included, is a result, one per request
  * in request order (a batch that is not a list gets one `invalid-request`) — and every finding a
  * client receives is its PUBLIC form (`publicFinding`); the full one goes to `onFinding`. Rejects
  * with `TypeError` only for a server misconfiguration (`maxBatch`, `maxConcurrentCalls`).
@@ -407,8 +420,8 @@ export async function serveHandles(
   const max = opts.maxBatch ?? DEFAULT_MAX_BATCH;
   if (!Number.isInteger(max) || max < 1)
     throw new TypeError(`serveHandles: maxBatch must be a positive integer, got ${String(max)}`);
-  const cap = opts.maxConcurrentCalls;
-  if (cap !== undefined && (!Number.isInteger(cap) || cap < 1))
+  const cap = opts.maxConcurrentCalls ?? DEFAULT_MAX_CONCURRENT_CALLS;
+  if (!Number.isInteger(cap) || cap < 1)
     throw new TypeError(
       `serveHandles: maxConcurrentCalls must be a positive integer, got ${String(cap)}`
     );
@@ -495,9 +508,11 @@ export async function serveHandle(
 }
 
 function openPass(exp: Experience, opts: ServeOptions): ServePass {
-  const { outputKinds, maxConcurrentCalls, invoker, now, signal, principal } = opts;
-  const capped: TransientInvoker =
-    maxConcurrentCalls === undefined ? invoker : limitInvoker(invoker, maxConcurrentCalls);
+  const { outputKinds, invoker, now, signal, principal } = opts;
+  const capped: TransientInvoker = limitInvoker(
+    invoker,
+    opts.maxConcurrentCalls ?? DEFAULT_MAX_CONCURRENT_CALLS
+  );
   const exec: ExecuteOptions = {
     // One memo per batch, in front of the cap: a memo hit never takes a slot.
     invoker: memoInvoker(capped),
