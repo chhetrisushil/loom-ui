@@ -11,6 +11,7 @@ import {
   customWidget$,
   flex,
   grid,
+  isLayoutId,
   isLayoutRole,
   validateBlueprint,
 } from "@loom/blueprint-runtime";
@@ -42,9 +43,10 @@ import {
 // that kind, and whose binding points at the hydration projection's `values.<handle>` with
 // `status.<handle>` as its status channel. A node's `span` — and, since Blueprint IR 2.1.0, its
 // `row`/`rowSpan`/`column` — ride in the `GridCell` its parent grid wraps it in, and a
-// container's `title` becomes its compiled layout's title (loom ADR 0098), and its `role` its
-// layout's role (IR 2.2.0, loom ADR 0099). Nothing semantic is smuggled into props: the
-// experience is the source of truth, the blueprint derived.
+// container's `title` becomes its compiled layout's title (loom ADR 0098), its `role` its
+// layout's role (IR 2.2.0, loom ADR 0099), and its `id` its layout's id (IR 2.4.0, loom ADR
+// 0101). Nothing semantic is smuggled into props: the experience is the source of truth, the
+// blueprint derived.
 
 /**
  * The hydration projection's top-level key. A widget's binding path is `values.<handle>`, and the
@@ -199,8 +201,15 @@ function compileContainer(
   // (`role-invalid`, warn) and is NOT emitted: every renderer would draw the plain container
   // anyway, and loom's `validateBlueprint` would repeat the finding against "<layout>".
   const roled = isLayoutRole(node.role) ? { role: node.role } : {};
+  // An id (IR 2.4.0, loom ADR 0101) is the container's node id — the same identity the
+  // Experience already addresses it by, in the one namespace widget ids share — so a renderer can
+  // keep the container (and every widget under it) across a recompose that inserts or reorders
+  // containers. loom-ui's `NodeId` rule (a non-empty string) IS loom's `isLayoutId`; the guard only
+  // matters for a hand-built node that bypassed the schema, which is keyed positionally instead.
+  const identified = isLayoutId(node.id) ? { id: node.id } : {};
   if (node.direction === "grid")
     return grid({
+      ...identified,
       columns: GRID_COLUMNS,
       ...(node.gap !== undefined && { gap: node.gap }),
       ...titled,
@@ -216,6 +225,7 @@ function compileContainer(
   // Neither `flex` nor `stack` has columns for a span or a placement to occupy (loom ADR 0097 D5).
   // A span simply does not apply here; a placement is `placement-outside-grid` (validateExperience).
   return flex({
+    ...identified,
     direction: node.direction,
     ...(node.gap !== undefined && { gap: node.gap }),
     ...titled,
