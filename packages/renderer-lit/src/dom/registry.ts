@@ -61,7 +61,13 @@ export interface DomContainerHandle {
    * nothing a remount would buy. Not called for an identical Blueprint.
    */
   update(props: DomContainerProps): void;
-  /** The container is being swept out, remounted, or the handle disposed. Remove your chrome. */
+  /**
+   * The container is being swept out, remounted, fallen back after a failure, or the handle
+   * disposed. Remove your chrome AND undo every attribute you set on the children you were
+   * handed (`role="tabpanel"`, `aria-labelledby`, `id`, `class`, …) — they may stay mounted in a
+   * plain container, where a reference to disposed chrome would dangle. The adapter guarantees
+   * only that visibility (`hidden`, `inert`, `aria-hidden`) is restored when a renderer throws.
+   */
   dispose(): void;
 }
 /**
