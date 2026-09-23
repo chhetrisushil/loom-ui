@@ -12,6 +12,7 @@ import {
   timeTickIndices,
 } from "../charts/svg";
 import { effectiveFormat, tick as formatTick, measure, timeTick } from "../format";
+import { t } from "../i18n";
 import { dirFor } from "../rtl";
 import { hideTooltip, showTooltip } from "../tooltip";
 import { LuWidget } from "./base";
@@ -121,8 +122,17 @@ export class LuTimeseries extends LuWidget {
     const n = timestamps.length;
     if (n === 0) return nothing;
 
-    const left = series.filter((s) => s.axis !== "right");
-    const right = series.filter((s) => s.axis === "right");
+    const leftDeclared = series.filter((s) => s.axis !== "right");
+    const rightDeclared = series.filter((s) => s.axis === "right");
+    // A right axis only earns its keep when there is something left-hand to contrast it
+    // against; with nothing declared left, a second scale would draw a meaningless 0-1 axis
+    // over an empty left domain instead of the data every series actually holds. Fall back to
+    // one shared left-axis scale, and drop the right-axis distinction (ticks, legend suffix)
+    // along with it.
+    const splitAxes = leftDeclared.length > 0 && rightDeclared.length > 0;
+    const left = splitAxes ? leftDeclared : series;
+    const right = splitAxes ? rightDeclared : [];
+    const onRight = (s: Series): boolean => splitAxes && s.axis === "right";
     const w = this.width;
     const h = Math.max(this.height - (series.length > 1 ? 22 : 0), 100);
     const innerW = w - M.left - (right.length > 0 ? RIGHT_AXIS_MARGIN : M.right);
@@ -133,7 +143,7 @@ export class LuTimeseries extends LuWidget {
     const rightDomain = padDomain(extent(right.flatMap((s) => s.points.map((p) => p.value))));
     const syL = linearScale(leftDomain, [M.top + innerH, M.top]);
     const syR = linearScale(rightDomain, [M.top + innerH, M.top]);
-    const yOf = (s: Series): Scale => (s.axis === "right" ? syR : syL);
+    const yOf = (s: Series): Scale => (onRight(s) ? syR : syL);
 
     const first = timestamps[0] ?? "";
     const last = timestamps[n - 1] ?? "";
@@ -142,7 +152,7 @@ export class LuTimeseries extends LuWidget {
     const yTicks = niceTicks(leftDomain[0], leftDomain[1], 4);
     const yTicksR = right.length > 0 ? niceTicks(rightDomain[0], rightDomain[1], 4) : [];
     const axisFormat = (side: "left" | "right"): SemanticFormat | undefined => {
-      const s = series.find((x) => (x.axis ?? "left") === side);
+      const s = series.find((x) => (onRight(x) ? "right" : "left") === side);
       return s === undefined ? undefined : this.formatOf(s);
     };
     const fmtL = axisFormat("left");
@@ -159,7 +169,7 @@ export class LuTimeseries extends LuWidget {
                 (s, i) =>
                   html`<span
                     ><span class="swatch" style="background:${colorFor(i)}"></span
-                    >${s.label}${s.axis === "right" ? " (R)" : ""}</span
+                    >${s.label}${onRight(s) ? ` (${t("R")})` : ""}</span
                   >`
               )}
             </div>`
@@ -179,17 +189,17 @@ export class LuTimeseries extends LuWidget {
         >
           <g class="grid">
             ${yTicks.map(
-              (t) => svg`<line x1=${M.left} x2=${M.left + innerW} y1=${syL(t)} y2=${syL(t)} />`
+              (v) => svg`<line x1=${M.left} x2=${M.left + innerW} y1=${syL(v)} y2=${syL(v)} />`
             )}
           </g>
           <g class="axis">
             ${yTicks.map(
-              (t) =>
-                svg`<text x=${M.left - 6} y=${syL(t) + 3} text-anchor="end">${formatTick(t, fmtL)}</text>`
+              (v) =>
+                svg`<text x=${M.left - 6} y=${syL(v) + 3} text-anchor="end">${formatTick(v, fmtL)}</text>`
             )}
             ${yTicksR.map(
-              (t) =>
-                svg`<text x=${M.left + innerW + 6} y=${syR(t) + 3} text-anchor="start">${formatTick(t, fmtR)}</text>`
+              (v) =>
+                svg`<text x=${M.left + innerW + 6} y=${syR(v) + 3} text-anchor="start">${formatTick(v, fmtR)}</text>`
             )}
             ${xTicks.map(
               (i) =>

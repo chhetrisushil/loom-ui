@@ -43,6 +43,26 @@ describe("lu-timeseries: dual axis and value-level format", () => {
     expect(el.shadowRoot?.textContent).toContain("bytes (R)");
     expect(el.shadowRoot?.innerHTML).not.toContain("NaN");
   });
+  it("when every series declares axis 'right', they share one left-axis scale instead of a meaningless 0-1 right domain", async () => {
+    setLocale("en-US");
+    const el = await mount("lu-timeseries", {
+      widget: customWidget$({ kind: "TimeSeries", id: "ts4", title: "Load", binding: b }),
+      value: {
+        series: [
+          { label: "rps", axis: "right", points: pts([100, 200]) },
+          { label: "errors", axis: "right", points: pts([300, 400]) },
+        ],
+      },
+    });
+    // No second axis is drawn: no right-hand ("start"-anchored) ticks at all.
+    expect(ticks(el, "start")).toEqual([]);
+    // The left axis reflects the data (100-400), not the empty-extent default of [0, 1].
+    const leftTicks = ticks(el, "end").map(Number);
+    expect(leftTicks.some((n) => n > 1)).toBe(true);
+    expect(el.shadowRoot?.textContent).not.toContain("(R)");
+    const paths = [...(el.shadowRoot?.querySelectorAll("path.series") ?? [])];
+    expect(paths[0]?.getAttribute("d")).not.toBe(paths[1]?.getAttribute("d"));
+  });
   it("without a right-axis series there are no right-hand ticks and one shared scale", async () => {
     const el = await mount("lu-timeseries", {
       widget: customWidget$({ kind: "TimeSeries", id: "ts2", title: "Load", binding: b }),
