@@ -483,7 +483,18 @@ describe("text props", () => {
         props: ["text", "caption"],
         textProps: ["text"],
         binding: "none",
-        surfaces: { web: { kind: "Note", props: ["text", "caption"], binding: "none" } },
+        surfaces: {
+          web: { kind: "Note", props: ["text", "caption"], binding: "none" },
+          // A degrade target whose contract has no "text" — the prop is dropped, not rendered.
+          terminal: { degradeTo: { name: "PlainCallout", version: "1.0.0" } },
+        },
+      },
+      {
+        name: "PlainCallout",
+        version: "1.0.0",
+        props: [],
+        binding: "none",
+        surfaces: { terminal: { kind: "Note", props: [], binding: "none" } },
       },
     ],
   });
@@ -506,6 +517,24 @@ describe("text props", () => {
   });
   it("a compiled Blueprint never carries a message key for a text prop", () => {
     const r = compile(callout({ text: { key: "secret.key", fallback: "Shown" } }), topts);
+    expect(JSON.stringify(r.blueprint)).not.toContain("secret.key");
+  });
+  // Deferred from Task 8's review: a text prop can be dropped by a degrade target's surface
+  // contract, same as any other prop. The allow-list filter runs BEFORE `resolveText` — so a
+  // dropped text prop's raw `LocalizedText` (message key included) never reaches `resolveText`,
+  // let alone the emitted widget's props. This pins that ordering rather than relying on it.
+  it("a text prop the degrade target drops is filtered before resolveText ever sees it: the raw LocalizedText never reaches props", () => {
+    const e = callout({ text: { key: "secret.key", fallback: "Shown" } });
+    const r = compile(e, { ...topts, surface: "terminal" });
+    expect(r.findings).toEqual([
+      {
+        code: "prop-not-rendered",
+        severity: "warn",
+        message: 'prop "text" of "Callout@1.0.0" is not rendered by "Note" on "terminal"',
+        nodeId: "c",
+      },
+    ]);
+    expect(widget(r).props).toEqual({});
     expect(JSON.stringify(r.blueprint)).not.toContain("secret.key");
   });
 });
