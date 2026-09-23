@@ -8,9 +8,10 @@ import type { TransientInvoker } from "./invoker";
 // with loom's EffectRuntime without either knowing the other exists. The in-process controller
 // builds ONE `limitInvoker` (the cap is controller-wide: it bounds every call it makes), ONE
 // `signalInvoker` over it bound to its own lifetime (so `dispose` cancels every upstream call at
-// once), and one `memoInvoker` PER PASS in front of both (a memo hit takes no slot). A server hydrating several
-// handles per request composes them the same way. Neither ever returns a promise it did not get
-// from the inner invoker except to wait for a slot, so they add no settle latency on a free slot.
+// once), and one `memoInvoker` PER PASS in front of both (a memo hit takes no slot). The split
+// server (`serveHandles`, split.ts) composes a memo over a cap the same way, once per batch.
+// None ever returns a promise it did not get from the inner invoker except to wait for a slot,
+// so they add no settle latency on a free slot.
 
 /**
  * At most `max` calls in flight through this invoker, across every caller. A queued call whose
