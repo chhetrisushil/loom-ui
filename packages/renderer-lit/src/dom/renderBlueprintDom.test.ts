@@ -451,3 +451,125 @@ describe("renderBlueprintDom", () => {
     handle.dispose();
   });
 });
+
+describe("renderBlueprintDom — title option", () => {
+  it("defaults to 'heading': renders the h1 and patches it on update", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+    });
+    const h1 = host.querySelector("h1");
+    expect(h1?.textContent).toBe("Dash");
+    handle.update({ ...bp, title: "Dash v2" });
+    expect(host.querySelector("h1")?.textContent).toBe("Dash v2");
+    handle.dispose();
+  });
+
+  it("title: 'heading' (explicit) behaves exactly like the default", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+      title: "heading",
+    });
+    expect(host.querySelector("h1")?.textContent).toBe("Dash");
+    handle.dispose();
+  });
+
+  it("title: 'none' renders no h1 at mount", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+      title: "none",
+    });
+    expect(host.querySelector("h1")).toBeNull();
+    handle.dispose();
+  });
+
+  it("title: 'none' — an update that changes only the title makes zero DOM mutations", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+      title: "none",
+    });
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    const r = handle.update({ ...bp, title: "Something else entirely" });
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(host.querySelector("h1")).toBeNull();
+    expect(r.findings).toEqual([]);
+    handle.dispose();
+  });
+
+  it("title: 'none' — an identical Blueprint update makes zero DOM mutations", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+      title: "none",
+    });
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    const r = handle.update(bp);
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(r.findings).toEqual([]);
+    handle.dispose();
+  });
+
+  it("'heading' — an identical Blueprint update still makes zero DOM mutations", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, bp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+      title: "heading",
+    });
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    const r = handle.update(bp);
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(r.findings).toEqual([]);
+    handle.dispose();
+  });
+});
