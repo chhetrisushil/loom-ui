@@ -164,6 +164,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "serveHandle",
       "serveHandles",
       "signalInvoker",
+      "terminalSteps",
     ]);
   });
 
