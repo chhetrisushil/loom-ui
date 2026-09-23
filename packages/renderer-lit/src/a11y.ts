@@ -1,4 +1,4 @@
-import { checkKindValue } from "@loom-ui/core";
+import { DELTA_FORMAT, checkKindValue } from "@loom-ui/core";
 import type {
   BarChartValue,
   KpiValue,
@@ -6,7 +6,7 @@ import type {
   TableValue,
   TimeSeriesValue,
 } from "@loom-ui/core";
-import { DELTA_FORMAT, type SemanticFormat, effectiveFormat, measure } from "./format";
+import { type SemanticFormat, effectiveFormat, measure } from "./format";
 import { t } from "./i18n";
 
 /**

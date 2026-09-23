@@ -1,7 +1,7 @@
-import type { KpiValue } from "@loom-ui/core";
+import { DELTA_FORMAT, type KpiValue } from "@loom-ui/core";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
-import { DELTA_FORMAT, type SemanticFormat, effectiveFormat, measure } from "../format";
+import { type SemanticFormat, effectiveFormat, measure } from "../format";
 import { LuWidget } from "./base";
 
 // A value in its own semantics, a ▲/▼ change badge, and the value's own label (the widget

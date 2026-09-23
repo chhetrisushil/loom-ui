@@ -1,5 +1,53 @@
 import type { SemanticFormat } from "./values";
 
+/** `deltaPct` is a fraction; it reads as a percentage to one decimal. One declaration, shared by
+ * every renderer's delta badge (a KPI's ▲/▼, its spoken form, and the terminal's), so they never
+ * drift apart. */
+export const DELTA_FORMAT: SemanticFormat = {
+  semanticType: "percentage",
+  maximumFractionDigits: 1,
+};
+
+let currencyCodes: ReadonlySet<string> | undefined;
+
+/**
+ * ISO 4217 by lookup, never by guess: the platform's own list, so an all-caps unit that is not a
+ * currency ("MPH", "RPM") stays a plain suffix. A runtime without `supportedValuesOf` declines.
+ */
+function isCurrencyCode(value: string): boolean {
+  if (!/^[A-Z]{3}$/.test(value)) return false;
+  if (currencyCodes === undefined) {
+    try {
+      currencyCodes = new Set(Intl.supportedValuesOf("currency"));
+    } catch {
+      // `supportedValuesOf` is optional (older runtimes). Without it, still recognise the two
+      // codes this module already special-cases via `$` and `€`, so a bare "USD"/"EUR" unit
+      // doesn't silently fall back to a plain suffix on a runtime that lacks the full list.
+      currencyCodes = new Set(["USD", "EUR"]);
+    }
+  }
+  return currencyCodes.has(value);
+}
+
+/** Read a legacy `unit` as semantics: `$`, `€`, `%`, or any ISO 4217 code. Anything else is left alone. */
+export function formatFromUnit(unit: string | undefined): SemanticFormat | undefined {
+  if (unit === undefined) return undefined;
+  const u = unit.trim();
+  if (u === "$") return { semanticType: "currency", currency: "USD" };
+  if (u === "€") return { semanticType: "currency", currency: "EUR" };
+  if (u === "%") return { semanticType: "percentage" };
+  if (isCurrencyCode(u)) return { semanticType: "currency", currency: u };
+  return undefined;
+}
+
+/** An explicit format wins; otherwise a legacy `unit` is read as semantics, if it says anything. */
+export function effectiveFormat(
+  format: SemanticFormat | undefined,
+  unit: string | undefined
+): SemanticFormat | undefined {
+  return format ?? formatFromUnit(unit);
+}
+
 /**
  * The `Intl.NumberFormat` options a `SemanticFormat` implies — the one place this mapping lives,
  * so a DOM renderer (locale-aware, its own `Intl.NumberFormat` call per reader) and a terminal
