@@ -8,6 +8,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
+import { t } from "../i18n";
 import { LuWidget } from "./base";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
@@ -22,9 +23,10 @@ function compareCells(a: TableCell, b: TableCell): number {
   if (a === null) return 1; // nulls last, whatever the direction
   if (b === null) return -1;
   if (typeof a === "number" && typeof b === "number") return a - b;
-  const as = String(a);
-  const bs = String(b);
-  return as < bs ? -1 : as > bs ? 1 : 0;
+  // At least one cell is a string (a column may legitimately mix types): compare as text but
+  // numeric-aware, so "9" sorts before "10" instead of by character code, and a numeric-looking
+  // string compares sanely against an actual number in the same column.
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
 }
 
 // A columnar table: headings (string or {label, format}) and rows of cells in column order,
@@ -83,9 +85,23 @@ export class LuTable extends LuWidget {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--gx-border, #30363d);
+    }
+    th button {
+      all: unset;
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
       cursor: pointer;
       user-select: none;
-      border-bottom: 1px solid var(--gx-border, #30363d);
+      font: inherit;
+      color: inherit;
+      text-transform: inherit;
+      letter-spacing: inherit;
+    }
+    th button:focus-visible {
+      outline: 2px solid var(--gx-accent, #6366f1);
+      outline-offset: -2px;
     }
     td {
       color: var(--gx-text, #e6edf3);
@@ -146,9 +162,10 @@ export class LuTable extends LuWidget {
               (label, i) => html`<th
                 class=${numeric[i] ? "num" : ""}
                 aria-sort=${this.sortCol === i ? (this.sortDir === 1 ? "ascending" : "descending") : "none"}
-                @click=${() => this.sortBy(i)}
               >
-                ${label}${this.sortCol === i ? (this.sortDir === 1 ? " ↑" : " ↓") : ""}
+                <button type="button" @click=${() => this.sortBy(i)}>
+                  ${label}${this.sortCol === i ? (this.sortDir === 1 ? " ↑" : " ↓") : ""}
+                </button>
               </th>`
             )}
           </tr>
@@ -169,8 +186,10 @@ export class LuTable extends LuWidget {
       ${
         shown < total
           ? html`<div class="more">
-              Showing ${shown} of ${total} rows
-              <button @click=${this.showMore}>Show ${Math.min(ROW_STEP, total - shown)} more</button>
+              ${t("Showing")} ${shown} ${t("of")} ${total} ${t("rows")}
+              <button @click=${this.showMore}>
+                ${t("Show")} ${Math.min(ROW_STEP, total - shown)} ${t("more")}
+              </button>
             </div>`
           : nothing
       }`;
