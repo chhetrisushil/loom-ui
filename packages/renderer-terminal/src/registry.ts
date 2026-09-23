@@ -94,6 +94,22 @@ const guarded =
     return body(w, v);
   };
 
+// The right-axis marker is semantic information (which axis a series reads against), so it must
+// never be lost to the label column's fixed width. `pad(`${label}${marker}`, width)` — padding
+// the already-concatenated string — truncates whichever part lands past the width, so a label
+// alone at or beyond `width` swallows the marker whole. Truncate the LABEL alone to leave room
+// for the marker, then append the marker after, so it always survives; a short label+marker
+// still pads to `width` exactly as before, so every row's sparkline column stays aligned.
+const RIGHT_AXIS_MARKER = " (R)";
+
+function padLabelWithMarker(label: string, marker: string, width: number): string {
+  const combined = `${label}${marker}`;
+  if (combined.length <= width) return combined.padEnd(width);
+  if (marker === "") return combined.slice(0, width);
+  const truncatedLabel = label.slice(0, Math.max(width - marker.length, 0));
+  return `${truncatedLabel}${marker}`;
+}
+
 const timeSeries = guarded("TimeSeries", (w, v) => {
   const { series } = v as TimeSeriesValue;
   const props = w.props as { unit?: string; format?: SemanticFormat };
@@ -107,7 +123,8 @@ const timeSeries = guarded("TimeSeries", (w, v) => {
     // Same precedence as the web's `formatOf` (lu-timeseries.ts): this series' own format, else
     // the widget's; a unit resolves only when neither format does.
     const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
-    return `    ${pad(`${s.label}${splitAxes && s.axis === "right" ? " (R)" : ""}`, 12)} ${sparkline(values)}  ${text}`;
+    const marker = splitAxes && s.axis === "right" ? RIGHT_AXIS_MARKER : "";
+    return `    ${padLabelWithMarker(s.label, marker, 12)} ${sparkline(values)}  ${text}`;
   });
   return [`${title(w)}:`, ...lines].join("\n");
 });

@@ -288,6 +288,29 @@ describe("terminal registry", () => {
       }) ?? "";
     expect(allRight).not.toContain("(R)");
   });
+  it("the (R) marker survives truncation of a long right-axis label; a long left-axis label is still truncated, and rows stay column-aligned", () => {
+    const ts = loomUiTerminalRegistry.get("TimeSeries");
+    const w = customWidget$({ kind: "TimeSeries", title: "Perf", binding: b });
+    const out =
+      ts?.(w, {
+        series: [
+          { label: "Queue depth over time", points: [{ timestamp: "a", value: 1 }] },
+          { label: "Pick latency", axis: "right", points: [{ timestamp: "a", value: 1 }] },
+        ],
+      }) ?? "";
+    const lines = out.split("\n").slice(1);
+    const [leftLine, rightLine] = [lines[0] ?? "", lines[1] ?? ""];
+    // The marker is semantic information: never truncated away, no matter how long the label is.
+    expect(rightLine).toContain("(R)");
+    expect(rightLine).toContain(" (R)");
+    // A long left-axis label truncates exactly as before (to the 12-char column), unmarked.
+    expect(leftLine).not.toContain("(R)");
+    expect(leftLine).toContain("Queue depth");
+    expect(leftLine).not.toContain("Queue depth over time");
+    // Both rows' sparkline column starts at the same offset, marked or not.
+    const sparkAt = (line: string) => line.search(/[▁▂▃▄▅▆▇█]/);
+    expect(sparkAt(leftLine)).toBe(sparkAt(rightLine));
+  });
   it("a unit stays beside a format that draws no symbol; currency and percent never double theirs", () => {
     const dec = { semanticType: "decimal" } as const;
     const kpi = loomUiTerminalRegistry.get("Kpi");
