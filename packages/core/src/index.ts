@@ -1,6 +1,9 @@
 export { orderKeyAfterAll, orderKeyBetween } from "./order";
 export {
   ExperienceNode,
+  GRID_COLUMNS,
+  GridColumn,
+  GridLine,
   LocalizedText,
   MAX_TREE_DEPTH,
   NodeId,
@@ -10,13 +13,16 @@ export {
   Span,
   findNode,
   isContainer,
+  isPlaced,
   nodeIds,
   normalize,
+  placementOf,
+  placementProblems,
   rebuild,
   treeDepth,
   walk,
 } from "./node";
-export type { ContainerNode, SemanticNode } from "./node";
+export type { ContainerNode, Placement, SemanticNode } from "./node";
 export {
   Experience,
   Intent,
