@@ -19,7 +19,7 @@ import {
   providerParams,
 } from "./params";
 import { terminalSteps, topoWaves } from "./plan";
-import { outputShapeHashOf, reshape, safeStringify } from "./reshape";
+import { type ReshaperRegistry, outputShapeHashOf, reshape, safeStringify } from "./reshape";
 
 // ── Executing one provider ────────────────────────────────────────────────────
 // The transient interpreter (ADRs 0060–0066): walk the graph in waves, invoke `mcp.invoke` per
@@ -101,6 +101,8 @@ export interface ExecuteOptions {
   readonly argumentHook?: ArgumentHook;
   /** On an input-schema drift. Default `"report"`. */
   readonly inputDrift?: InputDriftMode;
+  /** Where `reshaping.engine: "Named"` looks its reshaper up. */
+  readonly reshapers?: ReshaperRegistry;
 }
 
 async function mapLimit<T, R>(
@@ -325,6 +327,7 @@ export async function executeProvider(
     invoker: opts.invoker,
     ...(opts.signal && { signal: opts.signal }),
     ...(opts.principal && { principal: opts.principal }),
+    ...(opts.reshapers && { reshapers: opts.reshapers }),
   });
   if (!shaped.ok) {
     findings.push(shaped.finding);
