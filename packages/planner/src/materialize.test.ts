@@ -612,17 +612,53 @@ describe("materialize — revise (diff against the base)", () => {
       }),
     ]);
   });
-  it("a span change is reported (span-unchanged, warn) and not applied — span is not a prop", () => {
-    const exp = composed();
+  it("a span change is applied as setPlacement(span) — and leaves the node's grid placement alone", () => {
+    const placed = apply(composed(), { type: "setPlacement", nodeId: "note", row: 3, column: 1 });
+    if (!placed.ok) throw new Error(placed.finding.message);
     const revised: PlanDraft = {
       summary: "s",
       nodes: draft.nodes.map((n, i) => (i === 2 ? { ...n, span: 6 } : n)),
     };
-    const { ops, findings } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
-    expect(ops).toEqual([]);
-    expect(findings).toEqual([
-      expect.objectContaining({ code: "span-unchanged", severity: "warn", nodeId: "note" }),
-    ]);
+    const { ops, findings } = materialize(
+      revised,
+      placed.value,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings).toEqual([]);
+    expect(ops).toEqual([{ type: "setPlacement", nodeId: "note", span: 6 }]);
+    const r = replay(placed.value, ops);
+    const note = r.ok && isContainer(r.value.root) ? r.value.root.children[2] : undefined;
+    expect(note).toMatchObject({ id: "note", span: 6, row: 3, column: 1 });
+  });
+  it("a widening span that would overflow the grid emits setPlacement with column CLAMPED so it fits — the model never named a column", () => {
+    const placed = apply(composed(), { type: "setPlacement", nodeId: "orders", column: 9 });
+    if (!placed.ok) throw new Error(placed.finding.message);
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: draft.nodes.map((n, i) => (i === 0 ? { ...n, span: 6 } : n)),
+    };
+    const { ops, findings } = materialize(
+      revised,
+      placed.value,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings).toEqual([]);
+    expect(ops).toEqual([{ type: "setPlacement", nodeId: "orders", span: 6, column: 7 }]);
+    const r = replay(placed.value, ops);
+    const orders = r.ok && isContainer(r.value.root) ? r.value.root.children[0] : undefined;
+    expect(orders).toMatchObject({ id: "orders", span: 6, column: 7 });
+  });
+  it("a widening span that does NOT overflow leaves column absent from the op", () => {
+    const placed = apply(composed(), { type: "setPlacement", nodeId: "orders", column: 1 });
+    if (!placed.ok) throw new Error(placed.finding.message);
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: draft.nodes.map((n, i) => (i === 0 ? { ...n, span: 6 } : n)),
+    };
+    const { ops } = materialize(revised, placed.value, planningCatalog, capabilitiesFixture);
+    expect(ops).toEqual([{ type: "setPlacement", nodeId: "orders", span: 6 }]);
   });
   it("never touches a nested container's children: a draft node id that names a container is refused", () => {
     const exp = composed();
