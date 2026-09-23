@@ -1,5 +1,6 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as i18n from "../i18n";
 import { setLocale } from "../i18n";
 import "./index";
 
@@ -72,13 +73,58 @@ describe("lu-table", () => {
   it("sorts by column index, nulls last, and says so via aria-sort", async () => {
     const el = await mount("lu-table", { widget, value });
     const th = el.shadowRoot?.querySelectorAll("th");
-    (th?.[1] as HTMLElement).click();
+    (th?.[1]?.querySelector("button") as HTMLElement)?.click();
     await el.updateComplete;
     expect(firstCells(el)).toEqual(["orders", "carts", "users"]);
     expect(th?.[1]?.getAttribute("aria-sort")).toBe("descending");
-    (th?.[0] as HTMLElement).click();
+    (th?.[0]?.querySelector("button") as HTMLElement)?.click();
     await el.updateComplete;
     expect(firstCells(el)).toEqual(["users", "orders", "carts"]);
+  });
+  it("sort headers are real buttons — keyboard reachable — while aria-sort stays on the th", async () => {
+    const el = await mount("lu-table", { widget, value });
+    const th = el.shadowRoot?.querySelectorAll("th");
+    const btn = th?.[1]?.querySelector("button");
+    expect(btn?.tagName).toBe("BUTTON");
+    expect(th?.[1]?.hasAttribute("aria-sort")).toBe(true);
+    expect(btn?.hasAttribute("aria-sort")).toBe(false);
+    // A native <button> is keyboard-operable by the browser itself: focusable by default, and
+    // Enter/Space synthesize a click. Invoking it directly is the DOM-level stand-in for that
+    // keyboard activation (happy-dom does not itself synthesize clicks from keydown).
+    (btn as HTMLElement)?.focus();
+    (btn as HTMLElement)?.click();
+    await el.updateComplete;
+    expect(th?.[1]?.getAttribute("aria-sort")).toBe("descending");
+    expect(firstCells(el)).toEqual(["orders", "carts", "users"]);
+  });
+  it("sorts numeric-looking strings and mixed number/string cells numerically, not lexicographically", async () => {
+    setLocale("en-US");
+    const mixedWidget = customWidget$({ kind: "Table", id: "t-mixed", title: "Mixed", binding: b });
+    const el = await mount("lu-table", {
+      widget: mixedWidget,
+      value: { columns: ["n"], rows: [["9"], ["10"], [2]] },
+    });
+    const btn = el.shadowRoot?.querySelector("th")?.querySelector("button");
+    expect(btn).not.toBeUndefined();
+    (btn as HTMLElement).click();
+    await el.updateComplete;
+    // First click sorts descending: "10" > "9" > 2, not the lexicographic "2" < "9" < "10"
+    // (nor the insertion order "9", "10", 2 a no-op click would leave behind).
+    expect(firstCells(el)).toEqual(["10", "9", "2"]);
+  });
+  it("'showing' and 'more' chrome text passes through t()", async () => {
+    const spy = vi.spyOn(i18n, "t");
+    const rows = Array.from({ length: 205 }, (_, i) => [`r${i}`]);
+    const el = await mount("lu-table", {
+      widget: customWidget$({ kind: "Table", id: "t-big", title: "Big", binding: b }),
+      value: { columns: ["id"], rows },
+    });
+    const more = el.shadowRoot?.querySelector(".more");
+    expect(more?.textContent?.replace(/\s+/g, " ").trim()).toContain("Showing 200 of 205 rows");
+    expect(more?.querySelector("button")?.textContent?.trim()).toBe("Show 5 more");
+    const calledWith = spy.mock.calls.map(([k]) => k);
+    expect(calledWith).toEqual(expect.arrayContaining(["Showing", "of", "rows", "Show", "more"]));
+    spy.mockRestore();
   });
   it("a row shorter than the columns shows — for the missing cell; records are a contract error", async () => {
     const el = await mount("lu-table", {
@@ -108,6 +154,39 @@ describe("lu-status-card", () => {
     await el.updateComplete;
     expect(stateOf(el)).toBe("error");
   });
+  it("shows a visible, non-colour cue for the level — not colour alone", async () => {
+    const warn = await mount("lu-status-card", {
+      widget: customWidget$({ kind: "StatusCard", id: "s2", title: "Replication", binding: b }),
+      value: { level: "warning", headline: "Lag" },
+    });
+    const critical = await mount("lu-status-card", {
+      widget: customWidget$({ kind: "StatusCard", id: "s3", title: "Replication", binding: b }),
+      value: { level: "critical", headline: "Down" },
+    });
+    const ok = await mount("lu-status-card", {
+      widget: customWidget$({ kind: "StatusCard", id: "s4", title: "Replication", binding: b }),
+      value: { level: "ok", headline: "Fine" },
+    });
+    const cueOf = (el: HTMLElement) =>
+      el.shadowRoot?.querySelector("[data-level-text]")?.textContent?.trim();
+    expect(cueOf(warn)).toBe("warning");
+    expect(cueOf(critical)).toBe("critical");
+    expect(cueOf(ok)).toBe("ok");
+    // Three genuinely distinct cues, not the same text painted three colours.
+    expect(new Set([cueOf(warn), cueOf(critical), cueOf(ok)]).size).toBe(3);
+  });
+  it("announces once: the live region carries the description, the group's name stays the plain title", async () => {
+    const el = await mount("lu-status-card", {
+      widget: customWidget$({ kind: "StatusCard", id: "s5", title: "Replication", binding: b }),
+      value: { level: "warning", headline: "Replica lag", detail: "12s behind" },
+    });
+    const group = el.shadowRoot?.querySelector("[role='group']");
+    expect(group?.getAttribute("aria-label")).toBe("Replication");
+    const live = el.shadowRoot?.querySelector("[role='status']");
+    expect(live?.getAttribute("aria-live")).toBe("polite");
+    expect(live?.textContent).toContain("Replica lag");
+    expect(live?.textContent).toContain("12s behind");
+  });
 });
 
 describe("lu-note", () => {
@@ -135,5 +214,35 @@ describe("lu-note", () => {
     });
     expect(text(el)).toContain("Fallback");
     expect(text(el)).not.toContain("note.k");
+  });
+  it("a non-undefined bound value is a contract error, not silently ignored", async () => {
+    const el = await mount("lu-note", {
+      widget: customWidget$({
+        kind: "Note",
+        id: "n3",
+        title: "About",
+        props: { text: "Plain words" },
+      }),
+    });
+    expect(stateOf(el)).toBeUndefined();
+    Object.assign(el, { value: "unexpected" });
+    await el.updateComplete;
+    expect(stateOf(el)).toBe("error");
+  });
+});
+
+describe("lu-kpi and lu-status-card colour tokens", () => {
+  it("expose their level/delta colours as --lu-* custom properties with the current hex as fallback", async () => {
+    const { LuKpi } = await import("./lu-kpi");
+    const { LuStatusCard } = await import("./lu-status-card");
+    const kpiCss = (LuKpi.styles as unknown as { cssText: string }).cssText;
+    const cardCss = (LuStatusCard.styles as unknown as { cssText: string }).cssText;
+    expect(kpiCss).toContain("var(--lu-delta-up, #4ade80)");
+    expect(kpiCss).toContain("var(--lu-delta-down, #f87171)");
+    expect(kpiCss).not.toMatch(/--gx-delta/);
+    expect(cardCss).toContain("var(--lu-status-ok, #4ade80)");
+    expect(cardCss).toContain("var(--lu-status-warning, #fbbf24)");
+    expect(cardCss).toContain("var(--lu-status-critical, #f87171)");
+    expect(cardCss).not.toMatch(/--gx-status/);
   });
 });

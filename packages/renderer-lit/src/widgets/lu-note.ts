@@ -10,8 +10,11 @@ function noteText(value: unknown): string {
   return parsed.success ? parsed.data.fallback : "";
 }
 
-// Static text from props. A Note is never bound, so the status matrix does not apply: its
-// value is always undefined, which the matrix would read as "loading" forever.
+// Static text from props. A Note is never bound, so an undefined value bypasses the status
+// matrix entirely — the matrix would read "never bound" as "loading" forever. A DEFINED value
+// reaching a Note is a contract violation (its kind contract is `z.undefined()`, per
+// `kindValueContracts`), not something to render around silently: that case still goes through
+// the standard matrix, which turns the failed `checkKindValue` into the usual error state.
 @customElement("lu-note")
 export class LuNote extends LuWidget {
   readonly kind = "Note";
@@ -38,6 +41,7 @@ export class LuNote extends LuWidget {
   `;
 
   render(): TemplateResult | typeof nothing {
+    if (this.value !== undefined) return super.render();
     return this.renderReady();
   }
 

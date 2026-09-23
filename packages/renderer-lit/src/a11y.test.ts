@@ -75,4 +75,20 @@ describe("describeValue", () => {
       describeValue("StatusCard", { level: "warning", headline: "Lag", detail: "12s" }, "DB")
     ).toBe("DB: warning, Lag. 12s");
   });
+  it("speaks a Kpi's props.unit/props.format fallback the same way lu-kpi displays it", () => {
+    setLocale("en-US");
+    // Same shape as lu-kpi's renderReady: value carries neither unit nor format, so both come
+    // from the widget's props — the spoken text must match what the element shows, not a bare
+    // number.
+    expect(describeValue("Kpi", { value: 1234.5 }, "Revenue", { unit: "USD" })).toBe(
+      "Revenue: $1,234.50"
+    );
+    expect(
+      describeValue("Kpi", { value: 0.5 }, "Share", { format: { semanticType: "percentage" } })
+    ).toBe("Share: 50%");
+    // The value's own unit/format still win over the widget's props.
+    expect(describeValue("Kpi", { value: 7, unit: "ms" }, "p99", { unit: "USD" })).toBe(
+      "p99: 7 ms"
+    );
+  });
 });

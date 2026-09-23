@@ -40,12 +40,12 @@ export class LuKpi extends LuWidget {
       border-radius: 999px;
     }
     .up {
-      color: #4ade80;
-      background: rgba(74, 222, 128, 0.12);
+      color: var(--lu-delta-up, #4ade80);
+      background: var(--lu-delta-up-bg, rgba(74, 222, 128, 0.12));
     }
     .down {
-      color: #f87171;
-      background: rgba(248, 113, 113, 0.12);
+      color: var(--lu-delta-down, #f87171);
+      background: var(--lu-delta-down-bg, rgba(248, 113, 113, 0.12));
     }
     .label {
       font-size: 12px;

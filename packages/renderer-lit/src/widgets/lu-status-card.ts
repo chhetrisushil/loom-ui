@@ -2,6 +2,7 @@ import type { StatusCardValue } from "@loom-ui/core";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { describeValue } from "../a11y";
+import { t } from "../i18n";
 import { LuWidget } from "./base";
 
 // A level dot, a headline and optional detail. The description also lives in a visually-hidden
@@ -43,13 +44,19 @@ export class LuStatusCard extends LuWidget {
       box-shadow: 0 0 8px currentColor;
     }
     .ok {
-      color: #4ade80;
+      color: var(--lu-status-ok, #4ade80);
     }
     .warning {
-      color: #fbbf24;
+      color: var(--lu-status-warning, #fbbf24);
     }
     .critical {
-      color: #f87171;
+      color: var(--lu-status-critical, #f87171);
+    }
+    .level-text {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
     .headline {
       font-size: 14px;
@@ -64,6 +71,18 @@ export class LuStatusCard extends LuWidget {
     }
   `;
 
+  /**
+   * The group's own accessible name stays the plain title: the polite live region below already
+   * speaks the level/headline/detail sentence on every change, and the visible headline speaks
+   * it again in the ordinary reading order. Using the full sentence here too would announce the
+   * same content a third time to a screen reader entering the widget.
+   */
+  protected override label(): string {
+    if (this.state().state !== "ready") return super.label();
+    const source = this.sourceLabel;
+    return source === undefined ? this.title_ : `${source}: ${this.title_}`;
+  }
+
   protected renderReady(): TemplateResult | typeof nothing {
     // `level` is one of three literals: the contract ran before this did.
     const v = this.value as StatusCardValue;
@@ -73,6 +92,7 @@ export class LuStatusCard extends LuWidget {
       <div class="card">
         <span class="dot ${v.level}" data-level=${v.level} aria-hidden="true"></span>
         <div>
+          <div class="level-text ${v.level}" data-level-text>${t(v.level)}</div>
           <div class="headline">${v.headline}</div>
           ${v.detail ? html`<div class="detail">${v.detail}</div>` : nothing}
         </div>

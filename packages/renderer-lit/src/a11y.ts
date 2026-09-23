@@ -62,8 +62,12 @@ export function describeValue(
     }
     case "Kpi": {
       const v = value as KpiValue;
-      const fmt = effectiveFormat(v.format, v.unit);
-      const suffix = fmt === undefined && v.unit ? ` ${v.unit}` : "";
+      // Same fallback lu-kpi's renderReady uses: the value's own unit/format win, then the
+      // widget's props — the spoken text must not drop to a bare number when only props carry
+      // the semantics.
+      const unit = v.unit ?? p?.unit;
+      const fmt = effectiveFormat(v.format ?? p?.format, unit);
+      const suffix = fmt === undefined && unit ? ` ${unit}` : "";
       const delta = v.deltaPct ?? null;
       const change =
         delta === null
