@@ -9,6 +9,7 @@ import {
   isContainer,
   nodeIds,
   orderKeyAfterAll,
+  walk,
 } from "@loom-ui/core";
 import { jsonPathSelect, outputShapeHashOf } from "@loom-ui/hydration";
 import { strictest } from "@loom/classify";
@@ -122,7 +123,7 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
  * root (nested containers are the app's, untouched here); a draft id that names a container is
  * refused as `not-semantic`, and one that names a node NESTED inside such a container is refused
  * as `nested-node` — `describeExperience` never shows those, so a draft naming one is either a
- * hallucination or an instruction the model was told to ignore. Order: remapProvider before the bindProvider/insertNode that needs it; removals last.
+ * hallucination or an instruction the model was told to ignore. Order: remapProvider before the bindProvider/insertNode that needs it; removals last — `removeNode`, then a `removeProvider` for every handle the plan orphaned (`orphanedProviders`).
  *
  * `setProps` (core's `apply`) MERGES the patch into the existing props, so there is no way to
  * DELETE a key through this op: a patch value of `undefined` round-trips through `Operation`'s
@@ -140,6 +141,42 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
  * op. Only a type the catalogue marks `model-may-set` gets those warns; everywhere else the class
  * is the caller's and the model never saw it.
  */
+/**
+ * The providers a plan ORPHANS: every handle the base declares AND some base node binds, that
+ * no node binds once `ops` apply (a `removeNode` drops its whole subtree's bindings; a
+ * `bindProvider` moves a node to another handle; an `insertNode` adds its subtree's). One
+ * `removeProvider` each, sorted by handle — so they replay AFTER the ops that orphaned them.
+ * A provider the base declared with no binder is not this plan's to retire: the app may hold
+ * it on purpose.
+ */
+export function orphanedProviders(base: Experience, ops: readonly Operation[]): Operation[] {
+  const removed = new Set<string>();
+  const rebound = new Map<string, string>();
+  const after = new Set<string>();
+  for (const op of ops) {
+    if (op.type === "removeNode") removed.add(op.nodeId);
+    else if (op.type === "bindProvider") rebound.set(op.nodeId, op.handle);
+    else if (op.type === "insertNode")
+      walk(op.node, (n) => {
+        if (n.kind === "semantic" && n.binding !== undefined) after.add(n.binding.handle);
+      });
+  }
+  const before = new Set<string>();
+  walk(base.root, (n, parent) => {
+    // Parent before children, so a removed container's descendants are marked on the way down.
+    if (parent !== null && removed.has(parent.id)) removed.add(n.id);
+    if (n.kind !== "semantic") return;
+    if (n.binding !== undefined) before.add(n.binding.handle);
+    if (removed.has(n.id)) return;
+    const handle = rebound.get(n.id) ?? n.binding?.handle;
+    if (handle !== undefined) after.add(handle);
+  });
+  return [...before]
+    .filter((h) => !after.has(h) && Object.prototype.hasOwnProperty.call(base.providers, h))
+    .sort()
+    .map((handle) => ({ type: "removeProvider", handle }));
+}
+
 export function materialize(
   draft: PlanDraft,
   base: Experience,
@@ -386,6 +423,9 @@ export function materialize(
   for (const c of root.children) {
     if (!seen.has(c.id) && c.kind === "semantic") ops.push({ type: "removeNode", nodeId: c.id });
   }
+  // Last of all: a remove or a rebind can leave a provider no node binds any more. Left in
+  // place it keeps its stale pin forever, and a pin-freshness check fails on data nothing shows.
+  ops.push(...orphanedProviders(base, ops));
   return { ops, findings };
 }
 

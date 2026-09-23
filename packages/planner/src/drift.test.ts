@@ -203,7 +203,16 @@ describe("drift → revision", () => {
         spec?: { outputShapeHash: string; reshaping: { scriptRef: string } };
       }>;
     };
-    expect(op.materialized.map((o) => o.type)).toEqual(["remapProvider", "bindProvider"]);
+    // The one binder moved to the re-authored handle, so the drifted spec is retired with it.
+    expect(op.materialized.map((o) => o.type)).toEqual([
+      "remapProvider",
+      "bindProvider",
+      "removeProvider",
+    ]);
+    const before = isContainer(exp.root) ? exp.root.children[0] : undefined;
+    expect(op.materialized[2]?.handle).toBe(
+      before?.kind === "semantic" ? before.binding?.handle : undefined
+    );
     const remap = op.materialized[0];
     const bind = op.materialized[1];
     expect(remap?.spec?.reshaping.scriptRef).toBe("totals.count.value");

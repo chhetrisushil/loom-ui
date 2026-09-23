@@ -1,8 +1,15 @@
-import { type Operation, apply, genesis, replay, validateExperience } from "@loom-ui/core";
+import {
+  type Operation,
+  apply,
+  genesis,
+  isContainer,
+  replay,
+  validateExperience,
+} from "@loom-ui/core";
 import { outputShapeHashOf } from "@loom-ui/hydration";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
-import { buildProviderSpec, materialize, providerHandle } from "./materialize";
+import { buildProviderSpec, materialize, orphanedProviders, providerHandle } from "./materialize";
 import type { CapabilityRef } from "./spi";
 import {
   capabilitiesFixture,
@@ -58,6 +65,14 @@ const declaredBefore = (ops: Operation[]) =>
       ops.slice(0, i).some((p) => p.type === "remapProvider" && p.handle === handle)
     );
   });
+
+const buildSpecFor = (handle: string) => ({
+  handle,
+  executionGraph: [],
+  reshaping: { engine: "JSONPath" as const, scriptRef: "" },
+  outputShapeHash: "sha256:x",
+  cachePolicy: { ttlSeconds: 60, scope: "principal" as const },
+});
 
 describe("materialize — compose", () => {
   it("declares a provider before any op that references its handle, one insertNode per node in order, and replays to a valid experience", () => {
@@ -319,6 +334,13 @@ describe("materialize — compose", () => {
 });
 
 describe("materialize — revise (diff against the base)", () => {
+  const countHandle = providerHandle(
+    "orders.summary",
+    "2.1.0",
+    "sha256:orders-summary-2-1",
+    { window: "7d" },
+    "totals.count"
+  );
   const composed = () => {
     const r = replay(base(), materialize(draft, base(), planningCatalog, capabilitiesFixture).ops);
     if (!r.ok) throw new Error(r.finding.message);
@@ -369,7 +391,9 @@ describe("materialize — revise (diff against the base)", () => {
       ],
     };
     const { ops } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
-    expect(ops.map((o) => o.type)).toEqual(["remapProvider", "bindProvider"]);
+    expect(ops.map((o) => o.type)).toEqual(["remapProvider", "bindProvider", "removeProvider"]);
+    // `orders` was the only binder of the 7d handle; re-pathing it orphans that provider.
+    expect(ops[2]).toEqual({ type: "removeProvider", handle: countHandle });
   });
   it("a binding whose ONLY change is its sensitivity emits a bindProvider carrying it — the handle is untouched, so no remapProvider", () => {
     const exp = composed();
@@ -696,5 +720,106 @@ describe("materialize — revise (diff against the base)", () => {
       "root",
     ]);
     expect(ops.some((o) => o.type === "insertNode")).toBe(false);
+  });
+  it("removing the only binder of a handle retires its provider, after the removeNode", () => {
+    const exp = composed();
+    const revised: PlanDraft = { summary: "s", nodes: [draft.nodes[1]!, draft.nodes[2]!] };
+    const { ops } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
+    expect(ops).toEqual([
+      { type: "removeNode", nodeId: "orders" },
+      { type: "removeProvider", handle: countHandle },
+    ]);
+    const r = replay(exp, ops);
+    expect(r.ok).toBe(true);
+    expect(r.ok && Object.prototype.hasOwnProperty.call(r.value.providers, countHandle)).toBe(
+      false
+    );
+  });
+  it("a handle another node still binds is kept", () => {
+    const shared: PlanDraft = {
+      summary: "s",
+      nodes: [draft.nodes[0]!, { ...draft.nodes[0]!, id: "orders_copy" }],
+    };
+    const r0 = replay(
+      base(),
+      materialize(shared, base(), planningCatalog, capabilitiesFixture).ops
+    );
+    if (!r0.ok) throw new Error(r0.finding.message);
+    const { ops } = materialize(
+      { summary: "s", nodes: [draft.nodes[0]!] },
+      r0.value,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(ops).toEqual([{ type: "removeNode", nodeId: "orders_copy" }]);
+  });
+  it("a provider the base declared with NO binder is not the plan's to retire", () => {
+    const withAppOwned = apply(composed(), {
+      type: "remapProvider",
+      handle: "app_owned",
+      spec: {
+        handle: "app_owned",
+        executionGraph: [],
+        reshaping: { engine: "JSONPath", scriptRef: "" },
+        outputShapeHash: "sha256:x",
+        cachePolicy: { ttlSeconds: 60, scope: "principal" },
+      },
+    });
+    if (!withAppOwned.ok) throw new Error(withAppOwned.finding.message);
+    const { ops } = materialize(draft, withAppOwned.value, planningCatalog, capabilitiesFixture);
+    expect(ops).toEqual([]);
+  });
+  it("orphanedProviders counts nested binders and removed subtrees, and sorts by handle", () => {
+    const g0 = base();
+    const e = replay(g0, [
+      {
+        type: "remapProvider",
+        handle: "b",
+        spec: { ...buildSpecFor("b") },
+      },
+      { type: "remapProvider", handle: "a", spec: { ...buildSpecFor("a") } },
+      {
+        type: "insertNode",
+        parentId: "root",
+        node: {
+          id: "box",
+          order: "a",
+          kind: "container",
+          direction: "row",
+          span: 12,
+          children: [
+            {
+              id: "x",
+              order: "V",
+              kind: "semantic",
+              type: "Metric",
+              typeVersion: "1.0.0",
+              span: 4,
+              props: {},
+              binding: { handle: "b", priority: "P1" },
+            },
+            {
+              id: "y",
+              order: "W",
+              kind: "semantic",
+              type: "Metric",
+              typeVersion: "1.0.0",
+              span: 4,
+              props: {},
+              binding: { handle: "a", priority: "P1" },
+            },
+          ],
+        },
+      },
+    ]);
+    if (!e.ok) throw new Error(e.finding.message);
+    expect(orphanedProviders(e.value, [{ type: "removeNode", nodeId: "box" }])).toEqual([
+      { type: "removeProvider", handle: "a" },
+      { type: "removeProvider", handle: "b" },
+    ]);
+    expect(orphanedProviders(e.value, [])).toEqual([]);
+    expect(
+      orphanedProviders(e.value, [{ type: "bindProvider", nodeId: "x", handle: "a" }])
+    ).toEqual([{ type: "removeProvider", handle: "b" }]);
   });
 });

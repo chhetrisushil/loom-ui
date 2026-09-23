@@ -9,7 +9,13 @@ export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } 
 export type { ReferencePlannerOptions } from "./reference";
 export { EXPERIENCE_OP_ACTION, EXPERIENCE_PROMOTED, interpretAction } from "./interaction";
 export type { ExperiencePromotedPayload, Interpretation } from "./interaction";
-export { DEFAULT_TTL_SECONDS, buildProviderSpec, materialize, providerHandle } from "./materialize";
+export {
+  DEFAULT_TTL_SECONDS,
+  buildProviderSpec,
+  materialize,
+  orphanedProviders,
+  providerHandle,
+} from "./materialize";
 export {
   COMPOSE_SYSTEM,
   MAX_FENCE_BODY,
