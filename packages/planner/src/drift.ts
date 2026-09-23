@@ -25,7 +25,8 @@ function boundNodeIds(exp: Experience, handle: string): string[] {
  *
  * OPERATOR-AUTHORED WORDS ONLY. Everything interpolated here is a framework identifier the
  * framework itself constrains — a provider handle (`p-<hash>`, minted by `providerHandle`), a
- * node id (`DRAFT_ID`: `^[a-z][a-z0-9_]{0,31}$`), a step id, a tool name and a shape HASH. No
+ * node id (`DRAFT_ID`: `^[a-z][a-z0-9_]{0,31}$`), a step id, a tool name, a catalogue widget kind
+ * and a shape HASH. No
  * tool-authored text and no observed SHAPES: a shape is a structure the tool server chose the
  * key names of, so it is data — `reviseForDrift` hands it over as `context`, which
  * `reviseMessages` renders inside a DATA fence.
@@ -39,6 +40,8 @@ export function driftRequest(
     const nodes = boundNodeIds(exp, d.handle);
     for (const n of nodes) scope.add(n);
     const spec = exp.providers[d.handle];
+    if (d.kind === "output" && d.contractKind !== undefined)
+      return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer satisfies the value contract of kind "${d.contractKind}" (observed shape ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the contract, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output as a valid ${d.contractKind} value; keep the node id, label, type and props.`;
     return d.kind === "output"
       ? `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer matches the pinned shape ${d.expected} (observed ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the pin, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.`
       : `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) has an input-schema drift on step ${d.stepId ?? "?"} (${d.toolName ?? "?"}): expected ${d.expected}, observed ${d.observed}. Re-bind it with the offered capability for that tool.`;

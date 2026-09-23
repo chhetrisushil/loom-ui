@@ -70,4 +70,18 @@ describe("handleKinds", () => {
     const ghost: SemanticNode = { ...sem("g", "h3"), type: "Nope" };
     expect(handleKinds(exp([ghost]), testCatalog, "web").size).toBe(0);
   });
+
+  it("resolves a bound node nested inside a container, not just direct root children", () => {
+    const row: ContainerNode = {
+      id: "row",
+      order: "m",
+      kind: "container",
+      direction: "row",
+      span: 12,
+      children: [sem("nested", "h1")],
+    };
+    expect(Object.fromEntries(handleKinds(exp([row]), testCatalog, "web"))).toEqual({
+      h1: ["MetricCard"],
+    });
+  });
 });

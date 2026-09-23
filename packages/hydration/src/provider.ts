@@ -1,4 +1,10 @@
-import type { Finding, MCPToolNode, ProviderSpec } from "@loom-ui/core";
+import {
+  type Finding,
+  type MCPToolNode,
+  type ProviderSpec,
+  checkKindValue,
+  kindValueContract,
+} from "@loom-ui/core";
 import { type TaintedValue, tainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
@@ -21,6 +27,11 @@ export interface DriftRecord {
   readonly toolName?: string;
   readonly expected: string;
   readonly observed: string;
+  /**
+   * Output drift under `outputCheck: "contract"` only: the kind whose value contract the reshaped
+   * value failed. `expected` is then `contract:<kind>` and `observed` the value's shape hash.
+   */
+  readonly contractKind?: string;
   /**
    * Output drift only: the structural shape loom's `shapeOf` saw of the RESHAPED value — the one
    * that failed the pin, so it explains the mismatch. Absent when the value could not be walked.
@@ -55,6 +66,12 @@ export interface ExecuteOptions {
   readonly concurrency?: number;
   /** Attach the RAW terminal output to an output-drift record as a tainted sample. Default false. */
   readonly captureSample?: boolean;
+  /**
+   * The kinds the handle's bound nodes resolve to on the surface being hydrated (core's
+   * `handleKinds`). Read only when the spec's `outputCheck` is `"contract"` — which REFUSES to run
+   * without them: a contract check over no kinds would pass every value.
+   */
+  readonly kinds?: readonly string[];
 }
 
 async function mapLimit<T, R>(
@@ -211,6 +228,8 @@ export async function executeProvider(
     return { ok: false, finding: shaped.finding, drift, findings };
   }
 
+  if (spec.outputCheck === "contract")
+    return checkContract(spec, shaped.value, raw, opts, drift, findings);
   if (spec.outputShapeHash === "") {
     findings.push({
       code: "output-shape-unpinned",
@@ -268,4 +287,82 @@ export async function executeProvider(
     return { ok: false, finding: f, drift, findings };
   }
   return { ok: true, value: shaped.value, findings };
+}
+
+/**
+ * `outputCheck: "contract"`: the reshaped value must satisfy the value contract of EVERY kind the
+ * handle feeds (each widget renders the same value); kinds are checked in sorted order and the
+ * first failure is the drift. `undefined` is refused explicitly — `checkKindValue` passes it as
+ * "not hydrated yet", but a load that produced nothing is not a healthy value.
+ */
+function checkContract(
+  spec: ProviderSpec,
+  value: unknown,
+  raw: unknown,
+  opts: ExecuteOptions,
+  drift: DriftRecord[],
+  findings: Finding[]
+): ProviderOutcome {
+  const kinds = [...new Set(opts.kinds ?? [])].sort();
+  if (kinds.length === 0) {
+    const f = err(
+      "output-contract-unbound",
+      `provider "${spec.handle}" checks its output by contract, but no bound kinds were supplied; the value cannot be checked`
+    );
+    findings.push(f);
+    return { ok: false, finding: f, drift, findings };
+  }
+  for (const kind of kinds) {
+    const r =
+      value === undefined
+        ? {
+            ok: false as const,
+            finding: err(
+              "value-contract",
+              `value for kind "${kind}" is undefined: the reshaping produced nothing`
+            ),
+          }
+        : checkKindValue(kind, value);
+    if (r.ok) continue;
+    let observed = "unhashable";
+    try {
+      observed = outputShapeHashOf(value);
+    } catch {
+      // Too deep to hash: the contract failure below is still reported.
+    }
+    let observedShape: Shape | undefined;
+    try {
+      observedShape = shapeOf(value);
+    } catch {
+      observedShape = undefined;
+    }
+    let observedRawShape: Shape | undefined;
+    try {
+      observedRawShape = shapeOf(raw);
+    } catch {
+      observedRawShape = undefined;
+    }
+    drift.push({
+      kind: "output",
+      handle: spec.handle,
+      expected: `contract:${kind}`,
+      observed,
+      contractKind: kind,
+      ...(observedShape !== undefined && { observedShape }),
+      ...(observedRawShape !== undefined && { observedRawShape }),
+      ...(opts.captureSample === true && {
+        observedSample: tainted(raw, `provider:${spec.handle}`),
+      }),
+    });
+    const f = err("output-contract-drift", `provider "${spec.handle}": ${r.finding.message}`);
+    findings.push(f);
+    return { ok: false, finding: f, drift, findings };
+  }
+  if (kinds.every((k) => kindValueContract(k) === undefined))
+    findings.push({
+      code: "output-contract-unchecked",
+      severity: "warn",
+      message: `provider "${spec.handle}" feeds only kinds with no value contract (${kinds.join(", ")}); the value is unchecked`,
+    });
+  return { ok: true, value, findings };
 }

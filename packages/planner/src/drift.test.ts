@@ -217,3 +217,23 @@ describe("drift → revision", () => {
     ).toEqual(["orders"]);
   });
 });
+
+describe("contract drift → revision", () => {
+  it("names the kind whose value contract failed instead of a shape pin", async () => {
+    const invoker: TransientInvoker = {
+      async invokeTransient<TIn, TOut>(): Promise<TOut> {
+        return driftedReply as unknown as TOut;
+      },
+    };
+    // The path still selects `{ value: 412 }`: an object, which a MetricCard (a number) cannot draw.
+    const outcome = await executeProvider(
+      { ...spec, outputCheck: "contract" },
+      { invoker, kinds: ["MetricCard"] }
+    );
+    if (outcome.ok) throw new Error("expected a contract drift");
+    expect((outcome.drift[0] as DriftRecord).contractKind).toBe("MetricCard");
+    const req = driftRequest(exp, outcome.drift);
+    expect(req.text).toContain('value contract of kind "MetricCard"');
+    expect(req.text).not.toContain("pinned shape");
+  });
+});

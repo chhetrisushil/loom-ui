@@ -4,7 +4,10 @@ import {
   type HandleUse,
   MAX_TREE_DEPTH,
   type ProviderSpec,
+  type SemanticCatalog,
+  type Surface,
   experienceHandles,
+  handleKinds,
   treeDepth,
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
@@ -50,14 +53,24 @@ export interface ControllerOptions {
   };
   readonly cache?: HydrationCache;
   readonly onDrift?: (report: DriftReport) => void;
+  /**
+   * Where `outputCheck: "contract"` providers get their kinds: every bound node resolved on this
+   * surface through this catalogue (`handleKinds`). Without it a contract provider is an error.
+   */
+  readonly outputKinds?: { readonly catalog: SemanticCatalog; readonly surface: Surface };
 }
 
 interface Load {
   readonly handle: string;
   readonly spec: ProviderSpec;
+  readonly kinds: readonly string[];
   readonly experienceId: string;
   readonly versionHash: string;
 }
+
+/** The question a load asks: the spec, and — for a contract provider — the kinds it is checked against. */
+const loadFingerprint = (spec: ProviderSpec, kinds: readonly string[]): string =>
+  kinds.length === 0 ? specFingerprint(spec) : `${specFingerprint(spec)}\u0000${kinds.join(",")}`;
 
 const defaultTimer = (fn: () => void, ms: number): (() => void) => {
   const t = setTimeout(fn, ms);
@@ -87,6 +100,7 @@ export class HydrationController {
   /** handle → fingerprint of the spec it was last STARTED with. Pruned with the handle. */
   private readonly loaded = new Map<string, string>();
   private current: Experience | undefined;
+  private kinds: ReadonlyMap<string, readonly string[]> = new Map();
   private disposed = false;
 
   constructor(private readonly opts: ControllerOptions) {
@@ -155,6 +169,7 @@ export class HydrationController {
       const load: Load = {
         handle: use.handle,
         spec,
+        kinds: this.kinds.get(use.handle) ?? [],
         experienceId: this.current.experienceId,
         versionHash: this.current.versionHash,
       };
@@ -219,6 +234,10 @@ export class HydrationController {
       return { findings };
     }
     this.current = exp;
+    this.kinds =
+      this.opts.outputKinds === undefined
+        ? new Map()
+        : handleKinds(exp, this.opts.outputKinds.catalog, this.opts.outputKinds.surface);
     for (const use of experienceHandles(exp)) this.schedule(exp, use, findings);
     return { findings };
   }
@@ -247,7 +266,8 @@ export class HydrationController {
       this.opts.store.setStatus(use.handle, { state: "error", finding: f });
       return;
     }
-    const fp = specFingerprint(spec);
+    const kinds = this.kinds.get(use.handle) ?? [];
+    const fp = loadFingerprint(spec, kinds);
     const st = this.opts.store.status(use.handle)?.state;
     if (this.loaded.get(use.handle) === fp) {
       // Same question, already asked: loading, loaded, or drifted-and-awaiting-repair.
@@ -261,6 +281,7 @@ export class HydrationController {
     const load: Load = {
       handle: use.handle,
       spec,
+      kinds,
       experienceId: exp.experienceId,
       versionHash: exp.versionHash,
     };
@@ -286,7 +307,7 @@ export class HydrationController {
   private async start(load: Load): Promise<void> {
     const { handle, spec } = load;
     if (this.disposed) return;
-    this.loaded.set(handle, specFingerprint(spec));
+    this.loaded.set(handle, loadFingerprint(spec, load.kinds));
     const principalId = this.opts.principal?.id;
     const cached = this.cache.get(spec, principalId);
     if (cached) {
@@ -302,6 +323,7 @@ export class HydrationController {
       const outcome = await executeProvider(spec, {
         invoker: this.opts.invoker,
         signal: ac.signal,
+        kinds: load.kinds,
         ...(this.opts.principal?.chain && { principal: this.opts.principal.chain }),
         ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
       });
