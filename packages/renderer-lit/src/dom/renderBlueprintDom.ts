@@ -83,7 +83,7 @@ export function renderBlueprintDom(
   const title = document.createElement("h1");
   title.textContent = blueprint.title;
   element.append(title, ...unregistered.map(projectionPlaceholder));
-  element.append(root.el);
+  element.append(elementOf(root));
   host.appendChild(element);
 
   const state = { current: blueprint, root, disposed: false, updating: false };
@@ -146,7 +146,7 @@ export function renderBlueprintDom(
         if (!sameIds) {
           for (const p of currentPlaceholders) p.remove();
           for (const id of rebuilt.unregistered)
-            element.insertBefore(projectionPlaceholder(id), state.root.el);
+            element.insertBefore(projectionPlaceholder(id), elementOf(state.root));
         }
         state.current = next;
         return {

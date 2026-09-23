@@ -14,6 +14,7 @@ import {
   type MountContext,
   type WidgetEntry,
   applyPlacement,
+  applyTitle,
   childSpecs,
   disposeEntry,
   elementOf,
@@ -187,6 +188,7 @@ export function reconcileContainer(
   acc: Accumulator
 ): void {
   styleContainer(entry.el, next);
+  applyTitle(entry, next);
   const inGrid = next.type === "grid";
   const oldWidgets = new Map<string, WidgetEntry>();
   const oldContainers: ContainerEntry[] = [];
@@ -221,11 +223,11 @@ export function reconcileContainer(
           // Its widget ids are DISPOSED, not necessarily remounted — the new tree decides.
           disposeEntry(kept, disposeFailed(acc));
           acc.disposed.push(...widgetIdsOf(kept));
-          kept.el.remove();
+          elementOf(kept).remove();
           used.add(kept);
         }
         child = mountContainer(node, ctx, fail(acc, "mount-failed"), trackIn(acc));
-        entry.el.appendChild(child.el);
+        entry.el.appendChild(elementOf(child));
       }
     }
     used.add(child);

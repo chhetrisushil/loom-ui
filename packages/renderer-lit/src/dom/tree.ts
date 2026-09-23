@@ -36,8 +36,15 @@ export interface WidgetEntry {
 }
 export interface ContainerEntry {
   readonly kind: "container";
-  /** `<div data-layout>`. */
+  /** `<div data-layout>` — carries the layout style and holds the children. */
   readonly el: HTMLElement;
+  /**
+   * The element that sits in the PARENT: `el` itself, or — for a layout with a non-empty `title`
+   * (IR 2.1.0) — the `<section aria-label>` wrapping `<h2>` and `el`. Grid placement lands here.
+   */
+  outer: HTMLElement;
+  /** The `<h2>` while the layout is titled. */
+  heading: HTMLElement | undefined;
   layout: Layout;
   /** Document order — the i-th entry is the i-th child element of `el`. */
   children: Entry[];
@@ -168,6 +175,83 @@ export function styleContainer(el: HTMLElement, layout: Layout): void {
     setStyle(el, "flexDirection", layout.type === "flex" ? layout.direction : "column");
   }
   setStyle(el, "gap", layout.gap !== undefined ? `${layout.gap}px` : "");
+}
+
+/** A layout's heading: a NON-EMPTY string title, or none — the rule loom's React and terminal renderers apply (ADR 0098 D4). */
+export function titleOf(layout: Layout): string | undefined {
+  return typeof layout.title === "string" && layout.title !== "" ? layout.title : undefined;
+}
+
+/**
+ * A titled layout renders as loom's React renderer draws it (ADR 0098 D4):
+ * `<section aria-label=T><h2>T</h2>` + the layout element. The layout style stays on the inner
+ * element, so the heading is never a grid item; the SECTION is what sits in the parent (and
+ * carries the parent's grid lines). Always `h2`: the blueprint title is the `h1`. `aria-label`
+ * names the region — a `<section>` does not take its accessible name from its heading.
+ *
+ * Idempotent and change-guarded. A text change patches the heading and the label. Adding or
+ * removing a title WRAPS or UNWRAPS the same layout element in place: its widgets stay mounted
+ * (no dispose, no render), and because moving a subtree blurs a focused control inside it, that
+ * control's focus and text selection are restored after the move. Placement styles are cleared
+ * from the inner element on wrap; the parent's pass writes them on whichever element now sits in
+ * the grid.
+ */
+export function applyTitle(entry: ContainerEntry, layout: Layout): void {
+  const title = titleOf(layout);
+  const { el } = entry;
+  if (title !== undefined && entry.heading !== undefined) {
+    if (entry.heading.textContent !== title) entry.heading.textContent = title;
+    if (entry.outer.getAttribute("aria-label") !== title)
+      entry.outer.setAttribute("aria-label", title);
+    return;
+  }
+  if (title === undefined && entry.heading === undefined) return;
+  const restore = focusWithin(el);
+  if (title !== undefined) {
+    const section = document.createElement("section");
+    section.setAttribute("aria-label", title);
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    if (el.style.gridColumn !== "") el.style.gridColumn = "";
+    if (el.style.gridRow !== "") el.style.gridRow = "";
+    el.replaceWith(section); // a no-op while `el` has no parent (a fresh mount)
+    section.append(heading, el);
+    entry.outer = section;
+    entry.heading = heading;
+  } else {
+    entry.outer.replaceWith(el);
+    entry.outer = el;
+    entry.heading = undefined;
+  }
+  restore();
+}
+
+/** Capture the focused control under `root` (and its text selection) so a DOM move can hand both back. */
+function focusWithin(root: HTMLElement): () => void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !root.contains(active)) return () => {};
+  const field =
+    active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
+      ? active
+      : undefined;
+  let range: [number | null, number | null] = [null, null];
+  try {
+    if (field) range = [field.selectionStart, field.selectionEnd];
+  } catch {
+    // Input types without a selection (number, date, …) throw here; focus alone is restored.
+  }
+  return () => {
+    if (document.activeElement !== active) active.focus({ preventScroll: true });
+    const [start, end] = range;
+    if (field && start !== null && end !== null) {
+      try {
+        if (field.selectionStart !== start || field.selectionEnd !== end)
+          field.setSelectionRange(start, end);
+      } catch {
+        // Same: a type without a selection API.
+      }
+    }
+  };
 }
 
 // A bound widget's slice, resolved the way loom resolves it: value AND status both come from
@@ -330,7 +414,15 @@ export function mountContainer(
   const el = document.createElement("div");
   styleContainer(el, layout);
   const inGrid = layout.type === "grid";
-  const entry: ContainerEntry = { kind: "container", el, layout, children: [] };
+  const entry: ContainerEntry = {
+    kind: "container",
+    el,
+    outer: el,
+    heading: undefined,
+    layout,
+    children: [],
+  };
+  applyTitle(entry, layout);
   track?.(entry);
   for (const spec of childSpecs(layout)) {
     const { node } = spec;
@@ -373,5 +465,6 @@ export function widgetIdsOf(entry: Entry): string[] {
   return entry.kind === "widget" ? [entry.widget.id] : entry.children.flatMap(widgetIdsOf);
 }
 
+/** The element an entry puts in its parent: a widget's host, or a container's `outer` (its section when titled). */
 export const elementOf = (entry: Entry): HTMLElement =>
-  entry.kind === "widget" ? entry.host : entry.el;
+  entry.kind === "widget" ? entry.host : entry.outer;

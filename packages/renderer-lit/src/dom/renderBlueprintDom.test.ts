@@ -6,6 +6,7 @@ import {
   StatusBadge,
   blueprint$,
   cell,
+  flex,
   grid,
   stack,
 } from "@loom/blueprint-runtime";
@@ -390,6 +391,63 @@ describe("renderBlueprintDom", () => {
     expect(lines("[data-widget-id='flow']")).toEqual(["", ""]);
     // Still no wrapper: the grid item is the widget's own host.
     expect(el("[data-widget-id='p99']").parentElement).toBe(el("[data-layout='grid']"));
+    handle.dispose();
+  });
+
+  it("IR 2.1.0: a titled layout is a named <section> — <h2>, then the layout element — and the section is the grid item", () => {
+    const titledBp = blueprint$({
+      id: "e@t",
+      title: "Dash",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: grid({
+        columns: 12,
+        title: "Overview",
+        children: [
+          cell(
+            6,
+            stack({
+              title: "Signals",
+              children: [StatusBadge({ id: "phase", title: "Phase", binding: bind("h-phase") })],
+            }),
+            { row: 1, column: 7 }
+          ),
+          cell(
+            6,
+            flex({
+              direction: "row",
+              title: "",
+              children: [MetricCard({ id: "p99", title: "p99", binding: bind("h-p99") })],
+            })
+          ),
+        ],
+      }),
+    });
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(host, titledBp, {
+      projectionRuntime: runtime,
+      executionId: store.executionId,
+      registry: recording().registry,
+    });
+    const root = host.querySelector("[data-blueprint-id='e@t']") as HTMLElement;
+    expect(root.firstElementChild?.tagName).toBe("H1"); // the blueprint title stays the h1, first
+    const rootSection = [...root.children].find((c) => c.tagName === "SECTION") as HTMLElement;
+    expect(rootSection.getAttribute("aria-label")).toBe("Overview");
+    expect([...rootSection.children].map((c) => c.tagName)).toEqual(["H2", "DIV"]);
+    expect(rootSection.children[0]?.textContent).toBe("Overview");
+    const gridEl = rootSection.children[1] as HTMLElement;
+    expect(gridEl.dataset.layout).toBe("grid");
+    const signals = host.querySelector("section[aria-label='Signals']") as HTMLElement;
+    expect(signals.parentElement).toBe(gridEl);
+    expect([signals.style.gridColumn, signals.style.gridRow]).toEqual(["7 / span 6", "1 / span 1"]);
+    const stackEl = host.querySelector("[data-layout='stack']") as HTMLElement;
+    expect(stackEl.parentElement).toBe(signals);
+    expect(stackEl.style.gridColumn).toBe(""); // the placement is the section's, not the inner element's
+    // An empty-string title draws nothing — the rule loom's React and terminal renderers apply.
+    expect((host.querySelector("[data-layout='flex']") as HTMLElement).parentElement).toBe(gridEl);
+    expect(host.querySelectorAll("section")).toHaveLength(2);
+    expect(host.querySelectorAll("h2")).toHaveLength(2);
     handle.dispose();
   });
 });
