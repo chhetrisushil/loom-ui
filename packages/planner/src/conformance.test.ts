@@ -384,6 +384,54 @@ describe("checkPlannerConformance", () => {
     const findings = await checkPlannerConformance(hostile, fixtureWith());
     expect(findings.map((f) => f.code)).toContain("report-invalid");
   });
+  describe("report.usage is read ONCE per report, through a guard", () => {
+    const withUsageGetter = (get: (read: number) => unknown, reads: number[]): Planner => ({
+      compose: async (i, ctx) => {
+        const r = await new ReferencePlanner({
+          model: scriptedModel([compose], { inputTokens: 5, outputTokens: 1 }),
+          modelId: "m",
+        }).compose(i, ctx);
+        const slot = reads.push(0) - 1;
+        const report = Object.defineProperty({ ...r.report }, "usage", {
+          enumerable: true,
+          get() {
+            reads[slot] = (reads[slot] as number) + 1;
+            return get(reads[slot] as number);
+          },
+        });
+        return { ...r, report };
+      },
+      revise: (i, ctx) =>
+        new ReferencePlanner({ model: scriptedModel([revise]), modelId: "m" }).revise(i, ctx),
+    });
+    it("a report.usage getter that throws is a report-invalid finding, not a throw", async () => {
+      const reads: number[] = [];
+      const planner = withUsageGetter(() => {
+        throw new Error("hostile report");
+      }, reads);
+      const findings = await checkPlannerConformance(planner, fixtureWith());
+      expect(findings.filter((f) => f.code === "report-invalid").map((f) => f.message)).toEqual([
+        "compose: report.usage is not two non-negative integer token counts",
+      ]);
+      for (const f of findings) expect(f.message).not.toMatch(/hostile/);
+      expect(reads).toEqual([1, 1]);
+    });
+    it("a getter that changes between reads is judged on its FIRST value only (invalid, then valid)", async () => {
+      const reads: number[] = [];
+      const planner = withUsageGetter(
+        (n) =>
+          n === 1 ? { inputTokens: -1, outputTokens: 1 } : { inputTokens: 5, outputTokens: 1 },
+        reads
+      );
+      const findings = await checkPlannerConformance(planner, fixtureWith());
+      expect(findings.filter((f) => f.code === "report-invalid").map((f) => f.message)).toEqual([
+        "compose: report.usage is not two non-negative integer token counts",
+      ]);
+      // Each compose report's usage was read exactly once — the check and the replay comparison
+      // both used that one snapshot.
+      expect(reads).toEqual([1, 1]);
+    });
+  });
   describe("never throws on a malformed ATTEMPT usage; reports it by kind, never by content", () => {
     const revoked = (() => {
       const { proxy, revoke } = Proxy.revocable({ inputTokens: 1, outputTokens: 1 }, {});
