@@ -109,6 +109,29 @@ const placedV = (p99: { row?: number; column?: number }, memoRowSpan?: number): 
     }),
   });
 
+/** p99 at the root; the memo note inside a placed stack that may carry a title; the root may too. */
+const sectioned = (stackTitle?: string, rootTitle?: string): Blueprint =>
+  blueprint$({
+    id: "e@1",
+    title: "Board",
+    projections: [HYDRATION_PROJECTION_ID],
+    layout: grid({
+      columns: 12,
+      ...(rootTitle !== undefined && { title: rootTitle }),
+      children: [
+        cell(4, MetricCard({ id: "p99", title: "p99", binding: bind("h-p99"), unit: "ms" })),
+        cell(
+          8,
+          stack({
+            ...(stackTitle !== undefined && { title: stackTitle }),
+            children: [note("memo")],
+          }),
+          { row: 1, column: 5 }
+        ),
+      ],
+    }),
+  });
+
 /**
  * Counts `subscribeSelector` calls and the subscriptions still live, by wrapping the runtime's
  * own method — the adapter's only subscription path. `throwFor` makes a subscribe to that
@@ -774,6 +797,93 @@ describe("renderBlueprintDom.update — keyed recompose", () => {
     );
     expect(host.querySelector("[data-widget-id='p99']")).toBe(p99Host);
     expect([p99Host.style.gridColumn, p99Host.style.gridRow]).toEqual(["", ""]);
+    handle.dispose();
+  });
+  it("IR 2.1.0: an identical TITLED blueprint makes zero DOM mutations", () => {
+    const { host, handle, calls } = setup(sectioned("Notes", "Board sections"));
+    calls.length = 0;
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    handle.update(sectioned("Notes", "Board sections"));
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(calls).toEqual([]);
+    handle.dispose();
+  });
+
+  it("IR 2.1.0: a title's text change patches the heading and the label in place", () => {
+    const { host, handle, calls, store, runtime } = setup(sectioned("Notes"));
+    const section = host.querySelector("section[aria-label='Notes']") as HTMLElement;
+    const h2 = section.querySelector("h2") as HTMLElement;
+    calls.length = 0;
+    const next = sectioned("Shift notes");
+    handle.update(next);
+    expect(host.querySelector("section")).toBe(section);
+    expect(section.querySelector("h2")).toBe(h2);
+    expect(h2.textContent).toBe("Shift notes");
+    expect(section.getAttribute("aria-label")).toBe("Shift notes");
+    expect(calls).toEqual([]);
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
+  it("IR 2.1.0: adding then removing a title wraps and unwraps the SAME layout element — widgets, focus and selection kept, grid lines on whatever sits in the grid", () => {
+    const { host, handle, calls, store, runtime } = setup(sectioned());
+    const stackEl = host.querySelector("[data-layout='stack']") as HTMLElement;
+    const gridEl = host.querySelector("[data-layout='grid']") as HTMLElement;
+    const ta = host.querySelector("textarea[data-note='memo']") as HTMLTextAreaElement;
+    expect(stackEl.style.gridColumn).toBe("5 / span 8");
+    ta.focus();
+    ta.value = "half-typed";
+    ta.setSelectionRange(4, 4);
+    calls.length = 0;
+
+    const titled = sectioned("Notes");
+    const r = handle.update(titled);
+    const section = host.querySelector("section[aria-label='Notes']") as HTMLElement;
+    expect(section.parentElement).toBe(gridEl);
+    expect(section.children[1]).toBe(stackEl);
+    expect(host.querySelector("textarea[data-note='memo']")).toBe(ta);
+    expect(document.activeElement).toBe(ta);
+    expect(ta.value).toBe("half-typed");
+    expect(ta.selectionStart).toBe(4);
+    expect([section.style.gridColumn, section.style.gridRow]).toEqual(["5 / span 8", "1 / span 1"]);
+    expect([stackEl.style.gridColumn, stackEl.style.gridRow]).toEqual(["", ""]);
+    expect(r.remounted).toEqual([]);
+    expect(r.findings).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(shape(handle.element)).toEqual(freshShape(titled, store, runtime));
+
+    const untitled = sectioned();
+    handle.update(untitled);
+    expect(host.querySelector("section")).toBeNull();
+    expect(stackEl.parentElement).toBe(gridEl);
+    expect([stackEl.style.gridColumn, stackEl.style.gridRow]).toEqual(["5 / span 8", "1 / span 1"]);
+    expect(document.activeElement).toBe(ta);
+    expect(calls).toEqual([]);
+    expect(shape(handle.element)).toEqual(freshShape(untitled, store, runtime));
+    handle.dispose();
+  });
+
+  it("IR 2.1.0: the ROOT gains a title in place; projection placeholders stay before it", () => {
+    const bp = sectioned();
+    (bp as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost"];
+    const { host, handle, store, runtime } = setup(bp);
+    const gridEl = host.querySelector("[data-layout='grid']") as HTMLElement;
+    const next = sectioned(undefined, "Board sections");
+    (next as { projections: string[] }).projections = [HYDRATION_PROJECTION_ID, "ghost", "ghost-2"];
+    handle.update(next);
+    const top = [...handle.element.children] as HTMLElement[];
+    expect(top.map((c) => c.tagName)).toEqual(["H1", "DIV", "DIV", "SECTION"]);
+    expect(top.slice(1, 3).map((c) => c.dataset.projectionId)).toEqual(["ghost", "ghost-2"]);
+    expect(top[3]?.children[1]).toBe(gridEl);
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
     handle.dispose();
   });
 });
