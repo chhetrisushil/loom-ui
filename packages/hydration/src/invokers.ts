@@ -81,8 +81,23 @@ interface SharedCall {
   /** Cancels the ONE upstream call `inner` is actually making — aborted only once every live
    * caller below has aborted; never by any single caller's own signal. */
   readonly controller: AbortController;
-  /** How many callers (leader included) have not yet either aborted or seen this settle. */
+  /**
+   * How many callers (leader included) have not yet aborted. Never decremented on a normal
+   * settle — once the shared call settles, `live` stops mattering: a settled entry (see
+   * `settled` below) is kept for the rest of the pass no matter what `live` says. This field
+   * exists solely to answer one question — has the LAST live caller just aborted? — which is
+   * the only time the still-in-flight upstream call should be cancelled.
+   */
   live: number;
+  /**
+   * Set once, from a handler attached at entry-creation time (so it always runs before any
+   * caller added later), the instant `promise` settles — success or failure alike. Guards
+   * `onCallerAbort`: an abort landing after the upstream has already settled, but before that
+   * settlement handler has actually RUN (a real race — `resolve()`/`reject()` marks a promise
+   * settled synchronously, while every `.then` callback, this one included, only runs on a later
+   * microtask), must never cancel or evict a call whose result already exists.
+   */
+  settled: boolean;
 }
 
 /**
@@ -92,33 +107,46 @@ interface SharedCall {
  * `Object.keys()` on it, which for most of those is `[]`, so two calls with DIFFERENT such
  * arguments would canonicalize to the same `"{}"` and collide on one memo key. Reject those before
  * a key is ever computed, not after: `memoInvoker` must never be the reason a value collapses.
+ *
+ * `seen` makes this cycle-safe: a hostile or accidental circular reference is walked at most once
+ * per object (the second visit reports "not plain" rather than recursing forever), so a cyclic
+ * argument bypasses the memo instead of throwing `RangeError: Maximum call stack size exceeded`
+ * out of `invokeTransient`. Sharing one `seen` set across a whole call's plainness check is
+ * deliberately conservative: a repeated (non-cyclic) reference is also flagged "not plain" and
+ * bypasses sharing rather than being memoized — safe, since bypass just means no caching, never a
+ * wrong answer.
  */
-function isPlainJsonValue(value: unknown): boolean {
+function isPlainJsonValue(value: unknown, seen: WeakSet<object> = new WeakSet()): boolean {
   if (value === null || value === undefined) return true;
   const t = typeof value;
   if (t === "string" || t === "boolean") return true;
   if (t === "number") return Number.isFinite(value as number);
   if (t !== "object") return false; // function, bigint, symbol
-  if (Array.isArray(value)) return value.every(isPlainJsonValue);
-  const proto = Object.getPrototypeOf(value as object);
+  const obj = value as object;
+  if (seen.has(obj)) return false;
+  seen.add(obj);
+  if (Array.isArray(value)) return value.every((v) => isPlainJsonValue(v, seen));
+  const proto = Object.getPrototypeOf(obj);
   if (proto !== Object.prototype && proto !== null) return false;
-  return Object.values(value as Record<string, unknown>).every(isPlainJsonValue);
+  return Object.values(value as Record<string, unknown>).every((v) => isPlainJsonValue(v, seen));
 }
 
 /**
  * One call per identical MCP step for this invoker's lifetime (a PASS): same tool, same resolved
  * arguments, same schema pin, same principal — the canonical JSON of `[principal, mcp.invoke's
- * input]`, so argument key order does not matter and two callers never share a result they were
- * authorized for under different principals (loom's per-call authorizer still sees every joiner,
- * since a joiner never bypasses its own `invokeTransient` — it just doesn't cause a SECOND
- * upstream call). Settled results stay (a step in a later wave is still served) and failures are
- * shared. Other effects (a sandbox reshape) always run, uncached.
+ * input]`, so argument key order does not matter. A joiner is served straight from the shared
+ * promise — it never calls `inner` itself, so it never passes through whatever per-call authorizer
+ * `inner` enforces. That is safe ONLY because the principal is already part of the key: every
+ * joiner sharing one entry was, by construction, asking under the exact principal the leader's own
+ * (sole) call to `inner` was authorized for. Settled results stay (a step in a later wave is still
+ * served) and failures are shared. Other effects (a sandbox reshape) always run, uncached.
  *
  * Cancellation is ref-counted, not leader-owned: `inner` is called once, through an internal
  * `AbortController` this function owns — never a caller's own signal directly — so any ONE
  * caller's abort only ever settles that caller's OWN returned promise (a race against the shared
  * promise). The upstream call itself is cancelled, and the entry forgotten, only once every live
- * caller has aborted; a caller that arrives after that finds no entry and starts a fresh call.
+ * caller has aborted AND the call had not already settled; a caller that arrives after a real
+ * cancellation finds no entry and starts a fresh call.
  */
 export function memoInvoker(inner: TransientInvoker): TransientInvoker {
   const memo = new Map<string, SharedCall>();
@@ -126,8 +154,15 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
   const onCallerAbort = (key: string, hit: SharedCall): void => {
     hit.live -= 1;
     if (hit.live > 0) return;
-    hit.controller.abort();
-    if (memo.get(key) === hit) memo.delete(key);
+    // Deferred one microtask: `hit.settled` is set by a handler attached at entry-creation time,
+    // which — because it was attached first — is always queued (and so runs) before this check,
+    // even when the abort lands in the very same synchronous turn as the upstream settling.
+    // Checking `hit.settled` synchronously right here would miss exactly that race.
+    queueMicrotask(() => {
+      if (hit.settled) return;
+      hit.controller.abort();
+      if (memo.get(key) === hit) memo.delete(key);
+    });
   };
 
   const join = <TOut>(
@@ -174,10 +209,11 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
       if (toolId !== MCP_INVOKE_TOOL_ID)
         return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
       const principal = opts?.principal ?? null;
-      if (!isPlainJsonValue(principal) || !isPlainJsonValue(input))
-        return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
       let key: string;
       try {
+        const seen = new WeakSet<object>();
+        if (!isPlainJsonValue(principal, seen) || !isPlainJsonValue(input, seen))
+          return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
         key = canonicalJson([principal, input]);
       } catch {
         return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
@@ -187,12 +223,24 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
         hit.live += 1;
         return join<TOut>(key, hit, opts?.signal);
       }
+      // Mirrors limitInvoker's fast path: an already-aborted caller must never become the leader
+      // — that would call `inner`, create an entry nobody asked to keep, and (since nothing here
+      // would yet be subscribed to the resulting promise) risk an unhandled rejection.
+      if (opts?.signal?.aborted === true) return Promise.reject(new Error("aborted"));
       const controller = new AbortController();
       const promise = inner.invokeTransient<TIn, TOut>(toolId, input, {
         ...opts,
         signal: controller.signal,
       });
-      const entry: SharedCall = { promise, controller, live: 1 };
+      const entry: SharedCall = { promise, controller, live: 1, settled: false };
+      const onSettle = (): void => {
+        entry.settled = true;
+      };
+      // Attached at entry-creation time — before any joiner's own `.then` — so `entry.settled`
+      // is always set before `onCallerAbort`'s deferred check can run (see there). Also the
+      // backstop: attaching a rejection handler here means NO path can ever leave `promise`
+      // unhandled, even if a future caller subscribes late or never at all.
+      promise.then(onSettle, onSettle);
       memo.set(key, entry);
       return join<TOut>(key, entry, opts?.signal);
     },

@@ -1,6 +1,8 @@
 import { TypedFailure } from "@loom/core";
+import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { describe, expect, it } from "vitest";
+import type { TransientInvoker } from "./invoker";
 import { limitInvoker, memoInvoker } from "./invokers";
 import { FakeInvoker, flush } from "./testing.test-support";
 
@@ -261,5 +263,74 @@ describe("memoInvoker", () => {
     await memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t", { when: new Date(2020, 0, 1) }));
     await memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t", { when: new Date(2021, 0, 1) }));
     expect(inner.calls).toHaveLength(2);
+  });
+
+  it("a pre-aborted leader never calls inner, and never leaks an unhandled rejection", async () => {
+    const inner = new FakeInvoker().on(
+      MCP_INVOKE_TOOL_ID,
+      (_input, opts) =>
+        new Promise((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        })
+    );
+    const memo = memoInvoker(inner);
+    const unhandled: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandledRejection);
+    try {
+      const ac = new AbortController();
+      ac.abort();
+      await expect(
+        memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { signal: ac.signal })
+      ).rejects.toThrow("aborted");
+      expect(inner.calls).toHaveLength(0); // refused before ever reaching inner
+      await flush();
+      await new Promise((resolve) => setImmediate(resolve)); // give Node a full turn to detect a leak
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+    expect(unhandled).toHaveLength(0);
+  });
+
+  it("a cyclic input bypasses the memo instead of throwing out of invokeTransient", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => input);
+    const memo = memoInvoker(inner);
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    await expect(
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t", { cyclic }))
+    ).resolves.toBeDefined();
+    expect(inner.calls).toHaveLength(1);
+  });
+
+  it("an abort that lands the instant the upstream settles — before any .then has run — does not cancel or evict a successful entry", async () => {
+    let resolveInner: ((v: unknown) => void) | undefined;
+    const rawPromise = new Promise<unknown>((resolve) => {
+      resolveInner = resolve;
+    });
+    let calls = 0;
+    const rawInvoker: TransientInvoker = {
+      invokeTransient<TIn = unknown, TOut = unknown>(
+        _toolId: string,
+        _input: TIn,
+        _opts?: TransientInvokeOptions
+      ): Promise<TOut> {
+        calls += 1;
+        return rawPromise as Promise<TOut>;
+      },
+    };
+    const memo = memoInvoker(rawInvoker);
+    const ac = new AbortController();
+    const call = memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { signal: ac.signal });
+    resolveInner?.({ ok: true }); // settles the shared promise's internal state...
+    ac.abort(); // ...before any of its `.then` callbacks — including the entry's own settlement
+    // marker — has had a chance to run: the exact race this test exists to close.
+    await expect(call).rejects.toThrow("aborted"); // this caller still sees its own abort
+    await flush();
+    const again = await memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"));
+    expect(again).toEqual({ ok: true }); // served from the still-live entry, not re-fetched
+    expect(calls).toBe(1);
   });
 });
