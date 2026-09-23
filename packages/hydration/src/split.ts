@@ -215,7 +215,9 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
   /**
    * At most this many transient calls in flight across the whole batch. Default
    * `DEFAULT_MAX_CONCURRENT_CALLS` (32): a client decides how many handles a batch carries, so
-   * the server bounds the upstream fan-out unless it is told otherwise.
+   * the server bounds the upstream fan-out unless it is told otherwise. It bounds ONE batch: for
+   * a server-wide bound, wrap the invoker once in the exported `limitInvoker` and share that
+   * wrapped invoker across every batch.
    */
   readonly maxConcurrentCalls?: number;
   /**
