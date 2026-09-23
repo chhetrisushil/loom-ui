@@ -19,6 +19,7 @@ import {
   recordingContext,
   scriptedModel,
 } from "./testing.test-support";
+import { isPlannerUsage } from "./usage";
 
 const goodDraft = JSON.stringify({
   summary: "Weekly orders and top SKUs",
@@ -387,5 +388,119 @@ describe("ReferencePlanner usage", () => {
     const b = replay(g(), counted.ops);
     if (!a.ok || !b.ok) throw new Error("replay failed");
     expect(seal(b.value).versionHash).toBe(seal(a.value).versionHash);
+  });
+});
+
+describe("ReferencePlanner usage from a hostile adapter", () => {
+  const modelOf = (reply: () => unknown, contents = [goodDraft]): PlannerModel => {
+    let calls = 0;
+    return {
+      async complete() {
+        const content = contents[Math.min(calls, contents.length - 1)] as string;
+        calls += 1;
+        // Descriptors, not Object.assign: a getter must reach the planner un-invoked.
+        return Object.defineProperties(
+          { content },
+          Object.getOwnPropertyDescriptors(reply() as object)
+        ) as never;
+      },
+    };
+  };
+  const compose = async (model: PlannerModel) => {
+    const ctx = recordingContext();
+    const result = await new ReferencePlanner({ model, modelId: "m" }).compose(input, ctx);
+    return { result, ctx };
+  };
+  const invalidOf = (r: PlanResult) => r.findings.filter((f) => f.code === "usage-invalid");
+
+  it("describes a refused value by kind, never by content — a huge string is not journaled", async () => {
+    const huge = "x".repeat(1_000_000);
+    const { result, ctx } = await compose(
+      modelOf(() => ({ usage: { inputTokens: huge, outputTokens: 1 } }))
+    );
+    expect(invalidOf(result)).toHaveLength(1);
+    expect(invalidOf(result)[0]?.message).toContain("inputTokens is a string");
+    const recorded = JSON.stringify(ctx.decisions.get(planDecisionId("compose", input)));
+    expect(recorded.length).toBeLessThan(20_000);
+  });
+  it("a field whose toString throws is only usage-invalid, never model-error", async () => {
+    const { result } = await compose(
+      modelOf(() => ({
+        usage: {
+          inputTokens: {
+            toString() {
+              throw new Error("boom");
+            },
+          },
+          outputTokens: 1,
+        },
+      }))
+    );
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(invalidOf(result)[0]?.message).toContain("inputTokens is an object");
+    expect(result.ops.length).toBeGreaterThan(0);
+  });
+  it("a throwing getter on a count, or on usage itself, is only usage-invalid", async () => {
+    for (const reply of [
+      () => ({
+        usage: {
+          get inputTokens(): number {
+            throw new Error("boom");
+          },
+          outputTokens: 1,
+        },
+      }),
+      () => ({
+        get usage(): unknown {
+          throw new Error("boom");
+        },
+      }),
+    ]) {
+      const { result } = await compose(modelOf(reply));
+      expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+      expect(invalidOf(result)).toHaveLength(1);
+      expect("usage" in result.report).toBe(false);
+    }
+  });
+  it("each count is read ONCE: a getter that changes after validation cannot reach the journal", async () => {
+    let reads = 0;
+    const { result, ctx } = await compose(
+      modelOf(() => ({
+        usage: {
+          get inputTokens() {
+            reads += 1;
+            return reads === 1 ? 1 : -5;
+          },
+          outputTokens: 1,
+        },
+      }))
+    );
+    expect(reads).toBe(1);
+    expect(result.report.usage).toStrictEqual({ inputTokens: 1, outputTokens: 1 });
+    const recorded = ctx.decisions.get(planDecisionId("compose", input)) as PlanResult;
+    expect(recorded.report.usage).toStrictEqual({ inputTokens: 1, outputTokens: 1 });
+  });
+  it("an attempt usage that would overflow the plan total is refused; the total stays exact and valid", async () => {
+    const big = { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 1 };
+    const { result } = await compose(modelOf(() => ({ usage: big }), [badType, goodDraft]));
+    expect(result.report.attempts.map((a) => a.usage)).toEqual([big, undefined]);
+    expect(result.report.attempts[1]?.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "usage-invalid",
+          severity: "warn",
+          message: expect.stringContaining("would overflow the plan total"),
+        }),
+      ])
+    );
+    expect(result.report.usage).toStrictEqual(big);
+    expect(isPlannerUsage(result.report.usage)).toBe(true);
+  });
+  it("-0 is recorded as 0", async () => {
+    const { result } = await compose(
+      modelOf(() => ({ usage: { inputTokens: -0, outputTokens: 1 } }))
+    );
+    expect(Object.is(result.report.usage?.inputTokens, 0)).toBe(true);
+    expect(Object.is(result.report.attempts[0]?.usage?.inputTokens, 0)).toBe(true);
   });
 });
