@@ -1004,6 +1004,19 @@ describe("materialize — revise (diff against the base)", () => {
       expect(r.ok).toBe(true);
       expect(r.ok && Object.prototype.hasOwnProperty.call(r.value.providers, "b")).toBe(true);
     });
+    it("is idempotent: a handle `ops` already removeProvider-ed is not returned again, so replaying [...ops, ...orphaned] never trips missing-provider", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "removeNode", nodeId: "solo" },
+        { type: "removeProvider", handle: "c" },
+      ];
+      const orphaned = orphanedProviders(exp, ops);
+      expect(orphaned).toEqual([]);
+      const r = replay(exp, [...ops, ...orphaned]);
+      expect(r.ok ? "ok" : r.finding.code).toBe("ok");
+      // And applying the suggestion twice is still a fixed point.
+      expect(orphanedProviders(exp, [...ops, ...orphaned])).toEqual([]);
+    });
     it("bindProvider onto a node inserted bound to a DIFFERENT handle retires nothing: the handle it lands on stays bound", () => {
       const exp = nested();
       const ops: Operation[] = [

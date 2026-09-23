@@ -127,8 +127,9 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
  * relocates a binder, a subtree removed two containers deep, a node rebound twice, or an op
  * nested inside a `prompt`'s `materialized` all resolve the same way core itself would resolve
  * them, with no op-type-specific case to fall out of sync with `apply`. One `removeProvider`
- * each, sorted by handle, so replaying `[...ops, ...orphaned]` orphans exactly this set and never
- * trips `provider-still-bound`. A provider the base declared with no binder is not this plan's to
+ * each, sorted by handle, for handles still DECLARED once `ops` apply (one `ops` already removed
+ * is not returned again), so replaying `[...ops, ...orphaned]` orphans exactly this set and never
+ * trips `provider-still-bound` or `missing-provider`. A provider the base declared with no binder is not this plan's to
  * retire: the app may hold it on purpose. If `ops` do not replay cleanly onto `base`, the plan is
  * invalid and will be refused on its own; there is nothing here to orphan.
  */
@@ -143,8 +144,11 @@ export function orphanedProviders(base: Experience, ops: readonly Operation[]): 
   walk(after.value.root, (n) => {
     if (n.kind === "semantic" && n.binding !== undefined) bound.add(n.binding.handle);
   });
+  // Still declared in the AFTER state: a handle `ops` already retired is not retired twice, so
+  // the result is idempotent (`orphanedProviders(base, [...ops, ...orphaned])` is empty).
+  const declared = (h: string) => Object.prototype.hasOwnProperty.call(after.value.providers, h);
   return [...before]
-    .filter((h) => !bound.has(h) && Object.prototype.hasOwnProperty.call(base.providers, h))
+    .filter((h) => !bound.has(h) && declared(h))
     .sort()
     .map((handle) => ({ type: "removeProvider", handle }));
 }
