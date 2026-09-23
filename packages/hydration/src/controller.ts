@@ -166,8 +166,10 @@ export class HydrationController {
         run: (job, signal, pass) => this.run(job, signal, pass),
         cached: (job) => this.cache.get(job.spec, principalId, variant(job)),
         commit: (job, r) => {
-          // Only `ready` is cached — an `empty` answer has no value (loom ADR 0100) and is asked
-          // again next time. A result that proceeded past an input drift (`report-and-proceed`) is never cached:
+          // Only `ready` is cached — an `empty` answer has no value (loom ADR 0100), so nothing
+          // is stored. The scheduler still treats it as ANSWERED for the same question: it is
+          // re-asked only when the question changes, on `invalidate`, or on a new bind (and then
+          // never served from the cache). A result that proceeded past an input drift (`report-and-proceed`) is never cached:
           // the key does not carry the drift mode, so a controller sharing the cache under the
           // default (`report`) would be served it as a clean `ready` — no stale, no `onDrift`.
           if (r.state === "ready" && r.drift.length === 0)

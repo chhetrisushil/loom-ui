@@ -128,7 +128,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   drift and never repaired; `outcomeResult` maps it for both the controller and `serveHandle`, and
   `upstream-empty` is in the split server's public code vocabulary (`FIXED_CODES` + `publicText`). A new
   hydration finding code a client may see goes into BOTH, or it is served as `load-failed`/`load-warning`.
-, and every model call runs inside `ctx.decide` so
+- A planner returns OPERATIONS, never an Experience, and every model call runs inside `ctx.decide` so
   replay never re-calls a model. `@loom-ui/planner` imports no invoker, effect runtime, projection
   runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
 - Anything tool-authored that will be shown to a model (samples, observed drift values) is wrapped with
