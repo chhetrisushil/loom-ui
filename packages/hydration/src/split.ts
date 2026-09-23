@@ -10,6 +10,8 @@ import {
   handleKinds,
   treeDepth,
 } from "@loom-ui/core";
+import { MCP_INVOKE_ERRORS } from "@loom/plugin-mcp";
+import { SANDBOX_ERRORS } from "@loom/plugin-sandbox";
 import { type HydrationCache, specFingerprint } from "./cache";
 import type { DriftReport } from "./controller";
 import type { TransientInvoker } from "./invoker";
@@ -217,16 +219,13 @@ const refuse = (code: string, message: string): HandleLoadResult => ({
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /**
- * The failure channels loom itself declares (ADR 0060) — `mcp.invoke`'s and the sandbox's. A
- * `tool-<channel>` / `reshape-<channel>` code is built from whatever channel the (pluggable)
- * invoker threw, which is arbitrary text; only these are served as they are.
+ * The failure channels loom itself declares (ADR 0060) — `mcp.invoke`'s and the sandbox's, derived
+ * from loom's own exports so the list cannot drift. A `tool-<channel>` / `reshape-<channel>` code
+ * is built from whatever channel the (pluggable) invoker threw, which is arbitrary text; only
+ * these are served as they are.
  */
-const TOOL_CHANNELS: ReadonlySet<string> = new Set(["schemaDrift", "toolNotFound"]);
-const RESHAPE_CHANNELS: ReadonlySet<string> = new Set([
-  "scriptMissing",
-  "limitExceeded",
-  "shapeMismatch",
-]);
+const TOOL_CHANNELS: ReadonlySet<string> = new Set(Object.keys(MCP_INVOKE_ERRORS));
+const RESHAPE_CHANNELS: ReadonlySet<string> = new Set(Object.keys(SANDBOX_ERRORS));
 
 /**
  * Every other code a served finding may carry: the fixed codes hydration and the server mint
