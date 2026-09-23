@@ -5,7 +5,7 @@ import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { HydrationCache } from "./cache";
-import { type ControllerOptions, HydrationController } from "./controller";
+import { type ControllerOptions, HydrationController, loadFingerprint } from "./controller";
 import { HydrationStore } from "./projection";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
@@ -479,5 +479,15 @@ describe("HydrationController principals", () => {
     await flush();
     expect(inv.calls).toHaveLength(1);
     expect(bob.store.value("h")).toEqual({ v: "tool.h" });
+  });
+});
+
+describe("loadFingerprint", () => {
+  it("normalises kinds exactly as the cache key does: reordering or repeating kinds is not a new question", () => {
+    const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
+    const base = loadFingerprint(spec, ["Kpi", "MetricCard"]);
+    expect(loadFingerprint(spec, ["MetricCard", "Kpi"])).toBe(base);
+    expect(loadFingerprint(spec, ["Kpi", "MetricCard", "Kpi"])).toBe(base);
+    expect(loadFingerprint(spec, ["Kpi"])).not.toBe(base);
   });
 });

@@ -82,11 +82,10 @@ export function resolveArguments(
       return out;
     }
     if (Array.isArray(v)) return v.map(visit);
-    if (v !== null && typeof v === "object") {
-      const out: Record<string, unknown> = {};
-      for (const [k, x] of Object.entries(v)) out[k] = visit(x);
-      return out;
-    }
+    // `Object.fromEntries` writes with CreateDataProperty: an own `__proto__` argument stays an
+    // own key instead of becoming the args object's prototype (an assignment would set it).
+    if (v !== null && typeof v === "object")
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, visit(x)]));
     return v;
   };
   const args = visit(node.arguments) as Record<string, unknown>;

@@ -11,14 +11,25 @@ import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { type Shape, shapeOf } from "@loom/plugin-sandbox";
 import type { TransientInvoker } from "./invoker";
-import { resolveArguments, terminalSteps, topoWaves } from "./plan";
+import {
+  type ArgumentHook,
+  type LoadParams,
+  pickParams,
+  prepareArguments,
+  providerParams,
+} from "./params";
+import { terminalSteps, topoWaves } from "./plan";
 import { outputShapeHashOf, reshape, safeStringify } from "./reshape";
 
 // ── Executing one provider ────────────────────────────────────────────────────
 // The transient interpreter (ADRs 0060–0066): walk the graph in waves, invoke `mcp.invoke` per
-// step with the pinned input-schema hash, reshape the terminal output, check its shape. Zero
-// events on this path. A pin that drifts is REPORTED, never re-run with the observed hash — the
-// durable repair is the app's, and `remapOperation` (repair.ts) builds its operation.
+// step with the pinned input-schema hash, reshape the terminal output, check it. Zero events on
+// this path. Each step's arguments are prepared in a fixed order (params.ts): per-load params on
+// the arguments the step declares overridable, relative-time tokens against ONE instant per
+// call, `{{steps.…}}` templates, then the host's argument hook. The output is checked by its
+// shape pin (`outputCheck` absent or "shape") or by the value contracts of the kinds it feeds
+// ("contract"). A pin that drifts is REPORTED, never re-run with the observed hash — the durable
+// repair is the app's, and `remapOperation` (repair.ts) builds its operation.
 
 export interface DriftRecord {
   readonly kind: "input" | "output";
@@ -34,7 +45,7 @@ export interface DriftRecord {
   readonly contractKind?: string;
   /**
    * Output drift only: the structural shape loom's `shapeOf` saw of the RESHAPED value — the one
-   * that failed the pin, so it explains the mismatch. Absent when the value could not be walked.
+   * that failed the check, so it explains the mismatch. Absent when the value could not be walked.
    */
   readonly observedShape?: Shape;
   /**
@@ -72,6 +83,15 @@ export interface ExecuteOptions {
    * without them: a contract check over no kinds would pass every value.
    */
   readonly kinds?: readonly string[];
+  /**
+   * Per-load params: applied only to arguments a step declares `overridable`, never to a
+   * `{{steps.…}}` template. A param no step declares is ignored with a `param-not-overridable` warn.
+   */
+  readonly params?: LoadParams;
+  /** The instant relative-time tokens resolve against (epoch ms). Default: `Date.now()`, read once. */
+  readonly now?: number;
+  /** The host's last word on each step's arguments (after params, tokens, templates). */
+  readonly argumentHook?: ArgumentHook;
 }
 
 async function mapLimit<T, R>(
@@ -93,6 +113,43 @@ async function mapLimit<T, R>(
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
+
+/** A step's invocation failed for a reason other than an input-schema drift. */
+function stepFailure(node: MCPToolNode, e: unknown, signal: AbortSignal | undefined): Finding {
+  if (e instanceof TypedFailure)
+    return err(
+      `tool-${e.channel}`,
+      `step "${node.stepId}" (${node.toolName}) failed on channel ${e.channel}: ${safeStringify(e.payload)}`
+    );
+  if (signal?.aborted) return err("aborted", `step "${node.stepId}" aborted`);
+  return err(
+    "tool-failed",
+    `step "${node.stepId}" (${node.toolName}) failed: ${e instanceof Error ? e.message : String(e)}`
+  );
+}
+
+/**
+ * The shapes an output-drift record carries. Neither value has necessarily been proved walkable
+ * (the raw output never went through `shapeHash`): one too deep or too wide simply leaves its
+ * field absent — a drift REPORT must never become a throw.
+ */
+function observedShapes(
+  value: unknown,
+  raw: unknown
+): { observedShape?: Shape; observedRawShape?: Shape } {
+  const out: { observedShape?: Shape; observedRawShape?: Shape } = {};
+  try {
+    out.observedShape = shapeOf(value);
+  } catch {
+    // unwalkable: leave absent
+  }
+  try {
+    out.observedRawShape = shapeOf(raw);
+  } catch {
+    // unwalkable: leave absent
+  }
+  return out;
+}
 
 export async function executeProvider(
   spec: ProviderSpec,
@@ -120,8 +177,31 @@ export async function executeProvider(
       findings,
     };
 
+  const now = opts.now ?? Date.now();
+  const supplied: LoadParams = opts.params ?? {};
+  const names = providerParams(spec);
+  const declared = new Set(names);
+  const undeclared = Object.keys(supplied)
+    .filter((k) => !declared.has(k))
+    .sort();
+  // Only the params some step declares reach a step — and the argument hook. A hook that could
+  // read an undeclared param could make the answer depend on a value no cache key carries.
+  const params = pickParams(supplied, names);
+  if (undeclared.length > 0)
+    findings.push({
+      code: "param-not-overridable",
+      severity: "warn",
+      message: `provider "${spec.handle}" declares no overridable argument named ${undeclared.map((k) => `"${k}"`).join(", ")}; ignored`,
+    });
+
   const outputs = new Map<string, unknown>();
   const failed = new Map<string, Finding>();
+  const warnings = new Map<string, Finding[]>();
+  const warn = (stepId: string, f: Finding): void => {
+    const list = warnings.get(stepId);
+    if (list === undefined) warnings.set(stepId, [f]);
+    else list.push(f);
+  };
   const invokeOpts: TransientInvokeOptions = {
     label: "loom-ui.hydrate",
     ...(opts.signal && { signal: opts.signal }),
@@ -141,11 +221,17 @@ export async function executeProvider(
         );
         return;
       }
-      const args = resolveArguments(node, outputs);
+      const args = prepareArguments(node, outputs, {
+        handle: spec.handle,
+        params,
+        now,
+        ...(opts.argumentHook && { hook: opts.argumentHook }),
+      });
       if (!args.ok) {
         failed.set(node.stepId, args.finding);
         return;
       }
+      for (const f of args.findings) warn(node.stepId, f);
       try {
         const out = await opts.invoker.invokeTransient(
           MCP_INVOKE_TOOL_ID,
@@ -155,47 +241,32 @@ export async function executeProvider(
         outputs.set(node.stepId, out);
       } catch (e) {
         if (e instanceof TypedFailure && e.channel === "schemaDrift") {
-          const p = e.payload as { observedHash?: string };
+          const p = e.payload as { observedHash?: string } | undefined;
           drift.push({
             kind: "input",
             handle: spec.handle,
             stepId: node.stepId,
             toolName: node.toolName,
             expected: node.toolSchemaHash,
-            observed: p.observedHash ?? "",
+            observed: p?.observedHash ?? "",
           });
           failed.set(
             node.stepId,
             err(
               "schema-drift",
-              `step "${node.stepId}" (${node.toolName}) input schema drifted from ${node.toolSchemaHash} to ${p.observedHash ?? "?"}`
+              `step "${node.stepId}" (${node.toolName}) input schema drifted from ${node.toolSchemaHash} to ${p?.observedHash ?? "?"}`
             )
           );
-        } else if (e instanceof TypedFailure) {
-          failed.set(
-            node.stepId,
-            err(
-              `tool-${e.channel}`,
-              `step "${node.stepId}" (${node.toolName}) failed on channel ${e.channel}: ${safeStringify(e.payload)}`
-            )
-          );
-        } else if (opts.signal?.aborted) {
-          failed.set(node.stepId, err("aborted", `step "${node.stepId}" aborted`));
         } else {
-          failed.set(
-            node.stepId,
-            err(
-              "tool-failed",
-              `step "${node.stepId}" (${node.toolName}) failed: ${e instanceof Error ? e.message : String(e)}`
-            )
-          );
+          failed.set(node.stepId, stepFailure(node, e, opts.signal));
         }
       }
     });
   }
 
-  // GRAPH order, not completion order: two independent steps that fail in a race must produce
-  // the same finding list every run, or the surface's error text depends on which tool was slower.
+  // GRAPH order, not completion order: two independent steps that fail (or warn) in a race must
+  // produce the same finding list every run, or the surface's text depends on which tool was slower.
+  for (const step of steps) for (const f of warnings.get(step.stepId) ?? []) findings.push(f);
   for (const step of steps) {
     const f = failed.get(step.stepId);
     if (f) findings.push(f);
@@ -253,28 +324,12 @@ export async function executeProvider(
     return { ok: false, finding: f, drift, findings };
   }
   if (observed !== spec.outputShapeHash) {
-    let observedShape: Shape | undefined;
-    try {
-      observedShape = shapeOf(shaped.value);
-    } catch {
-      observedShape = undefined; // `observed` above already proved it hashable; belt and braces
-    }
-    // The RAW output has not been through `shapeHash`, so — unlike the reshaped value — nothing
-    // has proved it walkable. A raw value too deep or too wide for `shapeOf` simply leaves the
-    // field absent; it must never turn a drift REPORT into a throw.
-    let observedRawShape: Shape | undefined;
-    try {
-      observedRawShape = shapeOf(raw);
-    } catch {
-      observedRawShape = undefined;
-    }
     drift.push({
       kind: "output",
       handle: spec.handle,
       expected: spec.outputShapeHash,
       observed,
-      ...(observedShape !== undefined && { observedShape }),
-      ...(observedRawShape !== undefined && { observedRawShape }),
+      ...observedShapes(shaped.value, raw),
       ...(opts.captureSample === true && {
         observedSample: tainted(raw, `provider:${spec.handle}`),
       }),
@@ -330,26 +385,13 @@ function checkContract(
     } catch {
       // Too deep to hash: the contract failure below is still reported.
     }
-    let observedShape: Shape | undefined;
-    try {
-      observedShape = shapeOf(value);
-    } catch {
-      observedShape = undefined;
-    }
-    let observedRawShape: Shape | undefined;
-    try {
-      observedRawShape = shapeOf(raw);
-    } catch {
-      observedRawShape = undefined;
-    }
     drift.push({
       kind: "output",
       handle: spec.handle,
       expected: `contract:${kind}`,
       observed,
       contractKind: kind,
-      ...(observedShape !== undefined && { observedShape }),
-      ...(observedRawShape !== undefined && { observedRawShape }),
+      ...observedShapes(value, raw),
       ...(opts.captureSample === true && {
         observedSample: tainted(raw, `provider:${spec.handle}`),
       }),
