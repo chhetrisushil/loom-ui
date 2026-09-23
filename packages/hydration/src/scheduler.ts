@@ -25,7 +25,9 @@ export interface ScheduledJob {
 /** What a load publishes. Serializable: it is also what a `HandleLoader` returns across a boundary. */
 export type HandleLoadResult =
   | { readonly state: "ready"; readonly value: unknown; readonly finding?: Finding }
-  | { readonly state: "stale" | "error"; readonly finding: Finding };
+  | { readonly state: "stale" | "error"; readonly finding: Finding }
+  /** Delivered, and the upstream has no such row (`upstream-empty`): no value (loom ADR 0100). */
+  | { readonly state: "empty"; readonly finding: Finding };
 
 export interface SchedulerHooks<J extends ScheduledJob, G, R extends HandleLoadResult> {
   newGroup(): G;
@@ -197,8 +199,9 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
   private scheduleOne(job: J, group: () => G): void {
     const st = this.store.status(job.handle)?.state;
     if (this.loaded.get(job.handle) === job.fingerprint) {
-      // Same question, already asked: loading, loaded, or drifted-and-awaiting-repair.
-      if (st === "ready" || st === "pending" || st === "stale") return;
+      // Same question, already asked: loading, loaded (an `empty` answer is an answer), or
+      // drifted-and-awaiting-repair.
+      if (st === "ready" || st === "pending" || st === "stale" || st === "empty") return;
     } else {
       // A different question for this handle: whatever is in flight answers the OLD one.
       this.inflight.get(job.handle)?.abort();

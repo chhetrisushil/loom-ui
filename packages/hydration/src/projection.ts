@@ -11,11 +11,18 @@ import type { Projection, ProjectionRuntime } from "@loom/projection-runtime";
 // wakes one widget, not the surface.
 
 export const HYDRATION_PROJECTION_ID = "loom-ui.hydration";
-/** Bump when the MEANING of `values`/`status` changes; the compiler pins this into every blueprint. */
-export const HYDRATION_PROJECTION_VERSION = "1.0.0";
+/**
+ * Bump when the MEANING of `values`/`status` changes; the compiler pins this into every blueprint.
+ * 1.1.0: a status may be `empty` (loom ADR 0100), and the fold DROPS the handle's value with it.
+ */
+export const HYDRATION_PROJECTION_VERSION = "1.1.0";
 export const HYDRATION_SET_EVENT = "LOOM_UI_HYDRATION_SET";
 
-export type HandleState = "pending" | "ready" | "stale" | "error";
+/**
+ * `empty`: delivered, and the upstream has no such row — "no data", never an error (loom ADR
+ * 0100). It never carries a value: the fold drops `values[handle]` on it.
+ */
+export type HandleState = "pending" | "ready" | "stale" | "error" | "empty";
 export interface HandleStatus {
   readonly state: HandleState;
   readonly seq: number;
@@ -64,6 +71,15 @@ export function hydrationProjection(): Projection<HydrationState> {
           };
         }
         const status = { ...state.status, [p.handle]: p.status };
+        // loom ADR 0100 D1: a producer MUST clear the value beside `empty` — an older reader that
+        // cannot see `empty` would otherwise show an earlier `ready` value as current.
+        if (p.status?.state === "empty")
+          return {
+            values: Object.hasOwn(state.values, p.handle)
+              ? without(state.values, p.handle)
+              : state.values,
+            status,
+          };
         if (p.kind === "status") return { values: state.values, status };
         return { values: { ...state.values, [p.handle]: p.value }, status };
       },

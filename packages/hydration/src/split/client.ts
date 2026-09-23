@@ -129,7 +129,8 @@ function asLoadResult(x: unknown, handle: string): HandleLoadResult {
     return finding === undefined
       ? { state: "ready", value: r.value }
       : { state: "ready", value: r.value, finding };
-  if ((r.state === "stale" || r.state === "error") && finding !== undefined)
+  // `empty` (loom ADR 0100) carries its finding and never a value: a value beside it is dropped.
+  if ((r.state === "stale" || r.state === "error" || r.state === "empty") && finding !== undefined)
     return { state: r.state, finding };
   return malformedResult(handle);
 }
