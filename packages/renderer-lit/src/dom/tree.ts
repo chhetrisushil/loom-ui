@@ -4,6 +4,7 @@ import {
   type Widget,
   type WidgetAction,
   asCell,
+  isLayoutId,
   isLayoutRole,
   isWidget,
   resolveWidgetStatus,
@@ -65,7 +66,8 @@ export interface ContainerEntry {
   layout: Layout;
   /**
    * The well-formed role this entry was mounted under (`roleKey`), part of its reconcile key:
-   * containers match by ordinal + type + role (loom ADR 0099 D3). Fixed for the entry's life.
+   * containers match by layout id (IR 2.4.0, loom ADR 0101) or, without one, by ordinal among the
+   * id-less siblings — plus type + role (loom ADR 0099 D3). Fixed for the entry's life.
    */
   readonly role: string | undefined;
   /** The live container renderer, if the role has one and it has not failed. */
@@ -216,6 +218,15 @@ export function styleContainer(el: HTMLElement, layout: Layout): void {
 export function roleKey(layout: Layout): string | undefined {
   const role = (layout as { role?: unknown }).role;
   return isLayoutRole(role) ? role : undefined;
+}
+
+/**
+ * The `nodeId` a container-level finding carries: the layout's id when it has a well-formed one
+ * (loom's `isLayoutId`, IR 2.4.0, ADR 0101 D3), else `""` — a layout without an id has none.
+ */
+export function layoutNodeId(layout: Layout): string {
+  const id = (layout as { id?: unknown }).id;
+  return isLayoutId(id) ? id : "";
 }
 
 /** A layout's heading: a NON-EMPTY string title, or none — the rule loom's React and terminal renderers apply (ADR 0098 D4). */
@@ -502,7 +513,7 @@ export function mountWidget(
 
 /**
  * Mount `layout`. `path` names it from the blueprint root (`layout.children[1]`) — used only in a
- * container renderer's failure message, since a layout has no id to blame.
+ * container renderer's failure message, beside the layout's id when it has one (`layoutNodeId`).
  */
 export function mountContainer(
   layout: Layout,
@@ -640,7 +651,7 @@ function mountChrome(
   } catch (e) {
     entry.el.remove(); // out of the discarded role host; the parent places it
     unhide(children);
-    onFail({ nodeId: "", message: failureMessage(role, path, e) });
+    onFail({ nodeId: layoutNodeId(entry.layout), message: failureMessage(role, path, e) });
   }
 }
 
@@ -698,20 +709,20 @@ function dropChrome(entry: ContainerEntry): void {
 
 /**
  * Unsubscribe and dispose every widget under `entry` — and every container renderer's chrome —
- * reporting each failure against the WIDGET id it came from (`""` for chrome: a container has no
- * id of its own to blame). Leaves the DOM in place.
+ * reporting each failure against the WIDGET id it came from (for chrome, the layout's id when it
+ * has one, else `""` — `layoutNodeId`). Leaves the DOM in place.
  * Idempotent: a disposed widget has no handle or subscription left to dispose again.
  */
 export function disposeEntry(entry: Entry, onError: (widgetId: string, e: unknown) => void): void {
   if (entry.kind === "container") {
-    // A container renderer's chrome goes first (it wraps the children); a throw is blamed on "",
-    // since a layout has no id. Dropped from the entry so a second dispose does not repeat it.
+    // A container renderer's chrome goes first (it wraps the children); a throw is blamed on the
+    // layout's id, or "" without one. Dropped from the entry so a second dispose does not repeat it.
     const chrome = entry.chrome;
     entry.chrome = undefined;
     try {
       chrome?.handle.dispose();
     } catch (e) {
-      onError("", e);
+      onError(layoutNodeId(entry.layout), e);
     }
     for (const c of entry.children) disposeEntry(c, onError);
     return;

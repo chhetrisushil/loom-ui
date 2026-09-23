@@ -1295,3 +1295,277 @@ describe("renderBlueprintDom.update — a pass that cannot complete leaves nothi
     }
   });
 });
+
+// ── Container ids (Blueprint IR 2.4.0, loom ADR 0101) ─────────────────────────────────────────
+// A container WITH an id is keyed by it; an id-less one keeps the ordinal rule, counted among
+// its id-less siblings only. A kept container is moved, never re-created, so inserting or
+// reordering containers no longer costs the widgets inside the ones that shifted.
+
+/** A column of step containers, each a stack holding one widget (`<step>-note` is a textarea). */
+const steps = (
+  list: ReadonlyArray<
+    string | { id?: string; step: string; type?: "stack" | "flex"; role?: string }
+  >
+): Blueprint =>
+  blueprint$({
+    id: "e@1",
+    title: "Board",
+    projections: [HYDRATION_PROJECTION_ID],
+    layout: flex({
+      id: "root",
+      direction: "column",
+      children: list.map((s) => {
+        const o = typeof s === "string" ? { id: s, step: s } : s;
+        const children = [o.step === "payment" ? note(`${o.step}-note`) : metricOf(o.step)];
+        const own = {
+          ...(o.id !== undefined && { id: o.id }),
+          ...(o.role !== undefined && { role: o.role }),
+          children,
+        };
+        return o.type === "flex" ? flex({ direction: "column", ...own }) : stack(own);
+      }),
+    }),
+  });
+const metricOf = (id: string): Widget =>
+  MetricCard({ id, title: id, binding: bind(`h-${id}`), unit: "ms" });
+const rootEl = (host: HTMLElement) => host.querySelector("[data-layout='flex']") as HTMLElement;
+const widgetHost = (host: HTMLElement, id: string) =>
+  host.querySelector(`[data-widget-id='${id}']`) as HTMLElement | null;
+const typeInto = (host: HTMLElement): HTMLTextAreaElement => {
+  const ta = host.querySelector("textarea[data-note='payment-note']") as HTMLTextAreaElement;
+  ta.focus();
+  ta.value = "4111 1111";
+  ta.setSelectionRange(3, 3);
+  return ta;
+};
+
+describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () => {
+  it("a container inserted ABOVE a focused, typed-in one: nothing remounted, the SAME textarea keeps value, caret and focus", () => {
+    const { host, handle, calls, store, runtime } = setup(steps(["account", "payment"]));
+    store.setValue("h-extra", 1, { state: "ready" });
+    const ta = typeInto(host);
+    const accountHost = widgetHost(host, "account");
+    const paymentStep = ta.closest("[data-layout='stack']");
+    calls.length = 0;
+    const next = steps(["account", "extra", "payment"]);
+    const r = handle.update(next);
+    expect(r.remounted).toEqual([]);
+    expect(r.identity.added).toEqual(["extra"]);
+    expect(r.findings).toEqual([]);
+    expect(calls).toEqual(["mount:extra"]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    expect(ta.closest("[data-layout='stack']")).toBe(paymentStep);
+    expect(document.activeElement).toBe(ta);
+    expect(ta.value).toBe("4111 1111");
+    expect(ta.selectionStart).toBe(3);
+    expect(widgetHost(host, "account")).toBe(accountHost);
+    expect(
+      [...rootEl(host).children].map((e) =>
+        e.querySelector("[data-widget-id]")?.getAttribute("data-widget-id")
+      )
+    ).toEqual(["account", "extra", "payment-note"]);
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
+  it("the same insertion WITHOUT ids still shifts ordinals: payment's textarea is remounted, and reported", () => {
+    const idless = (list: string[]) => steps(list.map((step) => ({ step })));
+    const { host, handle, store } = setup(idless(["account", "payment"]));
+    store.setValue("h-extra", 1, { state: "ready" });
+    const ta = typeInto(host);
+    const r = handle.update(idless(["account", "extra", "payment"]));
+    expect(r.remounted).toEqual(["payment-note"]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);
+    handle.dispose();
+  });
+
+  it("reordering id'd containers keeps every widget: focus stays in the moved step, nothing remounted", () => {
+    const { host, handle, calls, store, runtime } = setup(steps(["payment", "account"]));
+    const ta = typeInto(host);
+    const accountHost = widgetHost(host, "account");
+    calls.length = 0;
+    const next = steps(["account", "payment"]);
+    const r = handle.update(next);
+    expect(r).toMatchObject({ remounted: [], rebound: [], findings: [] });
+    expect(calls).toEqual([]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    expect(document.activeElement).toBe(ta);
+    expect(ta.value).toBe("4111 1111");
+    expect(widgetHost(host, "account")).toBe(accountHost);
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
+  it("an identical id'd blueprint makes ZERO DOM mutations and calls nothing", () => {
+    const { host, handle, calls } = setup(steps(["account", "payment"]));
+    calls.length = 0;
+    const observer = new MutationObserver(() => {});
+    observer.observe(host, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    const r = handle.update(steps(["account", "payment"]));
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect(records).toEqual([]);
+    expect(r).toMatchObject({ remounted: [], rebound: [], findings: [] });
+    expect(calls).toEqual([]);
+    handle.dispose();
+  });
+
+  it("the id is a key, not markup: an id'd tree is DOM-identical to an id-less one", () => {
+    const { store, runtime } = setup();
+    expect(freshShape(steps(["account", "payment"]), store, runtime)).toEqual(
+      freshShape(steps([{ step: "account" }, { step: "payment" }]), store, runtime)
+    );
+  });
+
+  it("a TYPE change under the same id remounts that container's widgets, and reports them", () => {
+    const { host, handle } = setup(steps(["account", "payment"]));
+    const ta = typeInto(host);
+    const r = handle.update(steps(["account", { id: "payment", step: "payment", type: "flex" }]));
+    expect(r.remounted).toEqual(["payment-note"]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);
+    handle.dispose();
+  });
+
+  it("a ROLE change under the same id remounts that container's widgets, and reports them", () => {
+    const { host, handle } = setup(steps(["account", "payment"]));
+    const accountHost = widgetHost(host, "account");
+    const r = handle.update(steps([{ id: "account", step: "account", role: "boxed" }, "payment"]));
+    expect(r.remounted).toEqual(["account"]);
+    expect(widgetHost(host, "account")).not.toBe(accountHost);
+    handle.dispose();
+  });
+
+  it("an id CHANGE is a different container: remounted and reported — no positional fallback on a miss", () => {
+    const { host, handle } = setup(steps(["account", "payment"]));
+    const ta = typeInto(host);
+    const r = handle.update(steps(["account", { id: "payment-2", step: "payment" }]));
+    expect(r.remounted).toEqual(["payment-note"]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);
+    handle.dispose();
+  });
+
+  it("crossing the upgrade (id-less → id'd) remounts ONCE, reported; the next id'd recompose keeps everything", () => {
+    const { host, handle } = setup(steps([{ step: "account" }, { step: "payment" }]));
+    typeInto(host);
+    const first = handle.update(steps(["account", "payment"]));
+    expect(first.remounted).toEqual(["account", "payment-note"]);
+    const ta = typeInto(host);
+    const second = handle.update(steps(["account", "extra", "payment"]));
+    expect(second.remounted).toEqual([]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    // …and the reverse: an id'd container never matches an id-less one either.
+    const third = handle.update(
+      steps([{ step: "account" }, { step: "extra" }, { step: "payment" }])
+    );
+    expect(third.remounted).toEqual(["account", "extra", "payment-note"]);
+    handle.dispose();
+  });
+
+  it("mixed siblings: id'd ones match by id, id-less ones by ordinal among the id-less only — an id'd insertion shifts nothing", () => {
+    const { host, handle } = setup(
+      steps([{ id: "k1", step: "k1" }, { step: "u1" }, { id: "k2", step: "k2" }, { step: "u2" }])
+    );
+    const before = Object.fromEntries(
+      ["k1", "u1", "k2", "u2"].map((id) => [id, widgetHost(host, id)] as const)
+    );
+    const r = handle.update(
+      steps([
+        { id: "k3", step: "k3" },
+        { step: "u1" },
+        { id: "k2", step: "k2" },
+        { id: "k1", step: "k1" },
+        { step: "u2" },
+      ])
+    );
+    expect(r.remounted).toEqual([]);
+    for (const id of ["k1", "u1", "k2", "u2"]) expect(widgetHost(host, id)).toBe(before[id]);
+    expect(
+      [...rootEl(host).children].map((e) =>
+        e.querySelector("[data-widget-id]")?.getAttribute("data-widget-id")
+      )
+    ).toEqual(["k3", "u1", "k2", "k1", "u2"]);
+    handle.dispose();
+  });
+
+  it("a duplicate id in `next` never throws: the first occurrence claims the container, the second mounts fresh", () => {
+    const { host, handle, store, runtime } = setup(steps(["account", "payment"]));
+    store.setValue("h-extra", 1, { state: "ready" });
+    const accountHost = widgetHost(host, "account");
+    const next = steps(["account", { id: "account", step: "extra" }, "payment"]);
+    const r = handle.update(next);
+    expect(r.remounted).toEqual([]);
+    expect(widgetHost(host, "account")).toBe(accountHost);
+    expect(widgetHost(host, "extra")).not.toBeNull();
+    expect(shape(handle.element)).toEqual(freshShape(next, store, runtime));
+    handle.dispose();
+  });
+
+  it("a container moved to ANOTHER parent is remounted, and reported — ids key among siblings", () => {
+    const { host, handle } = setup(steps(["account", "payment"]));
+    const ta = typeInto(host);
+    const next = blueprint$({
+      id: "e@1",
+      title: "Board",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: flex({
+        id: "root",
+        direction: "column",
+        children: [
+          stack({
+            id: "account",
+            children: [
+              metricOf("account"),
+              stack({ id: "payment", children: [note("payment-note")] }),
+            ],
+          }),
+        ],
+      }),
+    });
+    const r = handle.update(next);
+    expect(r.remounted).toEqual(["payment-note"]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);
+    handle.dispose();
+  });
+
+  it("`__proto__` and `constructor` are ordinary ids — Map keys, never object keys", () => {
+    const { host, handle } = setup(
+      steps([
+        { id: "__proto__", step: "account" },
+        { id: "constructor", step: "payment" },
+      ])
+    );
+    const ta = typeInto(host);
+    const r = handle.update(
+      steps([
+        { id: "constructor", step: "payment" },
+        { id: "__proto__", step: "account" },
+      ])
+    );
+    expect(r).toMatchObject({ remounted: [], findings: [] });
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    handle.dispose();
+  });
+
+  it("a MALFORMED id (loom's `layout-id-invalid`) is treated as absent: keyed by ordinal among the id-less", () => {
+    const withBad = (list: string[]): Blueprint => {
+      const bp = steps(list.map((step) => ({ step })));
+      for (const c of (bp.layout as { children: Array<{ id?: unknown }> }).children) c.id = "";
+      return bp;
+    };
+    const { host, handle } = setup(withBad(["account", "payment"]));
+    const ta = typeInto(host);
+    // Same ordinals: kept.
+    expect(handle.update(withBad(["account", "payment"])).remounted).toEqual([]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    // …and an id-less next matches it positionally too — malformed IS absent.
+    const r = handle.update(steps([{ step: "account" }, { step: "payment" }]));
+    expect(r.remounted).toEqual([]);
+    expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
+    handle.dispose();
+  });
+});

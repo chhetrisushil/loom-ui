@@ -48,8 +48,9 @@ export interface DomRenderOptions {
 export interface DomRenderHandle {
   readonly element: HTMLElement;
   /**
-   * Land a revised Blueprint on the live tree: widgets keyed by id, containers by ordinal, type
-   * and role, the focused subtree never moved. Never throws — renderer failures come back in
+   * Land a revised Blueprint on the live tree: widgets keyed by id, containers by layout id (IR
+   * 2.4.0) or — without one — by ordinal among the id-less, plus type and role; the focused
+   * subtree never moved. Never throws — renderer failures come back in
    * `RecomposeReport.findings` with the failing widget already on its error placeholder.
    * Not re-entrant: an `update` called from inside a renderer's `patch`/`update` during a pass
    * is refused (a `re-entrant update` finding) and changes nothing.
