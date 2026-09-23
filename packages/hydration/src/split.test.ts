@@ -10,8 +10,8 @@ import {
 } from "@loom-ui/core";
 import type { Finding } from "@loom-ui/core";
 import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { MCP_INVOKE_ERRORS, MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -1032,6 +1032,21 @@ describe("served findings are public: provider internals stay on the server", ()
     expect(f("reshape-hunter2")).toBe("reshape-failed");
     expect(f("tool-hunter2")).toBe("tool-failed");
     expect(f("tool-__proto__")).toBe("tool-failed");
+  });
+
+  it("the declared channels are exactly the ones loom exports", () => {
+    const f = (code: string) => publicFinding("h", { code, severity: "error", message: "m" }).code;
+    const tool = Object.keys(MCP_INVOKE_ERRORS);
+    const sandbox = Object.keys(SANDBOX_ERRORS);
+    expect(tool.length).toBeGreaterThan(0);
+    expect(sandbox.length).toBeGreaterThan(0);
+    for (const ch of tool) expect(f(`tool-${ch}`)).toBe(`tool-${ch}`);
+    for (const ch of sandbox) expect(f(`reshape-${ch}`)).toBe(`reshape-${ch}`);
+    // Crossed over: a sandbox channel is not a tool channel, nor the reverse.
+    for (const ch of sandbox.filter((c) => !tool.includes(c)))
+      expect(f(`tool-${ch}`)).toBe("tool-failed");
+    for (const ch of tool.filter((c) => !sandbox.includes(c)))
+      expect(f(`reshape-${ch}`)).toBe("reshape-failed");
   });
 
   it("an async onFinding that rejects never becomes an unhandled rejection", async () => {
