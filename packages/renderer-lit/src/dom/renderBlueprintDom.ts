@@ -21,6 +21,15 @@ export interface DomRenderOptions {
   readonly executionId: string;
   readonly registry: DomRegistry;
   readonly onAction?: (action: WidgetAction) => void;
+  /**
+   * Whether the Blueprint's own title renders as the root `<h1>`. Default `"heading"` — today's
+   * behaviour, unchanged. `"none"` mounts no `<h1>` at all: an app with its own page header, or
+   * whose compiled title is not display text, gets a bare root. Under `"none"` a `blueprint.title`
+   * change is not a DOM mutation — `update` never creates, removes, or touches a title element.
+   * Not supported mid-handle: the mode is fixed for the handle's lifetime, read once at
+   * `renderBlueprintDom` and never re-read from `update`'s `next`.
+   */
+  readonly title?: "heading" | "none";
 }
 export interface DomRenderHandle {
   readonly element: HTMLElement;
@@ -78,11 +87,12 @@ export function renderBlueprintDom(
   };
   const root: ContainerEntry = mountContainer(blueprint.layout, ctx, () => {});
 
+  const titleMode = opts.title ?? "heading";
   const element = document.createElement("div");
   element.dataset.blueprintId = blueprint.id;
-  const title = document.createElement("h1");
-  title.textContent = blueprint.title;
-  element.append(title, ...unregistered.map(projectionPlaceholder));
+  const title = titleMode === "heading" ? document.createElement("h1") : undefined;
+  if (title) title.textContent = blueprint.title;
+  element.append(...(title ? [title] : []), ...unregistered.map(projectionPlaceholder));
   element.append(elementOf(root));
   host.appendChild(element);
 
@@ -135,7 +145,7 @@ export function renderBlueprintDom(
         // Written only when they differ, like the container styles — an identical Blueprint must
         // not so much as replace the title's text node.
         if (element.dataset.blueprintId !== next.id) element.dataset.blueprintId = next.id;
-        if (title.textContent !== next.title) title.textContent = next.title;
+        if (title && title.textContent !== next.title) title.textContent = next.title;
         const currentPlaceholders = [...element.children].filter(
           (p) => (p as HTMLElement).dataset.placeholder === "projection"
         ) as HTMLElement[];
