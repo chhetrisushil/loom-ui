@@ -1,4 +1,4 @@
-import { genesis, replay } from "@loom-ui/core";
+import { apply, genesis, replay } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
 import { EXPERIENCE_OP_ACTION, EXPERIENCE_PROMOTED, interpretAction } from "./interaction";
 import { materialize } from "./materialize";
@@ -99,5 +99,55 @@ describe("interpretAction", () => {
   });
   it("names the promotion event", () => {
     expect(EXPERIENCE_PROMOTED).toBe("EXPERIENCE_PROMOTED");
+  });
+  it("an experience.op carrying removeProvider is refused with provider-op-not-interactive — retiring a provider is the planner's or the app's, never a widget's", () => {
+    const r = interpretAction(exp, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "note",
+      payload: { type: "removeProvider", handle: "h1" },
+    });
+    expect(r.kind === "refused" && r.finding.code).toBe("provider-op-not-interactive");
+  });
+  it("a widget may resize or re-place a node (setPlacement) — but not the root, and not a missing node", () => {
+    const ok = interpretAction(exp, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "note",
+      payload: { type: "setPlacement", nodeId: "note", span: 6, row: 1, column: 7 },
+    });
+    expect(ok.kind).toBe("experience");
+    if (ok.kind === "experience") expect(ok.op.type).toBe("setPlacement");
+    const root = interpretAction(exp, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "root",
+      payload: { type: "setPlacement", nodeId: "root", span: 6 },
+    });
+    expect(root.kind === "refused" && root.finding.code).toBe("root-immutable");
+    const ghost = interpretAction(exp, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "ghost",
+      payload: { type: "setPlacement", nodeId: "ghost", span: 6 },
+    });
+    expect(ghost.kind === "refused" && ghost.finding.code).toBe("missing-node");
+  });
+  it("a widget may retitle a section (setTitle) — but not the root's title", () => {
+    const withSection = apply(exp, {
+      type: "insertNode",
+      parentId: "root",
+      node: { id: "sec", order: "a", kind: "container", direction: "grid", span: 12, children: [] },
+    });
+    if (!withSection.ok) throw new Error(withSection.finding.message);
+    const title = { key: "sec.title", fallback: "Renamed" };
+    const ok = interpretAction(withSection.value, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "sec",
+      payload: { type: "setTitle", nodeId: "sec", title },
+    });
+    expect(ok.kind === "experience" && ok.op).toEqual({ type: "setTitle", nodeId: "sec", title });
+    const root = interpretAction(withSection.value, {
+      type: EXPERIENCE_OP_ACTION,
+      widgetId: "root",
+      payload: { type: "setTitle", nodeId: "root", title },
+    });
+    expect(root.kind === "refused" && root.finding.code).toBe("root-immutable");
   });
 });
