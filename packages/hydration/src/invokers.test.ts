@@ -333,4 +333,47 @@ describe("memoInvoker", () => {
     expect(again).toEqual({ ok: true }); // served from the still-live entry, not re-fetched
     expect(calls).toBe(1);
   });
+
+  it("a fresh caller with no signal joining the very same turn the only other caller aborts still gets the upstream value: the internal controller is never aborted", async () => {
+    let resolveInner: ((v: unknown) => void) | undefined;
+    let rejectInner: ((e: unknown) => void) | undefined;
+    let controllerAborted = false;
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => {
+      opts?.signal?.addEventListener("abort", () => {
+        controllerAborted = true;
+        rejectInner?.(new Error("upstream-cancelled"));
+      });
+      return new Promise((resolve, reject) => {
+        resolveInner = resolve;
+        rejectInner = reject;
+      });
+    });
+    const memo = memoInvoker(inner);
+    const ac = new AbortController();
+    const leader = memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { signal: ac.signal });
+    ac.abort(); // drops `live` to 0 synchronously; the cancel-and-delete itself is deferred
+    const joiner = memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t")); // no signal — same turn
+    await expect(leader).rejects.toThrow("aborted");
+    expect(controllerAborted).toBe(false); // the deferred check must see the joiner and skip
+    resolveInner?.({ ok: true });
+    await expect(joiner).resolves.toEqual({ ok: true });
+    expect(inner.calls).toHaveLength(1);
+  });
+
+  it("a leader whose call to inner throws synchronously still returns a rejected promise, not a thrown exception, and a retry calls inner again", async () => {
+    let n = 0;
+    const rawInvoker: TransientInvoker = {
+      invokeTransient<TIn = unknown, TOut = unknown>(): Promise<TOut> {
+        n += 1;
+        if (n === 1) throw new Error("sync boom");
+        return Promise.resolve({ ok: true } as TOut);
+      },
+    };
+    const memo = memoInvoker(rawInvoker);
+    await expect(memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"))).rejects.toThrow("sync boom");
+    await expect(memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"))).resolves.toEqual({
+      ok: true,
+    });
+    expect(n).toBe(2);
+  });
 });
