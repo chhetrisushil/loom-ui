@@ -265,6 +265,125 @@ describe("checkPlannerConformance", () => {
     expect(finding).toBeDefined();
     expect(finding?.message).toContain("boom");
   });
+  const fixtureWith = (ctx = recordingContext()) => ({
+    intent: intentFixture,
+    catalog: planningCatalog,
+    capabilities: capabilitiesFixture,
+    meta: metaFixture,
+    revision: { text: "add an insight" },
+    ctx,
+  });
+  it("the reference planner on a model that reports usage passes with zero findings", async () => {
+    const model = scriptedModel([compose, revise], { inputTokens: 50, outputTokens: 10 });
+    const planner = new ReferencePlanner({ model, modelId: "m" });
+    expect(
+      await checkPlannerConformance(planner, { ...fixtureWith(), modelCalls: () => model.calls })
+    ).toEqual([]);
+  });
+  it("a planner whose replayed compose loses its usage fails usage-not-replayed — usage must live inside the decision", async () => {
+    const reference = new ReferencePlanner({
+      model: scriptedModel([compose, revise], { inputTokens: 50, outputTokens: 10 }),
+      modelId: "m",
+    });
+    let calls = 0;
+    const forgetful: Planner = {
+      compose: async (i, ctx) => {
+        const r = await reference.compose(i, ctx);
+        if (calls++ === 0) return r;
+        // The second call re-derives the report outside the decision and forgets the tokens.
+        const { decisionId, attempts, firstAttemptValid, modelId } = r.report;
+        return { ...r, report: { decisionId, attempts, firstAttemptValid, modelId } };
+      },
+      revise: (i, ctx) => reference.revise(i, ctx),
+    };
+    const findings = await checkPlannerConformance(forgetful, fixtureWith());
+    expect(findings.map((f) => f.code)).toEqual(["usage-not-replayed"]);
+  });
+  it("a usage that is not two non-negative integers, or that disagrees with its attempts, is report-invalid", async () => {
+    const reference = () =>
+      new ReferencePlanner({
+        model: scriptedModel([compose, revise], { inputTokens: 50, outputTokens: 10 }),
+        modelId: "m",
+      });
+    const lying: Planner = {
+      compose: async (i, ctx) => {
+        const r = await reference().compose(i, ctx);
+        return { ...r, report: { ...r.report, usage: { inputTokens: -5, outputTokens: 1 } } };
+      },
+      revise: async (i, ctx) => {
+        // D2 (preflight): a fresh reference() planner here would hand `revise` a MODEL that has
+        // never been called, so its first (and only) reply is the COMPOSE script entry — an
+        // empty materialization that trips prompt-replay-mismatch. `revise` gets its own
+        // single-entry script instead.
+        const r = await new ReferencePlanner({
+          model: scriptedModel([revise], { inputTokens: 50, outputTokens: 10 }),
+          modelId: "m",
+        }).revise(i, ctx);
+        return { ...r, report: { ...r.report, usage: { inputTokens: 1, outputTokens: 1 } } };
+      },
+    };
+    const findings = await checkPlannerConformance(lying, fixtureWith());
+    expect(findings.map((f) => f.code)).toEqual(["report-invalid", "report-invalid"]);
+    expect(findings[0]?.message).toContain("compose: report.usage");
+    expect(findings[1]?.message).toContain("revise: report.usage");
+  });
+  it("the reference planner still passes when an attempt's usage is refused for overflowing the plan total (two attempts, both at MAX_SAFE_INTEGER)", async () => {
+    // Attempt 1 fails to parse but reports MAX_SAFE_INTEGER input tokens — recorded. Attempt 2
+    // parses but would push the plan total past MAX_SAFE_INTEGER — refused (usage-invalid warning,
+    // not recorded). The reference planner's own report.usage must still equal the sum of what WAS
+    // recorded (attempt 1 alone), which is exactly what the kit checks.
+    let calls = 0;
+    const overflowing = {
+      async complete() {
+        calls += 1;
+        if (calls === 1)
+          return {
+            content: "not json",
+            usage: { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0 },
+          };
+        if (calls === 2) return { content: compose, usage: { inputTokens: 1, outputTokens: 0 } };
+        return { content: revise, usage: { inputTokens: 50, outputTokens: 10 } };
+      },
+    };
+    const planner = new ReferencePlanner({ model: overflowing, modelId: "m" });
+    expect(
+      await checkPlannerConformance(planner, { ...fixtureWith(), modelCalls: () => calls })
+    ).toEqual([]);
+  });
+  it("the reference planner still passes when no attempt reports usage (an absent total, not {0,0})", async () => {
+    const model = scriptedModel([compose, revise]);
+    const planner = new ReferencePlanner({ model, modelId: "m" });
+    const findings = await checkPlannerConformance(planner, {
+      ...fixtureWith(),
+      modelCalls: () => model.calls,
+    });
+    expect(findings).toEqual([]);
+  });
+  it("never throws on a hostile report.usage (a getter that throws); it reports a finding instead", async () => {
+    const reference = () => new ReferencePlanner({ model: scriptedModel([compose]), modelId: "m" });
+    const hostile: Planner = {
+      compose: async (i, ctx) => {
+        const r = await reference().compose(i, ctx);
+        return {
+          ...r,
+          report: {
+            ...r.report,
+            usage: Object.defineProperty({ outputTokens: 1 }, "inputTokens", {
+              enumerable: true,
+              get() {
+                throw new Error("hostile getter");
+              },
+            }) as unknown as { inputTokens: number; outputTokens: number },
+          },
+        };
+      },
+      revise: (i, ctx) =>
+        new ReferencePlanner({ model: scriptedModel([revise]), modelId: "m" }).revise(i, ctx),
+    };
+    // The call itself must not throw or reject (a hostile report.usage is a finding, not a crash).
+    const findings = await checkPlannerConformance(hostile, fixtureWith());
+    expect(findings.map((f) => f.code)).toContain("report-invalid");
+  });
   it("a planner whose compose works but whose revise rejects reports planner-threw, not revise-not-prompt", async () => {
     const composeOkReviseThrows: Planner = {
       compose: (i, ctx) =>
