@@ -125,6 +125,16 @@ describe("drift → revision", () => {
     expect(caps.find((c) => c.handle === "incidents_open")?.sampleOutput).toBeUndefined();
   });
 
+  it("driftedStep's fallback: an output DriftRecord with NO stepId on a single-terminal graph still keys the sole terminal's capability", async () => {
+    const drift = await producedDrift();
+    // The producer sets stepId whenever it can; strip it to exercise the OTHER branch —
+    // resolving via `terminalSteps` alone, for a record that predates or omits step identity.
+    const { stepId, ...withoutStepId } = drift[0] as DriftRecord;
+    expect(stepId).toBeDefined(); // the producer did set one — this test strips it deliberately
+    const caps = driftCapabilities(capabilitiesFixture, exp, [withoutStepId]);
+    expect(caps.find((c) => c.handle === "orders_summary")?.sampleOutput).toEqual(driftedReply);
+  });
+
   it("two drifted steps on the SAME tool with DIFFERENT arguments: matching samples still swap, disagreeing ones leave the capability's own sample alone", async () => {
     const drift = await producedDrift();
     const otherHandle = "p-other";
