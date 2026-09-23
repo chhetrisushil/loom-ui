@@ -187,7 +187,7 @@ export function describeExperience(
               arguments: step.arguments,
               ...(spec.reshaping.engine === "JSONPath"
                 ? { path: spec.reshaping.scriptRef }
-                : { reshaping: "QuickJS" }),
+                : { reshaping: spec.reshaping.engine }),
               priority: n.binding.priority,
               ...(n.binding.sensitivity !== undefined &&
                 findEntry(catalog, n.type, n.typeVersion)?.sensitivity === "model-may-set" && {
