@@ -71,6 +71,20 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   grid auto-placement on the web and to row-then-column order in the terminal (loom's
   `renderBlueprintToString`, which `@loom-ui/renderer-terminal` reaches by delegation; loom ADR 0098
   D4/D6).
+- A container's `role` (Blueprint IR 2.2.0, loom ADR 0099) is the open, app-defined key a container
+  renderer is registered under — never an ARIA role, never display text, never localised. Its one
+  rule is loom's `isLayoutRole` (`LayoutRole` in core); never re-spell the regex or loosen it to
+  `min(1)`. A malformed role in stored data is `role-invalid` (warn) and is not compiled. loom-ui
+  ships NO role vocabulary here (built-in roles are a later slice); an example names its own.
+  `setRole` is refused from widget actions (`role-op-not-interactive`).
+- Container renderers (`DomRenderOptions.containers`, keyed by role): the adapter owns `body`, every
+  child's mount / keyed reconcile / reorder / placement / subscription, the focus pin and the section
+  wrap; the app owns only chrome and child VISIBILITY (`hidden`/`inert`/`aria-*`/`role`/`id`/`class`
+  on the elements it is handed). `update` is required and fires only when the layout's own fields,
+  its child element list/order, or a child's own fields changed — an identical Blueprint is zero
+  mutations (MutationObserver tests in `containers.test.ts`). A role change is a reported remount; a
+  throwing container renderer falls back to the plain container in place with a finding, children
+  never lost. The terminal has no counterpart seam: a role prints the plain container.
 - Op refusal codes — the complete list `apply` (and so `replay`) can return, by op; a new
   `refuse("…")` in `operations.ts` fails `refusalCodesDocs.test.ts` until it is listed here and in the
   README. Every op: `invalid-operation` (the op fails the `Operation` schema) and `tree-too-deep` (the
@@ -81,10 +95,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   (the destination is absent or not a container), `cyclic-move`, `placement-outside-grid` /
   `placement-out-of-range`. `setPlacement`: `root-immutable`, `missing-node`, `empty-placement` (names
   no field), `placement-outside-grid`, `invalid-operation` (the placed node fails the node schema),
-  `placement-out-of-range`. `setTitle`: `missing-node`, `not-container`. `setProps` / `setLabel` /
+  `placement-out-of-range`. `setTitle`: `missing-node`, `not-container`. `setRole`: `missing-node`,
+  `not-container`, `invalid-operation` (a role that is not `isLayoutRole`). `setProps` / `setLabel` /
   `bindProvider`: `missing-node`, `not-semantic`. `remapProvider`: `handle-mismatch` (`spec.handle` ≠
   `handle`). `removeProvider`: `missing-provider`, `provider-still-bound`. `prompt`: whatever its
-  `materialized` ops return. Note `not-container` (`setTitle` on a semantic node) is a different code
+  `materialized` ops return. Note `not-container` (`setTitle` / `setRole` on a semantic node) is a different code
   from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `bindProvider`
   does not check that the handle is declared; `validateExperience` reports a binder with no provider
   as `unknown-handle`.
@@ -108,6 +123,6 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
 - Anything tool-authored that will be shown to a model (samples, observed drift values) is wrapped with
   `@loom/classify`'s `tainted` at the producer and fenced as DATA in a user message — never in `system`.
-- A widget that keeps its id and kind WITHIN ITS CONTAINER is never re-created: `renderBlueprintDom`'s `update` patches it in place, and the subtree holding the focused element never leaves the DOM. Containers are keyed by ordinal-among-container-siblings plus type, so a widget that moves to another container, or whose container's ordinal shifts or type changes, IS re-created — and, like a renderer without `DomWidgetHandle.patch`, it is REPORTED in `RecomposeReport.remounted`, never silently.
+- A widget that keeps its id and kind WITHIN ITS CONTAINER is never re-created: `renderBlueprintDom`'s `update` patches it in place, and the subtree holding the focused element never leaves the DOM. Containers are keyed by ordinal-among-container-siblings plus type plus role, so a widget that moves to another container, or whose container's ordinal shifts or type or role changes, IS re-created — and, like a renderer without `DomWidgetHandle.patch`, it is REPORTED in `RecomposeReport.remounted`, never silently.
 - User-entered state is DOM state. A renderer overwrites an input's value only when the BOUND value changed — never on `patch`, never on a re-render that the value did not cause (a Lit property binding such as `<input .value=${…}>` satisfies this — Lit dirty-checks property parts against the last value it set; an imperative `el.value = …` in `render()`/`updated()` that runs on every render does not).
 - loom-ui is a generic UI framework on top of loom, for ANY app; any consumer is never the design centre. No consumer names or prefixes anywhere in the repo (theme tokens are `--lu-*`, elements `lu-*`) — `packages/core/src/genericity.test.ts` enforces it; README's `## Consumers` section is the one place a consumer is named. State every capability as a consumer-neutral need; a contract describes the widget, not a consumer's payload (a consumer with an idiosyncratic shape adapts at its own boundary). Every capability ships with a reference example in loom-examples that is not a specific consumer's app. Review question for every change: would an unrelated app use this as-is?
