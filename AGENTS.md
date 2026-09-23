@@ -49,7 +49,13 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   in its PARENT grid and compile into that `GridCell`. Unlike `span` they are never silently inapplicable:
   under a `row`/`column` parent, or on the root, they are a `placement-outside-grid` error, and off the
   12 columns a `placement-out-of-range` error (the cell then compiles unplaced). A container's `title`
-  is a `LocalizedText`, resolved at compile like a label; renderers draw it as a section heading.
+  is a `LocalizedText`, resolved at compile like a label. `renderBlueprintDom` draws both the way loom's
+  React renderer does (ADR 0098 D4): a cell's grid lines land on the child's OWN element — no wrapper —
+  and a titled container renders as `<section aria-label><h2>` + the layout element, so the SECTION is
+  the grid item, never the heading. React and Lit agree on reading order only when a grid's cells are
+  all placed or all unplaced; a partially placed grid falls to CSS auto-placement on the web and to
+  row-then-column reading order in the terminal (loom's `renderBlueprintToString`, which
+  `@loom-ui/renderer-terminal` reaches by delegation).
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
