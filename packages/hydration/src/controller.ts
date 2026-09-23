@@ -12,8 +12,17 @@ import {
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
 import type { TransientInvoker } from "./invoker";
+import { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
+import {
+  type ArgumentHook,
+  type LoadParams,
+  checkParams,
+  paramsKey,
+  relevantParams,
+} from "./params";
 import { type HydrationStore, isReservedHandle } from "./projection";
-import { type DriftRecord, executeProvider, outcomeResult } from "./provider";
+import { type DriftRecord, type InputDriftMode, executeProvider, outcomeResult } from "./provider";
+import type { ReshaperRegistry } from "./reshape";
 import {
   type HandleLoadResult,
   HandleScheduler,
@@ -27,8 +36,19 @@ import {
 // ── The in-process controller ─────────────────────────────────────────────────
 // Schedules the handles an experience binds (scheduler.ts: once per QUESTION, P0/P1/P2) and
 // answers each through `executeProvider`, publishing to the store. A QUESTION is the provider
-// spec and — for a `"contract"` provider — the kinds it is checked against: a repaired provider
-// re-runs exactly once, and a `stale` handle is not re-invoked while its question stands.
+// spec, the load's params (defaults < global < handle-scoped, filtered to the arguments the
+// provider declares overridable) and — for a `"contract"` provider — the kinds it is checked
+// against: a repaired provider or a changed filter re-runs exactly once, an unrelated param
+// change re-runs nothing, and a `stale` handle is not re-invoked while its question stands.
+//
+// Loads started together form a PASS: one instant for every relative-time token in it, and one
+// memo, so an identical step (same tool, resolved args, schema pin, principal) shared by several
+// providers runs once. The memo sits IN FRONT of the one controller-wide call cap
+// (`maxConcurrentCalls`), so a memo hit never takes a slot; beneath both, every call is bound to
+// the controller's lifetime, so `dispose` cancels each upstream call at once (a memo defers the
+// cancel of a call only its own callers abandoned by a microtask — see invokers.ts). A lazy (P2) handle whose question
+// changes (new params, `invalidate`) waits for its next `markVisible`, keeping its last value on
+// screen until then.
 
 export interface DriftReport {
   readonly experienceId: string;
@@ -37,16 +57,22 @@ export interface DriftReport {
   readonly spec: ProviderSpec;
   readonly drift: readonly DriftRecord[];
   readonly findings: readonly Finding[];
+  /** `true` when the load retried with the observed pin and published (`inputDrift: "report-and-proceed"`). */
+  readonly proceeded: boolean;
 }
 
 export interface ControllerOptions {
   readonly invoker: TransientInvoker;
   readonly store: HydrationStore;
+  /** Cache TTLs AND relative-time tokens run on this clock (read once per pass). Default `Date.now`. */
   readonly clock?: () => number;
   /** Schedule `fn` after `ms`; returns a cancel. Default: setTimeout/clearTimeout. */
   readonly setTimer?: (fn: () => void, ms: number) => () => void;
   readonly batchWindowMs?: number;
+  /** Parallel steps per wave within ONE provider. Default 4. */
   readonly concurrency?: number;
+  /** At most this many transient calls in flight across the WHOLE controller. Default: unbounded. */
+  readonly maxConcurrentCalls?: number;
   readonly principal?: {
     readonly id: string;
     readonly chain?: TransientInvokeOptions["principal"];
@@ -58,6 +84,14 @@ export interface ControllerOptions {
    * surface through this catalogue (`handleKinds`). Without it a contract provider is an error.
    */
   readonly outputKinds?: { readonly catalog: SemanticCatalog; readonly surface: Surface };
+  /** Params every load starts from (e.g. `DEFAULT_TIME_RANGE`); `setParams` layers over them. */
+  readonly defaultParams?: LoadParams;
+  /** On an input-schema drift: `"report"` (default) goes stale; `"report-and-proceed"` publishes. */
+  readonly inputDrift?: InputDriftMode;
+  /** The host's last word on each step's arguments (after params, time tokens, templates). */
+  readonly argumentHook?: ArgumentHook;
+  /** Where `Named` reshaping looks its reshapers up. */
+  readonly reshapers?: ReshaperRegistry;
 }
 
 /**
@@ -75,10 +109,18 @@ export function loadFingerprint(spec: ProviderSpec, kinds: readonly string[]): s
 
 interface ProviderJob extends ScheduledJob {
   readonly spec: ProviderSpec;
+  /** Already filtered to the params this provider declares overridable (`relevantParams`). */
+  readonly params: LoadParams;
   /** The kinds a `"contract"` provider is checked against; `undefined` for any other provider. */
   readonly kinds: readonly string[] | undefined;
   readonly experienceId: string;
   readonly versionHash: string;
+}
+
+/** Loads started together: one instant for their time tokens, one step memo for their calls. */
+interface Pass {
+  readonly now: number;
+  readonly invoker: TransientInvoker;
 }
 
 type ProviderResult = HandleLoadResult & {
@@ -88,25 +130,46 @@ type ProviderResult = HandleLoadResult & {
 
 export class HydrationController {
   private readonly cache: HydrationCache;
-  private readonly sched: HandleScheduler<ProviderJob, undefined, ProviderResult>;
+  private readonly clock: () => number;
+  private readonly sched: HandleScheduler<ProviderJob, Pass, ProviderResult>;
   private current: Experience | undefined;
   private kinds: ReadonlyMap<string, readonly string[]> = new Map();
+  private globalParams: LoadParams = {};
+  private readonly scopedParams = new Map<string, LoadParams>();
+  private readonly lifetime = new AbortController();
 
+  /**
+   * Throws `RangeError` for a `maxConcurrentCalls` that is not a positive integer, or
+   * `defaultParams` that `checkParams` refuses.
+   */
   constructor(private readonly opts: ControllerOptions) {
-    this.cache = opts.cache ?? new HydrationCache(opts.clock ?? Date.now);
+    this.clock = opts.clock ?? Date.now;
+    this.cache = opts.cache ?? new HydrationCache(this.clock);
+    if (opts.defaultParams !== undefined) {
+      const bad = checkParams(opts.defaultParams);
+      if (bad) throw new RangeError(bad.message);
+    }
+    // ONE cap and ONE lifetime for the whole controller; a fresh memo per pass in front of them.
+    const calls = signalInvoker(
+      opts.maxConcurrentCalls === undefined
+        ? opts.invoker
+        : limitInvoker(opts.invoker, opts.maxConcurrentCalls),
+      this.lifetime.signal
+    );
     const principalId = opts.principal?.id;
-    const variant = (job: ProviderJob) => (job.kinds === undefined ? {} : { kinds: job.kinds });
-    this.sched = new HandleScheduler<ProviderJob, undefined, ProviderResult>(
+    const variant = (job: ProviderJob) =>
+      job.kinds === undefined ? { params: job.params } : { params: job.params, kinds: job.kinds };
+    this.sched = new HandleScheduler<ProviderJob, Pass, ProviderResult>(
       opts.store,
       {
-        newGroup: () => undefined,
-        run: (job, signal) => this.run(job, signal),
+        newGroup: () => ({ now: this.clock(), invoker: memoInvoker(calls) }),
+        run: (job, signal, pass) => this.run(job, signal, pass),
         cached: (job) => this.cache.get(job.spec, principalId, variant(job)),
         commit: (job, r) => {
           if (r.state === "ready") this.cache.set(job.spec, principalId, r.value, variant(job));
         },
         published: (job, r) => {
-          if (r.state !== "stale") return;
+          if (r.drift.length === 0) return;
           this.opts.onDrift?.({
             experienceId: job.experienceId,
             versionHash: job.versionHash,
@@ -114,6 +177,7 @@ export class HydrationController {
             spec: job.spec,
             drift: r.drift,
             findings: r.findings,
+            proceeded: r.state === "ready",
           });
         },
       },
@@ -145,8 +209,46 @@ export class HydrationController {
     // one exactly as it was, not half-torn-down between two experiences.
     if (treeDepth(next.root) > MAX_TREE_DEPTH)
       return { findings: [tooDeep(next.experienceId, MAX_TREE_DEPTH)] };
-    this.sched.retain(new Set(experienceHandles(next).map((h) => h.handle)));
+    const keep = new Set(experienceHandles(next).map((h) => h.handle));
+    this.sched.retain(keep);
+    for (const handle of [...this.scopedParams.keys()])
+      if (!keep.has(handle)) this.scopedParams.delete(handle);
     return this.bind(next);
+  }
+
+  /**
+   * Replace the global params (no `scope.handle`) or one handle's scoped params, then re-ask
+   * every bound handle whose question changed — only those. `{}` clears. Refused, with nothing
+   * changed, for params `checkParams` refuses or a reserved handle. A lazy (P2) handle whose
+   * question changed waits for its next `markVisible`.
+   */
+  setParams(params: LoadParams, scope: { readonly handle?: string } = {}): { findings: Finding[] } {
+    if (this.sched.isDisposed) return { findings: [disposedFinding("setParams")] };
+    const bad = checkParams(params);
+    if (bad) return { findings: [bad] };
+    if (scope.handle !== undefined && isReservedHandle(scope.handle))
+      return {
+        findings: [
+          {
+            code: "invalid-handle",
+            severity: "error",
+            message: `handle "${scope.handle}" is reserved`,
+          },
+        ],
+      };
+    const before =
+      this.current === undefined
+        ? new Map<string, string>()
+        : new Map(this.plan(this.current).jobs.map((j) => [j.handle, j.fingerprint]));
+    // A copy (own enumerable keys only): a caller mutating its object later changes nothing.
+    const copy: LoadParams = Object.fromEntries(Object.entries(params));
+    if (scope.handle === undefined) this.globalParams = copy;
+    else this.scopedParams.set(scope.handle, copy);
+    if (this.current !== undefined)
+      this.sched.schedule(
+        this.plan(this.current).jobs.filter((j) => before.get(j.handle) !== j.fingerprint)
+      );
+    return { findings: [] };
   }
 
   /**
@@ -169,6 +271,7 @@ export class HydrationController {
   /** Terminal: every in-flight load is aborted and reported, and nothing schedules again. */
   dispose(): void {
     this.sched.dispose();
+    this.lifetime.abort();
     this.current = undefined;
   }
 
@@ -217,28 +320,41 @@ export class HydrationController {
         continue;
       }
       const kinds = this.kinds.get(use.handle) ?? [];
+      // Keyed on the params the provider can USE, never the raw bag: an unrelated param must
+      // neither re-run the load nor split its cache entry.
+      const params = relevantParams(spec, {
+        ...this.opts.defaultParams,
+        ...this.globalParams,
+        ...this.scopedParams.get(use.handle),
+      });
       jobs.push({
         handle: use.handle,
         priority: use.priority,
         spec,
+        params,
         // Only a contract provider's checked value is answerable to a kind; the cache key and
         // `executeProvider` ignore kinds for any other provider anyway.
         kinds: spec.outputCheck === "contract" ? kinds : undefined,
         experienceId: exp.experienceId,
         versionHash: exp.versionHash,
-        fingerprint: loadFingerprint(spec, kinds),
+        fingerprint: `${paramsKey(params)}${KEY_SEP}${loadFingerprint(spec, kinds)}`,
       });
     }
     return { jobs, findings, missing };
   }
 
-  private async run(job: ProviderJob, signal: AbortSignal): Promise<ProviderResult> {
+  private async run(job: ProviderJob, signal: AbortSignal, pass: Pass): Promise<ProviderResult> {
     const outcome = await executeProvider(job.spec, {
-      invoker: this.opts.invoker,
+      invoker: pass.invoker,
       signal,
+      now: pass.now,
+      params: job.params,
       ...(job.kinds !== undefined && { kinds: job.kinds }),
       ...(this.opts.principal?.chain && { principal: this.opts.principal.chain }),
       ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
+      ...(this.opts.inputDrift !== undefined && { inputDrift: this.opts.inputDrift }),
+      ...(this.opts.argumentHook !== undefined && { argumentHook: this.opts.argumentHook }),
+      ...(this.opts.reshapers !== undefined && { reshapers: this.opts.reshapers }),
     });
     return { ...outcomeResult(outcome), drift: outcome.drift ?? [], findings: outcome.findings };
   }

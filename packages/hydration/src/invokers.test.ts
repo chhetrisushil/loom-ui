@@ -3,7 +3,7 @@ import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { describe, expect, it } from "vitest";
 import type { TransientInvoker } from "./invoker";
-import { limitInvoker, memoInvoker } from "./invokers";
+import { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
 import { FakeInvoker, flush } from "./testing.test-support";
 
 const mcp = (toolName: string, args: Record<string, unknown> = {}, pin = `schema-${toolName}`) => ({
@@ -375,5 +375,105 @@ describe("memoInvoker", () => {
       ok: true,
     });
     expect(n).toBe(2);
+  });
+
+  it("a caller re-entering with the same key from inside the upstream abort starts a fresh call: it never joins the dying entry", async () => {
+    let n = 0;
+    let reentered: Promise<unknown> | undefined;
+    const memo: TransientInvoker = memoInvoker(
+      new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => {
+        n += 1;
+        if (n > 1) return { fresh: true };
+        return new Promise((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => {
+            // Synchronously, from inside the internal controller's abort.
+            reentered = memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"));
+            reject(new Error("upstream-cancelled"));
+          });
+        });
+      })
+    );
+    const ac = new AbortController();
+    const first = memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { signal: ac.signal });
+    ac.abort();
+    await expect(first).rejects.toThrow("aborted");
+    await flush();
+    expect(reentered).toBeDefined();
+    await expect(reentered).resolves.toEqual({ fresh: true });
+    expect(n).toBe(2);
+  });
+
+  describe("a synchronous throw from inner on a pass-through path is a rejected promise", () => {
+    const throwing: TransientInvoker = {
+      invokeTransient<TIn = unknown, TOut = unknown>(): Promise<TOut> {
+        throw new Error("sync boom");
+      },
+    };
+    const deep = (levels: number): unknown => {
+      let v: unknown = 1;
+      for (let i = 0; i < levels; i++) v = { v };
+      return v;
+    };
+    const cases: Array<[string, string, unknown]> = [
+      ["a non-MCP tool", "sandbox.run", { x: 1 }],
+      ["an input that is not plain JSON", MCP_INVOKE_TOOL_ID, mcp("t", { at: new Date(0) })],
+      [
+        "an input canonicalJson refuses (too deep)",
+        MCP_INVOKE_TOOL_ID,
+        mcp("t", { d: deep(2000) }),
+      ],
+    ];
+    for (const [what, toolId, input] of cases)
+      it(what, async () => {
+        const memo = memoInvoker(throwing);
+        let p: Promise<unknown> | undefined;
+        expect(() => {
+          p = memo.invokeTransient(toolId, input);
+        }).not.toThrow();
+        await expect(p).rejects.toThrow("sync boom");
+      });
+  });
+});
+
+describe("signalInvoker", () => {
+  it("aborting the bound signal aborts every in-flight call at once, and refuses new ones", async () => {
+    const inner = new FakeInvoker().on("t", () => new Promise(() => {}));
+    const life = new AbortController();
+    const bound = signalInvoker(inner, life.signal);
+    const caller = new AbortController();
+    const p = bound.invokeTransient("t", {}, { signal: caller.signal });
+    p.catch(() => {});
+    expect(inner.calls[0]?.opts?.signal?.aborted).toBe(false);
+    life.abort();
+    expect(inner.calls[0]?.opts?.signal?.aborted).toBe(true); // synchronously
+    await expect(bound.invokeTransient("t", {})).rejects.toThrow("aborted");
+    expect(inner.calls).toHaveLength(1);
+  });
+
+  it("a caller's own abort still reaches inner, and a settled call lets go of the bound signal", async () => {
+    const inner = new FakeInvoker().on("t", () => ({ ok: true }));
+    const life = new AbortController();
+    const bound = signalInvoker(inner, life.signal);
+    await expect(bound.invokeTransient("t", {})).resolves.toEqual({ ok: true });
+    life.abort();
+    // The listener was removed on settle: aborting the bound signal later touches nothing.
+    expect(inner.calls[0]?.opts?.signal?.aborted).toBe(false);
+
+    const hanging = new FakeInvoker().on("t", () => new Promise(() => {}));
+    const b2 = signalInvoker(hanging, new AbortController().signal);
+    const caller = new AbortController();
+    b2.invokeTransient("t", {}, { signal: caller.signal }).catch(() => {});
+    caller.abort();
+    expect(hanging.calls[0]?.opts?.signal?.aborted).toBe(true);
+  });
+
+  it("a synchronous throw from inner is a rejected promise", async () => {
+    const throwing: TransientInvoker = {
+      invokeTransient<TIn = unknown, TOut = unknown>(): Promise<TOut> {
+        throw new Error("sync boom");
+      },
+    };
+    const bound = signalInvoker(throwing, new AbortController().signal);
+    await expect(bound.invokeTransient("t", {})).rejects.toThrow("sync boom");
   });
 });
