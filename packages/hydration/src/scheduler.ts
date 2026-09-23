@@ -62,7 +62,11 @@ export const tooDeep = (experienceId: string, max: number): Finding => ({
 
 export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResult> {
   private readonly inflight = new Map<string, AbortController>();
-  private pending: J[] = [];
+  /**
+   * P1 jobs waiting for the batch timer, ONE per handle: a question changed inside the window
+   * replaces the queued one (the old one would otherwise start first and wedge the new one).
+   */
+  private pending = new Map<string, J>();
   private cancelBatch: (() => void) | undefined;
   private readonly lazy = new Map<string, J>();
   /** handle → fingerprint of the job it was last STARTED with. Pruned with the handle. */
@@ -94,7 +98,7 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
     for (const handle of [
       ...this.inflight.keys(),
       ...this.lazy.keys(),
-      ...this.pending.map((p) => p.handle),
+      ...this.pending.keys(),
       ...this.store.handles(),
     ])
       if (!keep.has(handle)) drop.add(handle);
@@ -103,10 +107,10 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
       this.inflight.get(handle)?.abort();
       this.inflight.delete(handle);
       this.lazy.delete(handle);
+      this.pending.delete(handle);
       this.loaded.delete(handle);
       if (this.store.status(handle) !== undefined) this.store.remove(handle);
     }
-    this.pending = this.pending.filter((p) => !drop.has(p.handle));
   }
 
   /**
@@ -119,6 +123,7 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
     for (const job of jobs) {
       this.inflight.get(job.handle)?.abort();
       this.inflight.delete(job.handle);
+      this.pending.delete(job.handle); // started below (or re-queued lazy): not a second time
       if (job.priority === "P2") {
         this.lazy.set(job.handle, job);
         continue;
@@ -159,7 +164,7 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
     this.inflight.clear();
     this.cancelBatch?.();
     this.cancelBatch = undefined;
-    for (const job of this.pending) {
+    for (const job of this.pending.values()) {
       // Already published `pending`; leaving it there would spin the widget forever waiting on a
       // batch timer that just got cancelled. Lazy jobs were never published: nothing to terminate.
       this.store.setStatus(job.handle, {
@@ -171,7 +176,7 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
         },
       });
     }
-    this.pending = [];
+    this.pending.clear();
     this.lazy.clear();
     this.loaded.clear();
   }
@@ -195,6 +200,8 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
       this.inflight.get(job.handle)?.abort();
       this.inflight.delete(job.handle);
     }
+    // A job queued for the batch answers the old question (or the old priority): this one owns it.
+    this.pending.delete(job.handle);
     if (job.priority === "P2") {
       this.lazy.set(job.handle, job);
       return;
@@ -205,11 +212,12 @@ export class HandleScheduler<J extends ScheduledJob, G, R extends HandleLoadResu
       return;
     }
     this.store.setStatus(job.handle, { state: "pending" });
-    this.pending.push(job);
+    // Keyed by handle: a changed question REPLACES the queued one rather than queueing behind it.
+    this.pending.set(job.handle, job);
     this.cancelBatch ??= this.setTimer(() => {
       this.cancelBatch = undefined;
-      const batch = this.pending;
-      this.pending = [];
+      const batch = [...this.pending.values()];
+      this.pending.clear();
       if (batch.length === 0) return;
       const g = this.hooks.newGroup();
       for (const j of batch) this.start(j, g).catch(() => {});
