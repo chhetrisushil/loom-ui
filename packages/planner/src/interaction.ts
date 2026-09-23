@@ -30,7 +30,9 @@ const refuse = (code: string, message: string): Interpretation => ({
  * container renderers draws a section (loom ADR 0099) — presentation structure, like a
  * container's direction, which no op changes at all — and changing it remounts the container,
  * discarding its chrome state (the current step, the open tab). A role is authored by a planner
- * or the app. Who may EDIT the lineage otherwise is the app's policy, applied after this returns.
+ * or the app. An `insertNode` may still carry a container that already has a role: harmless, a
+ * new container has no chrome state to lose. Who may EDIT the lineage otherwise is the app's
+ * policy, applied after this returns.
  *
  * An inserted node's `binding.handle` is NOT checked against the experience's providers here:
  * core treats a dangling handle as a WARN (`validateExperience`), not a refusal, and no click can

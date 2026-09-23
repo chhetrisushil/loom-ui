@@ -76,7 +76,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   rule is loom's `isLayoutRole` (`LayoutRole` in core); never re-spell the regex or loosen it to
   `min(1)`. A malformed role in stored data is `role-invalid` (warn) and is not compiled. loom-ui
   ships NO role vocabulary here (built-in roles are a later slice); an example names its own.
-  `setRole` is refused from widget actions (`role-op-not-interactive`).
+  `setRole` is refused from widget actions (`role-op-not-interactive`); a widget's `insertNode` may
+  still insert an already-roled container — harmless, a new container has no chrome state to lose.
 - Container renderers (`DomRenderOptions.containers`, keyed by role): the adapter owns `body`, every
   child's mount / keyed reconcile / reorder / placement / subscription, the focus pin and the section
   wrap; the app owns only chrome and child VISIBILITY (`hidden`/`inert`/`aria-*`/`role`/`id`/`class`
@@ -84,7 +85,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   its child element list/order, or a child's own fields changed — an identical Blueprint is zero
   mutations (MutationObserver tests in `containers.test.ts`). A role change is a reported remount; a
   throwing container renderer falls back to the plain container in place with a finding, children
-  never lost. The terminal has no counterpart seam: a role prints the plain container.
+  never lost. The adapter restores only visibility on a throw; a renderer's `dispose` MUST undo
+  every other attribute it set on children (`role`, `aria-labelledby`, `id`, `class`). The terminal has no counterpart seam: a role prints the plain container.
 - Op refusal codes — the complete list `apply` (and so `replay`) can return, by op; a new
   `refuse("…")` in `operations.ts` fails `refusalCodesDocs.test.ts` until it is listed here and in the
   README. Every op: `invalid-operation` (the op fails the `Operation` schema) and `tree-too-deep` (the
