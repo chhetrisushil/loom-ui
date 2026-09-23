@@ -78,6 +78,8 @@ describe("executeProvider", () => {
         handle: "h",
         expected: outputShapeHashOf({ p99: "string-now" }),
         observed: outputShapeHashOf({ p99: 1 }),
+        // The provider's only step is also its only terminal, so it names itself unambiguously.
+        stepId: "s",
         observedShape: { p99: "number" },
         // This spec's reshaping is the identity (`scriptRef: ""`), so raw and reshaped coincide.
         observedRawShape: { p99: "number" },
@@ -124,6 +126,43 @@ describe("executeProvider", () => {
       signal: ac.signal,
     });
     expect(!r2.ok && r2.findings.map((f) => f.code)).toEqual(["aborted"]);
+  });
+
+  it("a multi-step provider's output-drift record carries the TERMINAL step's id, never the first (G4/P14)", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as McpIn;
+      if (i.toolName === "db.list") return { ids: ["a"] };
+      return { p99: "string-now" };
+    });
+    const spec = providerSpec(
+      "h",
+      [
+        mcpStep("list", "db.list"),
+        mcpStep("stats", "db.stats", { id: "{{steps.list.output.ids[0]}}" }, ["list"]),
+      ],
+      { outputShapeHash: outputShapeHashOf({ p99: 1 }) }
+    );
+    const r = await executeProvider(spec, { invoker: inv, captureSample: true });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("output-shape-drift");
+    expect(r.drift).toHaveLength(1);
+    // Not "list" (executionGraph[0]) — "stats" is the step whose output was actually reshaped.
+    expect(r.drift[0]?.stepId).toBe("stats");
+  });
+
+  it("several terminal steps: an output-drift record carries no stepId — the raw sample is not one step's output", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => ({
+      from: (input as McpIn).toolName,
+    }));
+    const spec = providerSpec("h", [mcpStep("x", "tx"), mcpStep("y", "ty")], {
+      outputShapeHash: outputShapeHashOf({ nope: true }),
+    });
+    const r = await executeProvider(spec, { invoker: inv, captureSample: true });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("output-shape-drift");
+    expect(r.drift[0]?.stepId).toBeUndefined();
   });
 
   it("an empty graph is a finding, not an invocation", async () => {

@@ -166,6 +166,90 @@ describe("drift → revision", () => {
     ).toEqual(capabilitiesFixture[0]?.sampleOutput);
   });
 
+  it("driftCapabilities keys the sample on the TERMINAL step's tool, never executionGraph[0]'s (G4/P14): an inlined upstream step of a DIFFERENT tool must not receive it", async () => {
+    const drift = await producedDrift();
+    const terminal = spec.executionGraph[0] as (typeof spec.executionGraph)[number];
+    expect((drift[0] as DriftRecord).stepId).toBe(terminal.stepId); // the fix's precondition
+    const upstream = {
+      ...terminal,
+      stepId: "s0",
+      toolName: "orders.summary.upstream",
+      toolVersion: "1.0.0",
+      dependsOn: [],
+    };
+    const twoStepSpec = {
+      ...spec,
+      // The node's OWN step (terminal, sampled) is LAST — a provider may inline an upstream
+      // dependency as an earlier step, so `executionGraph[0]` is the unrelated upstream step.
+      executionGraph: [upstream, { ...terminal, dependsOn: ["s0"] }],
+    };
+    const expTwoStep = { ...exp, providers: { ...exp.providers, [handle]: twoStepSpec } };
+    const capsWithUpstream = [
+      ...capabilitiesFixture,
+      {
+        handle: "orders_summary_upstream",
+        toolName: "orders.summary.upstream",
+        toolVersion: "1.0.0",
+        toolSchemaHash: "sha256:orders-summary-upstream-1-0",
+        description: "the inlined upstream step's own tool",
+        sampleOutput: { untouched: true },
+      },
+    ];
+    const caps = driftCapabilities(capsWithUpstream, expTwoStep, drift);
+    expect(caps.find((c) => c.handle === "orders_summary")?.sampleOutput).toEqual(driftedReply);
+    // Never handed the terminal's sample: the bug attached it here via executionGraph[0].
+    expect(caps.find((c) => c.handle === "orders_summary_upstream")?.sampleOutput).toEqual({
+      untouched: true,
+    });
+  });
+
+  it("several terminal steps: driftCapabilities keys no capability — the raw sample is not one tool's output", async () => {
+    const drift = await producedDrift();
+    const terminal = spec.executionGraph[0] as (typeof spec.executionGraph)[number];
+    const secondTerminal = { ...terminal, stepId: "s2", toolName: "orders.summary.second" };
+    const twoTerminalSpec = {
+      ...spec,
+      executionGraph: [{ ...terminal, dependsOn: [] }, secondTerminal],
+    };
+    const expTwoTerminal = { ...exp, providers: { ...exp.providers, [handle]: twoTerminalSpec } };
+    // A record produced over several terminals carries no stepId (hydration's own rule).
+    const { stepId: _stepId, ...withoutStepId } = drift[0] as DriftRecord;
+    const ambiguous: DriftRecord[] = [withoutStepId];
+    const caps = driftCapabilities(capabilitiesFixture, expTwoTerminal, ambiguous);
+    expect(caps.find((c) => c.handle === "orders_summary")?.sampleOutput).toEqual(
+      capabilitiesFixture[0]?.sampleOutput
+    );
+  });
+
+  it("two providers drifting on DIFFERENT tools each key their own capability, independently", async () => {
+    const drift = await producedDrift();
+    const otherHandle = "p-other";
+    const otherTerminal = {
+      ...(spec.executionGraph[0] as (typeof spec.executionGraph)[number]),
+      toolName: "incidents.list",
+      toolVersion: "1.0.0",
+    };
+    const expWithTwo = {
+      ...exp,
+      providers: {
+        ...exp.providers,
+        [otherHandle]: { ...spec, handle: otherHandle, executionGraph: [otherTerminal] },
+      },
+    };
+    const otherSample = { open: 3 };
+    const two: DriftRecord[] = [
+      drift[0] as DriftRecord,
+      {
+        ...(drift[0] as DriftRecord),
+        handle: otherHandle,
+        observedSample: tainted(otherSample, `provider:${otherHandle}`),
+      },
+    ];
+    const caps = driftCapabilities(capabilitiesFixture, expWithTwo, two);
+    expect(caps.find((c) => c.handle === "orders_summary")?.sampleOutput).toEqual(driftedReply);
+    expect(caps.find((c) => c.handle === "incidents_open")?.sampleOutput).toEqual(otherSample);
+  });
+
   it("a drift record without a sample leaves the capability's own sample in place (the planner can still re-author from the shapes)", async () => {
     const drift = await producedDrift();
     const noSample = drift.map(({ observedSample: _s, ...rest }) => rest);
@@ -224,6 +308,53 @@ describe("drift → revision", () => {
     expect(
       after.ok && isContainer(after.value.root) && after.value.root.children.map((c) => c.id)
     ).toEqual(["orders"]);
+  });
+
+  it("reviseForDrift repairs a MULTI-STEP provider end to end (G4/P14): a dependent (terminal) step's drift pins from its own sample, not an inlined upstream step's", async () => {
+    const drift = await producedDrift();
+    const terminal = spec.executionGraph[0] as (typeof spec.executionGraph)[number];
+    const upstream = {
+      ...terminal,
+      stepId: "s0",
+      toolName: "orders.summary.upstream",
+      toolVersion: "1.0.0",
+      dependsOn: [],
+    };
+    const twoStepSpec = {
+      ...spec,
+      executionGraph: [upstream, { ...terminal, dependsOn: ["s0"] }],
+    };
+    const expTwoStep = { ...exp, providers: { ...exp.providers, [handle]: twoStepSpec } };
+    const reauthored = JSON.stringify({
+      summary: "re-pathed",
+      nodes: [
+        {
+          ...composedDraft.nodes[0],
+          binding: { ...composedDraft.nodes[0]?.binding, path: "totals.count.value" },
+        },
+      ],
+    });
+    const planner = new ReferencePlanner({ model: scriptedModel([reauthored]), modelId: "m" });
+    const result = await reviseForDrift(
+      planner,
+      {
+        experience: expTwoStep,
+        drift,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+      },
+      recordingContext()
+    );
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const op = result.ops[0] as {
+      materialized: Array<{ type: string; spec?: { outputShapeHash: string } }>;
+    };
+    const remap = op.materialized[0];
+    // Pinned from the TERMINAL step's own sample (412 → 412). Keyed on `executionGraph[0]`
+    // (the upstream step) this would have carried the upstream tool's unrelated sample instead.
+    expect(remap?.spec?.outputShapeHash).toBe(outputShapeHashOf(412));
+    const after = replay(expTwoStep, result.ops);
+    expect(after.ok).toBe(true);
   });
 });
 
