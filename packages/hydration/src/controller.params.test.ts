@@ -327,6 +327,23 @@ describe("HydrationController: a question changed inside the batch window", () =
     expect(store.value("h")).toEqual({ x: 2 });
   });
 
+  it("invalidate inside the batch window starts the queued P1 load once, not again at the timer", async () => {
+    const { clock, inv, ctl, store } = rig(echo);
+    ctl.load(
+      expWith([node("a", "h", "P1")], {
+        h: providerSpec("h", [mcpStep("s", "t", { x: 0 })], {
+          cachePolicy: { ttlSeconds: 0, scope: "global" },
+        }),
+      })
+    );
+    ctl.invalidate("h");
+    await flush();
+    clock.advance(50);
+    await flush();
+    expect(argsOf(inv)).toEqual([{ x: 0 }]);
+    expect(store.status("h")?.state).toBe("ready");
+  });
+
   it("a queued P1 handle promoted to P0 by a recompose leaves the queue: it is asked once", async () => {
     const { clock, inv, ctl, store } = rig(echo);
     const spec = providerSpec("h", [mcpStep("s", "t", { x: 0 })], {
