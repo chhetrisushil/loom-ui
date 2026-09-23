@@ -7,7 +7,7 @@ import {
   resolveSurface,
   validateExperience,
 } from "./catalog";
-import { genesis } from "./experience";
+import { type Experience, genesis } from "./experience";
 import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
 import { testCatalog } from "./testCatalog.test-support";
 
@@ -247,5 +247,80 @@ describe("text props", () => {
         expect.objectContaining({ code: "text-prop-shape", severity: "error", nodeId: "c" }),
       ]);
     }
+  });
+});
+
+describe("validateExperience — placement (Blueprint IR 2.1.0)", () => {
+  const codes = (e: Experience) =>
+    validateExperience(e, testCatalog, "web").findings.map((f) => [f.code, f.nodeId]);
+
+  it("accepts placements that fit the 12-column grid, rowSpan included", () => {
+    const e = exp([
+      sem("a", "Metric", { span: 8, row: 1, rowSpan: 2, column: 1 }),
+      sem("b", "Metric", { span: 4, row: 1, column: 9 }),
+      sem("c", "Metric", { span: 4 }),
+    ]);
+    expect(validateExperience(e, testCatalog, "web").findings).toEqual([]);
+  });
+
+  it("reports an off-grid placement once per node, with loom's wording", () => {
+    const e = exp([
+      sem("over", "Metric", { span: 4, column: 10 }),
+      sem("wide", "Metric", { column: 13 }),
+      sem("rows", "Metric", { row: 0, rowSpan: 1.5 }),
+    ]);
+    const findings = validateExperience(e, testCatalog, "web").findings;
+    expect(findings.map((f) => [f.code, f.nodeId, f.severity])).toEqual([
+      ["placement-out-of-range", "over", "error"],
+      ["placement-out-of-range", "wide", "error"],
+      ["placement-out-of-range", "rows", "error"],
+    ]);
+    expect(findings[0]?.message).toMatch(/column 10 \+ span 4 overflows the 12-column grid/);
+    expect(findings[1]?.message).toMatch(/column 13 is outside 1\.\.12/);
+    expect(findings[2]?.message).toMatch(/row 0 .*; rowSpan 1\.5/);
+  });
+
+  it("reports placement on a node whose parent is not a grid, and on the root", () => {
+    const base = exp([]);
+    const row: ContainerNode = {
+      id: "r",
+      order: "B",
+      kind: "container",
+      direction: "row",
+      span: 12,
+      children: [sem("m", "Metric", { row: 1, column: 1 })],
+    };
+    const nested = {
+      ...base,
+      root: { ...base.root, children: [row] },
+      providers: { "h-m": providerSpec("h-m") },
+    };
+    expect(codes(nested)).toEqual([["placement-outside-grid", "m"]]);
+    expect(validateExperience(nested, testCatalog, "web").findings[0]?.message).toMatch(
+      /"r" is a row/
+    );
+    const placedRoot = { ...base, root: { ...base.root, row: 1 } };
+    expect(codes(placedRoot)).toEqual([["placement-outside-grid", "root"]]);
+  });
+
+  it("checks a placed CONTAINER under a grid like any other node", () => {
+    const base = exp([]);
+    const section: ContainerNode = {
+      id: "sec",
+      order: "B",
+      kind: "container",
+      direction: "column",
+      span: 6,
+      column: 9,
+      title: { key: "sec.title", fallback: "Section" },
+      children: [],
+    };
+    const withSection = { ...base, root: { ...base.root, children: [section] } };
+    expect(codes(withSection)).toEqual([["placement-out-of-range", "sec"]]);
+    const shifted = {
+      ...base,
+      root: { ...base.root, children: [{ ...section, column: 7 }] },
+    };
+    expect(codes(shifted)).toEqual([]);
   });
 });

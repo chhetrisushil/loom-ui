@@ -1,5 +1,15 @@
 import type { Experience, Finding, VocabularyFloor } from "./experience";
-import { LocalizedText, MAX_TREE_DEPTH, type SemanticNode, treeDepth, walk } from "./node";
+import {
+  type ContainerNode,
+  type ExperienceNode,
+  LocalizedText,
+  MAX_TREE_DEPTH,
+  type SemanticNode,
+  isPlaced,
+  placementProblems,
+  treeDepth,
+  walk,
+} from "./node";
 
 // ── The semantic catalogue ────────────────────────────────────────────────────
 // An entry is what a planner may NAME. It declares the props it accepts (an allow-list — `[]` is
@@ -206,16 +216,59 @@ export function validateExperience(
     };
   const ids = new Set<string>();
   let nodes = 0;
-  walk(exp.root, (n) => {
+  walk(exp.root, (n, parent) => {
     if (ids.has(n.id))
       findings.push(finding("duplicate-node-id", `node id "${n.id}" appears more than once`, n.id));
     ids.add(n.id);
+    checkPlacement(n, parent, findings);
     if (n.kind !== "semantic") return;
     nodes++;
     checkSemantic(n, exp, catalog, surface, findings);
   });
   findings.push(...checkFloor(exp, exp.vocabularyFloor));
   return { ok: findings.every((f) => f.severity !== "error"), findings, nodes };
+}
+
+/**
+ * A node's placement (loom ADR 0098) is a position in its PARENT's grid. Under a `grid` container
+ * it must fit the compiled grid's `GRID_COLUMNS` — `placement-out-of-range`, loom's own predicate
+ * and code, reported here against the NODE (loom's copy of the finding cannot name a container
+ * cell's node). Anywhere else there is no grid to place it in — a row/column parent compiles to a
+ * flex layout with no grid lines, and the root IS the blueprint's layout, not a cell — so it is
+ * `placement-outside-grid`. Both are errors: unlike `span`, which every node must carry and which
+ * therefore simply does not apply outside a grid (loom ADR 0097 D5), a placement is only ever
+ * written on purpose, and dropping it would draw the node somewhere its author did not ask.
+ */
+function checkPlacement(
+  n: ExperienceNode,
+  parent: ContainerNode | null,
+  findings: Finding[]
+): void {
+  if (!isPlaced(n)) return;
+  if (parent === null || parent.direction !== "grid") {
+    const keys = (["row", "rowSpan", "column"] as const).filter((k) => n[k] !== undefined);
+    const where =
+      parent === null
+        ? "it is the root, which is not a grid cell"
+        : `its parent "${parent.id}" is a ${parent.direction}, not a grid`;
+    findings.push(
+      finding(
+        "placement-outside-grid",
+        `"${n.id}" sets ${keys.join(", ")} but ${where} — there are no grid lines to place it on`,
+        n.id
+      )
+    );
+    return;
+  }
+  const problems = placementProblems(n);
+  if (problems.length > 0)
+    findings.push(
+      finding(
+        "placement-out-of-range",
+        `"${n.id}": placement cannot be laid out — ${problems.join("; ")}`,
+        n.id
+      )
+    );
 }
 
 function checkSemantic(
