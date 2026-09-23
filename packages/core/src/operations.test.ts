@@ -1,5 +1,7 @@
+import { canonicalJson } from "@loom/core";
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
+import { mintVersionHash } from "./log";
 import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode, findNode } from "./node";
 import { Operation, apply, replay } from "./operations";
 
@@ -383,5 +385,164 @@ describe("removeProvider", () => {
       { type: "removeProvider", handle: "h1" },
     ]);
     expect(r.ok && r.value.providers).toEqual(g.providers);
+  });
+});
+
+describe("setPlacement", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const withM1 = () => must(apply(g, { type: "insertNode", parentId: "root", node: node("m1") }));
+  it("sets span and grid placement; a field the op does not name is unchanged", () => {
+    const e1 = must(apply(withM1(), { type: "setPlacement", nodeId: "m1", span: 6, row: 2 }));
+    expect(findNode(e1.root, "m1")).toMatchObject({ span: 6, row: 2 });
+    const e2 = must(apply(e1, { type: "setPlacement", nodeId: "m1", column: 7, rowSpan: 3 }));
+    expect(findNode(e2.root, "m1")).toMatchObject({ span: 6, row: 2, column: 7, rowSpan: 3 });
+  });
+  it("null clears a placement field: the key is gone, so the node hashes as if never placed", () => {
+    const base = withM1();
+    const e = must(
+      replay(base, [
+        { type: "setPlacement", nodeId: "m1", row: 2, column: 3 },
+        { type: "setPlacement", nodeId: "m1", row: null, column: null, rowSpan: null },
+      ])
+    );
+    const n = findNode(e.root, "m1");
+    expect(n).toEqual(findNode(base.root, "m1"));
+    expect(n && "row" in n).toBe(false);
+    expect(n && "column" in n).toBe(false);
+    expect(mintVersionHash({ ...e, parents: base.parents })).toBe(mintVersionHash(base));
+  });
+  it("span is required on a node, so it can be set but never cleared", () => {
+    const r = apply(withM1(), { type: "setPlacement", nodeId: "m1", span: null } as never);
+    expect(!r.ok && r.finding.code).toBe("invalid-operation");
+  });
+  it("validates the placed node as insertNode validates a node: out-of-range values are invalid-operation findings naming the node", () => {
+    const e = withM1();
+    const fields: Array<Partial<Record<"span" | "row" | "rowSpan" | "column", number>>> = [
+      { span: 13 },
+      { span: 0 },
+      { row: 0 },
+      { rowSpan: 1.5 },
+      { column: -1 },
+    ];
+    const got = fields.map((f) => {
+      const r = apply(e, { type: "setPlacement", nodeId: "m1", ...f });
+      return r.ok ? "ok" : `${r.finding.code}@${r.finding.nodeId ?? ""}`;
+    });
+    expect(got).toEqual(fields.map(() => "invalid-operation@m1"));
+  });
+  it("an op naming no field would change nothing and is refused as empty-placement", () => {
+    const r = apply(withM1(), { type: "setPlacement", nodeId: "m1" });
+    expect(!r.ok && r.finding).toEqual(
+      expect.objectContaining({ code: "empty-placement", nodeId: "m1" })
+    );
+  });
+  it("the root is not a grid cell (root-immutable); an unknown node is missing-node", () => {
+    const e = withM1();
+    const codes = [
+      apply(e, { type: "setPlacement", nodeId: "root", span: 6 }),
+      apply(e, { type: "setPlacement", nodeId: "ghost", span: 6 }),
+    ].map((r) => (r.ok ? "ok" : r.finding.code));
+    expect(codes).toEqual(["root-immutable", "missing-node"]);
+  });
+  it("places a container the same way and keeps its children", () => {
+    const e = must(
+      replay(g, [
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "c1",
+            order: "a",
+            kind: "container",
+            direction: "row",
+            span: 12,
+            children: [node("m1")],
+          },
+        },
+        { type: "setPlacement", nodeId: "c1", span: 8, row: 1 },
+      ])
+    );
+    expect(findNode(e.root, "c1")).toMatchObject({ span: 8, row: 1 });
+    expect(findNode(e.root, "m1")).toBeDefined();
+  });
+  it("never mutates the base, and a recorded op (nulls included) parses to exactly itself", () => {
+    const base = withM1();
+    const before = JSON.stringify(base);
+    const op: Operation = { type: "setPlacement", nodeId: "m1", span: 3, row: null };
+    must(apply(base, op));
+    expect(JSON.stringify(base)).toBe(before);
+    expect(canonicalJson(Operation.parse(op))).toBe(canonicalJson(op));
+  });
+});
+
+describe("moveNode of a placed node", () => {
+  const must = (r: ReturnType<typeof apply>) => {
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const container = (id: string, direction: "row" | "column" | "grid"): ContainerNode => ({
+    id,
+    order: "a",
+    kind: "container",
+    direction,
+    span: 12,
+    children: [],
+  });
+  // root (grid) ⊃ { flow (row), grid2 (grid), m1 placed at row 2 / column 3 }
+  const setup = () =>
+    must(
+      replay(g, [
+        { type: "insertNode", parentId: "root", node: container("flow", "row") },
+        { type: "insertNode", parentId: "root", node: container("grid2", "grid") },
+        { type: "insertNode", parentId: "root", node: node("m1") },
+        { type: "setPlacement", nodeId: "m1", row: 2, column: 3 },
+      ])
+    );
+  it("into a container that does not lay out placement is refused (placement-outside-grid), naming the node; the base is untouched", () => {
+    const base = setup();
+    const before = JSON.stringify(base);
+    const r = apply(base, { type: "moveNode", nodeId: "m1", newParentId: "flow", newOrder: "b" });
+    expect(!r.ok && r.finding).toEqual(
+      expect.objectContaining({ code: "placement-outside-grid", nodeId: "m1" })
+    );
+    expect(JSON.stringify(base)).toBe(before);
+  });
+  it("any one placement key is enough to refuse (rowSpan alone)", () => {
+    const base = must(
+      replay(g, [
+        { type: "insertNode", parentId: "root", node: container("flow", "column") },
+        { type: "insertNode", parentId: "root", node: node("m1") },
+        { type: "setPlacement", nodeId: "m1", rowSpan: 2 },
+      ])
+    );
+    const r = apply(base, { type: "moveNode", nodeId: "m1", newParentId: "flow", newOrder: "b" });
+    expect(!r.ok && r.finding.code).toBe("placement-outside-grid");
+  });
+  it("succeeds once the caller clears the placement first", () => {
+    const e = must(
+      replay(setup(), [
+        { type: "setPlacement", nodeId: "m1", row: null, column: null },
+        { type: "moveNode", nodeId: "m1", newParentId: "flow", newOrder: "b" },
+      ])
+    );
+    expect(findNode(e.root, "flow")).toMatchObject({
+      children: [expect.objectContaining({ id: "m1" })],
+    });
+  });
+  it("into another grid keeps the placement; an unplaced node moves into a flow container freely", () => {
+    const e = must(
+      replay(setup(), [
+        { type: "moveNode", nodeId: "m1", newParentId: "grid2", newOrder: "b" },
+        { type: "insertNode", parentId: "root", node: node("m2", "c") },
+        { type: "moveNode", nodeId: "m2", newParentId: "flow", newOrder: "b" },
+      ])
+    );
+    expect(findNode(e.root, "m1")).toMatchObject({ row: 2, column: 3 });
+    expect(findNode(e.root, "flow")).toMatchObject({
+      children: [expect.objectContaining({ id: "m2" })],
+    });
   });
 });

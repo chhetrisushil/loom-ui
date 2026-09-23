@@ -10,6 +10,8 @@ import {
   Priority,
   Sensitivity,
   findNode,
+  isContainer,
+  isPlaced,
   normalize,
   rebuild,
   treeDepth,
@@ -39,6 +41,14 @@ export type Operation =
   | { type: "setProps"; nodeId: string; patch: Record<string, unknown> }
   | { type: "setLabel"; nodeId: string; label: LocalizedText }
   | {
+      type: "setPlacement";
+      nodeId: string;
+      span?: number;
+      row?: number | null;
+      rowSpan?: number | null;
+      column?: number | null;
+    }
+  | {
       type: "bindProvider";
       nodeId: string;
       handle: string;
@@ -61,6 +71,16 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
     }),
     z.object({ type: z.literal("setProps"), nodeId: NodeId, patch: z.record(z.unknown()) }),
     z.object({ type: z.literal("setLabel"), nodeId: NodeId, label: LocalizedText }),
+    // Deliberately loose: the RANGE check is the node schema's (see `apply`), so a bad value is
+    // refused with the node's id, exactly as an `insertNode` of that node would be.
+    z.object({
+      type: z.literal("setPlacement"),
+      nodeId: NodeId,
+      span: z.number().optional(),
+      row: z.number().nullable().optional(),
+      rowSpan: z.number().nullable().optional(),
+      column: z.number().nullable().optional(),
+    }),
     z.object({
       type: z.literal("bindProvider"),
       nodeId: NodeId,
@@ -130,6 +150,27 @@ function bindersOf(root: ExperienceNode, handle: string): string[] {
     if (n.kind === "semantic" && n.binding?.handle === handle) ids.push(n.id);
   });
   return ids;
+}
+
+type SetPlacement = Extract<Operation, { type: "setPlacement" }>;
+const PLACEMENT_KEYS = ["row", "rowSpan", "column"] as const;
+
+/**
+ * The node with `op`'s placement applied. Absent = unchanged; `null` = cleared, and a cleared
+ * key is REMOVED (not set to undefined) so the node hashes as if it was never placed. `null`
+ * rather than `undefined` because ops are persisted as JSON, where an undefined-valued key
+ * vanishes — a clear written that way would replay as "unchanged".
+ */
+function place(n: ExperienceNode, op: SetPlacement): ExperienceNode {
+  const cleared = new Set<string>(PLACEMENT_KEYS.filter((k) => op[k] === null));
+  const kept = Object.fromEntries(Object.entries(n).filter(([k]) => !cleared.has(k)));
+  const set: Record<string, number> = {};
+  if (op.span !== undefined) set.span = op.span;
+  for (const k of PLACEMENT_KEYS) {
+    const v = op[k];
+    if (typeof v === "number") set[k] = v;
+  }
+  return { ...kept, ...set } as unknown as ExperienceNode;
 }
 
 export function apply(base: Experience, rawOp: Operation): OpResult<Experience> {
@@ -202,6 +243,15 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         );
       if (findNode(moving, op.newParentId))
         return refuse("cyclic-move", "cannot move a node into its own subtree", op.nodeId);
+      // Only a grid lays out `row`/`rowSpan`/`column` (see `compile`). Carrying them into a flow
+      // or stack container would leave a placement nothing honours — refused rather than silently
+      // dropped, so the caller clears it first with `setPlacement` and the loss is explicit.
+      if (dest.direction !== "grid" && isPlaced(moving))
+        return refuse(
+          "placement-outside-grid",
+          `"${op.nodeId}" carries grid placement and "${op.newParentId}" is a ${dest.direction} container, which does not lay it out; clear it first with setPlacement`,
+          op.nodeId
+        );
       const detached: ExperienceNode = { ...normalize(moving), order: op.newOrder };
       let root = rebuild(base.root, (n) => (n.id === op.nodeId ? null : n));
       root = rebuild(root, (n) =>
@@ -210,6 +260,39 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           : n
       );
       return { ok: true, value: next(base, { root: normalize(root) }) };
+    }
+    case "setPlacement": {
+      if (op.nodeId === base.root.id)
+        return refuse(
+          "root-immutable",
+          "the root is not a grid cell; it has no placement",
+          op.nodeId
+        );
+      const target = findNode(base.root, op.nodeId);
+      if (!target) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      if (op.span === undefined && PLACEMENT_KEYS.every((k) => op[k] === undefined))
+        return refuse(
+          "empty-placement",
+          `setPlacement on "${op.nodeId}" names no field; an absent field means unchanged, so it would change nothing`,
+          op.nodeId
+        );
+      const placed = place(target, op);
+      // Validated exactly as `insertNode` validates a node — through the node schema, so every
+      // bound the schema declares applies here with no second copy. A container is checked
+      // without its children: they are untouched and were valid before.
+      const checked = ExperienceNode.safeParse(
+        isContainer(placed) ? { ...placed, children: [] } : placed
+      );
+      if (!checked.success)
+        return refuse(
+          "invalid-operation",
+          `setPlacement on "${op.nodeId}": ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+          op.nodeId
+        );
+      return {
+        ok: true,
+        value: next(base, { root: rebuild(base.root, (n) => (n.id === op.nodeId ? placed : n)) }),
+      };
     }
     case "setProps":
     case "setLabel":
