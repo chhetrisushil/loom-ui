@@ -4,7 +4,13 @@ import {
   type SemanticCatalog,
   defineSemanticCatalog,
 } from "@loom-ui/core";
-import type { CapabilityRef, DecideContext, DecideOptionsLike, PlannerModel } from "./spi";
+import type {
+  CapabilityRef,
+  DecideContext,
+  DecideOptionsLike,
+  PlannerModel,
+  PlannerUsage,
+} from "./spi";
 
 export const planningCatalog: SemanticCatalog = defineSemanticCatalog({
   id: "test.planning.v1",
@@ -84,14 +90,20 @@ export const metaFixture: Experience["meta"] = {
   sourceKind: "test",
 };
 
-/** Replies in order; repeats the last one when exhausted. Counts calls. */
-export function scriptedModel(responses: readonly string[]): PlannerModel & { calls: number } {
+/** Replies in order; repeats the last one when exhausted. Counts calls. Reports `usage` on every reply when given. */
+export function scriptedModel(
+  responses: readonly string[],
+  usage?: PlannerUsage
+): PlannerModel & { calls: number } {
   const model = {
     calls: 0,
     async complete() {
       const i = Math.min(model.calls, responses.length - 1);
       model.calls += 1;
-      return { content: responses[i] as string };
+      return {
+        content: responses[i] as string,
+        ...(usage !== undefined && { usage: { ...usage } }),
+      };
     },
   };
   return model;

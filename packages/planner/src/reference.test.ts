@@ -10,6 +10,7 @@ import { seal } from "@loom-ui/core/log";
 import { describe, expect, it } from "vitest";
 import { planDecisionId } from "./decision";
 import { REFERENCE_POLICY, ReferencePlanner } from "./reference";
+import type { PlanResult, PlannerModel } from "./spi";
 import {
   capabilitiesFixture,
   intentFixture,
@@ -268,5 +269,123 @@ describe("ReferencePlanner.revise", () => {
     );
     expect(result.ops).toEqual([]);
     expect(result.findings.map((f) => f.code)).toEqual(["unsealed-base"]);
+  });
+});
+
+describe("ReferencePlanner usage", () => {
+  const u = { inputTokens: 120, outputTokens: 30 };
+  it("records each attempt's usage and their sum on the report, INSIDE the decision", async () => {
+    const model = scriptedModel([badType, goodDraft], u);
+    const ctx = recordingContext();
+    const result = await new ReferencePlanner({ model, modelId: "m" }).compose(input, ctx);
+    expect(result.report.attempts.map((a) => a.usage)).toEqual([u, u]);
+    expect(result.report.usage).toEqual({ inputTokens: 240, outputTokens: 60 });
+    const recorded = ctx.decisions.get(planDecisionId("compose", input)) as PlanResult;
+    expect(recorded.report.usage).toEqual({ inputTokens: 240, outputTokens: 60 });
+  });
+  it("replay serves the recorded usage without calling the model", async () => {
+    const model = scriptedModel([goodDraft], u);
+    const ctx = recordingContext();
+    const planner = new ReferencePlanner({ model, modelId: "m" });
+    const first = await planner.compose(input, ctx);
+    const second = await planner.compose(input, ctx);
+    expect(second.report.usage).toEqual(first.report.usage);
+    expect(second.report.usage).toEqual(u);
+    expect(model.calls).toBe(1);
+  });
+  it("a revision reports its own usage", async () => {
+    const exp = replay(
+      genesis({ experienceId: "e", intent: intentFixture, meta: metaFixture }),
+      (
+        await new ReferencePlanner({ model: scriptedModel([goodDraft]), modelId: "m" }).compose(
+          input,
+          recordingContext()
+        )
+      ).ops
+    );
+    if (!exp.ok) throw new Error(exp.finding.message);
+    const r = await new ReferencePlanner({
+      model: scriptedModel([goodDraft], { inputTokens: 9, outputTokens: 2 }),
+      modelId: "m",
+    }).revise(
+      {
+        experience: seal(exp.value),
+        request: { text: "keep it" },
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+      },
+      recordingContext()
+    );
+    expect(r.report.usage).toEqual({ inputTokens: 9, outputTokens: 2 });
+  });
+  it("a model that reports no usage leaves no usage key anywhere", async () => {
+    const result = await new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+    }).compose(input, recordingContext());
+    expect("usage" in result.report).toBe(false);
+    expect(result.report.attempts.every((a) => !("usage" in a))).toBe(true);
+  });
+  it("a usage that is not two non-negative integers is dropped with a usage-invalid warn, never recorded", async () => {
+    const model: PlannerModel = {
+      async complete() {
+        return { content: goodDraft, usage: { inputTokens: -1, outputTokens: Number.NaN } };
+      },
+    };
+    const ctx = recordingContext();
+    const result = await new ReferencePlanner({ model, modelId: "m" }).compose(input, ctx);
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect("usage" in result.report).toBe(false);
+    expect(result.report.attempts[0]?.findings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "usage-invalid", severity: "warn" })])
+    );
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+  it("a provider that sends usage: null still plans (treated as unreported), never model-error", async () => {
+    const model = {
+      async complete() {
+        return { content: goodDraft, usage: null };
+      },
+    } as unknown as PlannerModel;
+    const result = await new ReferencePlanner({ model, modelId: "m" }).compose(
+      input,
+      recordingContext()
+    );
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(result.ops.length).toBeGreaterThan(0);
+    expect("usage" in result.report).toBe(false);
+    expect(result.report.attempts.every((a) => !("usage" in a))).toBe(true);
+  });
+  it("extra provider fields on usage are not recorded — only the two counts", async () => {
+    const model = {
+      async complete() {
+        return {
+          content: goodDraft,
+          usage: { inputTokens: 3, outputTokens: 4, costUsd: 0.1, raw: { x: 1 } },
+        };
+      },
+    } as unknown as PlannerModel;
+    const result = await new ReferencePlanner({ model, modelId: "m" }).compose(
+      input,
+      recordingContext()
+    );
+    expect(result.report.attempts[0]?.usage).toStrictEqual({ inputTokens: 3, outputTokens: 4 });
+    expect(result.report.usage).toStrictEqual({ inputTokens: 3, outputTokens: 4 });
+  });
+  it("usage never changes the ops, so the composed experience's content address is identical", async () => {
+    const plain = await new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+    }).compose(input, recordingContext());
+    const counted = await new ReferencePlanner({
+      model: scriptedModel([goodDraft], u),
+      modelId: "m",
+    }).compose(input, recordingContext());
+    expect(counted.ops).toEqual(plain.ops);
+    const g = () => genesis({ experienceId: "e", intent: intentFixture, meta: metaFixture });
+    const a = replay(g(), plain.ops);
+    const b = replay(g(), counted.ops);
+    if (!a.ok || !b.ok) throw new Error("replay failed");
+    expect(seal(b.value).versionHash).toBe(seal(a.value).versionHash);
   });
 });

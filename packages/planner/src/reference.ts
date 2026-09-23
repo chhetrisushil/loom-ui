@@ -20,8 +20,10 @@ import type {
   PlanResult,
   Planner,
   PlannerModel,
+  PlannerUsage,
   ReviseInput,
 } from "./spi";
+import { isPlannerUsage, totalUsage } from "./usage";
 
 export const REFERENCE_POLICY = { id: "loom-ui.reference-planner", version: "1.0.0" } as const;
 export const REFERENCE_SOURCE = "loom-ui.planner.reference";
@@ -44,12 +46,28 @@ export function scratchGenesis(intent: Intent): Experience {
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
+const warn = (code: string, message: string): Finding => ({ code, severity: "warn", message });
 const errorsOf = (fs: readonly Finding[]) => fs.filter((f) => f.severity === "error");
 
 export class ReferencePlanner implements Planner {
   private readonly maxAttempts: number;
   constructor(private readonly opts: ReferencePlannerOptions) {
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
+  }
+
+  private report(
+    decisionId: string,
+    attempts: readonly AttemptTrace[],
+    firstAttemptValid: boolean
+  ): PlanReport {
+    const usage = totalUsage(attempts);
+    return {
+      decisionId,
+      attempts,
+      firstAttemptValid,
+      modelId: this.opts.modelId,
+      ...(usage !== undefined && { usage }),
+    };
   }
 
   compose(input: ComposeInput, ctx: DecideContext): Promise<PlanResult> {
@@ -173,8 +191,27 @@ export class ReferencePlanner implements Planner {
     let lastFindings: Finding[] = [];
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       let content: string;
+      let usage: PlannerUsage | undefined;
+      const usageFindings: Finding[] = [];
       try {
-        content = (await this.opts.model.complete(messagesFor(previous))).content;
+        const reply = await this.opts.model.complete(messagesFor(previous));
+        content = reply.content;
+        // Read through a widened type: an adapter is outside the type system, so `usage` may be
+        // null (treated as unreported) or any other shape (refused with a finding, never thrown on).
+        const reported = reply.usage as { inputTokens?: unknown; outputTokens?: unknown } | null;
+        if (reported !== undefined && reported !== null) {
+          // Only the two counts are kept: a provider may attach more, and the decided value's
+          // shape must not depend on which provider answered.
+          if (isPlannerUsage(reported))
+            usage = { inputTokens: reported.inputTokens, outputTokens: reported.outputTokens };
+          else
+            usageFindings.push(
+              warn(
+                "usage-invalid",
+                `the model reported usage that is not two non-negative integer token counts (inputTokens=${String(reported?.inputTokens)}, outputTokens=${String(reported?.outputTokens)}); it is not recorded`
+              )
+            );
+        }
       } catch (e) {
         const f = err(
           "model-error",
@@ -185,28 +222,24 @@ export class ReferencePlanner implements Planner {
         previous = { error: f.message, raw: "" };
         continue;
       }
+      const trace = (t: AttemptTrace): AttemptTrace => (usage === undefined ? t : { ...t, usage });
       const parsed = parseModelJson(schema, content);
       if (!parsed.ok) {
         const f = err("model-output-invalid", parsed.error);
-        attempts.push({ parsed: false, findings: [f] });
-        lastFindings = [f];
+        attempts.push(trace({ parsed: false, findings: [f, ...usageFindings] }));
+        lastFindings = [f, ...usageFindings];
         previous = { error: parsed.error, raw: parsed.raw };
         continue;
       }
       const m = materialize(parsed.value, base, input.catalog, input.capabilities);
-      const findings: Finding[] = [...m.findings];
+      const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
       if (!applied.ok) findings.push(applied.finding);
       else findings.push(...validateExperience(applied.value, input.catalog, surface).findings);
-      attempts.push({ parsed: true, findings });
+      attempts.push(trace({ parsed: true, findings }));
       lastFindings = findings;
       if (errorsOf(findings).length === 0) {
-        const report: PlanReport = {
-          decisionId,
-          attempts,
-          firstAttemptValid: attempts.length === 1,
-          modelId: this.opts.modelId,
-        };
+        const report = this.report(decisionId, attempts, attempts.length === 1);
         if (request === undefined) return { ops: m.ops, findings, report };
         const prompt: Operation = {
           type: "prompt",
@@ -238,19 +271,13 @@ export class ReferencePlanner implements Planner {
         raw: "",
       };
     }
-    const report: PlanReport = {
-      decisionId,
-      attempts,
-      firstAttemptValid: false,
-      modelId: this.opts.modelId,
-    };
     return {
       ops: [],
       findings: [
         ...lastFindings,
         err("plan-failed", `no valid plan after ${this.maxAttempts} attempt(s)`),
       ],
-      report,
+      report: this.report(decisionId, attempts, false),
     };
   }
 }

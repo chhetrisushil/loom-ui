@@ -26,4 +26,13 @@ describe("SPI seams", () => {
     expect((await m.complete({ messages: [] })).content).toBe("b");
     expect(m.calls).toBe(3);
   });
+  it("scriptedModel reports a usage on every reply when given one, and none otherwise", async () => {
+    const withUsage = scriptedModel(["a"], { inputTokens: 7, outputTokens: 3 });
+    expect(await withUsage.complete({ messages: [] })).toEqual({
+      content: "a",
+      usage: { inputTokens: 7, outputTokens: 3 },
+    });
+    const without = await scriptedModel(["a"]).complete({ messages: [] });
+    expect("usage" in without).toBe(false);
+  });
 });
