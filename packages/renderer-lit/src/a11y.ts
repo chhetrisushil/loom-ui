@@ -1,6 +1,12 @@
 import { checkKindValue } from "@loom-ui/core";
-import type { BarChartValue, TimeSeriesValue } from "@loom-ui/core";
-import { type SemanticFormat, effectiveFormat, measure } from "./format";
+import type {
+  BarChartValue,
+  KpiValue,
+  StatusCardValue,
+  TableValue,
+  TimeSeriesValue,
+} from "@loom-ui/core";
+import { DELTA_FORMAT, type SemanticFormat, effectiveFormat, measure } from "./format";
 import { t } from "./i18n";
 
 /**
@@ -53,6 +59,23 @@ export function describeValue(
       const fmt = effectiveFormat(v.format ?? p?.format, unit);
       const suffix = fmt === undefined && unit ? ` ${unit}` : "";
       return `${title}: ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${suffix}`;
+    }
+    case "Kpi": {
+      const v = value as KpiValue;
+      const fmt = effectiveFormat(v.format, v.unit);
+      const suffix = fmt === undefined && v.unit ? ` ${v.unit}` : "";
+      const delta = v.deltaPct ?? null;
+      const change =
+        delta === null
+          ? ""
+          : `, ${delta >= 0 ? t("up") : t("down")} ${measure(Math.abs(delta), DELTA_FORMAT)}`;
+      return `${title}: ${measure(v.value, fmt)}${suffix}${change}`;
+    }
+    case "Table":
+      return `${title}: ${t("table with")} ${(value as TableValue).rows.length} ${t("rows")}`;
+    case "StatusCard": {
+      const v = value as StatusCardValue;
+      return `${title}: ${t(v.level)}, ${v.headline}${v.detail ? `. ${v.detail}` : ""}`;
     }
     default:
       return title;

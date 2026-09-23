@@ -60,4 +60,19 @@ describe("describeValue", () => {
       )
     ).toContain("€100.00");
   });
+  it("speaks the framework kinds", () => {
+    setLocale("en-US");
+    expect(describeValue("Kpi", { value: 1234.5, unit: "USD", deltaPct: 0.12 }, "Revenue")).toBe(
+      "Revenue: $1,234.50, up 12%"
+    );
+    expect(describeValue("Kpi", { value: 7, unit: "ms", deltaPct: -0.034 }, "p99")).toBe(
+      "p99: 7 ms, down 3.4%"
+    );
+    expect(describeValue("Table", { columns: ["a"], rows: [["x"], ["y"]] }, "Top")).toBe(
+      "Top: table with 2 rows"
+    );
+    expect(
+      describeValue("StatusCard", { level: "warning", headline: "Lag", detail: "12s" }, "DB")
+    ).toBe("DB: warning, Lag. 12s");
+  });
 });

@@ -124,7 +124,14 @@ export const StatusCardValue = z.object({
 });
 export type StatusCardValue = z.infer<typeof StatusCardValue>;
 
-export const FRAMEWORK_KINDS = ["TimeSeries", "BarChart"] as const;
+export const FRAMEWORK_KINDS = [
+  "TimeSeries",
+  "BarChart",
+  "Kpi",
+  "Table",
+  "StatusCard",
+  "Note",
+] as const;
 
 export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   MetricCard: z.number(),
