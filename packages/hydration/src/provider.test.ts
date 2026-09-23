@@ -46,7 +46,7 @@ describe("executeProvider", () => {
     });
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.finding.code).toBe("provider-failed");
+    expect(r.finding.code).toBe("schema-drift");
     expect(r.drift).toEqual([
       {
         kind: "input",

@@ -355,6 +355,31 @@ describe("serveHandle", () => {
       ["latest", true],
     ]);
   });
+
+  it("a drift that is not proceeded past reaches the client as schema-drift, waiting for a repair", async () => {
+    const exp = board();
+    const drifting = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as McpIn;
+      throw new TypedFailure("schemaDrift", {
+        toolName: i.toolName,
+        expectedSchemaHash: i.expectedSchemaHash,
+        observedHash: "v2",
+      });
+    });
+    const head = await serveHandle(exp, req(exp, "latest"), {
+      invoker: drifting,
+      now: NOW,
+      outputKinds,
+    });
+    expect(head).toEqual({
+      state: "stale",
+      finding: {
+        code: "schema-drift",
+        severity: "error",
+        message: 'handle "latest": input schema changed; waiting for a repair',
+      },
+    });
+  });
 });
 
 describe("serveHandle(s): a proceeded result is never cached", () => {

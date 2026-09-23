@@ -140,7 +140,7 @@ describe("HydrationController scheduling", () => {
     ctl.load(withNodes([node("a", "d", "P0"), node("b", "e", "P0")], ["d", "e"]));
     await flush();
     expect(store.status("d")?.state).toBe("stale");
-    expect(store.status("d")?.finding?.code).toBe("provider-failed");
+    expect(store.status("d")?.finding?.code).toBe("schema-drift");
     expect(store.value("d")).toBeUndefined();
     expect(store.status("e")?.state).toBe("error");
     expect(drifts).toHaveLength(1);
