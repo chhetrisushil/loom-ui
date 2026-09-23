@@ -97,7 +97,9 @@ export interface PlanReport {
   readonly firstAttemptValid: boolean;
   readonly modelId: string;
   /**
-   * Tokens across every attempt that reported usage; absent when none did. The report is part
+   * The sum of `usage` over the attempts that reported (and had recorded) usage; absent when
+   * none did. Always a valid PlannerUsage: an attempt whose usage would push it past
+   * Number.MAX_SAFE_INTEGER is refused with a `usage-invalid` warning instead. The report is part
    * of the DECIDED value, so a replay serves these same numbers without a model call — a
    * per-plan token total that survives replay.
    */

@@ -23,7 +23,7 @@ import type {
   PlannerUsage,
   ReviseInput,
 } from "./spi";
-import { isPlannerUsage, totalUsage } from "./usage";
+import { readReportedUsage, totalUsage } from "./usage";
 
 export const REFERENCE_POLICY = { id: "loom-ui.reference-planner", version: "1.0.0" } as const;
 export const REFERENCE_SOURCE = "loom-ui.planner.reference";
@@ -189,29 +189,15 @@ export class ReferencePlanner implements Planner {
     const attempts: AttemptTrace[] = [];
     let previous: PreviousError | undefined;
     let lastFindings: Finding[] = [];
+    // Running total of the usage recorded so far; guards the plan total against overflow.
+    let spent: PlannerUsage = { inputTokens: 0, outputTokens: 0 };
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       let content: string;
-      let usage: PlannerUsage | undefined;
-      const usageFindings: Finding[] = [];
+      let reply: object;
       try {
-        const reply = await this.opts.model.complete(messagesFor(previous));
-        content = reply.content;
-        // Read through a widened type: an adapter is outside the type system, so `usage` may be
-        // null (treated as unreported) or any other shape (refused with a finding, never thrown on).
-        const reported = reply.usage as { inputTokens?: unknown; outputTokens?: unknown } | null;
-        if (reported !== undefined && reported !== null) {
-          // Only the two counts are kept: a provider may attach more, and the decided value's
-          // shape must not depend on which provider answered.
-          if (isPlannerUsage(reported))
-            usage = { inputTokens: reported.inputTokens, outputTokens: reported.outputTokens };
-          else
-            usageFindings.push(
-              warn(
-                "usage-invalid",
-                `the model reported usage that is not two non-negative integer token counts (inputTokens=${String(reported?.inputTokens)}, outputTokens=${String(reported?.outputTokens)}); it is not recorded`
-              )
-            );
-        }
+        const r = await this.opts.model.complete(messagesFor(previous));
+        content = r.content;
+        reply = r;
       } catch (e) {
         const f = err(
           "model-error",
@@ -221,6 +207,38 @@ export class ReferencePlanner implements Planner {
         lastFindings = [f];
         previous = { error: f.message, raw: "" };
         continue;
+      }
+      // Never throws: an adapter's bad usage is a warning on this attempt, not a failed call.
+      let usage: PlannerUsage | undefined;
+      const usageFindings: Finding[] = [];
+      const read = readReportedUsage(reply);
+      if (read.problem !== undefined)
+        usageFindings.push(
+          warn(
+            "usage-invalid",
+            `the model reported usage that is not two non-negative integer token counts (${read.problem}); it is not recorded`
+          )
+        );
+      else if (read.usage !== undefined) {
+        // Refused rather than saturated: the plan total must stay the EXACT sum of the
+        // recorded attempts, and itself a valid PlannerUsage.
+        if (
+          spent.inputTokens + read.usage.inputTokens > Number.MAX_SAFE_INTEGER ||
+          spent.outputTokens + read.usage.outputTokens > Number.MAX_SAFE_INTEGER
+        )
+          usageFindings.push(
+            warn(
+              "usage-invalid",
+              "the model reported usage that would overflow the plan total past Number.MAX_SAFE_INTEGER; it is not recorded"
+            )
+          );
+        else {
+          usage = read.usage;
+          spent = {
+            inputTokens: spent.inputTokens + usage.inputTokens,
+            outputTokens: spent.outputTokens + usage.outputTokens,
+          };
+        }
       }
       const trace = (t: AttemptTrace): AttemptTrace => (usage === undefined ? t : { ...t, usage });
       const parsed = parseModelJson(schema, content);
