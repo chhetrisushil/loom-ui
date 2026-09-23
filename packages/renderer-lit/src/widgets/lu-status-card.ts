@@ -61,12 +61,12 @@ export class LuStatusCard extends LuWidget {
     .headline {
       font-size: 14px;
       font-weight: 600;
-      color: var(--gx-text, #e6edf3);
+      color: var(--lu-text, #e6edf3);
       line-height: 1.3;
     }
     .detail {
       font-size: 12px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       margin-top: 2px;
     }
   `;

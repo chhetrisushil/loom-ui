@@ -3,11 +3,11 @@
  *
  * A view is an adjacency-list component tree (relationships by id reference, never
  * nesting; exactly one node has `id: "root"`) drawn from a catalog vocabulary and
- * bound to a data model by JSON Pointer. genUI renders it generically — the same
+ * bound to a data model by JSON Pointer. A host renders it generically — the same
  * shape the server-side `@loom/plugin-a2ui` catalog describes — so a component
  * type with no bespoke renderer (e.g. a user-registered one) can still be drawn
  * from primitives. This module is the PURE core (types + binding resolution); the
- * Lit element in `@genui/widgets-lit` walks the tree with it.
+ * Lit element in `widgets/lu-a2ui-view.ts` walks the tree with it.
  *
  * A prop is either a literal value or a data binding `{ path: "<JSON Pointer>" }`.
  */
@@ -29,7 +29,7 @@ export interface A2UINode {
 
 /** A renderable A2UI view: the component tree plus the catalog it draws from. */
 export interface A2UIView {
-  /** The catalog these `component` types resolve in (e.g. "genui.widgets.v1"). */
+  /** The catalog these `component` types resolve in (e.g. "widgets.v1"). */
   catalogId?: string;
   /** Adjacency-list nodes; exactly one must have `id: "root"`. */
   nodes: A2UINode[];

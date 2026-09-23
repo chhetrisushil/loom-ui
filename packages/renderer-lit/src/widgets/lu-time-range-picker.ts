@@ -40,13 +40,13 @@ export class LuTimeRangePicker extends LitElement {
       font-size: 12px;
     }
     .icon {
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       font-size: 12px;
     }
     .seg {
       display: inline-flex;
-      background: var(--gx-panel, #161b22);
-      border: 1px solid var(--gx-border, #30363d);
+      background: var(--lu-panel, #161b22);
+      border: 1px solid var(--lu-border, #30363d);
       border-radius: 8px;
       overflow: hidden;
     }
@@ -54,34 +54,34 @@ export class LuTimeRangePicker extends LitElement {
       appearance: none;
       border: none;
       background: transparent;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       font: inherit;
       font-size: 12px;
       padding: 4px 9px;
       cursor: pointer;
-      border-inline-start: 1px solid var(--gx-border, #30363d);
+      border-inline-start: 1px solid var(--lu-border, #30363d);
     }
     button:first-child {
       border-inline-start: none;
     }
     button:hover {
-      color: var(--gx-text, #e6edf3);
+      color: var(--lu-text, #e6edf3);
       background: rgba(99, 102, 241, 0.08);
     }
     button.active {
       color: #fff;
-      background: var(--gx-accent, #6366f1);
+      background: var(--lu-accent, #6366f1);
     }
     .custom {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
     }
     input[type="date"] {
-      background: var(--gx-panel, #161b22);
-      color: var(--gx-text, #e6edf3);
-      border: 1px solid var(--gx-border, #30363d);
+      background: var(--lu-panel, #161b22);
+      color: var(--lu-text, #e6edf3);
+      border: 1px solid var(--lu-border, #30363d);
       border-radius: 6px;
       padding: 3px 6px;
       font: inherit;

@@ -35,7 +35,7 @@ describe("app-level elements", () => {
   });
   it("lu-a2ui-view renders a Text primitive bound to data and a Button dispatches a2ui-action", async () => {
     // The brief's fixture used a { root, nodes: {...} } shape with $pointer bindings and
-    // props.text; the real A2UIView (src/a2ui/plan.ts, ported from genUI's a2ui.ts) is an
+    // props.text; the real A2UIView (src/a2ui/plan.ts, ported from a prior a2ui.ts) is an
     // adjacency-list ARRAY with exactly one node id "root", a `component` key (not `type`),
     // props directly on the node (not under `props`), and a `{ path }` JSON-Pointer binding
     // (not `$pointer`). Adjusted per the brief's own instruction to fix the fixture, not the

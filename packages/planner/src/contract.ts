@@ -150,7 +150,7 @@ export function planSchema(
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string; raw: string };
 
-/** genUI's `parseWith`, ported: strip a code fence, JSON.parse, validate; never throws. */
+/** Strip a code fence, JSON.parse, validate; never throws. */
 export function parseModelJson<T>(schema: z.ZodType<T>, raw: string): Parsed<T> {
   const stripped = raw
     .trim()

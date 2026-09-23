@@ -1,6 +1,6 @@
 // ── Locale shim ───────────────────────────────────────────────────────────────
-// genUI's i18n runtime loads message catalogs and manifests; that is app infrastructure and
-// stays in genUI. The widgets here only need: a locale to format with, a change signal so an
+// Loading message catalogs and manifests is app infrastructure and stays with the host.
+// The widgets here only need: a locale to format with, a change signal so an
 // element re-renders when it changes, and the RTL question. `t` is identity — the widget's
 // user-visible strings are the app's to localize.
 

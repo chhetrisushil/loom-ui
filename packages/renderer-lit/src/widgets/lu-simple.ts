@@ -125,7 +125,7 @@ export class LuList extends LuWidget {
       padding-inline-start: 18px;
     }
     .ts {
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       margin-inline-end: 6px;
       font-variant-numeric: tabular-nums;
     }

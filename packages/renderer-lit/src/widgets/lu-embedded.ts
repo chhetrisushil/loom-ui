@@ -41,7 +41,7 @@ export class LuSandboxWidget extends LuWidget {
       height: 100%;
     }
     .missing {
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       font-size: 12px;
       font-style: italic;
     }

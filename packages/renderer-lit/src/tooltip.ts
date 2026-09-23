@@ -10,7 +10,7 @@ let node: HTMLDivElement | null = null;
 function portal(): HTMLDivElement {
   if (!node) {
     node = document.createElement("div");
-    node.setAttribute("data-gx-tooltip", "");
+    node.setAttribute("data-lu-tooltip", "");
     Object.assign(node.style, {
       position: "fixed",
       zIndex: "10000",
@@ -23,9 +23,9 @@ function portal(): HTMLDivElement {
       lineHeight: "1.5",
       fontFamily: "inherit",
       // Reference the app's design tokens (from :root), with safe fallbacks.
-      background: "var(--gx-panel-2, #1c2128)",
-      color: "var(--gx-text, #e6edf3)",
-      border: "1px solid var(--gx-border, #30363d)",
+      background: "var(--lu-panel-2, #1c2128)",
+      color: "var(--lu-text, #e6edf3)",
+      border: "1px solid var(--lu-border, #30363d)",
       boxShadow: "0 8px 24px rgba(0,0,0,.5)",
     } satisfies Partial<CSSStyleDeclaration>);
     document.body.appendChild(node);

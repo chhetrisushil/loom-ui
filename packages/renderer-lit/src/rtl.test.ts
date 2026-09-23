@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "./i18n";
 import { dirFor, rtlBehaviorOf } from "./rtl";
 
-// The keys in RTL_BEHAVIOR are TAG NAMES, and the tags are `lu-*`. They were `gx-*` — genUI's
-// prefix — which made every lookup miss and every chart mirror inside an Arabic page, silently:
-// a "preserve" behaviour that never matches looks exactly like no behaviour at all.
+// The keys in RTL_BEHAVIOR are TAG NAMES, and the tags are `lu-*`. Before the element-prefix
+// rename they carried a different prefix, which made every lookup miss and every chart mirror
+// inside an Arabic page, silently: a "preserve" behaviour that never matches looks exactly like
+// no behaviour at all.
 
 afterEach(() => {
   setLocale("en-US");

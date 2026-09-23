@@ -79,13 +79,13 @@ export class LuTable extends LuWidget {
     th {
       position: sticky;
       top: 0;
-      background: var(--gx-panel, #161b22);
-      color: var(--gx-text-dim, #8b949e);
+      background: var(--lu-panel, #161b22);
+      color: var(--lu-text-dim, #8b949e);
       font-weight: 600;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      border-bottom: 1px solid var(--gx-border, #30363d);
+      border-bottom: 1px solid var(--lu-border, #30363d);
     }
     th button {
       all: unset;
@@ -100,12 +100,12 @@ export class LuTable extends LuWidget {
       letter-spacing: inherit;
     }
     th button:focus-visible {
-      outline: 2px solid var(--gx-accent, #6366f1);
+      outline: 2px solid var(--lu-accent, #6366f1);
       outline-offset: -2px;
     }
     td {
-      color: var(--gx-text, #e6edf3);
-      border-bottom: 1px solid var(--gx-grid, rgba(139, 148, 158, 0.08));
+      color: var(--lu-text, #e6edf3);
+      border-bottom: 1px solid var(--lu-grid, rgba(139, 148, 158, 0.08));
     }
     td.num,
     th.num {
@@ -117,7 +117,7 @@ export class LuTable extends LuWidget {
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       font-size: 11px;
     }
   `;

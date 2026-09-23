@@ -22,13 +22,13 @@ export class LuKpi extends LuWidget {
     .value {
       font-size: clamp(22px, 4.2cqw, 40px);
       font-weight: 650;
-      color: var(--gx-text, #e6edf3);
+      color: var(--lu-text, #e6edf3);
       letter-spacing: -0.02em;
       line-height: 1.1;
     }
     .unit {
       font-size: 13px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       margin-inline-start: 6px;
     }
     .delta {
@@ -49,7 +49,7 @@ export class LuKpi extends LuWidget {
     }
     .label {
       font-size: 12px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       margin-top: 2px;
     }
   `;

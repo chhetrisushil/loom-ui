@@ -49,19 +49,19 @@ export class LuTimeseries extends LuWidget {
       display: block;
     }
     .axis text {
-      fill: var(--gx-text-dim, #8b949e);
+      fill: var(--lu-text-dim, #8b949e);
       font-size: 10px;
       font-family: inherit;
     }
     .grid line {
-      stroke: var(--gx-grid, rgba(139, 148, 158, 0.15));
+      stroke: var(--lu-grid, rgba(139, 148, 158, 0.15));
     }
     .legend {
       display: flex;
       gap: 12px;
       padding: 0 4px 2px;
       font-size: 11px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       flex-wrap: wrap;
     }
     .swatch {
@@ -216,7 +216,7 @@ export class LuTimeseries extends LuWidget {
             hover !== null && hover < n
               ? svg`
                 <line x1=${sx(hover)} x2=${sx(hover)} y1=${M.top} y2=${M.top + innerH}
-                  stroke="var(--gx-text-dim, #8b949e)" stroke-dasharray="3,3" stroke-width="1"/>
+                  stroke="var(--lu-text-dim, #8b949e)" stroke-dasharray="3,3" stroke-width="1"/>
                 ${series.map((s, i) => {
                   const p = s.points[hover];
                   return p
@@ -255,7 +255,7 @@ export class LuTimeseries extends LuWidget {
       })
       .join("");
     showTooltip(
-      `<div style="margin-bottom:2px;color:var(--gx-text-dim,#8b949e)">${escapeHtml(timeTick(timestamps[hover] ?? "", 1e12))}</div>${rows}`,
+      `<div style="margin-bottom:2px;color:var(--lu-text-dim,#8b949e)">${escapeHtml(timeTick(timestamps[hover] ?? "", 1e12))}</div>${rows}`,
       rect.left + sx(hover),
       rect.top + M.top,
       { html: true }

@@ -1,6 +1,6 @@
 # loom-ui
 
-A semantic UI framework for [loom](https://github.com/chhetrisushil/loom). You describe an
+loom-ui is a generic UI framework on top of loom. You describe an
 **experience** — semantic nodes such as `Metric`, `Trend`, `Collection`, with stable ids, bound to
 data by handle — and loom-ui compiles it, per surface, to a loom `Blueprint` that loom's renderers
 draw. Composition is recorded as a content-addressed artifact plus the operations that produced
@@ -88,6 +88,12 @@ directly (`node dist/dom/index.js`), its `moduleResolution: "Bundler"` build emi
 relative specifiers (`./litRegistry`, not `./litRegistry.js`) that only a bundler's resolver
 completes — plain Node ESM resolution requires the extension. Its consumer is a bundler (Vite,
 webpack, …); that is the supported path, not a plain Node `import()`.
+
+## Consumers
+
+- [genUI](https://github.com/chhetrisushil/genUI) — generative dashboards and authoring; migrating onto loom-ui (loom `docs/requirements/2026-09-23-genui-migration-design.md`).
+
+Theming: every `lu-*` element reads `--lu-*` CSS custom properties (`--lu-text`, `--lu-text-dim`, `--lu-border`, `--lu-panel`, `--lu-panel-2`, `--lu-grid`, `--lu-accent`, `--lu-radius`, `--lu-delta-up`, `--lu-delta-up-bg`, `--lu-delta-down`, `--lu-delta-down-bg`, `--lu-status-ok`, `--lu-status-warning`, `--lu-status-critical`); set them on any ancestor.
 
 ## Planning (illustrative — not a compiling snippet)
 

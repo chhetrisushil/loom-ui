@@ -17,12 +17,12 @@ export class LuStatusBadge extends LuWidget {
     }
     .badge-title {
       font-size: 12px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
     }
     .badge {
       font-size: 13px;
       font-weight: 600;
-      color: var(--gx-text, #e6edf3);
+      color: var(--lu-text, #e6edf3);
     }
   `;
 

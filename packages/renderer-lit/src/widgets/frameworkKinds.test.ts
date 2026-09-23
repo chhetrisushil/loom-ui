@@ -239,10 +239,8 @@ describe("lu-kpi and lu-status-card colour tokens", () => {
     const cardCss = (LuStatusCard.styles as unknown as { cssText: string }).cssText;
     expect(kpiCss).toContain("var(--lu-delta-up, #4ade80)");
     expect(kpiCss).toContain("var(--lu-delta-down, #f87171)");
-    expect(kpiCss).not.toMatch(/--gx-delta/);
     expect(cardCss).toContain("var(--lu-status-ok, #4ade80)");
     expect(cardCss).toContain("var(--lu-status-warning, #fbbf24)");
     expect(cardCss).toContain("var(--lu-status-critical, #f87171)");
-    expect(cardCss).not.toMatch(/--gx-status/);
   });
 });

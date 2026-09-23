@@ -5,7 +5,7 @@
  * frame, and the message contract — are unit-testable without a browser.
  *
  * Threat model: a user-registered component ships arbitrary render code. It must
- * never reach the genUI origin's DOM, cookies, localStorage, or auth tokens, and
+ * never reach the host origin's DOM, cookies, localStorage, or auth tokens, and
  * must not be able to exfiltrate over the network. The isolation is structural:
  *
  *  1. The frame is `sandbox="allow-scripts"` and, deliberately, NOTHING else —
