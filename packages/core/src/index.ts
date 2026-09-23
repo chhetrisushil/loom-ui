@@ -51,11 +51,14 @@ export type {
 export { loomCatalogFor } from "./loomCatalog";
 export {
   DELTA_FORMAT,
+  deltaDirection,
   effectiveFormat,
   formatFromUnit,
   formatSemanticNumber,
   semanticNumberFormatOptions,
+  unitSuffix,
 } from "./format";
+export type { DeltaDirection } from "./format";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,

@@ -133,15 +133,45 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
     expect(checkKindValue("A2UIView", { anything: [1] })).toEqual({ ok: true });
     expect(checkKindValue("SandboxView", 7)).toEqual({ ok: true });
   });
-  it("SemanticFormat accepts the framework's whole vocabulary and refuses a malformed currency", () => {
-    for (const semanticType of ["duration", "datetime", "measurement", "country"])
+  it("SemanticFormat is the set the renderers honour — five number types — and refuses a malformed currency", () => {
+    for (const semanticType of ["number", "integer", "decimal", "percentage", "currency"])
       expect(SemanticFormat.safeParse({ semanticType }).success).toBe(true);
+    // A type no renderer honours is refused rather than silently drawn as a plain number: a
+    // consumer with richer semantics maps to these five at its own boundary.
+    for (const semanticType of ["duration", "datetime", "measurement", "country"])
+      expect(SemanticFormat.safeParse({ semanticType }).success).toBe(false);
     expect(SemanticFormat.safeParse({ semanticType: "currency", currency: "usd" }).success).toBe(
       false
     );
     expect(
       SemanticFormat.safeParse({ semanticType: "number", maximumFractionDigits: 101 }).success
     ).toBe(false);
+  });
+  it("SemanticFormat: min ≤ max fraction digits; unhonoured fields are tolerated and dropped", () => {
+    expect(
+      SemanticFormat.safeParse({
+        semanticType: "decimal",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 3,
+      }).success
+    ).toBe(true);
+    expect(
+      SemanticFormat.safeParse({
+        semanticType: "decimal",
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 1,
+      }).success
+    ).toBe(false);
+    // A non-strict object: a payload carrying fields the renderers never honoured still passes,
+    // and those fields are not part of the parsed format.
+    const parsed = SemanticFormat.safeParse({
+      semanticType: "decimal",
+      unit: "ms",
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual({ semanticType: "decimal" });
   });
   it("tableColumnLabel / tableColumnFormat read either column form", () => {
     expect(tableColumnLabel("db")).toBe("db");

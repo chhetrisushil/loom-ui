@@ -9,42 +9,34 @@ import type { Finding } from "./experience";
 // here for the same reason. The slice-5 planner pins `outputShapeHash` to values that pass.
 
 /**
- * What a number MEANS, so the reader's locale decides how it looks — the framework's set of
- * number/date/currency semantics. A contract narrower than the payloads it guards would turn a
- * healthy `duration` column into a contract failure (and, under output-check-by-contract, into
- * drift), so every semantic type a producer might emit is accepted; a renderer with no special
- * rendering for a type formats it as a plain number.
+ * What a number MEANS, so the reader's locale decides how it looks. The set is exactly what the
+ * renderers HONOUR — five number semantics, each with a distinct rendering on the web, in the
+ * spoken form and in the terminal — so a format never promises a rendering nobody draws. A
+ * consumer with richer semantics (dates, durations, measurements) maps them to these at its own
+ * boundary. A non-strict object: a payload carrying fields outside this contract still passes,
+ * and those fields are simply not part of the parsed format.
  */
-export const SemanticFormat = z.object({
-  semanticType: z.enum([
-    "number",
-    "integer",
-    "decimal",
-    "currency",
-    "percentage",
-    "date",
-    "time",
-    "datetime",
-    "duration",
-    "unit",
-    "measurement",
-    "region",
-    "country",
-    "language",
-  ]),
-  /** ISO 4217. Well-formed is all `Intl.NumberFormat` requires; a malformed code throws there. */
-  currency: z
-    .string()
-    .regex(/^[A-Z]{3}$/)
-    .optional(),
-  unit: z.string().optional(),
-  notation: z.enum(["standard", "compact"]).optional(),
-  // 0..20: outside it `Intl.NumberFormat` throws a RangeError out of a render.
-  minimumFractionDigits: z.number().int().min(0).max(20).optional(),
-  maximumFractionDigits: z.number().int().min(0).max(20).optional(),
-  dateStyle: z.enum(["short", "medium", "long", "full"]).optional(),
-  timeStyle: z.enum(["short", "medium", "long", "full"]).optional(),
-});
+export const SemanticFormat = z
+  .object({
+    semanticType: z.enum(["number", "integer", "decimal", "percentage", "currency"]),
+    /** ISO 4217. Well-formed is all `Intl.NumberFormat` requires; a malformed code throws there. */
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
+    notation: z.enum(["standard", "compact"]).optional(),
+    // 0..20: outside it `Intl.NumberFormat` throws a RangeError out of a render.
+    minimumFractionDigits: z.number().int().min(0).max(20).optional(),
+    maximumFractionDigits: z.number().int().min(0).max(20).optional(),
+  })
+  // min > max is also a RangeError out of `Intl.NumberFormat`, so it is refused here instead.
+  .refine(
+    (f) =>
+      f.minimumFractionDigits === undefined ||
+      f.maximumFractionDigits === undefined ||
+      f.minimumFractionDigits <= f.maximumFractionDigits,
+    { message: "minimumFractionDigits must not exceed maximumFractionDigits" }
+  );
 export type SemanticFormat = z.infer<typeof SemanticFormat>;
 
 /**
