@@ -46,12 +46,22 @@ export interface PlannerMessage {
   readonly role: "system" | "user" | "assistant";
   readonly content: string;
 }
+/**
+ * Token accounting for one model call — the same shape as `@loom/llm`'s `LlmResponse.usage`,
+ * so a loom provider's usage flows through with no adapter.
+ */
+export interface PlannerUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
 export interface PlannerModel {
   complete(request: {
     readonly system?: string;
     readonly messages: readonly PlannerMessage[];
   }): Promise<{
     readonly content: string;
+    /** Absent when the provider reports none — "unreported", not "free". */
+    readonly usage?: PlannerUsage;
   }>;
 }
 
@@ -77,6 +87,8 @@ export interface AttemptTrace {
   /** The raw reply survived JSON.parse + the contract schema. */
   readonly parsed: boolean;
   readonly findings: readonly Finding[];
+  /** What the model reported for THIS attempt's call. Absent when it reported none, or threw. */
+  readonly usage?: PlannerUsage;
 }
 export interface PlanReport {
   readonly decisionId: string;
@@ -84,6 +96,12 @@ export interface PlanReport {
   /** Clean on the FIRST attempt — the rate a prompt regression moves (a clean vs a retried attempt). */
   readonly firstAttemptValid: boolean;
   readonly modelId: string;
+  /**
+   * Tokens across every attempt that reported usage; absent when none did. The report is part
+   * of the DECIDED value, so a replay serves these same numbers without a model call — a
+   * per-plan token total that survives replay.
+   */
+  readonly usage?: PlannerUsage;
 }
 export interface PlanResult {
   readonly ops: readonly Operation[];
