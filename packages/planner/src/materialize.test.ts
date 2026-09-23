@@ -822,4 +822,197 @@ describe("materialize — revise (diff against the base)", () => {
       orphanedProviders(e.value, [{ type: "bindProvider", nodeId: "x", handle: "a" }])
     ).toEqual([{ type: "removeProvider", handle: "b" }]);
   });
+  describe("orphanedProviders — exact after-state (not approximated per op-type)", () => {
+    // A richer fixture than the flat "box" one above: `x` sits two containers deep, `solo` is a
+    // sibling bound to its own handle — enough structure for a moved binder, a doubly-nested
+    // removal, and an insert that lands on a handle a removal just freed to all diverge from what
+    // an op-type-by-op-type approximation would guess.
+    const nested = () => {
+      const g0 = base();
+      const e = replay(g0, [
+        { type: "remapProvider", handle: "a", spec: buildSpecFor("a") },
+        { type: "remapProvider", handle: "b", spec: buildSpecFor("b") },
+        { type: "remapProvider", handle: "c", spec: buildSpecFor("c") },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "box",
+            order: "a",
+            kind: "container",
+            direction: "row",
+            span: 12,
+            children: [
+              {
+                id: "inner",
+                order: "V",
+                kind: "container",
+                direction: "column",
+                span: 12,
+                children: [
+                  {
+                    id: "x",
+                    order: "V",
+                    kind: "semantic",
+                    type: "Metric",
+                    typeVersion: "1.0.0",
+                    span: 4,
+                    props: {},
+                    binding: { handle: "b", priority: "P1" },
+                  },
+                ],
+              },
+              {
+                id: "y",
+                order: "W",
+                kind: "semantic",
+                type: "Metric",
+                typeVersion: "1.0.0",
+                span: 4,
+                props: {},
+                binding: { handle: "a", priority: "P1" },
+              },
+            ],
+          },
+        },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "solo",
+            order: "b",
+            kind: "semantic",
+            type: "Metric",
+            typeVersion: "1.0.0",
+            span: 4,
+            props: {},
+            binding: { handle: "c", priority: "P1" },
+          },
+        },
+      ]);
+      if (!e.ok) throw new Error(e.finding.message);
+      return e.value;
+    };
+    it("a moveNode that relocates a binder out of a subtree before it is removed keeps that binder's provider", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "moveNode", nodeId: "x", newParentId: "root", newOrder: "d" },
+        { type: "removeNode", nodeId: "box" },
+      ];
+      const orphaned = orphanedProviders(exp, ops);
+      // `x` (still bound to "b") survived the move; "y" (bound to "a") went down with `box`.
+      expect(orphaned).toEqual([{ type: "removeProvider", handle: "a" }]);
+      const r = replay(exp, [...ops, ...orphaned]);
+      expect(r.ok).toBe(true);
+      expect(r.ok && Object.prototype.hasOwnProperty.call(r.value.providers, "b")).toBe(true);
+    });
+    it("bindProvider onto a node inserted bound to a DIFFERENT handle retires nothing: the handle it lands on stays bound", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "removeNode", nodeId: "solo" },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "n",
+            order: "z",
+            kind: "semantic",
+            type: "Metric",
+            typeVersion: "1.0.0",
+            span: 4,
+            props: {},
+            binding: { handle: "a", priority: "P1" },
+          },
+        },
+        { type: "bindProvider", nodeId: "n", handle: "c" },
+      ];
+      const orphaned = orphanedProviders(exp, ops);
+      expect(orphaned).toEqual([]);
+      const r = replay(exp, [...ops, ...orphaned]);
+      expect(r.ok).toBe(true);
+    });
+    it("removing a node inserted bound to a freed handle retires that handle too", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "removeNode", nodeId: "solo" },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "n",
+            order: "z",
+            kind: "semantic",
+            type: "Metric",
+            typeVersion: "1.0.0",
+            span: 4,
+            props: {},
+            binding: { handle: "c", priority: "P1" },
+          },
+        },
+        { type: "removeNode", nodeId: "n" },
+      ];
+      const orphaned = orphanedProviders(exp, ops);
+      expect(orphaned).toEqual([{ type: "removeProvider", handle: "c" }]);
+      const r = replay(exp, [...ops, ...orphaned]);
+      expect(r.ok).toBe(true);
+    });
+    it("a prompt op's nested materialized ops are folded exactly like top-level ops", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "prompt", text: "x", materialized: [{ type: "removeNode", nodeId: "solo" }] },
+      ];
+      const orphaned = orphanedProviders(exp, ops);
+      expect(orphaned).toEqual([{ type: "removeProvider", handle: "c" }]);
+      const r = replay(exp, [...ops, ...orphaned]);
+      expect(r.ok).toBe(true);
+    });
+    it("ops that do not replay onto base leave nothing to orphan", () => {
+      const exp = nested();
+      expect(orphanedProviders(exp, [{ type: "removeNode", nodeId: "does-not-exist" }])).toEqual(
+        []
+      );
+    });
+    it("remove a node and re-insert the same id bound to the same handle: the handle is kept", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "removeNode", nodeId: "solo" },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "solo",
+            order: "b",
+            kind: "semantic",
+            type: "Metric",
+            typeVersion: "1.0.0",
+            span: 4,
+            props: {},
+            binding: { handle: "c", priority: "P1" },
+          },
+        },
+      ];
+      expect(orphanedProviders(exp, ops)).toEqual([]);
+    });
+    it("insert a DIFFERENT node bound to the just-removed node's handle: the handle is kept", () => {
+      const exp = nested();
+      const ops: Operation[] = [
+        { type: "removeNode", nodeId: "solo" },
+        {
+          type: "insertNode",
+          parentId: "root",
+          node: {
+            id: "other",
+            order: "b",
+            kind: "semantic",
+            type: "Metric",
+            typeVersion: "1.0.0",
+            span: 4,
+            props: {},
+            binding: { handle: "c", priority: "P1" },
+          },
+        },
+      ];
+      expect(orphanedProviders(exp, ops)).toEqual([]);
+    });
+  });
 });
