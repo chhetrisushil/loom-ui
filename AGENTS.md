@@ -3,7 +3,7 @@
 loom-ui is a semantic UI framework for [loom](../loom). Its Experience Model **compiles to loom's
 `Blueprint`**, so loom's renderers draw what this framework composes. Design:
 `../loom/docs/requirements/2026-09-21-loom-ui-design.md`. The Blueprint contract it targets is
-versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.3.0 (loom ADRs 0096, 0097, 0098, 0099, 0100).
+versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.4.0 (loom ADRs 0096, 0097, 0098, 0099, 0100, 0101).
 
 ## How loom is consumed
 
