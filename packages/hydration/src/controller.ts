@@ -11,7 +11,7 @@ import {
   treeDepth,
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { HydrationCache, specFingerprint } from "./cache";
+import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
 import type { TransientInvoker } from "./invoker";
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type DriftRecord, executeProvider } from "./provider";
@@ -74,10 +74,12 @@ interface Load {
  * kinds: its bound nodes' resolved kinds can change (a catalogue edit, a widened binding) without
  * the provider itself changing, and that must not abort an in-flight load or force a re-run.
  */
-const loadFingerprint = (spec: ProviderSpec, kinds: readonly string[]): string =>
-  spec.outputCheck === "contract" && kinds.length > 0
-    ? `${specFingerprint(spec)}\u0000${kinds.join(",")}`
-    : specFingerprint(spec);
+export function loadFingerprint(spec: ProviderSpec, kinds: readonly string[]): string {
+  if (spec.outputCheck !== "contract" || kinds.length === 0) return specFingerprint(spec);
+  // Normalised exactly as the cache key normalises them: a reordered or repeated kinds list is
+  // the same question, and must not abort an in-flight load or force a re-run.
+  return `${specFingerprint(spec)}\u0000${normaliseKinds(kinds).join(",")}`;
+}
 
 const defaultTimer = (fn: () => void, ms: number): (() => void) => {
   const t = setTimeout(fn, ms);
@@ -319,8 +321,9 @@ export class HydrationController {
     // `kinds` unless `outputCheck === "contract"`); passing them unconditionally would be a no-op
     // there, but only a contract provider's checked value is answerable to a kind.
     const kinds = spec.outputCheck === "contract" ? load.kinds : undefined;
+    const variant = kinds === undefined ? {} : { kinds };
     const principalId = this.opts.principal?.id;
-    const cached = this.cache.get(spec, principalId, kinds);
+    const cached = this.cache.get(spec, principalId, variant);
     if (cached) {
       this.inflight.delete(handle);
       this.opts.store.setValue(handle, cached.value, { state: "ready" });
@@ -341,7 +344,7 @@ export class HydrationController {
       if (this.inflight.get(handle) !== ac || ac.signal.aborted) return; // superseded or aborted: drop the late result
       this.inflight.delete(handle);
       if (outcome.ok) {
-        this.cache.set(spec, principalId, outcome.value, kinds);
+        this.cache.set(spec, principalId, outcome.value, variant);
         const warn = outcome.findings.find((f) => f.severity === "warn");
         this.opts.store.setValue(handle, outcome.value, {
           state: "ready",

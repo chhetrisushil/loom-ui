@@ -1,5 +1,6 @@
 import type { ProviderSpec } from "@loom-ui/core";
 import { canonicalJson, fnv1a64 } from "@loom/core";
+import type { LoadParams } from "./params";
 
 // ── Result cache ──────────────────────────────────────────────────────────────
 // `scope: "global"` shares one entry per handle; `scope: "principal"` keys on (principal, handle)
@@ -44,40 +45,71 @@ export function specFingerprint(spec: ProviderSpec): string {
   return fp;
 }
 
+/**
+ * What else, besides the spec, decides a cached answer.
+ *
+ * `params` are the load's params AS DECLARED — relative-time tokens (`$now-7d`) UNRESOLVED. That
+ * is deliberate: resolving first would give every load a fresh instant and so a fresh key, and the
+ * cache would never hit. `$now-7d` is therefore one key for the entry's TTL; freshness comes from
+ * `cachePolicy.ttlSeconds`, and a provider whose answer must track the clock more closely than
+ * that sets a shorter TTL (or 0, never cached).
+ *
+ * `kinds` are the kinds a `"contract"` value was checked against. They are keyed ONLY for a spec
+ * whose `outputCheck` is `"contract"`, sorted and de-duplicated (`normaliseKinds`). A value that
+ * passed for `[Kpi]` was never checked against `MetricCard` — serving it for `[Kpi, MetricCard]`
+ * would publish a value no check ever cleared for the kind now reading it. A shape-mode key
+ * ignores `kinds` entirely.
+ */
+export interface CacheVariant {
+  readonly params?: LoadParams;
+  readonly kinds?: readonly string[];
+}
+
+/**
+ * The one normal form of a kinds list — sorted, de-duplicated. The cache key and the controller's
+ * load fingerprint both use it, so they can never disagree about whether two kinds lists are the
+ * same question.
+ */
+export function normaliseKinds(kinds: readonly string[]): string[] {
+  return [...new Set(kinds)].sort();
+}
+
+/** `""` for the plain variant; `undefined` for one that cannot be keyed (never cached). */
+function variantKey(params: LoadParams, kinds: readonly string[]): string | undefined {
+  if (Object.keys(params).length === 0 && kinds.length === 0) return "";
+  try {
+    return fnv1a64(canonicalJson({ params, kinds }));
+  } catch {
+    return undefined;
+  }
+}
+
 export class HydrationCache {
   private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
   constructor(private readonly clock: () => number = Date.now) {}
 
-  /**
-   * `outputCheck: "contract"` only: the sorted, deduplicated kinds a value was checked against
-   * are part of the key. A value that passed for `[Kpi]` was never checked against `MetricCard`
-   * — serving it for `[Kpi, MetricCard]` (a recompose that binds a second widget to the same
-   * handle, or a second surface with different resolved kinds sharing this cache) would publish
-   * a value no check ever cleared for the kind now reading it. Shape-mode keys are unaffected:
-   * `kinds` is not even read unless the spec checks by contract.
-   */
   private key(
     spec: ProviderSpec,
     principalId: string | undefined,
-    kinds: readonly string[] | undefined
+    variant: CacheVariant
   ): string | undefined {
+    const kinds = spec.outputCheck === "contract" ? normaliseKinds(variant.kinds ?? []) : [];
+    const v = variantKey(variant.params ?? {}, kinds);
+    if (v === undefined) return undefined;
     const fp = specFingerprint(spec);
-    const kindsPart =
-      spec.outputCheck === "contract"
-        ? `${SEP}k:${[...new Set(kinds ?? [])].sort().join(",")}`
-        : "";
-    if (spec.cachePolicy.scope === "global") return `g${SEP}${fp}${kindsPart}${SEP}${spec.handle}`;
+    // The handle stays LAST: `invalidate(handle)` suffix-matches it across every variant.
+    if (spec.cachePolicy.scope === "global") return `g${SEP}${fp}${SEP}${v}${SEP}${spec.handle}`;
     return principalId === undefined
       ? undefined
-      : `p${SEP}${principalId}${SEP}${fp}${kindsPart}${SEP}${spec.handle}`;
+      : `p${SEP}${principalId}${SEP}${fp}${SEP}${v}${SEP}${spec.handle}`;
   }
 
   get(
     spec: ProviderSpec,
     principalId: string | undefined,
-    kinds?: readonly string[]
+    variant: CacheVariant = {}
   ): { value: unknown } | undefined {
-    const k = this.key(spec, principalId, kinds);
+    const k = this.key(spec, principalId, variant);
     if (k === undefined) return undefined;
     const e = this.entries.get(k);
     if (!e) return undefined;
@@ -92,9 +124,9 @@ export class HydrationCache {
     spec: ProviderSpec,
     principalId: string | undefined,
     value: unknown,
-    kinds?: readonly string[]
+    variant: CacheVariant = {}
   ): void {
-    const k = this.key(spec, principalId, kinds);
+    const k = this.key(spec, principalId, variant);
     if (k === undefined || spec.cachePolicy.ttlSeconds <= 0) return;
     this.entries.set(k, { value, expiresAt: this.clock() + spec.cachePolicy.ttlSeconds * 1000 });
   }

@@ -73,39 +73,106 @@ describe("HydrationCache", () => {
   it("a contract-mode spec's key includes the checked kinds: different kinds are different entries", () => {
     const c = new HydrationCache(() => 0);
     const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
-    c.set(spec, undefined, "kpi-only", ["Kpi"]);
-    expect(c.get(spec, undefined, ["Kpi"])).toEqual({ value: "kpi-only" });
+    c.set(spec, undefined, "kpi-only", { kinds: ["Kpi"] });
+    expect(c.get(spec, undefined, { kinds: ["Kpi"] })).toEqual({ value: "kpi-only" });
     // Not yet checked against this wider set: no entry, never the narrower one's value.
-    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toBeUndefined();
-    c.set(spec, undefined, "widened", ["Kpi", "MetricCard"]);
-    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toEqual({ value: "widened" });
+    expect(c.get(spec, undefined, { kinds: ["Kpi", "MetricCard"] })).toBeUndefined();
+    c.set(spec, undefined, "widened", { kinds: ["Kpi", "MetricCard"] });
+    expect(c.get(spec, undefined, { kinds: ["Kpi", "MetricCard"] })).toEqual({ value: "widened" });
     // The narrower entry is untouched by the wider one.
-    expect(c.get(spec, undefined, ["Kpi"])).toEqual({ value: "kpi-only" });
+    expect(c.get(spec, undefined, { kinds: ["Kpi"] })).toEqual({ value: "kpi-only" });
   });
 
   it("kinds are sorted and deduplicated before keying: order and repeats don't matter", () => {
     const c = new HydrationCache(() => 0);
     const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
-    c.set(spec, undefined, "v", ["MetricCard", "Kpi"]);
-    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toEqual({ value: "v" });
-    expect(c.get(spec, undefined, ["Kpi", "Kpi", "MetricCard"])).toEqual({ value: "v" });
+    c.set(spec, undefined, "v", { kinds: ["MetricCard", "Kpi"] });
+    expect(c.get(spec, undefined, { kinds: ["Kpi", "MetricCard"] })).toEqual({ value: "v" });
+    expect(c.get(spec, undefined, { kinds: ["Kpi", "Kpi", "MetricCard"] })).toEqual({ value: "v" });
   });
 
   it("a shape-mode spec's key ignores kinds entirely (existing behavior, unchanged)", () => {
     const c = new HydrationCache(() => 0);
     const spec = providerSpec("h", [mcpStep("s", "t")]); // outputCheck unset
-    c.set(spec, undefined, "v", ["Kpi"]);
-    expect(c.get(spec, undefined, ["MetricCard"])).toEqual({ value: "v" });
+    c.set(spec, undefined, "v", { kinds: ["Kpi"] });
+    expect(c.get(spec, undefined, { kinds: ["MetricCard"] })).toEqual({ value: "v" });
     expect(c.get(spec, undefined)).toEqual({ value: "v" });
   });
 
   it("invalidate(handle) drops every kinds-generation of a contract spec too", () => {
     const c = new HydrationCache(() => 0);
     const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
-    c.set(spec, undefined, "a", ["Kpi"]);
-    c.set(spec, undefined, "b", ["Kpi", "MetricCard"]);
+    c.set(spec, undefined, "a", { kinds: ["Kpi"] });
+    c.set(spec, undefined, "b", { kinds: ["Kpi", "MetricCard"] });
     c.invalidate("h");
-    expect(c.get(spec, undefined, ["Kpi"])).toBeUndefined();
-    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toBeUndefined();
+    expect(c.get(spec, undefined, { kinds: ["Kpi"] })).toBeUndefined();
+    expect(c.get(spec, undefined, { kinds: ["Kpi", "MetricCard"] })).toBeUndefined();
+  });
+});
+describe("HydrationCache variants", () => {
+  it("params are part of the key: another param set misses, the same set in any key order hits", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")]);
+    c.set(spec, undefined, "ridge-7d", { params: { station: "ridge", from: "$now-7d" } });
+    expect(c.get(spec, undefined, { params: { from: "$now-7d", station: "ridge" } })).toEqual({
+      value: "ridge-7d",
+    });
+    expect(
+      c.get(spec, undefined, { params: { station: "harbour", from: "$now-7d" } })
+    ).toBeUndefined();
+    expect(c.get(spec, undefined)).toBeUndefined();
+  });
+
+  it("the checked kinds are part of the key (for a contract spec)", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
+    c.set(spec, undefined, 1, { kinds: ["Kpi"] });
+    expect(c.get(spec, undefined, { kinds: ["Kpi"] })).toEqual({ value: 1 });
+    expect(c.get(spec, undefined, { kinds: ["MetricCard"] })).toBeUndefined();
+  });
+
+  it("invalidate(handle) drops every variant of that handle", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")]);
+    c.set(spec, undefined, 1, { params: { a: 1 } });
+    c.set(spec, undefined, 2, { params: { a: 2 } });
+    c.invalidate("h");
+    expect(c.get(spec, undefined, { params: { a: 1 } })).toBeUndefined();
+    expect(c.get(spec, undefined, { params: { a: 2 } })).toBeUndefined();
+  });
+
+  it("params that cannot be keyed are never cached", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")]);
+    c.set(spec, undefined, 1, { params: { a: Number.NaN } });
+    expect(c.get(spec, undefined, { params: { a: Number.NaN } })).toBeUndefined();
+  });
+});
+
+describe("HydrationCache variants — params and kinds together", () => {
+  it("time tokens are keyed AS DECLARED: $now-7d is one key across instants; freshness is the TTL", () => {
+    let t = 0;
+    const c = new HydrationCache(() => t);
+    const spec = providerSpec("h", [mcpStep("s", "t")]);
+    c.set(spec, undefined, "v", { params: { from: "$now-7d" } });
+    t = 30_000;
+    expect(c.get(spec, undefined, { params: { from: "$now-7d" } })).toEqual({ value: "v" });
+    t = 60_000;
+    expect(c.get(spec, undefined, { params: { from: "$now-7d" } })).toBeUndefined();
+  });
+
+  it("a contract spec keys params AND kinds; kinds are normalised", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
+    c.set(spec, undefined, "v", { params: { a: 1 }, kinds: ["MetricCard", "Kpi"] });
+    expect(
+      c.get(spec, undefined, { params: { a: 1 }, kinds: ["Kpi", "Kpi", "MetricCard"] })
+    ).toEqual({
+      value: "v",
+    });
+    expect(
+      c.get(spec, undefined, { params: { a: 2 }, kinds: ["Kpi", "MetricCard"] })
+    ).toBeUndefined();
+    expect(c.get(spec, undefined, { kinds: ["Kpi", "MetricCard"] })).toBeUndefined();
   });
 });
