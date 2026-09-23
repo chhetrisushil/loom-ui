@@ -1,4 +1,5 @@
 import {
+  type ContainerNode,
   type Operation,
   apply,
   genesis,
@@ -659,6 +660,67 @@ describe("materialize — revise (diff against the base)", () => {
     };
     const { ops } = materialize(revised, placed.value, planningCatalog, capabilitiesFixture);
     expect(ops).toEqual([{ type: "setPlacement", nodeId: "orders", span: 6 }]);
+    const r = replay(placed.value, ops);
+    expect(r.ok).toBe(true);
+    const orders = r.ok && isContainer(r.value.root) ? r.value.root.children[0] : undefined;
+    expect(orders).toMatchObject({ id: "orders", span: 6, column: 1 });
+  });
+  it("clamps to column 1 at the extreme: a full-width widened span leaves no room to keep any of the original column", () => {
+    const placed = apply(composed(), { type: "setPlacement", nodeId: "orders", column: 9 });
+    if (!placed.ok) throw new Error(placed.finding.message);
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: draft.nodes.map((n, i) => (i === 0 ? { ...n, span: 12 } : n)),
+    };
+    const { ops, findings } = materialize(
+      revised,
+      placed.value,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings).toEqual([]);
+    expect(ops).toEqual([{ type: "setPlacement", nodeId: "orders", span: 12, column: 1 }]);
+    const r = replay(placed.value, ops);
+    expect(r.ok).toBe(true);
+    const orders = r.ok && isContainer(r.value.root) ? r.value.root.children[0] : undefined;
+    expect(orders).toMatchObject({ id: "orders", span: 12, column: 1 });
+  });
+  it("a span change on a node under a NON-grid parent emits a span-only setPlacement — no row/column key, nothing to overflow", () => {
+    const rowRoot: ContainerNode = {
+      id: "root",
+      order: "V",
+      kind: "container",
+      direction: "row",
+      span: 12,
+      children: [],
+    };
+    const rowBase = genesis({
+      experienceId: "e",
+      intent: intentFixture,
+      meta: metaFixture,
+      root: rowRoot,
+    });
+    const composedOps = materialize(draft, rowBase, planningCatalog, capabilitiesFixture).ops;
+    const rowComposed = replay(rowBase, composedOps);
+    if (!rowComposed.ok) throw new Error(rowComposed.finding.message);
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: draft.nodes.map((n, i) => (i === 0 ? { ...n, span: 6 } : n)),
+    };
+    const { ops, findings } = materialize(
+      revised,
+      rowComposed.value,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings).toEqual([]);
+    expect(ops).toEqual([{ type: "setPlacement", nodeId: "orders", span: 6 }]);
+    const r = replay(rowComposed.value, ops);
+    expect(r.ok).toBe(true);
+    const orders = r.ok && isContainer(r.value.root) ? r.value.root.children[0] : undefined;
+    expect(orders).toMatchObject({ id: "orders", span: 6 });
+    expect(orders && "column" in orders).toBe(false);
+    expect(orders && "row" in orders).toBe(false);
   });
   it("never touches a nested container's children: a draft node id that names a container is refused", () => {
     const exp = composed();
