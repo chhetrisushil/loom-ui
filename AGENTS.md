@@ -48,7 +48,15 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - A node's `row` / `rowSpan` / `column` (1-based grid lines, loom ADR 0098) are, like `span`, a position
   in its PARENT grid and compile into that `GridCell`. Unlike `span` they are never silently inapplicable:
   under a `row`/`column` parent, or on the root, they are a `placement-outside-grid` error, and off the
-  12 columns a `placement-out-of-range` error (the cell then compiles unplaced). A container's `title`
+  12 columns a `placement-out-of-range` error. `validateExperience` reports such state in pre-existing
+  data (the cell then compiles unplaced); every op refuses creating it — `setPlacement`, `insertNode`
+  and `moveNode` raise both codes, so a log recorded before these refusals that inserted a placed node
+  off a grid or overflowing it no longer replays. `moveNode` of a placed node out of a grid is refused:
+  clear it first with `setPlacement { row: null, column: null, rowSpan: null }`. A resize that makes a
+  placed node overflow is refused (the interactive path never clamps); only the reference planner, on a
+  widening revision, clamps `column` to `GRID_COLUMNS − span + 1`. Other op-level refusals a consumer
+  must handle: `missing-provider`, `provider-still-bound`, `empty-placement`, `root-immutable`,
+  `not-container`. A container's `title`
   is a `LocalizedText`, resolved at compile like a label. `renderBlueprintDom` draws both the way loom's
   React renderer does (ADR 0098 D4): a cell's grid lines land on the child's OWN element — no wrapper —
   and a titled container renders as `<section aria-label><h2>` + the layout element, so the SECTION is
