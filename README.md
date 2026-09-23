@@ -10,7 +10,7 @@ in the path.
 | Package | Job |
 |---|---|
 | `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint`; `./log` subpath for content-addressed persistence |
-| `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath reshape → shape check), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, caches per principal, reports drift for the app's durable repair |
+| `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath/named reshape → a shape pin, or the bound kinds' value contracts), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, applies per-load params to overridable arguments and resolves relative-time tokens against an injected clock, caches per principal and per params, caps and de-duplicates tool calls, reports drift for the app's durable repair (or proceeds past an input drift for a read-only viewer) — in-process, or split across a trust boundary (`handleInventory` + `serveHandle` on the server, `SplitHydrationController` + a `HandleLoader` on the client) |
 | `@loom-ui/renderer-lit` | A loom DOM renderer adapter (`renderBlueprintDom`, subpath `./dom`) and Lit elements registered under loom kinds (`litRegistry`) — every built-in kind plus the framework kinds (`FRAMEWORK_KINDS`: `TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`); four app-level elements (time-range picker, locale picker, sandbox, A2UI view) |
 | `@loom-ui/renderer-terminal` | String renderers for every framework kind merged over loom's terminal registry, `renderExperience` (loom's status matrix — a declared channel with no value yet prints loom's loading row `⋯ <title>` — with the framework's value check in loom's `check` seam), and `watch` |
 | `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner that runs its model call as one `ctx.decide` per plan, a catalogue-derived output contract (a model may set `binding.sensitivity` only on a type whose entry declares `sensitivity: "model-may-set"`), plan-time pins, drift re-authoring (`reviseForDrift`), the conformance kit any planner must pass, and `interpretAction` (experience ops vs business actions) |
@@ -61,6 +61,52 @@ controller.load(experience);              // P0 now, P1 in 50 ms, P2 on markVisi
 const r = remapOperation(report.spec, report.drift);
 if (r.ok) { const next = apply(sealedExperience, r.op); /* seal + put + */ ctx.emit(SCHEMA_REPAIRED, { ...report, op: r.op }); }
 ```
+
+## Hydration options and split hydration (illustrative — not a compiling snippet)
+
+```ts
+import { DEFAULT_TIME_RANGE, HydrationController, SplitHydrationController, defineReshapers, handleInventory, serveHandles } from "@loom-ui/hydration";
+
+// A provider may be checked by what its widgets can render instead of an exact output shape:
+const provider: ProviderSpec = { ...spec, outputCheck: "contract" };   // an empty list or a null cell is healthy
+
+const controller = new HydrationController({
+  invoker: effectRuntime, store,
+  outputKinds: { catalog, surface: "web" },   // a handle's kinds = its bound nodes resolved on this surface
+  clock: Date.now,                            // `$now`, `$now-7d`, `$now+1h` resolve against it, once per pass
+  defaultParams: DEFAULT_TIME_RANGE,          // { from: "$now-24h", to: "$now" }
+  maxConcurrentCalls: 4,                      // controller-wide; an identical step runs once per pass, per principal
+  inputDrift: "report-and-proceed",           // a read-only viewer: record the drift, retry once, publish
+  argumentHook: (args, { params, now }) => args,                      // the host's last word before each call
+  reshapers: defineReshapers({ "rows-to-table": (raw) => toTable(raw) }), // reshaping.engine "Named"
+});
+controller.setParams({ from: "$now-7d" });                       // a time-range picker
+controller.setParams({ region: "north" }, { handle: "fleet" });  // one widget's filter
+
+// Split: providers never leave the server. `revisionOf` is REQUIRED and must be a KEYED hash (an
+// HMAC over a server secret) — never the spec's own content fingerprint, which a client could
+// confirm a guessed provider against offline.
+const revisionOf = (handle, fingerprint) =>
+  createHmac("sha256", serverSecret).update(`${handle}\0${fingerprint}`).digest("hex");
+// server GET  → { blueprint: compile(exp, opts).blueprint, inventory: handleInventory(exp, { revisionOf }).inventory }
+// server POST → serveHandles(exp, requests, { invoker: effectRuntime, now: Date.now(), outputKinds, reshapers, cache, onFinding })
+//               (serveHandle answers one request; serveHandles is the batch pass it is built from)
+const split = new SplitHydrationController({
+  store,
+  loader: {
+    load: (request, signal) => postJson("/hydrate", request, signal),
+    loadMany: (requests, signal) => postJson("/hydrate/batch", requests, signal), // required — no fallback to N loads
+  },
+});
+split.load(inventory);
+```
+
+- **Contract check.** `outputCheck: "contract"` validates the reshaped value with `checkKindValue` against EVERY kind the handle feeds on the hydrated surface (a handle bound by a `Kpi` and a `Table` must satisfy both); drift names the failing kind (`DriftRecord.contractKind`). No kinds supplied is an error (`output-contract-unbound`), kinds without a contract pass with a warning, and `undefined` is drift. The input schema pin is checked the same way under both modes.
+- **Params.** A step lists the argument names a load may override (`MCPToolNode.overridable`); a param never replaces an argument holding a `{{steps.…}}` template and is never itself one. Precedence: `defaultParams` < `setParams(p)` < `setParams(p, { handle })`, filtered to the provider's declared names — so an unrelated param change reloads nothing. The cache key carries the params AS DECLARED (`$now` tokens unresolved) plus the checked kinds; freshness comes from the cache entry's TTL, never from re-resolving a token.
+- **Relative time.** `$now`, `$now±<n><s|m|h|d|w>` become ISO-8601 instants against one clock read per pass, so two steps asking for "the last day" in the same load ask the same question; anything else that starts `$now` is refused (`invalid-time-token`) rather than sent to a tool. Tokens resolve before templates, so tool output is never rewritten.
+- **Named reshaping.** `reshaping.engine: "Named"` looks a step's `scriptRef` up in an injected `ReshaperRegistry` (`defineReshapers`) and runs it in-process — no sandbox hop — and an unregistered name is a finding, never a silent fall-through to another engine. The reshaper receives a COPY of the raw terminal output (best-effort `structuredClone`); a raw value the clone cannot represent (a function anywhere in it) is refused before the reshaper ever runs, never passed through live.
+- **Calls.** `maxConcurrentCalls` caps transient calls in flight across the WHOLE controller (or, server-side, the whole batch); beneath it, one step memo per pass — keyed by principal too — runs an identical step once no matter how many handles share it, ref-counted so one caller's abort never cancels a call another caller of the same step is still waiting on.
+- **Split.** The inventory lists, per bound handle, its priority (the Blueprint carries none), the NAMES of its overridable params and an opaque, KEYED revision (`revisionOf`) — never a tool, an argument or a script. `serveHandle`/`serveHandles` treat every request as untrusted (version, handle and params are all re-checked on the server; an unbound handle is `unknown-handle`; a batch over `maxBatch`, default 256, is refused whole as `batch-too-large`) and return the same `HandleLoadResult` the in-process controller publishes. A client only ever receives a finding's PUBLIC form — a fixed code and a message keyed off it, naming only the handle; the full finding (tool, step, script, hash, exception text) reaches only the server's own `onFinding` hook. `HandleLoader` must implement BOTH `load` and `loadMany` — loads the scheduler starts together (the P0s of one bind, a P1 batch) go out as ONE `loadMany` round trip, so handles sharing an upstream step share the call server-side too. As with `invalidate`, a lazy (P2) handle whose question changes waits for the surface's next `markVisible`.
 
 ## Rendering (illustrative — not a compiling snippet)
 
@@ -128,4 +174,4 @@ Capabilities are an INPUT: the app resolves tools, pins `toolSchemaHash`, and su
 
 A revision describes, and materialises, only the root's DIRECT children. A nested container is shown as a locked placeholder (`{ id, kind: "container", locked: true, descendants }`) and its subtree is not described at all; a draft naming a node inside one is refused as `nested-node`.
 
-Output drift (`DriftRecord{kind:"output"}`) carries `observedShape` (the RESHAPED value that failed the pin), `observedRawShape` (the raw terminal output's shape, which is what a `reshaping.scriptRef` is authored against) and, when the hydration caller sets `captureSample`, a tainted `observedSample` of the RAW terminal output — raw because a capability's `sampleOutput` is raw by contract. `reviseForDrift` turns a drift report into a repair revision: the handles and node ids go in the request text, the shapes go in `context` (fenced), and the raw sample becomes the drifted capability's `sampleOutput`.
+Output drift (`DriftRecord{kind:"output"}`) carries `observedShape` (the RESHAPED value that failed the pin), `observedRawShape` (the raw terminal output's shape, which is what a `reshaping.scriptRef` is authored against) and, when the hydration caller sets `captureSample`, a tainted `observedSample` of the RAW terminal output — raw because a capability's `sampleOutput` is raw by contract. `reviseForDrift` turns a drift report into a repair revision: the handles and node ids go in the request text, the shapes go in `context` (fenced), and the raw sample becomes the drifted capability's `sampleOutput`. A contract drift (`outputCheck: "contract"`) carries `contractKind`, and the repair request names that kind instead of a shape pin.
