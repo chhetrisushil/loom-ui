@@ -133,7 +133,7 @@ export abstract class LuWidget extends LitElement {
     if (s.state === "loading" || s.state === "pending") return loadingStateText(this.title_);
     if (s.state === "error") return errorStateText(this.title_);
     if (s.state === "stale") return staleStateText(this.title_);
-    return describeValue(this.kind, this.value, this.title_);
+    return describeValue(this.kind, this.value, this.title_, this.widget?.props);
   }
 
   render(): TemplateResult | typeof nothing {

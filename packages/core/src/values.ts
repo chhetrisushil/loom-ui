@@ -47,11 +47,22 @@ export const SemanticFormat = z.object({
 });
 export type SemanticFormat = z.infer<typeof SemanticFormat>;
 
+/**
+ * Which y-axis a series is scaled against. A series whose unit differs from the rest of the
+ * chart — bytes alongside requests, say — would flatten to a near-flat line sharing one scale;
+ * assigning it "right" gives it its own scale and its own labelled axis.
+ */
+export const ChartAxis = z.enum(["left", "right"]);
+export type ChartAxis = z.infer<typeof ChartAxis>;
+
 export const TimeSeriesValue = z.object({
   series: z.array(
     z.object({
       label: z.string(),
+      /** Legacy display suffix; `format` supersedes it when both are present. */
       unit: z.string().optional(),
+      format: SemanticFormat.optional(),
+      axis: ChartAxis.optional(),
       points: z.array(z.object({ timestamp: z.string(), value: z.number() })),
     })
   ),
@@ -60,6 +71,7 @@ export type TimeSeriesValue = z.infer<typeof TimeSeriesValue>;
 
 export const BarChartValue = z.object({
   unit: z.string().optional(),
+  format: SemanticFormat.optional(),
   bars: z.array(z.object({ label: z.string(), value: z.number() })),
 });
 export type BarChartValue = z.infer<typeof BarChartValue>;

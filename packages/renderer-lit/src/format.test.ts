@@ -24,4 +24,12 @@ describe("semantic formatting", () => {
     expect(effectiveFormat({ semanticType: "integer" }, "$")).toEqual({ semanticType: "integer" });
     expect(effectiveFormat(undefined, "%")).toEqual({ semanticType: "percentage" });
   });
+  it("formatFromUnit reads any ISO 4217 code, keeps $, € and %, and leaves all-caps non-currencies alone", () => {
+    expect(formatFromUnit("JPY")).toEqual({ semanticType: "currency", currency: "JPY" });
+    expect(formatFromUnit(" GBP ")).toEqual({ semanticType: "currency", currency: "GBP" });
+    expect(formatFromUnit("USD")).toEqual({ semanticType: "currency", currency: "USD" });
+    expect(formatFromUnit("€")).toEqual({ semanticType: "currency", currency: "EUR" });
+    expect(formatFromUnit("MPH")).toBeUndefined();
+    expect(formatFromUnit("usd")).toBeUndefined();
+  });
 });

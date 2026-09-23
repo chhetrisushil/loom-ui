@@ -1,23 +1,39 @@
+import type { SemanticFormat } from "@loom-ui/core";
 import { formattingLocale } from "./i18n";
 
-export interface SemanticFormat {
-  semanticType: "number" | "integer" | "decimal" | "percentage" | "currency" | "date" | "time";
-  currency?: string;
-  notation?: "standard" | "compact";
-  maximumFractionDigits?: number;
-  dateStyle?: "short" | "medium" | "long";
-  timeStyle?: "short" | "medium";
-}
+// One declaration of what a number means, in `@loom-ui/core` beside the value contracts that
+// carry it; the renderers only read it.
+export type { SemanticFormat };
 
 /** An em dash, not "∞" and not "NaN": a missing figure, never an infinite one. */
 const NOT_A_NUMBER = "—";
 
+let currencyCodes: ReadonlySet<string> | undefined;
+
+/**
+ * ISO 4217 by lookup, never by guess: the platform's own list, so an all-caps unit that is not a
+ * currency ("MPH", "RPM") stays a plain suffix. A runtime without `supportedValuesOf` declines.
+ */
+function isCurrencyCode(value: string): boolean {
+  if (!/^[A-Z]{3}$/.test(value)) return false;
+  if (currencyCodes === undefined) {
+    try {
+      currencyCodes = new Set(Intl.supportedValuesOf("currency"));
+    } catch {
+      currencyCodes = new Set();
+    }
+  }
+  return currencyCodes.has(value);
+}
+
+/** Read a legacy `unit` as semantics: `$`, `€`, `%`, or any ISO 4217 code. Anything else is left alone. */
 export function formatFromUnit(unit: string | undefined): SemanticFormat | undefined {
   if (unit === undefined) return undefined;
   const u = unit.trim();
-  if (u === "$" || u === "USD") return { semanticType: "currency", currency: "USD" };
-  if (u === "€" || u === "EUR") return { semanticType: "currency", currency: "EUR" };
+  if (u === "$") return { semanticType: "currency", currency: "USD" };
+  if (u === "€") return { semanticType: "currency", currency: "EUR" };
   if (u === "%") return { semanticType: "percentage" };
+  if (isCurrencyCode(u)) return { semanticType: "currency", currency: u };
   return undefined;
 }
 

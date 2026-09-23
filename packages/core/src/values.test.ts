@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ChartAxis,
   FRAMEWORK_KINDS,
   SemanticFormat,
   checkKindValue,
@@ -139,5 +140,34 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
     const col = { label: "p99", format: { semanticType: "integer" as const } };
     expect(tableColumnLabel(col)).toBe("p99");
     expect(tableColumnFormat(col)).toEqual({ semanticType: "integer" });
+  });
+});
+
+describe("chart enrichments", () => {
+  it("a series may carry a format and an axis; a bar chart a value-level format", () => {
+    expect(
+      checkKindValue("TimeSeries", {
+        series: [
+          {
+            label: "revenue",
+            format: { semanticType: "currency", currency: "EUR" },
+            axis: "right",
+            points: [{ timestamp: "2026-01-01T00:00:00Z", value: 1 }],
+          },
+        ],
+      })
+    ).toEqual({ ok: true });
+    expect(
+      checkKindValue("TimeSeries", {
+        series: [{ label: "x", axis: "top", points: [] }],
+      })
+    ).toMatchObject({ ok: false });
+    expect(
+      checkKindValue("BarChart", {
+        format: { semanticType: "percentage" },
+        bars: [{ label: "a", value: 0.5 }],
+      })
+    ).toEqual({ ok: true });
+    expect(ChartAxis.options).toEqual(["left", "right"]);
   });
 });

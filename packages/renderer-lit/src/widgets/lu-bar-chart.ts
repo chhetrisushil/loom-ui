@@ -2,7 +2,7 @@ import type { BarChartValue } from "@loom-ui/core";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { SERIES_COLORS, linearScale, niceTicks } from "../charts/svg";
-import { effectiveFormat, tick as formatTick, measure } from "../format";
+import { type SemanticFormat, effectiveFormat, tick as formatTick, measure } from "../format";
 import { dirFor } from "../rtl";
 import { LuWidget } from "./base";
 
@@ -75,7 +75,10 @@ export class LuBarChart extends LuWidget {
     const v = this.value as BarChartValue;
     const bars = v.bars;
     if (bars.length === 0) return nothing;
-    const fmt = effectiveFormat(undefined, v.unit);
+    // value format › widget props.format › the value's (or widget's) unit.
+    const props = this.widget.props as { unit?: string; format?: SemanticFormat };
+    const unit = v.unit ?? props.unit;
+    const fmt = effectiveFormat(v.format ?? props.format, unit);
     const w = this.width;
     const h = this.height;
     const innerW = w - M.left - M.right;
@@ -123,7 +126,7 @@ export class LuBarChart extends LuWidget {
             }} />
           ${
             this.hover === i
-              ? svg`<text class="val" x=${x + barW / 2} y=${y - 4} text-anchor="middle">${measure(b.value, fmt)}${fmt === undefined && v.unit ? ` ${v.unit}` : ""}</text>`
+              ? svg`<text class="val" x=${x + barW / 2} y=${y - 4} text-anchor="middle">${measure(b.value, fmt)}${fmt === undefined && unit ? ` ${unit}` : ""}</text>`
               : nothing
           }
           <text x=${x + barW / 2} y=${M.top + innerH + 14} text-anchor="middle">${b.label.slice(0, Math.max(4, Math.floor(band / 7)))}</text>`;

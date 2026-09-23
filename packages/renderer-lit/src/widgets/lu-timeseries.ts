@@ -1,8 +1,9 @@
-import type { TimeSeriesValue } from "@loom-ui/core";
+import type { SemanticFormat, TimeSeriesValue } from "@loom-ui/core";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import {
   SERIES_COLORS,
+  type Scale,
   extent,
   linePath,
   linearScale,
@@ -10,15 +11,22 @@ import {
   padDomain,
   timeTickIndices,
 } from "../charts/svg";
-import { effectiveFormat, tick as formatTick, timeTick } from "../format";
+import { effectiveFormat, tick as formatTick, measure, timeTick } from "../format";
 import { dirFor } from "../rtl";
 import { hideTooltip, showTooltip } from "../tooltip";
 import { LuWidget } from "./base";
 
 // Multi-series line chart, hand-rolled SVG inside the shadow root; resizes via ResizeObserver;
-// crosshair tooltip on hover. loom's `TimeSeriesValue` has no dual-axis field (genUI's
-// `axis: "right"`), so every series shares one y-axis.
+// crosshair tooltip on hover. A series marked `axis: "right"` is scaled against its own domain
+// and labelled on a right-hand axis — a series whose unit differs from the rest (bytes alongside
+// requests, say) would otherwise flatten to a near-flat line sharing one scale; every other
+// series shares the left axis. An axis's ticks read in the format of the first series drawn on
+// it.
 const M = { top: 12, right: 14, bottom: 22, left: 46 };
+/** Right margin when a right-hand axis needs room for its tick labels. */
+const RIGHT_AXIS_MARGIN = 46;
+
+type Series = TimeSeriesValue["series"][number];
 
 @customElement("lu-timeseries")
 export class LuTimeseries extends LuWidget {
@@ -99,6 +107,12 @@ export class LuTimeseries extends LuWidget {
     super.disconnectedCallback();
   }
 
+  /** value format › widget props.format › the series' (or widget's) unit. */
+  private formatOf(s: Series): SemanticFormat | undefined {
+    const props = this.widget.props as { unit?: string; format?: SemanticFormat };
+    return effectiveFormat(s.format ?? props.format, s.unit ?? props.unit);
+  }
+
   protected renderReady(): TemplateResult | typeof nothing {
     const v = this.value as TimeSeriesValue;
     const series = v.series;
@@ -107,21 +121,32 @@ export class LuTimeseries extends LuWidget {
     const n = timestamps.length;
     if (n === 0) return nothing;
 
+    const left = series.filter((s) => s.axis !== "right");
+    const right = series.filter((s) => s.axis === "right");
     const w = this.width;
     const h = Math.max(this.height - (series.length > 1 ? 22 : 0), 100);
-    const innerW = w - M.left - M.right;
+    const innerW = w - M.left - (right.length > 0 ? RIGHT_AXIS_MARGIN : M.right);
     const innerH = h - M.top - M.bottom;
     const sx = linearScale([0, n - 1], [M.left, M.left + innerW]);
 
-    const domain = padDomain(extent(series.flatMap((s) => s.points.map((p) => p.value))));
-    const sy = linearScale(domain, [M.top + innerH, M.top]);
+    const leftDomain = padDomain(extent(left.flatMap((s) => s.points.map((p) => p.value))));
+    const rightDomain = padDomain(extent(right.flatMap((s) => s.points.map((p) => p.value))));
+    const syL = linearScale(leftDomain, [M.top + innerH, M.top]);
+    const syR = linearScale(rightDomain, [M.top + innerH, M.top]);
+    const yOf = (s: Series): Scale => (s.axis === "right" ? syR : syL);
 
     const first = timestamps[0] ?? "";
     const last = timestamps[n - 1] ?? "";
     const spanMs = new Date(last).getTime() - new Date(first).getTime() || 86_400_000;
     const xTicks = timeTickIndices(n, Math.max(3, Math.min(6, Math.floor(innerW / 80))));
-    const yTicks = niceTicks(domain[0], domain[1], 4);
-    const fmt = effectiveFormat(undefined, series[0]?.unit);
+    const yTicks = niceTicks(leftDomain[0], leftDomain[1], 4);
+    const yTicksR = right.length > 0 ? niceTicks(rightDomain[0], rightDomain[1], 4) : [];
+    const axisFormat = (side: "left" | "right"): SemanticFormat | undefined => {
+      const s = series.find((x) => (x.axis ?? "left") === side);
+      return s === undefined ? undefined : this.formatOf(s);
+    };
+    const fmtL = axisFormat("left");
+    const fmtR = axisFormat("right");
 
     const colorFor = (i: number): string => SERIES_COLORS[i % SERIES_COLORS.length]!;
     const hover = this.hoverIndex;
@@ -134,7 +159,7 @@ export class LuTimeseries extends LuWidget {
                 (s, i) =>
                   html`<span
                     ><span class="swatch" style="background:${colorFor(i)}"></span
-                    >${s.label}</span
+                    >${s.label}${s.axis === "right" ? " (R)" : ""}</span
                   >`
               )}
             </div>`
@@ -154,13 +179,17 @@ export class LuTimeseries extends LuWidget {
         >
           <g class="grid">
             ${yTicks.map(
-              (t) => svg`<line x1=${M.left} x2=${M.left + innerW} y1=${sy(t)} y2=${sy(t)} />`
+              (t) => svg`<line x1=${M.left} x2=${M.left + innerW} y1=${syL(t)} y2=${syL(t)} />`
             )}
           </g>
           <g class="axis">
             ${yTicks.map(
               (t) =>
-                svg`<text x=${M.left - 6} y=${sy(t) + 3} text-anchor="end">${formatTick(t, fmt)}</text>`
+                svg`<text x=${M.left - 6} y=${syL(t) + 3} text-anchor="end">${formatTick(t, fmtL)}</text>`
+            )}
+            ${yTicksR.map(
+              (t) =>
+                svg`<text x=${M.left + innerW + 6} y=${syR(t) + 3} text-anchor="start">${formatTick(t, fmtR)}</text>`
             )}
             ${xTicks.map(
               (i) =>
@@ -168,6 +197,7 @@ export class LuTimeseries extends LuWidget {
             )}
           </g>
           ${series.map((s, i) => {
+            const sy = yOf(s);
             const pts = s.points.map((p, j) => ({ x: sx(j), y: sy(p.value) }));
             return svg`<path class="series" d=${linePath(pts)} fill="none" stroke=${colorFor(i)}
               stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
@@ -180,7 +210,7 @@ export class LuTimeseries extends LuWidget {
                 ${series.map((s, i) => {
                   const p = s.points[hover];
                   return p
-                    ? svg`<circle cx=${sx(hover)} cy=${sy(p.value)} r="3.5" fill=${colorFor(i)} />`
+                    ? svg`<circle cx=${sx(hover)} cy=${yOf(s)(p.value)} r="3.5" fill=${colorFor(i)} />`
                     : nothing;
                 })}`
               : nothing
@@ -206,11 +236,11 @@ export class LuTimeseries extends LuWidget {
     // Portal tooltip so it's never clipped by the widget/scroll container.
     const rows = series
       .map((s, i) => {
-        const fmt = effectiveFormat(undefined, s.unit);
+        const fmt = this.formatOf(s);
         const v = s.points[hover]?.value ?? 0;
         const suffix = fmt === undefined && s.unit ? ` ${escapeHtml(s.unit)}` : "";
         return `<div style="color:${colorFor(i)}">${escapeHtml(s.label)}: ${escapeHtml(
-          fmt === undefined ? String(v) : formatTick(v, fmt)
+          measure(v, fmt)
         )}${suffix}</div>`;
       })
       .join("");
