@@ -62,8 +62,17 @@ export type { HandleUse } from "./handles";
 export {
   BarChartValue,
   FRAMEWORK_KINDS,
+  KpiValue,
+  SemanticFormat,
+  StatusCardValue,
+  StatusLevel,
+  TableCell,
+  TableColumn,
+  TableValue,
   TimeSeriesValue,
   checkKindValue,
   kindValueContract,
   kindValueContracts,
+  tableColumnFormat,
+  tableColumnLabel,
 } from "./values";

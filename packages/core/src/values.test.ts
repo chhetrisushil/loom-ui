@@ -1,18 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { FRAMEWORK_KINDS, checkKindValue, kindValueContract, kindValueContracts } from "./values";
+import {
+  FRAMEWORK_KINDS,
+  SemanticFormat,
+  checkKindValue,
+  kindValueContract,
+  kindValueContracts,
+  tableColumnFormat,
+  tableColumnLabel,
+} from "./values";
 
 describe("kindValueContracts", () => {
   it("declares every loom built-in kind and the framework kinds", () => {
     expect(Object.keys(kindValueContracts).sort()).toEqual(
       [
+        "A2UIView",
         "AlertCard",
         "ApprovalCard",
         "BarChart",
         "DataTable",
+        "Kpi",
         "MetricCard",
+        "Note",
         "ProgressBar",
+        "SandboxView",
         "StatusBadge",
+        "StatusCard",
         "StreamingText",
+        "Table",
         "TimeSeries",
         "Timeline",
       ].sort()
@@ -56,5 +70,74 @@ describe("kindValueContracts", () => {
       series: [{ label: "x", points: [{ timestamp: "t", value: "1" }] }],
     });
     expect(!r.ok && r.finding.message).toMatch(/TimeSeries.*series\.0\.points\.0\.value/);
+  });
+});
+
+describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", () => {
+  it("Kpi: a number with optional unit, format, label and a nullable deltaPct", () => {
+    expect(checkKindValue("Kpi", { value: 1234.5 })).toEqual({ ok: true });
+    expect(
+      checkKindValue("Kpi", {
+        type: "metric", // an unrecognized field is harmless; a non-strict object ignores it
+        value: 0.25,
+        unit: "USD",
+        format: { semanticType: "currency", currency: "USD" },
+        label: "vs last week",
+        deltaPct: null,
+      })
+    ).toEqual({ ok: true });
+    expect(checkKindValue("Kpi", 412)).toMatchObject({ ok: false });
+    expect(checkKindValue("Kpi", { value: "412" })).toMatchObject({ ok: false });
+  });
+  it("Table: columns are strings or {label, format}; rows are arrays of string | number | null", () => {
+    const ok = {
+      columns: ["db", { label: "p99", format: { semanticType: "integer" } }],
+      rows: [
+        ["orders", 12],
+        ["users", null],
+      ],
+    };
+    expect(checkKindValue("Table", ok)).toEqual({ ok: true });
+    expect(checkKindValue("Table", [{ db: "orders" }])).toMatchObject({ ok: false });
+    expect(checkKindValue("Table", { columns: ["a"], rows: [[{ nested: 1 }]] })).toMatchObject({
+      ok: false,
+    });
+    // a row shorter than the columns is NOT a contract failure — the renderer shows "—"
+    expect(checkKindValue("Table", { columns: ["a", "b"], rows: [["x"]] })).toEqual({ ok: true });
+  });
+  it("StatusCard: level is ok | warning | critical, headline required", () => {
+    expect(checkKindValue("StatusCard", { level: "warning", headline: "Lag" })).toEqual({
+      ok: true,
+    });
+    expect(
+      checkKindValue("StatusCard", { level: "ok", headline: "Fine", detail: "all green" })
+    ).toEqual({ ok: true });
+    expect(checkKindValue("StatusCard", { level: "meh", headline: "x" })).toMatchObject({
+      ok: false,
+    });
+    expect(checkKindValue("StatusCard", "ok")).toMatchObject({ ok: false });
+  });
+  it("Note takes no value; A2UIView and SandboxView accept any data", () => {
+    expect(checkKindValue("Note", undefined)).toEqual({ ok: true });
+    expect(checkKindValue("Note", "text")).toMatchObject({ ok: false });
+    expect(checkKindValue("A2UIView", { anything: [1] })).toEqual({ ok: true });
+    expect(checkKindValue("SandboxView", 7)).toEqual({ ok: true });
+  });
+  it("SemanticFormat accepts the framework's whole vocabulary and refuses a malformed currency", () => {
+    for (const semanticType of ["duration", "datetime", "measurement", "country"])
+      expect(SemanticFormat.safeParse({ semanticType }).success).toBe(true);
+    expect(SemanticFormat.safeParse({ semanticType: "currency", currency: "usd" }).success).toBe(
+      false
+    );
+    expect(
+      SemanticFormat.safeParse({ semanticType: "number", maximumFractionDigits: 101 }).success
+    ).toBe(false);
+  });
+  it("tableColumnLabel / tableColumnFormat read either column form", () => {
+    expect(tableColumnLabel("db")).toBe("db");
+    expect(tableColumnFormat("db")).toBeUndefined();
+    const col = { label: "p99", format: { semanticType: "integer" as const } };
+    expect(tableColumnLabel(col)).toBe("p99");
+    expect(tableColumnFormat(col)).toEqual({ semanticType: "integer" });
   });
 });
