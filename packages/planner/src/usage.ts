@@ -18,7 +18,30 @@ export function isPlannerUsage(u: unknown): u is PlannerUsage {
   }
 }
 
-/** The sum over the parts that report usage; `undefined` when none do ("unreported" ≠ "free"). */
+/**
+ * A fresh copy of `u`'s two counts when it is a valid `PlannerUsage`, read exactly ONCE each (a
+ * getter cannot validate as one value and be summed as another); `undefined` otherwise. Never
+ * throws, whatever `u` is.
+ */
+export function snapshotUsage(u: unknown): PlannerUsage | undefined {
+  if (typeof u !== "object" || u === null) return undefined;
+  try {
+    const { inputTokens, outputTokens } = u as { inputTokens?: unknown; outputTokens?: unknown };
+    return isCount(inputTokens) && isCount(outputTokens)
+      ? { inputTokens: inputTokens as number, outputTokens: outputTokens as number }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The sum over the parts that report usage; `undefined` when none do ("unreported" ≠ "free").
+ *
+ * PRECONDITION: every `usage` present is already a validated, plain `PlannerUsage` (e.g. from
+ * `readReportedUsage` or `snapshotUsage`). This is plain arithmetic, not a guard — handed an
+ * unvalidated adapter value it may throw or return NaN. Validate first, then sum.
+ */
 export function totalUsage(
   parts: readonly { readonly usage?: PlannerUsage }[]
 ): PlannerUsage | undefined {

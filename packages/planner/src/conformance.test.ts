@@ -384,6 +384,59 @@ describe("checkPlannerConformance", () => {
     const findings = await checkPlannerConformance(hostile, fixtureWith());
     expect(findings.map((f) => f.code)).toContain("report-invalid");
   });
+  describe("never throws on a malformed ATTEMPT usage; reports it by kind, never by content", () => {
+    const revoked = (() => {
+      const { proxy, revoke } = Proxy.revocable({ inputTokens: 1, outputTokens: 1 }, {});
+      revoke();
+      return proxy;
+    })();
+    const throwingGetter = Object.defineProperty({ outputTokens: 1 }, "inputTokens", {
+      enumerable: true,
+      get() {
+        throw new Error("hostile getter");
+      },
+    });
+    const cases: readonly [string, (a: object) => object][] = [
+      ["null", (a) => ({ ...a, usage: null })],
+      ["a string", (a) => ({ ...a, usage: "x" })],
+      ["a number", (a) => ({ ...a, usage: 7 })],
+      ["a non-integer count", (a) => ({ ...a, usage: { inputTokens: "a", outputTokens: 1 } })],
+      ["an object whose count getter throws", (a) => ({ ...a, usage: throwingGetter })],
+      ["a revoked proxy", (a) => ({ ...a, usage: revoked })],
+      [
+        "a usage PROPERTY whose getter throws",
+        (a) =>
+          Object.defineProperty({ ...a }, "usage", {
+            enumerable: true,
+            get() {
+              throw new Error("hostile attempt");
+            },
+          }),
+      ],
+    ];
+    for (const [name, corrupt] of cases)
+      it(name, async () => {
+        const hostile: Planner = {
+          compose: async (i, ctx) => {
+            // A valid report.usage too, so the kit reaches the sum-of-attempts comparison.
+            const r = await new ReferencePlanner({
+              model: scriptedModel([compose], { inputTokens: 5, outputTokens: 1 }),
+              modelId: "m",
+            }).compose(i, ctx);
+            const attempts = r.report.attempts.map((a) => corrupt(a)) as typeof r.report.attempts;
+            return { ...r, report: { ...r.report, attempts } };
+          },
+          revise: (i, ctx) =>
+            new ReferencePlanner({ model: scriptedModel([revise]), modelId: "m" }).revise(i, ctx),
+        };
+        const findings = await checkPlannerConformance(hostile, fixtureWith());
+        const invalid = findings.filter((f) => f.code === "report-invalid");
+        expect(invalid.map((f) => f.message)).toEqual([
+          "compose: attempt #0 usage is not two non-negative integer token counts",
+        ]);
+        for (const f of findings) expect(f.message).not.toMatch(/NaN|0a|hostile/);
+      });
+  });
   it("a planner whose compose works but whose revise rejects reports planner-threw, not revise-not-prompt", async () => {
     const composeOkReviseThrows: Planner = {
       compose: (i, ctx) =>
