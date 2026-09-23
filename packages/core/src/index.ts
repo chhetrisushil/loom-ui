@@ -73,7 +73,7 @@ export {
   hydrationStatusPath,
 } from "./compile";
 export type { CompileOptions, CompileResult } from "./compile";
-export { experienceHandles } from "./handles";
+export { experienceHandles, handleKinds } from "./handles";
 export type { HandleUse } from "./handles";
 export {
   BarChartValue,

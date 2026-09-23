@@ -1,3 +1,4 @@
+import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
 import type { Experience } from "./experience";
 import { type Priority, walk } from "./node";
 
@@ -34,4 +35,34 @@ export function experienceHandles(exp: Experience): HandleUse[] {
         RANK[a.priority] - RANK[b.priority] ||
         (a.handle < b.handle ? -1 : a.handle > b.handle ? 1 : 0)
     );
+}
+
+/**
+ * The widget kinds each bound handle feeds on ONE surface: every node binding the handle,
+ * resolved through the catalogue (degrade chains followed), deduplicated and sorted. What a
+ * `"contract"` provider's value is checked against (`ProviderSpec.outputCheck`): a handle bound
+ * by a `Kpi` and a `Table` widget feeds both, and its value must satisfy both contracts — each
+ * widget renders the same value. Per surface, never across surfaces: a degrade changes the kind.
+ * A node whose type does not resolve contributes nothing (`validateExperience` reports it); a
+ * handle with no resolvable node is absent. Entries are in handle order.
+ */
+export function handleKinds(
+  exp: Experience,
+  catalog: SemanticCatalog,
+  surface: Surface
+): Map<string, string[]> {
+  const kinds = new Map<string, Set<string>>();
+  walk(exp.root, (n) => {
+    if (n.kind !== "semantic" || n.binding === undefined) return;
+    const r = resolveSurface(catalog, n.type, n.typeVersion, surface, n.id);
+    if (!r.ok) return;
+    const set = kinds.get(n.binding.handle);
+    if (set === undefined) kinds.set(n.binding.handle, new Set([r.kind]));
+    else set.add(r.kind);
+  });
+  return new Map(
+    [...kinds.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([handle, set]) => [handle, [...set].sort()])
+  );
 }
