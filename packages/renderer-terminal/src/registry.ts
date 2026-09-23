@@ -23,7 +23,6 @@ import {
 const SPARK = "▁▂▃▄▅▆▇█";
 const title = (w: Widget): string => w.title ?? w.kind;
 const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s.padEnd(n));
-const num = (v: number): string => (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "—");
 
 /** One fixed, deterministic locale for every terminal number: the same grouping/rounding/currency
  * rules the DOM renderer's `measure()` applies for its reader, without varying with the host's
@@ -94,16 +93,26 @@ const guarded =
 
 const timeSeries = guarded("TimeSeries", (w, v) => {
   const { series } = v as TimeSeriesValue;
+  const props = w.props as { unit?: string; format?: SemanticFormat };
   const lines = series.map((s) => {
     const values = s.points.map((p) => p.value);
     const last = values.length > 0 ? (values[values.length - 1] as number) : Number.NaN;
-    return `    ${pad(`${s.label}${s.axis === "right" ? " (R)" : ""}`, 12)} ${sparkline(values)}  ${num(last)}${s.unit ? ` ${s.unit}` : ""}`;
+    // Same precedence as the web's `formatOf` (lu-timeseries.ts): this series' own format, else
+    // the widget's; a unit resolves only when neither format does.
+    const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
+    return `    ${pad(`${s.label}${s.axis === "right" ? " (R)" : ""}`, 12)} ${sparkline(values)}  ${text}`;
   });
   return [`${title(w)}:`, ...lines].join("\n");
 });
 
 const barChart = guarded("BarChart", (w, v) => {
-  const { bars, unit } = v as BarChartValue;
+  const { bars, format, unit } = v as BarChartValue;
+  const props = w.props as { unit?: string; format?: SemanticFormat };
+  // Same precedence as the web's lu-bar-chart.ts: the chart's own value-level format, else the
+  // widget's props.format; a unit resolves only when neither format does. One format for every
+  // bar, exactly as the web computes it once and reuses it for every bar's `measure()` call.
+  const chartFormat = format ?? props.format;
+  const chartUnit = unit ?? props.unit;
   // Single-pass max (never Math.max(...spread) — same argument-count hazard as sparkline's
   // min/max), floored at 1 so an all-non-finite/zero series never divides by zero below.
   let max = 1;
@@ -113,7 +122,8 @@ const barChart = guarded("BarChart", (w, v) => {
   }
   const lines = bars.map((b) => {
     const filled = Number.isFinite(b.value) ? Math.round((Math.abs(b.value) / max) * 20) : 0;
-    return `    ${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${num(b.value)}${unit ?? ""}`;
+    const text = formatted(b.value, chartFormat, chartUnit);
+    return `    ${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${text}`;
   });
   return [`${title(w)}:`, ...lines].join("\n");
 });

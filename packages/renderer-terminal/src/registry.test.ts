@@ -29,12 +29,15 @@ describe("terminal registry", () => {
     expect(out.split("\n")[0]).toBe("Latency:");
     expect(out).toMatch(/p99\s+[▁▂▃▄▅▆▇█]{2}\s+4 ms/);
     const bc = loomUiTerminalRegistry.get("BarChart");
+    // A "%" unit resolves to `{semanticType:"percentage"}` (`effectiveFormat`, same as the web's
+    // `lu-bar-chart.ts`), whose Intl percent style expects a FRACTION — 0.5 prints "50%", not the
+    // literal number 50 with a "%" appended. Fixture updated accordingly (review round 2).
     const bars =
       bc?.(customWidget$({ kind: "BarChart", title: "Bars", binding: b }), {
         unit: "%",
         bars: [
-          { label: "a", value: 50 },
-          { label: "b", value: 100 },
+          { label: "a", value: 0.5 },
+          { label: "b", value: 1 },
         ],
       }) ?? "";
     expect(bars).toMatch(/a\s+█{10}·{10}\s+50%/);
@@ -194,5 +197,81 @@ describe("terminal registry", () => {
         series: [{ label: "bytes", axis: "right", points: [{ timestamp: "a", value: 1 }] }],
       }) ?? "";
     expect(out).toContain("bytes (R)");
+  });
+  it("TimeSeries: a series-level format prints the web's currency symbol with grouping", () => {
+    const ts = loomUiTerminalRegistry.get("TimeSeries");
+    const out =
+      ts?.(customWidget$({ kind: "TimeSeries", title: "Revenue", binding: b }), {
+        series: [
+          {
+            label: "eur",
+            format: { semanticType: "currency", currency: "EUR" },
+            points: [{ timestamp: "a", value: 1234567.891 }],
+          },
+        ],
+      }) ?? "";
+    expect(out).toContain("€1,234,567.89");
+  });
+  it("TimeSeries: series format beats widget props.format beats unit", () => {
+    const ts = loomUiTerminalRegistry.get("TimeSeries");
+    const w = customWidget$({
+      kind: "TimeSeries",
+      title: "Precedence",
+      binding: b,
+      props: { format: { semanticType: "percentage" }, unit: "ms" },
+    });
+    const out =
+      ts?.(w, {
+        series: [
+          {
+            label: "s",
+            format: { semanticType: "currency", currency: "EUR" },
+            unit: "ms",
+            points: [{ timestamp: "a", value: 12 }],
+          },
+        ],
+      }) ?? "";
+    expect(out).toContain("€12.00");
+  });
+  it("TimeSeries: an unformatted series groups a large last value, like the web", () => {
+    const ts = loomUiTerminalRegistry.get("TimeSeries");
+    const out =
+      ts?.(customWidget$({ kind: "TimeSeries", title: "Raw", binding: b }), {
+        series: [{ label: "n", points: [{ timestamp: "a", value: 1234567.891 }] }],
+      }) ?? "";
+    expect(out).toContain("1,234,567.891");
+  });
+  it("BarChart: a value-level format prints a percentage, like the web", () => {
+    const bc = loomUiTerminalRegistry.get("BarChart");
+    const out =
+      bc?.(customWidget$({ kind: "BarChart", title: "Share", binding: b }), {
+        format: { semanticType: "percentage" },
+        bars: [{ label: "a", value: 0.256 }],
+      }) ?? "";
+    expect(out).toContain("26%");
+  });
+  it("BarChart: value-level format beats widget props.format beats unit", () => {
+    const bc = loomUiTerminalRegistry.get("BarChart");
+    const w = customWidget$({
+      kind: "BarChart",
+      title: "Precedence",
+      binding: b,
+      props: { format: { semanticType: "percentage" }, unit: "ms" },
+    });
+    const out =
+      bc?.(w, {
+        format: { semanticType: "currency", currency: "EUR" },
+        unit: "ms",
+        bars: [{ label: "a", value: 12 }],
+      }) ?? "";
+    expect(out).toContain("€12.00");
+  });
+  it("BarChart: an unformatted large value groups thousands, like the web", () => {
+    const bc = loomUiTerminalRegistry.get("BarChart");
+    const out =
+      bc?.(customWidget$({ kind: "BarChart", title: "Big", binding: b }), {
+        bars: [{ label: "a", value: 1234567.891 }],
+      }) ?? "";
+    expect(out).toContain("1,234,567.891");
   });
 });
