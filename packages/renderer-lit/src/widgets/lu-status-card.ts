@@ -1,0 +1,87 @@
+import type { StatusCardValue } from "@loom-ui/core";
+import { type TemplateResult, css, html, nothing } from "lit";
+import { customElement } from "lit/decorators.js";
+import { describeValue } from "../a11y";
+import { LuWidget } from "./base";
+
+// A level dot, a headline and optional detail. The description also lives in a visually-hidden
+// `role="status" aria-live="polite"` region, so a CHANGE of status is announced without
+// stealing focus — unlike loom's StatusBadge, which stays a bare string.
+@customElement("lu-status-card")
+export class LuStatusCard extends LuWidget {
+  readonly kind = "StatusCard";
+
+  static styles = css`
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
+    :host {
+      display: block;
+      height: 100%;
+      padding: 6px 10px;
+      box-sizing: border-box;
+    }
+    .card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex: none;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+    .ok {
+      color: #4ade80;
+    }
+    .warning {
+      color: #fbbf24;
+    }
+    .critical {
+      color: #f87171;
+    }
+    .headline {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--gx-text, #e6edf3);
+      line-height: 1.3;
+    }
+    .detail {
+      font-size: 12px;
+      color: var(--gx-text-dim, #8b949e);
+      margin-top: 2px;
+    }
+  `;
+
+  protected renderReady(): TemplateResult | typeof nothing {
+    // `level` is one of three literals: the contract ran before this did.
+    const v = this.value as StatusCardValue;
+    return html`<span role="status" aria-live="polite" class="sr-only"
+        >${describeValue("StatusCard", v, this.title_)}</span
+      >
+      <div class="card">
+        <span class="dot ${v.level}" data-level=${v.level} aria-hidden="true"></span>
+        <div>
+          <div class="headline">${v.headline}</div>
+          ${v.detail ? html`<div class="detail">${v.detail}</div>` : nothing}
+        </div>
+      </div>`;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "lu-status-card": LuStatusCard;
+  }
+}

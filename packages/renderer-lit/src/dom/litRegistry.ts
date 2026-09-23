@@ -37,6 +37,11 @@ export const LIT_ONLY_KINDS: ReadonlySet<string> = new Set(FRAMEWORK_KINDS);
 export const frameworkKindContracts: readonly CatalogEntry[] = [
   { kind: "TimeSeries", props: ["unit", "format"], binding: "required" },
   { kind: "BarChart", props: ["unit", "format"], binding: "required" },
+  { kind: "Kpi", props: ["unit", "format"], binding: "required" },
+  { kind: "Table", props: [], binding: "required" },
+  { kind: "StatusCard", props: [], binding: "required" },
+  // Static text; declare `textProps: ["text"]` on the semantic entry to localize it at compile.
+  { kind: "Note", props: ["text"], binding: "none" },
 ];
 
 export const litRegistry: DomRegistry = new RendererRegistry<DomWidgetRenderer>()
@@ -45,6 +50,10 @@ export const litRegistry: DomRegistry = new RendererRegistry<DomWidgetRenderer>(
   .register("DataTable", elementRenderer("lu-data-table"))
   .register("TimeSeries", elementRenderer("lu-timeseries"))
   .register("BarChart", elementRenderer("lu-bar-chart"))
+  .register("Kpi", elementRenderer("lu-kpi"))
+  .register("Table", elementRenderer("lu-table"))
+  .register("StatusCard", elementRenderer("lu-status-card"))
+  .register("Note", elementRenderer("lu-note"))
   .register("ProgressBar", elementRenderer("lu-progress"))
   .register("AlertCard", elementRenderer("lu-alert"))
   .register("StreamingText", elementRenderer("lu-text"))

@@ -32,7 +32,14 @@ describe("kindValueContracts", () => {
         "Timeline",
       ].sort()
     );
-    expect(FRAMEWORK_KINDS).toEqual(["TimeSeries", "BarChart"]);
+    expect(FRAMEWORK_KINDS).toEqual([
+      "TimeSeries",
+      "BarChart",
+      "Kpi",
+      "Table",
+      "StatusCard",
+      "Note",
+    ]);
     expect(kindValueContract("Nope")).toBeUndefined();
   });
   it("pins loom's implicit contracts: scalar metric, string badge, object rows", () => {

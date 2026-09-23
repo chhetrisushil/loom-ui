@@ -18,7 +18,9 @@ describe("litRegistry parity", () => {
     expect([...LIT_ONLY_KINDS].sort()).toEqual([...FRAMEWORK_KINDS].sort());
     for (const k of FRAMEWORK_KINDS) expect(litRegistry.has(k)).toBe(true);
     expect(frameworkKindContracts.map((c) => c.kind).sort()).toEqual([...FRAMEWORK_KINDS].sort());
-    for (const c of frameworkKindContracts) expect(c.binding).toBe("required");
+    // A Note is static text from props; every other framework kind renders bound data.
+    for (const c of frameworkKindContracts)
+      expect(c.binding).toBe(c.kind === "Note" ? "none" : "required");
   });
   it("the registry's extras beyond the catalogue are exactly the Lit-only kinds", () => {
     const report = catalogCoverage(builtinCatalog, litRegistry);

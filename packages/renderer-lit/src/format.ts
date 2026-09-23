@@ -5,6 +5,13 @@ import { formattingLocale } from "./i18n";
 // carry it; the renderers only read it.
 export type { SemanticFormat };
 
+/** `deltaPct` is a fraction; it reads as a percentage to one decimal. One declaration, shared by
+ * `lu-kpi`'s badge and `describeValue`'s spoken form, so the two never drift apart. */
+export const DELTA_FORMAT: SemanticFormat = {
+  semanticType: "percentage",
+  maximumFractionDigits: 1,
+};
+
 /** An em dash, not "∞" and not "NaN": a missing figure, never an infinite one. */
 const NOT_A_NUMBER = "—";
 
