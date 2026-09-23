@@ -80,19 +80,19 @@ export class LuDataTable extends LuWidget {
     th {
       position: sticky;
       top: 0;
-      background: var(--gx-panel, #161b22);
-      color: var(--gx-text-dim, #8b949e);
+      background: var(--lu-panel, #161b22);
+      color: var(--lu-text-dim, #8b949e);
       font-weight: 600;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       cursor: pointer;
       user-select: none;
-      border-bottom: 1px solid var(--gx-border, #30363d);
+      border-bottom: 1px solid var(--lu-border, #30363d);
     }
     td {
-      color: var(--gx-text, #e6edf3);
-      border-bottom: 1px solid var(--gx-grid, rgba(139, 148, 158, 0.08));
+      color: var(--lu-text, #e6edf3);
+      border-bottom: 1px solid var(--lu-grid, rgba(139, 148, 158, 0.08));
     }
     td.num {
       font-variant-numeric: tabular-nums;
@@ -109,13 +109,13 @@ export class LuDataTable extends LuWidget {
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
       font-size: 11px;
     }
     .more button {
       background: rgba(99, 102, 241, 0.12);
-      color: var(--gx-text, #e6edf3);
-      border: 1px solid var(--gx-border, #30363d);
+      color: var(--lu-text, #e6edf3);
+      border: 1px solid var(--lu-border, #30363d);
       border-radius: 6px;
       padding: 3px 8px;
       cursor: pointer;

@@ -73,7 +73,7 @@ describe("resolveProp", () => {
 
 describe("tree helpers", () => {
   const view: A2UIView = {
-    catalogId: "genui.widgets.v1",
+    catalogId: "widgets.v1",
     nodes: [
       { id: "root", component: "Column", children: ["title", "val"] },
       { id: "title", component: "Text", text: "Revenue" },

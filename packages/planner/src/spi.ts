@@ -81,7 +81,7 @@ export interface AttemptTrace {
 export interface PlanReport {
   readonly decisionId: string;
   readonly attempts: readonly AttemptTrace[];
-  /** Clean on the FIRST attempt — the rate a prompt regression moves (genUI's `clean` vs `retried`). */
+  /** Clean on the FIRST attempt — the rate a prompt regression moves (a clean vs a retried attempt). */
   readonly firstAttemptValid: boolean;
   readonly modelId: string;
 }

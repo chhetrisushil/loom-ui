@@ -37,15 +37,15 @@ export class LuBarChart extends LuWidget {
       min-height: 0;
     }
     text {
-      fill: var(--gx-text-dim, #8b949e);
+      fill: var(--lu-text-dim, #8b949e);
       font-size: 10px;
       font-family: inherit;
     }
     .grid line {
-      stroke: var(--gx-grid, rgba(139, 148, 158, 0.15));
+      stroke: var(--lu-grid, rgba(139, 148, 158, 0.15));
     }
     .val {
-      fill: var(--gx-text, #e6edf3);
+      fill: var(--lu-text, #e6edf3);
       font-size: 10px;
     }
   `;

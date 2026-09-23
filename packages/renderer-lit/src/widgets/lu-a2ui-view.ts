@@ -36,22 +36,22 @@ export class LuA2UIView extends LitElement {
     .col { display: flex; flex-direction: column; gap: 8px; }
     .row { display: flex; flex-direction: row; gap: 12px; align-items: center; flex-wrap: wrap; }
     .list { display: flex; flex-direction: column; gap: 6px; }
-    .text { color: var(--gx-text, #e6edf3); font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .text { color: var(--lu-text, #e6edf3); font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
     .badge {
       display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
-      font-size: 12px; font-weight: 600; background: var(--gx-border, #30363d);
-      color: var(--gx-text, #e6edf3);
+      font-size: 12px; font-weight: 600; background: var(--lu-border, #30363d);
+      color: var(--lu-text, #e6edf3);
     }
     .badge.ok { background: #14532d; color: #4ade80; }
     .badge.warning { background: #422006; color: #fbbf24; }
     .badge.critical, .badge.error { background: #450a0a; color: #f87171; }
     button.a2ui {
-      font: inherit; cursor: pointer; padding: 6px 12px; border-radius: var(--gx-radius, 6px);
-      border: 1px solid var(--gx-border, #30363d); background: var(--gx-accent, #2563eb);
+      font: inherit; cursor: pointer; padding: 6px 12px; border-radius: var(--lu-radius, 6px);
+      border: 1px solid var(--lu-border, #30363d); background: var(--lu-accent, #2563eb);
       color: #fff; font-size: 13px; font-weight: 600;
     }
     button.a2ui:hover { filter: brightness(1.08); }
-    .unknown { color: var(--gx-text-dim, #8b949e); font-size: 12px; font-style: italic; }
+    .unknown { color: var(--lu-text-dim, #8b949e); font-size: 12px; font-style: italic; }
   `;
 
   render() {
@@ -77,7 +77,7 @@ export class LuA2UIView extends LitElement {
           @click=${() => this.emitAction(node.action, node.context)}
         >${node.label}</button>`;
       case "unknown":
-        // genUI interpolated `t("unknown component: {name}", { name })`; this
+        // A richer i18n layer might interpolate `t("unknown component: {name}", { name })`; this
         // package's `t` is identity-only (no params), so the substitution is done
         // at the call site before handing the string to `t`.
         return html`<span class="unknown">${t(`unknown component: ${node.component}`)}</span>`;

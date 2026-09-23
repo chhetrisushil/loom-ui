@@ -29,11 +29,11 @@ export class LuNote extends LuWidget {
     .title {
       font-size: 12px;
       font-weight: 600;
-      color: var(--gx-text-dim, #8b949e);
+      color: var(--lu-text-dim, #8b949e);
     }
     .text {
       margin: 2px 0 0;
-      color: var(--gx-text, #e6edf3);
+      color: var(--lu-text, #e6edf3);
       font-size: 14px;
       line-height: 1.5;
       white-space: pre-wrap;
