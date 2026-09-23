@@ -13,7 +13,7 @@ import { resolveArguments } from "./plan";
 
 export type LoadParams = Readonly<Record<string, unknown>>;
 
-/** A time-range default a host may pass as `defaultParams`: the last 24 hours, relative to the load. */
+/** A time-range default a host may pass as `ControllerOptions.defaultParams`: the last 24 hours, relative to each pass. */
 export const DEFAULT_TIME_RANGE: LoadParams = Object.freeze({ from: "$now-24h", to: "$now" });
 
 /** Token-shaped: `$now` not followed by a word character. `$nowcast` is an ordinary string. */

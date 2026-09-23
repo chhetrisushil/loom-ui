@@ -3,11 +3,12 @@ import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import type { TransientInvoker } from "./invoker";
 
-// ── Invoker wrappers: a call cap and an in-pass step memo ─────────────────────
-// Both are TransientInvokers wrapping a TransientInvoker, so they compose with each other and
+// ── Invoker wrappers: a call cap, an owner's lifetime signal, an in-pass step memo ─
+// All are TransientInvokers wrapping a TransientInvoker, so they compose with each other and
 // with loom's EffectRuntime without either knowing the other exists. The in-process controller
-// builds ONE `limitInvoker` (the cap is controller-wide: it bounds every call it makes) and one
-// `memoInvoker` PER PASS in front of it (a memo hit takes no slot). A server hydrating several
+// builds ONE `limitInvoker` (the cap is controller-wide: it bounds every call it makes), ONE
+// `signalInvoker` over it bound to its own lifetime (so `dispose` cancels every upstream call at
+// once), and one `memoInvoker` PER PASS in front of both (a memo hit takes no slot). A server hydrating several
 // handles per request composes them the same way. Neither ever returns a promise it did not get
 // from the inner invoker except to wait for a slot, so they add no settle latency on a free slot.
 
@@ -76,6 +77,47 @@ export function limitInvoker(inner: TransientInvoker, max: number): TransientInv
   };
 }
 
+/** `call()`, with a synchronous throw turned into the rejected promise the contract promises. */
+function callSafely<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return call();
+  } catch (e) {
+    return Promise.reject(e);
+  }
+}
+
+/**
+ * Every call through this invoker is ALSO cancelled, synchronously, when `signal` aborts — the
+ * owner's lifetime (a controller's `dispose`), independent of any caller's own signal, which still
+ * reaches `inner` too. Once `signal` has aborted, new calls reject `"aborted"` without reaching
+ * `inner`. Leak-free on a long-lived `signal`: a call holds its listener only until it settles.
+ */
+export function signalInvoker(inner: TransientInvoker, signal: AbortSignal): TransientInvoker {
+  return {
+    invokeTransient<TIn = unknown, TOut = unknown>(
+      toolId: string,
+      input: TIn,
+      opts?: TransientInvokeOptions
+    ): Promise<TOut> {
+      const own = opts?.signal;
+      if (signal.aborted || own?.aborted === true) return Promise.reject(new Error("aborted"));
+      const ac = new AbortController();
+      const abort = (): void => ac.abort();
+      signal.addEventListener("abort", abort, { once: true });
+      own?.addEventListener("abort", abort, { once: true });
+      const release = (): void => {
+        signal.removeEventListener("abort", abort);
+        own?.removeEventListener("abort", abort);
+      };
+      const p = callSafely(() =>
+        inner.invokeTransient<TIn, TOut>(toolId, input, { ...opts, signal: ac.signal })
+      );
+      p.then(release, release);
+      return p;
+    },
+  };
+}
+
 interface SharedCall {
   readonly promise: Promise<unknown>;
   /** Cancels the ONE upstream call `inner` is actually making — aborted only once every live
@@ -90,8 +132,8 @@ interface SharedCall {
    */
   live: number;
   /**
-   * Set once, from a handler attached at entry-creation time (so it always runs before any
-   * caller added later), the instant `promise` settles — success or failure alike. Guards
+   * Set once, from a handler attached at entry-creation time (so it runs before any caller
+   * added later), the instant `promise` settles — success or failure alike. Guards
    * `onCallerAbort`: an abort landing after the upstream has already settled, but before that
    * settlement handler has actually RUN (a real race — `resolve()`/`reject()` marks a promise
    * settled synchronously, while every `.then` callback, this one included, only runs on a later
@@ -155,9 +197,13 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
     hit.live -= 1;
     if (hit.live > 0) return;
     // Deferred one microtask: `hit.settled` is set by a handler attached at entry-creation time,
-    // which — because it was attached first — is always queued (and so runs) before this check,
-    // even when the abort lands in the very same synchronous turn as the upstream settling.
-    // Checking `hit.settled` synchronously right here would miss exactly that race.
+    // which — because it was attached first — runs before this check for any settlement the memo
+    // can observe, even when the abort lands in the very same synchronous turn as `hit.promise`
+    // settling. Checking `hit.settled` synchronously right here would miss exactly that race.
+    // "The memo can observe" is `hit.promise` — `inner`'s promise — not the raw upstream: behind
+    // a queued `limitInvoker` (or any wrapper that settles a few hops after its own inner call),
+    // an all-abort landing after the RAW upstream settled but before `hit.promise` does still
+    // cancels and evicts, so a later caller re-fetches. A wasted call, never a wrong answer.
     //
     // Both conditions below are RE-READ at that later point, not captured now, because either can
     // change in the gap between "live just dropped to 0" and "the microtask actually runs": a
@@ -172,8 +218,11 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
     // to keep going (or already has its answer), so it is left alone.
     queueMicrotask(() => {
       if (hit.settled || hit.live > 0) return;
-      hit.controller.abort();
+      // Forget the entry BEFORE aborting: `abort()` runs `inner`'s listeners synchronously, and a
+      // caller re-entering with the same key from one of them must start a fresh call, not join
+      // this dying one.
       if (memo.get(key) === hit) memo.delete(key);
+      hit.controller.abort();
     });
   };
 
@@ -218,17 +267,20 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
       input: TIn,
       opts?: TransientInvokeOptions
     ): Promise<TOut> {
-      if (toolId !== MCP_INVOKE_TOOL_ID)
-        return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
+      // Every pass-through is guarded like the leader's call: a synchronous throw from `inner`
+      // must come back as a rejected promise, never escape `invokeTransient`.
+      const passThrough = (): Promise<TOut> =>
+        callSafely(() => inner.invokeTransient<TIn, TOut>(toolId, input, opts));
+      if (toolId !== MCP_INVOKE_TOOL_ID) return passThrough();
       const principal = opts?.principal ?? null;
       let key: string;
       try {
         const seen = new WeakSet<object>();
         if (!isPlainJsonValue(principal, seen) || !isPlainJsonValue(input, seen))
-          return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
+          return passThrough();
         key = canonicalJson([principal, input]);
       } catch {
-        return inner.invokeTransient<TIn, TOut>(toolId, input, opts);
+        return passThrough();
       }
       const hit = memo.get(key);
       if (hit !== undefined) {
@@ -258,7 +310,7 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
         entry.settled = true;
       };
       // Attached at entry-creation time — before any joiner's own `.then` — so `entry.settled`
-      // is always set before `onCallerAbort`'s deferred check can run (see there). Also the
+      // is set before `onCallerAbort`'s deferred check can run (see there). Also the
       // backstop: attaching a rejection handler here means NO path can ever leave `promise`
       // unhandled, even if a future caller subscribes late or never at all.
       promise.then(onSettle, onSettle);
