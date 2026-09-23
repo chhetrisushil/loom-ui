@@ -39,6 +39,8 @@ describe("kindValueContracts", () => {
       "Table",
       "StatusCard",
       "Note",
+      "A2UIView",
+      "SandboxView",
     ]);
     expect(kindValueContract("Nope")).toBeUndefined();
   });
