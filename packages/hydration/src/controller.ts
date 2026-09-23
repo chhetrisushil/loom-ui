@@ -68,9 +68,16 @@ interface Load {
   readonly versionHash: string;
 }
 
-/** The question a load asks: the spec, and — for a contract provider — the kinds it is checked against. */
+/**
+ * The question a load asks: the spec, and — for a `outputCheck: "contract"` provider only — the
+ * kinds it is checked against. A `"shape"` (or unset) provider's fingerprint must NEVER fold in
+ * kinds: its bound nodes' resolved kinds can change (a catalogue edit, a widened binding) without
+ * the provider itself changing, and that must not abort an in-flight load or force a re-run.
+ */
 const loadFingerprint = (spec: ProviderSpec, kinds: readonly string[]): string =>
-  kinds.length === 0 ? specFingerprint(spec) : `${specFingerprint(spec)}\u0000${kinds.join(",")}`;
+  spec.outputCheck === "contract" && kinds.length > 0
+    ? `${specFingerprint(spec)}\u0000${kinds.join(",")}`
+    : specFingerprint(spec);
 
 const defaultTimer = (fn: () => void, ms: number): (() => void) => {
   const t = setTimeout(fn, ms);
@@ -308,8 +315,12 @@ export class HydrationController {
     const { handle, spec } = load;
     if (this.disposed) return;
     this.loaded.set(handle, loadFingerprint(spec, load.kinds));
+    // A shape provider's cache entry is not keyed by kinds at all (`HydrationCache.key` ignores
+    // `kinds` unless `outputCheck === "contract"`); passing them unconditionally would be a no-op
+    // there, but only a contract provider's checked value is answerable to a kind.
+    const kinds = spec.outputCheck === "contract" ? load.kinds : undefined;
     const principalId = this.opts.principal?.id;
-    const cached = this.cache.get(spec, principalId);
+    const cached = this.cache.get(spec, principalId, kinds);
     if (cached) {
       this.inflight.delete(handle);
       this.opts.store.setValue(handle, cached.value, { state: "ready" });
@@ -323,14 +334,14 @@ export class HydrationController {
       const outcome = await executeProvider(spec, {
         invoker: this.opts.invoker,
         signal: ac.signal,
-        kinds: load.kinds,
+        ...(kinds !== undefined && { kinds }),
         ...(this.opts.principal?.chain && { principal: this.opts.principal.chain }),
         ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
       });
       if (this.inflight.get(handle) !== ac || ac.signal.aborted) return; // superseded or aborted: drop the late result
       this.inflight.delete(handle);
       if (outcome.ok) {
-        this.cache.set(spec, principalId, outcome.value);
+        this.cache.set(spec, principalId, outcome.value, kinds);
         const warn = outcome.findings.find((f) => f.severity === "warn");
         this.opts.store.setValue(handle, outcome.value, {
           state: "ready",

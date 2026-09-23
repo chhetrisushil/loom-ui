@@ -69,4 +69,43 @@ describe("HydrationCache", () => {
     expect(c.get(h, undefined)).toBeUndefined();
     expect(c.get(xh, undefined)).toEqual({ value: 2 });
   });
+
+  it("a contract-mode spec's key includes the checked kinds: different kinds are different entries", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
+    c.set(spec, undefined, "kpi-only", ["Kpi"]);
+    expect(c.get(spec, undefined, ["Kpi"])).toEqual({ value: "kpi-only" });
+    // Not yet checked against this wider set: no entry, never the narrower one's value.
+    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toBeUndefined();
+    c.set(spec, undefined, "widened", ["Kpi", "MetricCard"]);
+    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toEqual({ value: "widened" });
+    // The narrower entry is untouched by the wider one.
+    expect(c.get(spec, undefined, ["Kpi"])).toEqual({ value: "kpi-only" });
+  });
+
+  it("kinds are sorted and deduplicated before keying: order and repeats don't matter", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
+    c.set(spec, undefined, "v", ["MetricCard", "Kpi"]);
+    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toEqual({ value: "v" });
+    expect(c.get(spec, undefined, ["Kpi", "Kpi", "MetricCard"])).toEqual({ value: "v" });
+  });
+
+  it("a shape-mode spec's key ignores kinds entirely (existing behavior, unchanged)", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")]); // outputCheck unset
+    c.set(spec, undefined, "v", ["Kpi"]);
+    expect(c.get(spec, undefined, ["MetricCard"])).toEqual({ value: "v" });
+    expect(c.get(spec, undefined)).toEqual({ value: "v" });
+  });
+
+  it("invalidate(handle) drops every kinds-generation of a contract spec too", () => {
+    const c = new HydrationCache(() => 0);
+    const spec = providerSpec("h", [mcpStep("s", "t")], { outputCheck: "contract" });
+    c.set(spec, undefined, "a", ["Kpi"]);
+    c.set(spec, undefined, "b", ["Kpi", "MetricCard"]);
+    c.invalidate("h");
+    expect(c.get(spec, undefined, ["Kpi"])).toBeUndefined();
+    expect(c.get(spec, undefined, ["Kpi", "MetricCard"])).toBeUndefined();
+  });
 });
