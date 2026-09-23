@@ -15,6 +15,15 @@ describe("PlannerUsage", () => {
     ])
       expect(isPlannerUsage(bad)).toBe(false);
   });
+  it("isPlannerUsage never throws — a revoked proxy, or one as a count, is just not a usage", () => {
+    const revoked = () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      return proxy;
+    };
+    expect(isPlannerUsage(revoked())).toBe(false);
+    expect(isPlannerUsage({ inputTokens: revoked(), outputTokens: 1 })).toBe(false);
+  });
   it("totalUsage sums the parts that report usage and is undefined when none do", () => {
     expect(totalUsage([])).toBeUndefined();
     expect(totalUsage([{}, {}])).toBeUndefined();

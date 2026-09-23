@@ -496,6 +496,24 @@ describe("ReferencePlanner usage from a hostile adapter", () => {
     expect(result.report.usage).toStrictEqual(big);
     expect(isPlannerUsage(result.report.usage)).toBe(true);
   });
+  it("a revoked proxy as a count (or as usage) is only usage-invalid; the plan is still produced", async () => {
+    const revoked = () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      return proxy;
+    };
+    for (const usage of [
+      () => ({ inputTokens: revoked(), outputTokens: 1 }),
+      () => ({ inputTokens: 1, outputTokens: revoked() }),
+      () => revoked(),
+    ]) {
+      const { result } = await compose(modelOf(() => ({ usage: usage() })));
+      expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+      expect(invalidOf(result)).toHaveLength(1);
+      expect(result.ops.length).toBeGreaterThan(0);
+      expect("usage" in result.report).toBe(false);
+    }
+  });
   it("-0 is recorded as 0", async () => {
     const { result } = await compose(
       modelOf(() => ({ usage: { inputTokens: -0, outputTokens: 1 } }))

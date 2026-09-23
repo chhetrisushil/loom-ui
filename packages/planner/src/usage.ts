@@ -9,8 +9,13 @@ const isCount = (n: unknown): boolean => typeof n === "number" && Number.isSafeI
  */
 export function isPlannerUsage(u: unknown): u is PlannerUsage {
   if (typeof u !== "object" || u === null) return false;
-  const { inputTokens, outputTokens } = u as { inputTokens?: unknown; outputTokens?: unknown };
-  return isCount(inputTokens) && isCount(outputTokens);
+  try {
+    const { inputTokens, outputTokens } = u as { inputTokens?: unknown; outputTokens?: unknown };
+    return isCount(inputTokens) && isCount(outputTokens);
+  } catch {
+    // A throwing getter or a revoked proxy is simply not a usage — a type guard never throws.
+    return false;
+  }
 }
 
 /** The sum over the parts that report usage; `undefined` when none do ("unreported" ≠ "free"). */
@@ -29,14 +34,22 @@ export function totalUsage(
   return seen ? { inputTokens, outputTokens } : undefined;
 }
 
-/** A refused value's KIND — never its content, which an adapter controls (size, `toString`). */
+/**
+ * A refused value's KIND — never its content, which an adapter controls (size, `toString`).
+ * Total: it never throws, whatever the value (`typeof` cannot throw; `Array.isArray` can, on a
+ * revoked proxy, so it is guarded).
+ */
 function kindOf(v: unknown): string {
   if (v === undefined) return "missing";
   if (v === null) return "null";
-  if (typeof v === "number") return "a number that is not a safe non-negative integer";
-  if (Array.isArray(v)) return "an array";
   const t = typeof v;
-  return t === "object" ? "an object" : `a ${t}`;
+  if (t === "number") return "a number that is not a safe non-negative integer";
+  if (t !== "object") return `a ${t}`;
+  try {
+    return Array.isArray(v) ? "an array" : "an object";
+  } catch {
+    return "an object";
+  }
 }
 
 /**
@@ -61,17 +74,24 @@ export function readReportedUsage(reply: object): {
   } catch {
     return { problem: "reading usage threw" };
   }
-  if (isCount(inputTokens) && isCount(outputTokens))
-    return {
-      usage: {
-        // `+ 0` turns -0 into 0 so the live value and its JSON replay are the same number.
-        inputTokens: (inputTokens as number) + 0,
-        outputTokens: (outputTokens as number) + 0,
-      },
-    };
-  const bad = [
-    ...(isCount(inputTokens) ? [] : [`inputTokens is ${kindOf(inputTokens)}`]),
-    ...(isCount(outputTokens) ? [] : [`outputTokens is ${kindOf(outputTokens)}`]),
-  ];
-  return { problem: bad.join(", ") };
+  // From here on only the local copies are touched, through `typeof` / `Number.isSafeInteger` /
+  // comparison on a verified number / `kindOf` — none of which can throw. The guard stays anyway,
+  // so a future edit here cannot let an adapter value escape as a rejected plan.
+  try {
+    if (isCount(inputTokens) && isCount(outputTokens))
+      return {
+        usage: {
+          // `+ 0` turns -0 into 0 so the live value and its JSON replay are the same number.
+          inputTokens: (inputTokens as number) + 0,
+          outputTokens: (outputTokens as number) + 0,
+        },
+      };
+    const bad = [
+      ...(isCount(inputTokens) ? [] : [`inputTokens is ${kindOf(inputTokens)}`]),
+      ...(isCount(outputTokens) ? [] : [`outputTokens is ${kindOf(outputTokens)}`]),
+    ];
+    return { problem: bad.join(", ") };
+  } catch {
+    return { problem: "usage could not be inspected" };
+  }
 }
