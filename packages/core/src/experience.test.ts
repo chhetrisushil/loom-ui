@@ -179,3 +179,24 @@ describe("ProviderSpec grows additively", () => {
     expect(ProviderSpec.safeParse({ ...legacy, outputCheck: "exact" }).success).toBe(false);
   });
 });
+
+describe("B3's additive fields", () => {
+  it("accepts a step's overridable argument names and the Named engine, and adds nothing", () => {
+    const withBoth = {
+      ...legacy,
+      executionGraph: [{ ...legacyStep, overridable: ["station", "from"] }],
+      reshaping: { engine: "Named", scriptRef: "readings-to-kpi" },
+    };
+    expect(ProviderSpec.parse(withBoth)).toStrictEqual(withBoth);
+  });
+
+  it("refuses an empty overridable name and an unknown engine", () => {
+    expect(
+      ProviderSpec.safeParse({ ...legacy, executionGraph: [{ ...legacyStep, overridable: [""] }] })
+        .success
+    ).toBe(false);
+    expect(
+      ProviderSpec.safeParse({ ...legacy, reshaping: { engine: "Lua", scriptRef: "x" } }).success
+    ).toBe(false);
+  });
+});

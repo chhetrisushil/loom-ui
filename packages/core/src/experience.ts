@@ -23,6 +23,13 @@ export const MCPToolNode = z.object({
   arguments: z.record(z.unknown()),
   dependsOn: z.array(z.string()).default([]),
   idempotent: z.boolean().default(true),
+  /**
+   * Top-level `arguments` keys a per-load param may replace (or supply when absent) — a
+   * time-range picker's `from`/`to`, a filter's value. Nothing else is overridable, and an
+   * argument holding a `{{steps.…}}` template never is: it is another step's output. Optional
+   * with no default: a step written before this field hashes the same.
+   */
+  overridable: z.array(z.string().min(1)).optional(),
 });
 export type MCPToolNode = z.infer<typeof MCPToolNode>;
 
@@ -36,8 +43,14 @@ export const ProviderSpec = z.object({
    * - `JSONPath`: `scriptRef` holds the path expression INLINE — a dotted path with optional
    *   `[i]` indices (`result.items[0].value`); `""` or `$` selects the whole output. A path is
    *   tiny and human-readable, so content-addressing it buys nothing. (Slice-3 ruling.)
+   * - `Named`: `scriptRef` is the NAME of a reshaper the host registered with hydration (a
+   *   `ReshaperRegistry`); it runs in-process as host code — no sandbox hop. An unregistered name
+   *   is a finding, never a fall-through to another engine.
    */
-  reshaping: z.object({ engine: z.enum(["JSONPath", "QuickJS"]), scriptRef: z.string() }),
+  reshaping: z.object({
+    engine: z.enum(["JSONPath", "QuickJS", "Named"]),
+    scriptRef: z.string(),
+  }),
   outputShapeHash: z.string(),
   /**
    * How the reshaped value is checked before it is published.
