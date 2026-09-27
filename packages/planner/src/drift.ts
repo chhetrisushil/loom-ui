@@ -2,7 +2,7 @@ import { type Experience, type Finding, type MCPToolNode, experienceHandles } fr
 import { type DriftRecord, terminalSteps } from "@loom-ui/hydration";
 import { type TaintedValue, unwrapTainted } from "@loom/classify";
 import { canonicalJson } from "@loom/core";
-import type { CapabilityRef, DecideContext, PlanResult, Planner, ReviseInput } from "./spi";
+import type { CapabilityRef, DecideContext, PlanResult, ReviseInput } from "./spi";
 
 // `remapOperation` (hydration's repair.ts) repairs INPUT drift mechanically — a new schema pin,
 // no model involved — and refuses OUTPUT drift with `repair-needs-planner`: an output reshape can
@@ -190,7 +190,7 @@ export function driftCapabilities(
  * another call's output would record a wrong repair as proven. (A sample-less drift on a tool
  * nobody observed is the ordinary case — the planner re-authors from the shapes in `context`.)
  */
-function unsampledDrift(exp: Experience, drift: readonly DriftRecord[]): Finding[] {
+export function unsampledDrift(exp: Experience, drift: readonly DriftRecord[]): Finding[] {
   const observedTools = new Set<string>();
   const observedCalls = new Set<string>();
   const steps = drift.map((d) => {
@@ -218,8 +218,27 @@ function unsampledDrift(exp: Experience, drift: readonly DriftRecord[]): Finding
   return findings;
 }
 
-export async function reviseForDrift(
-  planner: Planner,
+/**
+ * What `reviseForDrift` needs of a planner: its `revise`. Generic over the result that `revise`
+ * returns, so a planner whose revision carries MORE than a `PlanResult` (say, artifacts the caller
+ * must persist beside the ops) gets its own result type back — every `Planner` satisfies
+ * `DriftReviser<PlanResult>`.
+ */
+export interface DriftReviser<R extends PlanResult = PlanResult> {
+  revise(input: ReviseInput, ctx: DecideContext): Promise<R>;
+}
+
+/**
+ * Repair a drifted experience: build the revise request (`driftRequest`), the fenced drift shapes
+ * (`driftContext`, beside the caller's own `context` under `caller`), the per-handle samples
+ * (`observedSamples`, on `ReviseInput.observed`) and the fallback capabilities
+ * (`driftCapabilities`), call `planner.revise` once, and append `unsampledDrift`'s findings.
+ * Resolves to the planner's OWN result (`R`) — every field it returned is kept; only `findings`
+ * may grow. A custom planner that does not go through this function reproduces it from those
+ * five exported helpers.
+ */
+export async function reviseForDrift<R extends PlanResult>(
+  planner: DriftReviser<R>,
   input: {
     experience: Experience;
     drift: readonly DriftRecord[];
@@ -229,7 +248,7 @@ export async function reviseForDrift(
     surface?: ReviseInput["surface"];
   },
   ctx: DecideContext
-): Promise<PlanResult> {
+): Promise<R> {
   // The caller's own context, when it has one, is nested under `caller` so the drift shapes can
   // never overwrite a key it owns (and so `context` stays one fenced DATA block, not two).
   const context = {

@@ -9,8 +9,9 @@ export {
   driftRequest,
   observedSamples,
   reviseForDrift,
+  unsampledDrift,
 } from "./drift";
-export type { DriftContextEntry } from "./drift";
+export type { DriftContextEntry, DriftReviser } from "./drift";
 export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } from "./reference";
 export type { ReferencePlannerOptions } from "./reference";
 export { addUsage, isPlannerUsage, readReportedUsage, totalUsage } from "./usage";
