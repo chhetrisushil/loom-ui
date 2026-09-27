@@ -7,7 +7,7 @@ export { driftCapabilities, driftContext, driftRequest, reviseForDrift } from ".
 export type { DriftContextEntry } from "./drift";
 export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } from "./reference";
 export type { ReferencePlannerOptions } from "./reference";
-export { isPlannerUsage, totalUsage } from "./usage";
+export { addUsage, isPlannerUsage, readReportedUsage, totalUsage } from "./usage";
 export { EXPERIENCE_OP_ACTION, EXPERIENCE_PROMOTED, interpretAction } from "./interaction";
 export type { ExperiencePromotedPayload, Interpretation } from "./interaction";
 export {

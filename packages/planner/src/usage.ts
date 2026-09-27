@@ -81,6 +81,18 @@ function kindOf(v: unknown): string {
  * throwing getter or proxy trap is a refusal, not a failed model call). Only a fresh copy of the
  * two counts is returned, with -0 normalised to 0. `null`/absent ⇒ unreported (neither field set).
  * `problem` describes a refusal by kind only, so nothing adapter-controlled reaches the journal.
+ *
+ * Exported so a planner that is not `ReferencePlanner` can apply the exact same rule to its own
+ * model replies instead of re-deriving it:
+ * - absent (`undefined`) or `null` `usage` ⇒ `{}` — unreported, not free, and not a problem.
+ * - `usage` present but not an object, or an object whose `inputTokens`/`outputTokens` are not
+ *   both non-negative safe integers ⇒ `{ problem }`, a one-line description of the KIND of what
+ *   was wrong (e.g. `"inputTokens is a string"`) — never the value itself, so an adapter cannot
+ *   smuggle arbitrary content (a huge string, a hostile `toString`) into a journaled finding.
+ * - two non-negative safe integers ⇒ `{ usage }`, a plain fresh `{ inputTokens, outputTokens }`
+ *   with `-0` normalised to `0`.
+ * - never throws, whatever `reply` is (a throwing getter, a revoked proxy, `reply.usage` itself
+ *   throwing on read) — every read happens inside a guard, and a throw is reported as a problem.
  */
 export function readReportedUsage(reply: object): {
   readonly usage?: PlannerUsage;
@@ -117,4 +129,37 @@ export function readReportedUsage(reply: object): {
   } catch {
     return { problem: "usage could not be inspected" };
   }
+}
+
+/**
+ * Adds one attempt's usage to a running total, refusing rather than overflowing: a caller that
+ * summed every attempt as it went, with no upper bound, would eventually hold a total that is no
+ * longer a valid `PlannerUsage` (a JSON replay of `Number.MAX_SAFE_INTEGER + 1` is not the value
+ * that produced it). When either field of `total + next` would exceed `Number.MAX_SAFE_INTEGER`,
+ * `total` is returned UNCHANGED and `refused` names the reason (safe to fold straight into a
+ * `usage-invalid`-style warning; it names no value, only the rule that fired). Otherwise `total`
+ * is the field-wise sum and `refused` is absent.
+ *
+ * PRECONDITION, like `totalUsage`: both `total` and `next` are already validated `PlannerUsage`
+ * values (e.g. from `readReportedUsage` or `snapshotUsage`). This is plain arithmetic, not a
+ * guard — an unvalidated value may produce NaN or a nonsensical sum.
+ */
+export function addUsage(
+  total: PlannerUsage,
+  next: PlannerUsage
+): { readonly total: PlannerUsage; readonly refused?: string } {
+  if (
+    total.inputTokens + next.inputTokens > Number.MAX_SAFE_INTEGER ||
+    total.outputTokens + next.outputTokens > Number.MAX_SAFE_INTEGER
+  )
+    return {
+      total,
+      refused: "would overflow the plan total past Number.MAX_SAFE_INTEGER",
+    };
+  return {
+    total: {
+      inputTokens: total.inputTokens + next.inputTokens,
+      outputTokens: total.outputTokens + next.outputTokens,
+    },
+  };
 }
