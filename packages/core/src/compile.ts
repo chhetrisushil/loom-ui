@@ -82,6 +82,18 @@ export interface CompileOptions {
   readonly baseCatalog?: WidgetCatalog;
   /** If given, kinds the derived catalogue declares but this registry lacks become `renderer-coverage` findings. */
   readonly registry?: RendererRegistry<unknown>;
+  /**
+   * Overrides the compiled Blueprint's `title`. Absent (default): `exp.intent.objective`
+   * verbatim, today's behaviour, unchanged — but note that the objective is the experience's own
+   * compose request, inside its content hash, and can be private; an app that serves the
+   * Blueprint to a viewer other than the one who composed it, or that has its own renamable,
+   * localizable display title, should override this. A `LocalizedText` resolves through
+   * `resolveLabel` exactly like a container title or a node label — same resolver, same locale,
+   * same fallback. `{ omit: true }` drops it: loom's Blueprint requires `title` as a string, so
+   * this compiles to `""`, which every renderer treats as untitled (loom ADR 0098 D4;
+   * `DomRenderOptions.title: "none"` on the web).
+   */
+  readonly title?: LocalizedText | { readonly omit: true };
 }
 
 export interface CompileResult {
@@ -93,6 +105,11 @@ export interface CompileResult {
 
 export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   const findings: Finding[] = [];
+  // Resolved once, ahead of the depth probe below, so the title override applies identically on
+  // both the early "too deep" return and the normal path — it is a function of `opts` and `exp`,
+  // never of the (possibly-capped) tree.
+  const resolveLabel = opts.resolveLabel ?? ((l: LocalizedText) => l.fallback);
+  const title = resolveBlueprintTitle(exp, opts, resolveLabel);
   // Before `validateExperience`, `normalize` or any recursive descent: a tree past the cap is a
   // finding with an empty blueprint, never a `RangeError` thrown out of a total function.
   const depth = treeDepth(exp.root);
@@ -100,7 +117,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     return {
       blueprint: blueprint$({
         id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
-        title: exp.intent.objective,
+        title,
         layout: flex({ direction: "column", children: [] }),
         projections: [opts.hydrationProjectionId],
         projectionVersions: { [opts.hydrationProjectionId]: opts.hydrationProjectionVersion },
@@ -120,7 +137,6 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   findings.push(...semantic.findings);
   const derived = loomCatalogFor(opts.catalog, opts.surface, opts.baseCatalog);
   findings.push(...derived.findings);
-  const resolveLabel = opts.resolveLabel ?? ((l: LocalizedText) => l.fallback);
   const catalogByKind = new Map(derived.catalog.entries.map((e) => [e.kind, e] as const));
 
   const layout = compileContainer(
@@ -132,7 +148,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   );
   const blueprint = blueprint$({
     id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
-    title: exp.intent.objective,
+    title,
     layout,
     projections: [opts.hydrationProjectionId],
     projectionVersions: { [opts.hydrationProjectionId]: opts.hydrationProjectionVersion },
@@ -160,6 +176,21 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
       });
   }
   return { blueprint, findings, ok: findings.every((f) => f.severity !== "error") };
+}
+
+/**
+ * The compiled Blueprint's `title`: `opts.title` when given (a `LocalizedText`, resolved through
+ * `resolveLabel` like any other label; `{ omit: true }`, which loom's `title: string` renders as
+ * `""`), else `exp.intent.objective` — today's default, carried over unchanged.
+ */
+function resolveBlueprintTitle(
+  exp: Experience,
+  opts: CompileOptions,
+  resolveLabel: (l: LocalizedText) => string
+): string {
+  if (opts.title === undefined) return exp.intent.objective;
+  if ("omit" in opts.title) return "";
+  return resolveLabel(opts.title);
 }
 
 /** loom's finding codes that restate one this compiler already reported for the same node. */

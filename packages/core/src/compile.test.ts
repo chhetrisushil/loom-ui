@@ -833,3 +833,56 @@ describe("compile — container ids (Blueprint IR 2.4.0, loom ADR 0101)", () => 
     );
   });
 });
+
+// The objective in `exp.intent.objective` is the experience's own compose request — inside its
+// content hash, and possibly private. `opts.title` overrides what `compile` puts on the
+// Blueprint, for an app that serves the Blueprint to a viewer other than the composer, or that
+// has its own renamable, localizable display title.
+describe("compile — Blueprint title override (loom-ui gap G9)", () => {
+  it("absent title option: today's behaviour, unchanged — the objective, byte-identical", () => {
+    const r = compile(exp, opts);
+    expect(r.blueprint.title).toBe("Investigate checkout latency");
+    expect(JSON.stringify(r.blueprint)).toContain('"title":"Investigate checkout latency"');
+  });
+
+  it("a LocalizedText title resolves through resolveLabel — same resolver, same locale, same fallback", () => {
+    const withDefault = compile(exp, {
+      ...opts,
+      title: { key: "board.title", fallback: "Checkout board" },
+    });
+    expect(withDefault.blueprint.title).toBe("Checkout board"); // default resolver: the fallback
+    const withLocale = compile(exp, {
+      ...opts,
+      title: { key: "board.title", fallback: "Checkout board" },
+      resolveLabel: (l) => (l.key === "board.title" ? "Tableau de bord" : l.fallback),
+    });
+    expect(withLocale.blueprint.title).toBe("Tableau de bord");
+  });
+
+  it('{ omit: true } compiles the title to "" — loom\'s Blueprint requires the field as a string', () => {
+    const r = compile(exp, { ...opts, title: { omit: true } });
+    expect(r.blueprint.title).toBe("");
+  });
+
+  it("the objective never appears in the Blueprint once the title is overridden", () => {
+    const overridden = compile(exp, {
+      ...opts,
+      title: { key: "board.title", fallback: "Checkout board" },
+    });
+    expect(JSON.stringify(overridden.blueprint)).not.toContain("Investigate checkout latency");
+    const omitted = compile(exp, { ...opts, title: { omit: true } });
+    expect(JSON.stringify(omitted.blueprint)).not.toContain("Investigate checkout latency");
+  });
+
+  it("applies identically on the tree-too-deep early return", () => {
+    const tooDeep = { ...exp, root: chain(300) };
+    const overridden = compile(tooDeep, {
+      ...opts,
+      title: { key: "board.title", fallback: "Checkout board" },
+    });
+    expect(overridden.blueprint.title).toBe("Checkout board");
+    const omitted = compile(tooDeep, { ...opts, title: { omit: true } });
+    expect(omitted.blueprint.title).toBe("");
+    expect(JSON.stringify(omitted.blueprint)).not.toContain("Investigate checkout latency");
+  });
+});
