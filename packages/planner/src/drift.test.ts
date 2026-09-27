@@ -591,4 +591,76 @@ describe("per-handle drift samples (G8)", () => {
     const { messages } = reviseMessages(seen as ReviseInput);
     expect(messages.map((m) => m.content).join("\n")).not.toContain('"n": 9');
   });
+
+  it("a NEW node on a drifted tool with an argument set nobody observed is DROPPED with one warn; the other handles' repairs survive", async () => {
+    const drift = [await driftOf(handleA, replyA), await driftOf(handleB, replyB)];
+    const reply = JSON.stringify({
+      summary: "re-pathed, plus a new window",
+      nodes: [
+        ...twoDraft.nodes.map((n) => ({
+          ...n,
+          binding: {
+            ...n.binding,
+            path: n.id === "orders" ? "totals.count.value" : "totals.count.n",
+          },
+        })),
+        {
+          ...(twoDraft.nodes[0] as (typeof twoDraft.nodes)[number]),
+          id: "orders90",
+          label: "Orders (90d)",
+          binding: {
+            ...(twoDraft.nodes[0] as (typeof twoDraft.nodes)[number]).binding,
+            arguments: { window: "90d" },
+            path: "totals.count.value",
+          },
+        },
+      ],
+    });
+    const result = await revise(drift, reply);
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const notObserved = result.findings.filter((f) => f.code === "sample-not-observed");
+    expect(notObserved).toHaveLength(1);
+    expect(notObserved[0]?.severity).toBe("warn");
+    expect(notObserved[0]?.nodeId).toBe("orders90");
+    const revised = applied(result.ops);
+    expect(
+      isContainer(revised.root) && revised.root.children.map((c) => c.id).includes("orders90")
+    ).toBe(false);
+    for (const [nodeId, r] of [
+      ["orders", replyA],
+      ["orders30", replyB],
+    ] as const) {
+      const outcome = await executeProvider(
+        revised.providers[handleOf(revised, nodeId)] as ProviderSpec,
+        { invoker: invokerReplying(r) }
+      );
+      expect(outcome.ok).toBe(true);
+    }
+  });
+
+  it("the output-drift request tells the model a NEW argument set on a drifted tool is not bindable this round", async () => {
+    const drift = [await driftOf(handleA, replyA)];
+    expect(driftRequest(expTwo, drift).text).toContain("not bindable this round");
+  });
+
+  it("a handle with MORE THAN ONE terminal step contributes no observation (its sample is a stepId-keyed record, not one call's output)", async () => {
+    const specA = expTwo.providers[handleA] as ProviderSpec;
+    const terminal = specA.executionGraph[0] as (typeof specA.executionGraph)[number];
+    const twoTerminals: ProviderSpec = {
+      ...specA,
+      executionGraph: [terminal, { ...terminal, stepId: "s2" }],
+    };
+    const base = { ...expTwo, providers: { ...expTwo.providers, [handleA]: twoTerminals } };
+    const { ops, findings } = materialize(twoDraft, base, planningCatalog, capabilitiesFixture, {
+      [handleA]: tainted(replyA, `provider:${handleA}`),
+    });
+    // Skipped ⇒ the tool counts as unobserved and the capability's own sample pins, as before:
+    // A's rebuilt single-step spec pins 412 (a number), never replyA's `{ value: number }`.
+    const remapA = ops.find((o) => o.type === "remapProvider" && o.handle === handleA) as
+      | { spec: ProviderSpec }
+      | undefined;
+    expect(remapA?.spec.outputShapeHash).toBe(outputShapeHashOf(412));
+    expect(findings.map((f) => f.code)).not.toContain("sample-not-observed");
+    expect(ops.some((o) => o.type === "remapProvider" && o.handle === handleB)).toBe(false);
+  });
 });

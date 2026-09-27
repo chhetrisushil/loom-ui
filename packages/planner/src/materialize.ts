@@ -219,7 +219,8 @@ export function orphanedProviders(base: Experience, ops: readonly Operation[]): 
  * the draft does not guess from the capability's (pre-drift, or another call's) sample: a handle
  * the base already declares is kept with its current spec; an existing node the draft re-binds
  * keeps its binding (`sample-not-observed`, warn — unrepaired, never mis-repaired); a new node is
- * refused (`sample-not-observed`, error). Absent `observed`, or a tool nobody observed, the
+ * dropped (`sample-not-observed`, warn — not an error, so the plan's other repairs survive).
+ * Absent `observed`, or a tool nobody observed, the
  * capability's `sampleOutput` pins as before.
  */
 export function materialize(
@@ -262,6 +263,8 @@ export function materialize(
   const emittedThisRun = new Map<string, { spec: ProviderSpec; capability: string }>();
   const siblings: Array<{ order: string }> = [...root.children];
   const observations = indexObserved(base, observed);
+  // Draft nodes left out whole (`sample-not-observed`): never inserted, never edited.
+  const dropped = new Set<string>();
   const seen = new Set<string>();
 
   // Exactly a node's binding — the shape this resolver exists to produce — so `sensitivity`
@@ -313,7 +316,17 @@ export function materialize(
           findings.push(warn("sample-not-observed", `${message} — its binding is kept`, n.id));
           return current.binding;
         }
-        findings.push(err("sample-not-observed", message, n.id));
+        // Dropped, not refused: an error would fail the whole plan and take every OTHER handle's
+        // valid repair down with it. The drift request already tells the model this is not
+        // bindable this round; a node that still tries is left out.
+        findings.push(
+          warn(
+            "sample-not-observed",
+            `${message} — ${current === undefined ? "it is not inserted" : "it is left unchanged"}`,
+            n.id
+          )
+        );
+        dropped.add(n.id);
         return undefined;
       }
     }
@@ -392,6 +405,7 @@ export function materialize(
       continue;
     }
     const bound = resolveBinding(n, existingNode?.kind === "semantic" ? existingNode : undefined);
+    if (dropped.has(n.id)) continue;
     if (existingNode === undefined) {
       // A new node's binding travels INSIDE its insertNode: one op, no intermediate artifact
       // that would trip `missing-binding` for a moment that never actually existed. `bindProvider`

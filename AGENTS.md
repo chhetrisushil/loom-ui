@@ -136,7 +136,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - An observed sample belongs to a HANDLE (one call: tool + arguments), never to a tool@version. Drift
   samples reach a planner on `ReviseInput.observed` (keyed by handle, built by `observedSamples`, never
   rendered into a prompt), and a rebuilt provider is pinned only against its own call's sample — with no
-  such sample it is kept or reported (`sample-not-observed` / `drift-sample-missing`), never pinned from
+  such sample it is kept, dropped with a warn, or reported (`sample-not-observed` / `drift-sample-missing`), never pinned from
   another handle's output. `CapabilityRef.sampleOutput` (one per tool) is only the fallback
   (`driftCapabilities`) when a tool's drift is a single observation.
 - A widget that keeps its id and kind WITHIN ITS CONTAINER is never re-created: `renderBlueprintDom`'s `update` patches it in place, and the subtree holding the focused element never leaves the DOM. Containers are keyed by layout id (Blueprint IR 2.4.0, loom ADR 0101 — `compile` emits every container's node id, root included) plus type plus role, so inserting or reordering containers keeps every widget inside them; a layout WITHOUT an id (hand-built) falls back to its ordinal among its id-less siblings, and an id'd container never matches an id-less one (no positional fallback on an id miss). A widget that moves to another container, or whose container's id, type or role changes (or, id-less, whose ordinal shifts), IS re-created — and, like a renderer without `DomWidgetHandle.patch`, it is REPORTED in `RecomposeReport.remounted`, never silently.
