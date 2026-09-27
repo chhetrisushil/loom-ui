@@ -1,0 +1,220 @@
+import { type ContainerNode, type Experience, type ProviderSpec, genesis } from "@loom-ui/core";
+import { isTainted, unwrapTainted } from "@loom/classify";
+import { TypedFailure } from "@loom/core";
+import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { describe, expect, it } from "vitest";
+import { type DriftReport, HydrationController } from "./controller";
+import { HydrationStore } from "./projection";
+import { type DriftRecord, executeProvider, outcomeResult } from "./provider";
+import { remapOperation } from "./repair";
+import { defineReshapers } from "./reshape";
+import { serveHandle } from "./split/index";
+import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
+
+// G11 — a reshaping that FAILS on the tool's output is output drift a planner can repair: the
+// record carries the raw output's shape and (under `captureSample`) its tainted sample, so it
+// reaches `observedSamples` / `driftContext` like a failed pin. The handle's status and every
+// public finding are unchanged.
+
+const RAW = { rows: [{ secretCell: "RAW-SECRET-412" }] };
+const tool = () => new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => RAW);
+const crashing = (channel = "limitExceeded") =>
+  tool().on(SANDBOX_TOOL_ID, () => {
+    throw new TypedFailure(channel, { kind: "cpu" });
+  });
+const scripted = (over: Partial<ProviderSpec> = {}): ProviderSpec =>
+  providerSpec("h", [mcpStep("s1", "t")], {
+    reshaping: { engine: "QuickJS", scriptRef: "sha256:script" },
+    outputShapeHash: "pinned",
+    ...over,
+  });
+
+describe("a failed reshaping is output drift (G11)", () => {
+  it("a sandbox failure records one output drift with the raw shape, the step and a tainted raw sample", async () => {
+    const r = await executeProvider(scripted(), { invoker: crashing(), captureSample: true });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("reshape-limitExceeded");
+    expect(r.drift).toHaveLength(1);
+    const d = r.drift[0] as DriftRecord;
+    expect(d).toMatchObject({
+      kind: "output",
+      handle: "h",
+      stepId: "s1",
+      expected: "reshape",
+      observed: "reshape-limitExceeded",
+      reshapeFailure: "reshape-limitExceeded",
+      observedRawShape: { rows: [{ secretCell: "string" }] },
+    });
+    expect(d.observedShape).toBeUndefined();
+    expect(isTainted(d.observedSample)).toBe(true);
+    expect(unwrapTainted(d.observedSample)).toEqual(RAW);
+  });
+
+  it("no sample without captureSample; the shape still travels", async () => {
+    const r = await executeProvider(scripted(), { invoker: crashing() });
+    const d = !r.ok ? r.drift[0] : undefined;
+    expect(d?.reshapeFailure).toBe("reshape-limitExceeded");
+    expect(d?.observedSample).toBeUndefined();
+    expect(d?.observedRawShape).toBeDefined();
+  });
+
+  it("any other script throw (reshape-failed), a JSONPath that selects nothing and a throwing Named reshaper all record it", async () => {
+    const plain = tool().on(SANDBOX_TOOL_ID, () => {
+      throw new Error("script threw");
+    });
+    const a = await executeProvider(scripted(), { invoker: plain });
+    const b = await executeProvider(
+      scripted({ reshaping: { engine: "JSONPath", scriptRef: "totals.count" } }),
+      { invoker: tool() }
+    );
+    const c = await executeProvider(
+      scripted({ reshaping: { engine: "Named", scriptRef: "boom" } }),
+      {
+        invoker: tool(),
+        reshapers: defineReshapers({
+          boom: () => {
+            throw new Error("x");
+          },
+        }),
+      }
+    );
+    for (const r of [a, b, c])
+      expect(!r.ok && r.drift.map((d) => d.reshapeFailure)).toEqual(["reshape-failed"]);
+  });
+
+  it("is NOT recorded when the output did not cause it: an unregistered reshaper, a missing script, an aborted load", async () => {
+    const unregistered = await executeProvider(
+      scripted({ reshaping: { engine: "Named", scriptRef: "nope" } }),
+      { invoker: tool(), reshapers: defineReshapers({}) }
+    );
+    const missing = await executeProvider(scripted(), { invoker: crashing("scriptMissing") });
+    const ac = new AbortController();
+    const aborting = tool().on(SANDBOX_TOOL_ID, () => {
+      ac.abort();
+      throw new Error("aborted");
+    });
+    const aborted = await executeProvider(scripted(), { invoker: aborting, signal: ac.signal });
+    for (const r of [unregistered, missing, aborted]) {
+      expect(r.ok).toBe(false);
+      expect(!r.ok && r.drift).toEqual([]);
+    }
+  });
+
+  it("several terminals: no stepId (the raw sample is a stepId-keyed record)", async () => {
+    const r = await executeProvider(
+      providerSpec("h", [mcpStep("a", "t"), mcpStep("b", "t")], {
+        reshaping: { engine: "QuickJS", scriptRef: "sha256:script" },
+      }),
+      { invoker: crashing(), captureSample: true }
+    );
+    const d = !r.ok ? r.drift[0] : undefined;
+    expect(d?.stepId).toBeUndefined();
+    expect(unwrapTainted(d?.observedSample)).toEqual({ a: RAW, b: RAW });
+  });
+
+  it("the handle stays `error` (as before); a proceeded input drift beside it still makes it `stale`", async () => {
+    const r = await executeProvider(scripted(), { invoker: crashing() });
+    expect(outcomeResult(r)).toMatchObject({
+      state: "error",
+      finding: { code: "reshape-limitExceeded" },
+    });
+    const proceeded = crashing().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as { expectedSchemaHash: string; toolName: string };
+      if (i.expectedSchemaHash !== "v2")
+        throw new TypedFailure("schemaDrift", {
+          toolName: i.toolName,
+          expectedSchemaHash: i.expectedSchemaHash,
+          observedHash: "v2",
+        });
+      return RAW;
+    });
+    const both = await executeProvider(scripted(), {
+      invoker: proceeded,
+      inputDrift: "report-and-proceed",
+    });
+    expect(!both.ok && both.drift.map((d) => d.kind)).toEqual(["input", "output"]);
+    expect(outcomeResult(both).state).toBe("stale");
+  });
+
+  it("remapOperation refuses it: a failed reshaping needs the planner, not a pin move", async () => {
+    const r = await executeProvider(scripted(), { invoker: crashing() });
+    const op = remapOperation(scripted(), !r.ok ? r.drift : []);
+    expect(!op.ok && op.finding.code).toBe("repair-needs-planner");
+  });
+});
+
+describe("a failed reshaping: split and in-process report the same drift (G11)", () => {
+  const exp = (): Experience => {
+    const g = genesis({
+      experienceId: "e",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    return {
+      ...g,
+      versionHash: "v1",
+      root: {
+        ...(g.root as ContainerNode),
+        children: [
+          {
+            id: "n",
+            order: "n",
+            kind: "semantic",
+            type: "Reading",
+            typeVersion: "1.0.0",
+            span: 4,
+            props: {},
+            binding: { handle: "h", priority: "P0" },
+          },
+        ],
+      },
+      providers: { h: scripted() },
+    };
+  };
+
+  it("same state, same public-or-full finding code, same drift records — and the sample never reaches the client", async () => {
+    const e = exp();
+    const local: DriftReport[] = [];
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
+    const ctl = new HydrationController({
+      invoker: crashing(),
+      store,
+      clock: () => 0,
+      setTimer: new ManualClock().setTimer,
+      captureSample: true,
+      onDrift: (r) => local.push(r),
+    });
+    ctl.load(e);
+    await flush();
+
+    const remote: DriftReport[] = [];
+    const served = await serveHandle(
+      e,
+      { experienceId: "e", versionHash: "v1", handle: "h", params: {} },
+      { invoker: crashing(), now: 0, captureSample: true, onDrift: (r) => remote.push(r) }
+    );
+    const wire = JSON.stringify(served);
+    expect(wire).not.toContain("RAW-SECRET-412");
+    expect(wire).not.toContain("secretCell");
+    // The public vocabulary is unchanged: a declared sandbox channel is served as it is.
+    expect(served).toMatchObject({ state: "error", finding: { code: "reshape-limitExceeded" } });
+    expect(store.state().status.h).toMatchObject({
+      state: "error",
+      finding: { code: "reshape-limitExceeded" },
+    });
+    expect(local).toHaveLength(1);
+    expect(remote).toHaveLength(1);
+    expect(remote[0]?.proceeded).toBe(false);
+    expect(local[0]?.proceeded).toBe(false);
+    const plain = (ds: readonly DriftRecord[] | undefined) =>
+      (ds ?? []).map(({ observedSample, ...rest }) => ({
+        ...rest,
+        sample: unwrapTainted(observedSample),
+      }));
+    expect(plain(remote[0]?.drift)).toEqual(plain(local[0]?.drift));
+    expect(plain(local[0]?.drift)[0]?.sample).toEqual(RAW);
+  });
+});

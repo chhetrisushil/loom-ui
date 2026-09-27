@@ -49,6 +49,10 @@ export function driftRequest(
     const nodes = boundNodeIds(exp, d.handle);
     for (const n of nodes) scope.add(n);
     const spec = exp.providers[d.handle];
+    // The failure's code is NOT interpolated: a `reshape-<channel>` code carries whatever channel
+    // the (pluggable) invoker threw — arbitrary text. It travels in the fenced context instead.
+    if (d.kind === "output" && d.reshapeFailure !== undefined)
+      return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaping FAILED on the tool's current output, so it produced no value at all. Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed raw output shape, which a path is authored against. Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.${NO_NEW_CALLS}`;
     if (d.kind === "output" && d.contractKind !== undefined)
       return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer satisfies the value contract of kind "${d.contractKind}" (observed shape ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the contract, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output as a valid ${d.contractKind} value; keep the node id, label, type and props.${NO_NEW_CALLS}`;
     return d.kind === "output"
@@ -65,6 +69,8 @@ export interface DriftContextEntry {
   readonly stepId?: string;
   readonly expected: string;
   readonly observed: string;
+  /** Set when the reshaping itself failed on the output (`DriftRecord.reshapeFailure`): its code. */
+  readonly reshapeFailure?: string;
   readonly observedShape?: unknown;
   readonly observedRawShape?: unknown;
 }
@@ -73,6 +79,8 @@ export interface DriftContextEntry {
  * The shapes a repair needs, as DATA. `observedRawShape` is the one a `path` is authored against
  * (`reshaping.scriptRef` indexes the RAW output); `observedShape` is what actually failed the pin.
  * Both travel when both were captured — a record that carries only one still says something.
+ * A failed reshaping (`reshapeFailure`) is output drift too, with only the raw shape: there was no
+ * reshaped value.
  */
 export function driftContext(drift: readonly DriftRecord[]): DriftContextEntry[] {
   return drift
@@ -82,6 +90,7 @@ export function driftContext(drift: readonly DriftRecord[]): DriftContextEntry[]
       ...(d.stepId !== undefined && { stepId: d.stepId }),
       expected: d.expected,
       observed: d.observed,
+      ...(d.reshapeFailure !== undefined && { reshapeFailure: d.reshapeFailure }),
       ...(d.observedShape !== undefined && { observedShape: d.observedShape }),
       ...(d.observedRawShape !== undefined && { observedRawShape: d.observedRawShape }),
     }));

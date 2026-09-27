@@ -92,6 +92,12 @@ export interface ControllerOptions {
   readonly argumentHook?: ArgumentHook;
   /** Where `Named` reshaping looks its reshapers up. */
   readonly reshapers?: ReshaperRegistry;
+  /**
+   * Attach the RAW terminal output to each output-drift record `onDrift` reports, as a tainted
+   * sample (`DriftRecord.observedSample`) — what a planner repair pins against. Default false.
+   * The same option `serveHandle` takes, so in-process and split drift reports carry the same.
+   */
+  readonly captureSample?: boolean;
 }
 
 /**
@@ -370,6 +376,7 @@ export class HydrationController {
       ...(this.opts.inputDrift !== undefined && { inputDrift: this.opts.inputDrift }),
       ...(this.opts.argumentHook !== undefined && { argumentHook: this.opts.argumentHook }),
       ...(this.opts.reshapers !== undefined && { reshapers: this.opts.reshapers }),
+      ...(this.opts.captureSample !== undefined && { captureSample: this.opts.captureSample }),
     });
     return { ...outcomeResult(outcome), drift: outcome.drift ?? [], findings: outcome.findings };
   }
