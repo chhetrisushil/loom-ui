@@ -9,7 +9,7 @@ import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
 import { type DriftRecord, executeProvider, outcomeResult } from "./provider";
 import { remapOperation } from "./repair";
-import { defineReshapers } from "./reshape";
+import { SANDBOX_SCRIPT_ERROR_CHANNEL, defineReshapers } from "./reshape";
 import { serveHandle } from "./split/index";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
@@ -46,6 +46,7 @@ describe("a failed reshaping is output drift (G11)", () => {
       expected: "reshape",
       observed: "reshape-limitExceeded",
       reshapeFailure: "reshape-limitExceeded",
+      reshapeFailureKind: "limit-cpu",
       observedRawShape: { rows: [{ secretCell: "string" }] },
     });
     expect(d.observedShape).toBeUndefined();
@@ -61,46 +62,71 @@ describe("a failed reshaping is output drift (G11)", () => {
     expect(d?.observedRawShape).toBeDefined();
   });
 
-  it("any other script throw (reshape-failed), a JSONPath that selects nothing and a throwing Named reshaper all record it", async () => {
-    const plain = tool().on(SANDBOX_TOOL_ID, () => {
-      throw new Error("script threw");
+  const kindOf = async (spec: ProviderSpec, inv: FakeInvoker, extra = {}) => {
+    const r = await executeProvider(spec, { invoker: inv, ...extra });
+    expect(r.ok).toBe(false);
+    return !r.ok ? r.drift.map((d) => [d.reshapeFailureKind, d.reshapeFailure]) : [];
+  };
+  const throwing = (channel: string, payload: unknown) =>
+    tool().on(SANDBOX_TOOL_ID, () => {
+      throw new TypedFailure(channel, payload);
     });
-    const a = await executeProvider(scripted(), { invoker: plain });
-    const b = await executeProvider(
-      scripted({ reshaping: { engine: "JSONPath", scriptRef: "totals.count" } }),
-      { invoker: tool() }
-    );
-    const c = await executeProvider(
-      scripted({ reshaping: { engine: "Named", scriptRef: "boom" } }),
-      {
-        invoker: tool(),
+
+  it("each output-caused failure records its typed kind", async () => {
+    expect(await kindOf(scripted(), throwing(SANDBOX_SCRIPT_ERROR_CHANNEL, { m: "x" }))).toEqual([
+      ["script-error", "reshape-scriptError"],
+    ]);
+    for (const k of ["cpu", "memory", "output"] as const)
+      expect(await kindOf(scripted(), throwing("limitExceeded", { kind: k }))).toEqual([
+        [`limit-${k}`, "reshape-limitExceeded"],
+      ]);
+    expect(
+      await kindOf(
+        scripted({ reshaping: { engine: "JSONPath", scriptRef: "totals.count" } }),
+        tool()
+      )
+    ).toEqual([["selects-nothing", "reshape-failed"]]);
+    expect(
+      await kindOf(scripted({ reshaping: { engine: "Named", scriptRef: "boom" } }), tool(), {
         reshapers: defineReshapers({
           boom: () => {
             throw new Error("x");
           },
         }),
-      }
-    );
-    for (const r of [a, b, c])
-      expect(!r.ok && r.drift.map((d) => d.reshapeFailure)).toEqual(["reshape-failed"]);
+      })
+    ).toEqual([["named-threw", "reshape-failed"]]);
   });
 
-  it("is NOT recorded when the output did not cause it: an unregistered reshaper, a missing script, an aborted load", async () => {
-    const unregistered = await executeProvider(
-      scripted({ reshaping: { engine: "Named", scriptRef: "nope" } }),
-      { invoker: tool(), reshapers: defineReshapers({}) }
-    );
-    const missing = await executeProvider(scripted(), { invoker: crashing("scriptMissing") });
+  it("is NOT recorded for infrastructure or transient failures: untyped throws, wallClock, denials, a missing script or reshaper, other channels, an abort", async () => {
+    const plain = (e: unknown) =>
+      tool().on(SANDBOX_TOOL_ID, () => {
+        throw e;
+      });
+    class DeniedError extends Error {}
+    const cases: Array<[ProviderSpec, FakeInvoker, object?]> = [
+      // An untyped throw: a transport error, an unavailable worker pool — or a script error the
+      // sandbox did not type. Never classified from its message.
+      [scripted(), plain(new Error("sandbox script failed: TypeError"))],
+      [scripted(), plain(new Error("sandbox worker pool unavailable"))],
+      [scripted(), plain(new DeniedError("Capability denied"))],
+      [scripted(), throwing("limitExceeded", { kind: "wallClock" })],
+      [scripted(), throwing("limitExceeded", {})],
+      [scripted(), throwing("scriptMissing", { ref: "sha256:script" })],
+      [scripted(), throwing("shapeMismatch", { expected: "a", observed: "b" })],
+      [scripted(), throwing("quotaExceeded", {})],
+      [
+        scripted({ reshaping: { engine: "Named", scriptRef: "nope" } }),
+        tool(),
+        { reshapers: defineReshapers({}) },
+      ],
+    ];
+    for (const [spec, inv, extra] of cases) expect(await kindOf(spec, inv, extra)).toEqual([]);
     const ac = new AbortController();
     const aborting = tool().on(SANDBOX_TOOL_ID, () => {
       ac.abort();
-      throw new Error("aborted");
+      throw new TypedFailure("limitExceeded", { kind: "cpu" });
     });
-    const aborted = await executeProvider(scripted(), { invoker: aborting, signal: ac.signal });
-    for (const r of [unregistered, missing, aborted]) {
-      expect(r.ok).toBe(false);
-      expect(!r.ok && r.drift).toEqual([]);
-    }
+    expect(await kindOf(scripted(), aborting, { signal: ac.signal })).toEqual([]);
   });
 
   it("several terminals: no stepId (the raw sample is a stepId-keyed record)", async () => {
@@ -174,6 +200,49 @@ describe("a failed reshaping: split and in-process report the same drift (G11)",
       providers: { h: scripted() },
     };
   };
+
+  const both = async (inv: () => FakeInvoker) => {
+    const e = exp();
+    const local: DriftReport[] = [];
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
+    new HydrationController({
+      invoker: inv(),
+      store,
+      clock: () => 0,
+      setTimer: new ManualClock().setTimer,
+      captureSample: true,
+      onDrift: (r) => local.push(r),
+    }).load(e);
+    await flush();
+    const remote: DriftReport[] = [];
+    const served = await serveHandle(
+      e,
+      { experienceId: "e", versionHash: "v1", handle: "h", params: {} },
+      { invoker: inv(), now: 0, captureSample: true, onDrift: (r) => remote.push(r) }
+    );
+    return { local, remote, served, status: store.state().status.h };
+  };
+
+  it("an infrastructure or transient failure fires onDrift in NEITHER, and is the same error either way", async () => {
+    const infra = [
+      () =>
+        tool().on(SANDBOX_TOOL_ID, () => {
+          throw new TypedFailure("limitExceeded", { kind: "wallClock" });
+        }),
+      () =>
+        tool().on(SANDBOX_TOOL_ID, () => {
+          throw new Error("sandbox worker pool unavailable");
+        }),
+    ];
+    for (const inv of infra) {
+      const r = await both(inv);
+      expect(r.local).toEqual([]);
+      expect(r.remote).toEqual([]);
+      expect(r.served.state).toBe("error");
+      expect(r.status?.state).toBe("error");
+      expect(r.served.finding?.code).toBe(r.status?.finding?.code);
+    }
+  });
 
   it("same state, same public-or-full finding code, same drift records — and the sample never reaches the client", async () => {
     const e = exp();

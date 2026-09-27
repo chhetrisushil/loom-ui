@@ -2,7 +2,9 @@ import { type ProviderSpec, genesis, isContainer, replay } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
 import {
   type DriftRecord,
+  SANDBOX_SCRIPT_ERROR_CHANNEL,
   type TransientInvoker,
+  defineReshapers,
   executeProvider,
   outputShapeHashOf,
 } from "@loom-ui/hydration";
@@ -764,15 +766,11 @@ describe("a failed reshaping → revision (G11)", () => {
       [handle]: { ...spec, reshaping: { engine: "QuickJS" as const, scriptRef: "sha256:script" } },
     },
   };
-  const failedDrift = async (
-    e: typeof exp,
-    reply: unknown,
-    channel = "hidden.channel: RAW-CHANNEL-TEXT"
-  ): Promise<DriftRecord[]> => {
+  const failedDrift = async (e: typeof exp, reply: unknown): Promise<DriftRecord[]> => {
     const invoker: TransientInvoker = {
       async invokeTransient<TIn, TOut>(toolId: string): Promise<TOut> {
         if (toolId === MCP_INVOKE_TOOL_ID) return reply as TOut;
-        throw new TypedFailure(channel, { detail: "script threw" });
+        throw new TypedFailure(SANDBOX_SCRIPT_ERROR_CHANNEL, { detail: "RAW-PAYLOAD-TEXT" });
       },
     };
     const outcome = await executeProvider(e.providers[handle] as ProviderSpec, {
@@ -799,19 +797,23 @@ describe("a failed reshaping → revision (G11)", () => {
       .filter((o) => o.type === "remapProvider")
       .map((o) => o.spec as ProviderSpec);
 
-  it("the record reaches observedSamples and driftContext; the request says the reshaping failed, never the channel text", async () => {
+  it("the record reaches observedSamples and driftContext; the request says the reshaping failed, never the failure's text", async () => {
     const drift = await failedDrift(scriptedExp, driftedReply);
-    expect(drift.map((d) => d.reshapeFailure)).toEqual([
-      "reshape-hidden.channel: RAW-CHANNEL-TEXT",
+    expect(drift.map((d) => [d.reshapeFailure, d.reshapeFailureKind])).toEqual([
+      ["reshape-scriptError", "script-error"],
     ]);
     expect(unwrapTainted(observedSamples(drift)[handle])).toEqual(driftedReply);
     const [entry] = driftContext(drift);
-    expect(entry?.reshapeFailure).toBe("reshape-hidden.channel: RAW-CHANNEL-TEXT");
+    expect(entry?.reshapeFailure).toBe("reshape-scriptError");
+    expect(entry?.reshapeFailureKind).toBe("script-error");
     expect(entry?.observedRawShape).toBeDefined();
     expect(entry?.observedShape).toBeUndefined();
     const req = driftRequest(scriptedExp, drift);
     expect(req.text).toContain("its reshaping FAILED");
-    expect(req.text).not.toContain("RAW-CHANNEL-TEXT");
+    expect(req.text).not.toContain("RAW-PAYLOAD-TEXT");
+    // A script's ref is a content address, never called a path.
+    expect(req.text).not.toContain("Current path");
+    expect(req.text).toContain('a sandbox script "sha256:script"');
     expect(req.scopeNodeIds).toEqual(["orders"]);
   });
 
@@ -847,10 +849,41 @@ describe("a failed reshaping → revision (G11)", () => {
     expect(reload.ok && reload.value).toBe(412);
   });
 
+  it("a Named reshaper that threw is named as a host reshaper, never as a path", async () => {
+    const namedExp = {
+      ...exp,
+      providers: {
+        ...exp.providers,
+        [handle]: { ...spec, reshaping: { engine: "Named" as const, scriptRef: "orders_total" } },
+      },
+    };
+    const outcome = await executeProvider(namedExp.providers[handle] as ProviderSpec, {
+      invoker: {
+        async invokeTransient<TIn, TOut>(): Promise<TOut> {
+          return driftedReply as TOut;
+        },
+      },
+      reshapers: defineReshapers({
+        orders_total: () => {
+          throw new Error("RAW-THROW-TEXT");
+        },
+      }),
+    });
+    const drift = outcome.ok ? [] : outcome.drift;
+    expect(drift.map((d) => d.reshapeFailureKind)).toEqual(["named-threw"]);
+    const text = driftRequest(namedExp, drift).text;
+    expect(text).toContain('the host reshaper named "orders_total" (not a path)');
+    expect(text).not.toContain("Current path");
+    expect(text).not.toContain("RAW-THROW-TEXT");
+  });
+
   it("a JSONPath that selects nothing on the new output is repaired the same way", async () => {
     const moved = { window: "7d", summary: { orders: 412 } };
     const drift = await failedDrift(exp, moved);
-    expect(drift.map((d) => d.reshapeFailure)).toEqual(["reshape-failed"]);
+    expect(drift.map((d) => [d.reshapeFailure, d.reshapeFailureKind])).toEqual([
+      ["reshape-failed", "selects-nothing"],
+    ]);
+    expect(driftRequest(exp, drift).text).toContain('Current path: "totals.count".');
     const result = await reviseForDrift(
       repairTo("summary.orders"),
       { experience: exp, drift, catalog: planningCatalog, capabilities: capabilitiesFixture },

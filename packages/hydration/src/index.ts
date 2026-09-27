@@ -15,8 +15,13 @@ export type {
 } from "./projection";
 export type { TransientInvoker } from "./invoker";
 export { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
-export { defineReshapers, jsonPathSelect, outputShapeHashOf } from "./reshape";
-export type { ReshapeResult, Reshaper, ReshaperRegistry } from "./reshape";
+export {
+  SANDBOX_SCRIPT_ERROR_CHANNEL,
+  defineReshapers,
+  jsonPathSelect,
+  outputShapeHashOf,
+} from "./reshape";
+export type { ReshapeFailureKind, ReshapeResult, Reshaper, ReshaperRegistry } from "./reshape";
 export { DEFAULT_TIME_RANGE, checkParams } from "./params";
 export type { ArgumentHook, ArgumentHookContext, LoadParams } from "./params";
 export { executeProvider } from "./provider";

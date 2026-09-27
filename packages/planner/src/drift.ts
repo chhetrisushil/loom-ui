@@ -1,5 +1,5 @@
 import { type Experience, type Finding, type MCPToolNode, experienceHandles } from "@loom-ui/core";
-import { type DriftRecord, terminalSteps } from "@loom-ui/hydration";
+import { type DriftRecord, type ReshapeFailureKind, terminalSteps } from "@loom-ui/hydration";
 import { type TaintedValue, unwrapTainted } from "@loom/classify";
 import { canonicalJson } from "@loom/core";
 import type { CapabilityRef, DecideContext, PlanResult, ReviseInput } from "./spi";
@@ -40,6 +40,18 @@ function boundNodeIds(exp: Experience, handle: string): string[] {
 const NO_NEW_CALLS =
   " Keep this binding's arguments: on a drifted tool, a new argument set has no observed output, so it is not bindable this round.";
 
+/**
+ * The binding's current reshaping, named per engine: only a JSONPath `scriptRef` IS a path; a
+ * QuickJS `scriptRef` is a script's content address and a Named one a host reshaper's name.
+ */
+function currentReshaping(r: { engine: string; scriptRef: string } | undefined): string {
+  if (r === undefined) return "";
+  if (r.engine === "JSONPath") return `Current path: "${r.scriptRef}".`;
+  if (r.engine === "Named")
+    return `Current reshaping: the host reshaper named "${r.scriptRef}" (not a path).`;
+  return `Current reshaping: a sandbox script "${r.scriptRef}" (a content address, not a path).`;
+}
+
 export function driftRequest(
   exp: Experience,
   drift: readonly DriftRecord[]
@@ -52,7 +64,7 @@ export function driftRequest(
     // The failure's code is NOT interpolated: a `reshape-<channel>` code carries whatever channel
     // the (pluggable) invoker threw — arbitrary text. It travels in the fenced context instead.
     if (d.kind === "output" && d.reshapeFailure !== undefined)
-      return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaping FAILED on the tool's current output, so it produced no value at all. Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed raw output shape, which a path is authored against. Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.${NO_NEW_CALLS}`;
+      return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaping FAILED on the tool's current output, so it produced no value at all. ${currentReshaping(spec?.reshaping)} The CONTEXT DATA block lists this handle's observed raw output shape, which a path is authored against. Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.${NO_NEW_CALLS}`;
     if (d.kind === "output" && d.contractKind !== undefined)
       return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer satisfies the value contract of kind "${d.contractKind}" (observed shape ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the contract, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output as a valid ${d.contractKind} value; keep the node id, label, type and props.${NO_NEW_CALLS}`;
     return d.kind === "output"
@@ -71,6 +83,8 @@ export interface DriftContextEntry {
   readonly observed: string;
   /** Set when the reshaping itself failed on the output (`DriftRecord.reshapeFailure`): its code. */
   readonly reshapeFailure?: string;
+  /** Beside `reshapeFailure`: why it failed, typed (`DriftRecord.reshapeFailureKind`). */
+  readonly reshapeFailureKind?: ReshapeFailureKind;
   readonly observedShape?: unknown;
   readonly observedRawShape?: unknown;
 }
@@ -91,6 +105,7 @@ export function driftContext(drift: readonly DriftRecord[]): DriftContextEntry[]
       expected: d.expected,
       observed: d.observed,
       ...(d.reshapeFailure !== undefined && { reshapeFailure: d.reshapeFailure }),
+      ...(d.reshapeFailureKind !== undefined && { reshapeFailureKind: d.reshapeFailureKind }),
       ...(d.observedShape !== undefined && { observedShape: d.observedShape }),
       ...(d.observedRawShape !== undefined && { observedRawShape: d.observedRawShape }),
     }));
@@ -243,7 +258,8 @@ export interface DriftReviser<R extends PlanResult = PlanResult> {
  * (`observedSamples`, on `ReviseInput.observed`) and the fallback capabilities
  * (`driftCapabilities`), call `planner.revise` once, and append `unsampledDrift`'s findings.
  * Resolves to the planner's OWN result (`R`) — every field it returned is kept; only `findings`
- * may grow. A custom planner that does not go through this function reproduces it from those
+ * may grow. The result is re-spread when findings are appended, so it must be plain JSON data: a
+ * class instance's prototype members (methods, getters) are dropped. A custom planner that does not go through this function reproduces it from those
  * five exported helpers.
  */
 export async function reviseForDrift<R extends PlanResult>(
