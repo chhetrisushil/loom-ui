@@ -2,14 +2,14 @@ import { type ContainerNode, type Experience, type ProviderSpec, genesis } from 
 import { isTainted, unwrapTainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
 import { type DriftRecord, executeProvider, outcomeResult } from "./provider";
 import { remapOperation } from "./repair";
-import { SANDBOX_SCRIPT_ERROR_CHANNEL, defineReshapers } from "./reshape";
+import { defineReshapers } from "./reshape";
 import { serveHandle } from "./split/index";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
@@ -20,6 +20,8 @@ import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testin
 
 const RAW = { rows: [{ secretCell: "RAW-SECRET-412" }] };
 const tool = () => new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => RAW);
+/** loom's own channels, typed against `SANDBOX_ERRORS`: a channel loom drops fails to compile. */
+const SCRIPT_ERROR: keyof typeof SANDBOX_ERRORS = "scriptError";
 const crashing = (channel = "limitExceeded") =>
   tool().on(SANDBOX_TOOL_ID, () => {
     throw new TypedFailure(channel, { kind: "cpu" });
@@ -73,9 +75,15 @@ describe("a failed reshaping is output drift (G11)", () => {
     });
 
   it("each output-caused failure records its typed kind", async () => {
-    expect(await kindOf(scripted(), throwing(SANDBOX_SCRIPT_ERROR_CHANNEL, { m: "x" }))).toEqual([
-      ["script-error", "reshape-scriptError"],
-    ]);
+    expect(
+      await kindOf(
+        scripted(),
+        throwing(
+          SCRIPT_ERROR,
+          SANDBOX_ERRORS.scriptError.parse({ name: "TypeError", message: "x" })
+        )
+      )
+    ).toEqual([["script-error", "reshape-scriptError"]]);
     for (const k of ["cpu", "memory", "output"] as const)
       expect(await kindOf(scripted(), throwing("limitExceeded", { kind: k }))).toEqual([
         [`limit-${k}`, "reshape-limitExceeded"],

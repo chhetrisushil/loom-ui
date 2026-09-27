@@ -145,6 +145,9 @@ importers:
       '@loom/plugin-renderer-terminal':
         specifier: link:../../../loom/plugins/renderer-terminal
         version: link:../../../loom/plugins/renderer-terminal
+      '@loom/plugin-sandbox':
+        specifier: link:../../../loom/plugins/sandbox
+        version: link:../../../loom/plugins/sandbox
       '@loom/projection-runtime':
         specifier: link:../../../loom/packages/projection-runtime
         version: link:../../../loom/packages/projection-runtime
