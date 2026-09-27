@@ -11,18 +11,19 @@ import {
 // dispatches on loom's own tool id. `noLookups.test.ts` excludes test files for exactly this.
 import { tainted } from "@loom/classify";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   driftCapabilities,
   driftContext,
   driftRequest,
   observedSamples,
   reviseForDrift,
+  unsampledDrift,
 } from "./drift";
 import { materialize } from "./materialize";
 import { reviseMessages } from "./prompt";
 import { ReferencePlanner } from "./reference";
-import type { Planner, ReviseInput } from "./spi";
+import type { PlanResult, Planner, ReviseInput } from "./spi";
 import {
   capabilitiesFixture,
   intentFixture,
@@ -662,5 +663,89 @@ describe("per-handle drift samples (G8)", () => {
     expect(remapA?.spec.outputShapeHash).toBe(outputShapeHashOf(412));
     expect(findings.map((f) => f.code)).not.toContain("sample-not-observed");
     expect(ops.some((o) => o.type === "remapProvider" && o.handle === handleB)).toBe(false);
+  });
+});
+
+/**
+ * G10 — a planner whose `revise` returns MORE than a `PlanResult` (artifacts the caller must
+ * persist beside the ops) gets its own result type back through `reviseForDrift`, extra fields
+ * intact; `unsampledDrift`'s findings are still appended.
+ */
+describe("reviseForDrift keeps the planner's own result type (G10)", () => {
+  type Extended = PlanResult & { readonly extra: { readonly artifacts: readonly string[] } };
+  class ExtendingPlanner implements Planner {
+    readonly inner = new ReferencePlanner({
+      model: scriptedModel([
+        JSON.stringify({
+          summary: "re-pathed",
+          nodes: [
+            {
+              ...composedDraft.nodes[0],
+              binding: { ...composedDraft.nodes[0]?.binding, path: "totals.count.value" },
+            },
+          ],
+        }),
+      ]),
+      modelId: "m",
+    });
+    compose(...args: Parameters<Planner["compose"]>) {
+      return this.inner.compose(...args);
+    }
+    async revise(...args: Parameters<Planner["revise"]>): Promise<Extended> {
+      return { ...(await this.inner.revise(...args)), extra: { artifacts: ["a1"] } };
+    }
+  }
+
+  it("a richer revise result survives, typed; the repair and the appended findings are unchanged", async () => {
+    const drift = await producedDrift();
+    const result = await reviseForDrift(
+      new ExtendingPlanner(),
+      { experience: exp, drift, catalog: planningCatalog, capabilities: capabilitiesFixture },
+      recordingContext()
+    );
+    expectTypeOf(result).toEqualTypeOf<Extended>();
+    expect(result.extra).toEqual({ artifacts: ["a1"] });
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(replay(exp, result.ops).ok).toBe(true);
+  });
+
+  it("the extra fields survive when unsampledDrift appends a finding", async () => {
+    // Two drifts on one tool: A observed, B (another call) without a sample of its own.
+    const [a] = await producedDrift();
+    const other = {
+      ...spec,
+      executionGraph: spec.executionGraph.map((s) => ({ ...s, arguments: { window: "30d" } })),
+    };
+    const expB = {
+      ...exp,
+      providers: { ...exp.providers, "p-other": { ...other, handle: "p-other" } },
+    };
+    const { observedSample: _s, ...b } = { ...(a as DriftRecord), handle: "p-other" };
+    const result = await reviseForDrift(
+      new ExtendingPlanner(),
+      {
+        experience: expB,
+        drift: [a as DriftRecord, b],
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+      },
+      recordingContext()
+    );
+    expect(result.extra).toEqual({ artifacts: ["a1"] });
+    expect(result.findings.map((f) => f.code)).toContain("drift-sample-missing");
+    expect(unsampledDrift(expB, [a as DriftRecord, b]).map((f) => f.code)).toEqual([
+      "drift-sample-missing",
+    ]);
+  });
+
+  it("a planner typed as the plain `Planner` still resolves to a `PlanResult` (existing callers unchanged)", () => {
+    const p: Planner = new ExtendingPlanner();
+    const call = () =>
+      reviseForDrift(
+        p,
+        { experience: exp, drift: [], catalog: planningCatalog, capabilities: capabilitiesFixture },
+        recordingContext()
+      );
+    expectTypeOf<Awaited<ReturnType<typeof call>>>().toEqualTypeOf<PlanResult>();
   });
 });
