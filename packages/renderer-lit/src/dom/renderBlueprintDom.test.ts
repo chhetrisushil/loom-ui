@@ -572,4 +572,42 @@ describe("renderBlueprintDom — title option", () => {
     expect(r.findings).toEqual([]);
     handle.dispose();
   });
+
+  // `compile`'s `{ omit: true }` title option (loom-ui gap G9) puts `""` on the Blueprint — loom's
+  // `title` is a required string, so there is no absent case to render. Both title modes still
+  // mount cleanly.
+  it("an empty blueprint.title (compile's title omit) renders no h1 under 'none'", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(
+      host,
+      { ...bp, title: "" },
+      {
+        projectionRuntime: runtime,
+        executionId: store.executionId,
+        registry: recording().registry,
+        title: "none",
+      }
+    );
+    expect(host.querySelector("h1")).toBeNull();
+    handle.dispose();
+  });
+
+  it("an empty blueprint.title (compile's title omit) mounts an empty h1 under the 'heading' default", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const store = new HydrationStore(runtime, { experienceId: "e" });
+    const host = document.createElement("div");
+    const handle = renderBlueprintDom(
+      host,
+      { ...bp, title: "" },
+      {
+        projectionRuntime: runtime,
+        executionId: store.executionId,
+        registry: recording().registry,
+      }
+    );
+    expect(host.querySelector("h1")?.textContent).toBe("");
+    handle.dispose();
+  });
 });
