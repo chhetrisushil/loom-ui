@@ -61,8 +61,11 @@ export function driftRequest(
     const nodes = boundNodeIds(exp, d.handle);
     for (const n of nodes) scope.add(n);
     const spec = exp.providers[d.handle];
-    // The failure's code is NOT interpolated: a `reshape-<channel>` code carries whatever channel
-    // the (pluggable) invoker threw — arbitrary text. It travels in the fenced context instead.
+    // A failed-reshaping record exists for exactly these codes: `reshape-scriptError`
+    // (`script-error`), `reshape-limitExceeded` (`limit-cpu` / `limit-memory` / `limit-output`) and
+    // `reshape-failed` (`selects-nothing`, `uncloneable-output`) — hydration records no drift for
+    // any other channel. The code is still not interpolated: it travels, with its typed kind, in
+    // the fenced context, so the request text is the same whatever the invoker threw.
     if (d.kind === "output" && d.reshapeFailure !== undefined)
       return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaping FAILED on the tool's current output, so it produced no value at all. ${currentReshaping(spec?.reshaping)} The CONTEXT DATA block lists this handle's observed raw output shape, which a path is authored against. Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.${NO_NEW_CALLS}`;
     if (d.kind === "output" && d.contractKind !== undefined)

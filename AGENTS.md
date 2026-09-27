@@ -118,12 +118,13 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   viewer publish). Drift kinds: `input` (a step's schema pin moved — `remapOperation` repairs it) and
   `output` (the reshaping no longer works for the output: a failed shape pin, a failed value contract
   (`contractKind`), or the reshaping itself failing BECAUSE of it (`reshapeFailure` + a typed
-  `reshapeFailureKind`: script-error, selects-nothing, named-threw, limit-cpu/-memory/-output) — only a
+  `reshapeFailureKind`: script-error, selects-nothing, uncloneable-output (never sampled), limit-cpu/-memory/-output) — only a
   planner repairs it). Classify from the typed channel/payload, never a message — the sandbox's channels are
   loom's own (`keyof typeof SANDBOX_ERRORS`: `scriptError`, `limitExceeded`), never a local string, and a
   `scriptError` payload is untrusted script text (it can echo the output) that is never copied into a finding
   message, handle status, drift record or request — its finding message is fixed text; an infrastructure or
-  transient failure (wallClock, untyped throw, denial, missing script/reshaper, abort) is NOT drift. A
+  transient failure (wallClock, untyped throw, denial, missing script/reshaper, abort) or a Named
+  reshaper's own throw (host code) is NOT drift. A
   `reshapeFailure` record keeps the handle `error`, not `stale`, and the public finding unchanged; it
   carries the raw output's shape and sample only. loom-ui never bounds repairs (apps dedupe on
   `(versionHash, handle)` and cap attempts), and a server `onDrift` never forwards `observedSample`. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else — or declare

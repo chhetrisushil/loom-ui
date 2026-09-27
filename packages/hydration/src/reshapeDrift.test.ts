@@ -94,15 +94,61 @@ describe("a failed reshaping is output drift (G11)", () => {
         tool()
       )
     ).toEqual([["selects-nothing", "reshape-failed"]]);
-    expect(
-      await kindOf(scripted({ reshaping: { engine: "Named", scriptRef: "boom" } }), tool(), {
+  });
+
+  it("a Named reshaper's throw is NOT drift: host code failing is not proven output-caused", async () => {
+    // A host bug or the reshaper's own I/O would otherwise get the host's reshaper replaced by a
+    // model-authored binding. It stays a plain error finding, exactly as before G11.
+    const r = await executeProvider(
+      scripted({ reshaping: { engine: "Named", scriptRef: "boom" } }),
+      {
+        invoker: tool(),
+        captureSample: true,
         reshapers: defineReshapers({
           boom: () => {
             throw new Error("x");
           },
         }),
-      })
-    ).toEqual([["named-threw", "reshape-failed"]]);
+      }
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("reshape-failed");
+    expect(r.drift).toEqual([]);
+  });
+
+  it("an output a Named reshaper cannot be handed (uncloneable) IS drift, unsampled", async () => {
+    // The OUTPUT itself is the cause: it holds a value `structuredClone` cannot copy, so the
+    // reshaper never runs. No sample is captured — a value that cannot be cloned is not a data
+    // observation a planner can author against (and a live reference would let the planner side
+    // see later mutations) — so the record carries only the codes (and a raw shape, when one
+    // can be taken).
+    const odd = { rows: [{ n: 1 }], hook: () => 1 };
+    let ran = false;
+    const r = await executeProvider(scripted({ reshaping: { engine: "Named", scriptRef: "ok" } }), {
+      invoker: new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => odd),
+      captureSample: true,
+      reshapers: defineReshapers({
+        ok: () => {
+          ran = true;
+          return 1;
+        },
+      }),
+    });
+    expect(ran).toBe(false);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("reshape-failed");
+    expect(r.drift).toHaveLength(1);
+    expect(r.drift[0]).toMatchObject({
+      kind: "output",
+      handle: "h",
+      stepId: "s1",
+      expected: "reshape",
+      reshapeFailure: "reshape-failed",
+      reshapeFailureKind: "uncloneable-output",
+    });
+    expect(r.drift[0]?.observedSample).toBeUndefined();
   });
 
   it("is NOT recorded for infrastructure or transient failures: untyped throws, wallClock, denials, a missing script or reshaper, other channels, an abort", async () => {
