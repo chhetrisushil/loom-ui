@@ -415,9 +415,11 @@ export async function executeProvider(
         reshapeFailureKind: shaped.failureKind,
         ...(terminals.length === 1 && { stepId: (terminals[0] as MCPToolNode).stepId }),
         ...observedRawShape(raw),
-        ...(opts.captureSample === true && {
-          observedSample: tainted(raw, `provider:${spec.handle}`),
-        }),
+        // An uncloneable output is not a data observation: no sample, even under captureSample.
+        ...(opts.captureSample === true &&
+          shaped.failureKind !== "uncloneable-output" && {
+            observedSample: tainted(raw, `provider:${spec.handle}`),
+          }),
       });
     return { ok: false, finding: shaped.finding, drift, findings };
   }

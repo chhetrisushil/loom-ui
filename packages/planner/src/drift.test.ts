@@ -855,7 +855,7 @@ describe("a failed reshaping → revision (G11)", () => {
     expect(reload.ok && reload.value).toBe(412);
   });
 
-  it("a Named reshaper that threw is named as a host reshaper, never as a path", async () => {
+  it("a Named reshaper that threw is NOT drift (host code), so there is nothing to revise", async () => {
     const namedExp = {
       ...exp,
       providers: {
@@ -875,12 +875,43 @@ describe("a failed reshaping → revision (G11)", () => {
         },
       }),
     });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? [] : outcome.drift).toEqual([]);
+  });
+
+  it("an uncloneable output under a Named reshaper is named as a host reshaper, never as a path", async () => {
+    const namedExp = {
+      ...exp,
+      providers: {
+        ...exp.providers,
+        [handle]: { ...spec, reshaping: { engine: "Named" as const, scriptRef: "orders_total" } },
+      },
+    };
+    const outcome = await executeProvider(namedExp.providers[handle] as ProviderSpec, {
+      invoker: {
+        async invokeTransient<TIn, TOut>(): Promise<TOut> {
+          return { ...driftedReply, hook: () => "RAW-THROW-TEXT" } as TOut;
+        },
+      },
+      reshapers: defineReshapers({ orders_total: () => 1 }),
+    });
     const drift = outcome.ok ? [] : outcome.drift;
-    expect(drift.map((d) => d.reshapeFailureKind)).toEqual(["named-threw"]);
+    expect(drift.map((d) => d.reshapeFailureKind)).toEqual(["uncloneable-output"]);
     const text = driftRequest(namedExp, drift).text;
     expect(text).toContain('the host reshaper named "orders_total" (not a path)');
     expect(text).not.toContain("Current path");
     expect(text).not.toContain("RAW-THROW-TEXT");
+    const result = await reviseForDrift(
+      repairTo("totals.count.value"),
+      { experience: namedExp, drift, catalog: planningCatalog, capabilities: capabilitiesFixture },
+      recordingContext()
+    );
+    // Unsampled: the planner can only pin against the capability's OLD sample, where a path
+    // authored for the new output selects nothing — the repair fails with error findings after
+    // the planner's own bounded attempts, and emits no ops. It does not loop.
+    expect(drift[0]?.observedSample).toBeUndefined();
+    expect(result.ops).toEqual([]);
+    expect(result.findings.map((f) => f.code)).toEqual(["reshape-invalid", "plan-failed"]);
   });
 
   it("a JSONPath that selects nothing on the new output is repaired the same way", async () => {
