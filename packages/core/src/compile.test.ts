@@ -811,15 +811,20 @@ describe("compile — container ids (Blueprint IR 2.4.0, loom ADR 0101)", () => 
     ]);
   });
 
-  it("a malformed (hand-built, schema-bypassing) container id is not emitted: the layout is keyed positionally, and compile does not throw", () => {
+  it("a malformed (hand-built, schema-bypassing) container id is passed through and reported as loom's layout-id-invalid WARN — never dropped silently", () => {
     const bad: ContainerNode = {
       ...sectioned,
       children: [{ ...(sectioned.children[0] as ContainerNode), id: "" }],
     };
     const r = compile(withRoot(exp, bad), opts);
+    expect(r.ok).toBe(true);
+    expect(r.findings.map((f) => [f.code, f.severity, f.nodeId])).toEqual([
+      ["loom:layout-id-invalid", "warn", "<layout>"],
+    ]);
     const first = (r.blueprint.layout as GridLayout).children[0]?.node as FlexLayout;
-    expect("id" in first).toBe(false);
-    expect(r.findings.filter((f) => f.code.startsWith("loom:"))).toEqual([]);
+    expect(first.id).toBe("");
+    // …and loom's identity walk treats it as absent, like every renderer does.
+    expect(blueprintLayoutIds(r.blueprint)).toEqual(["root"]);
   });
 
   it("is deterministic — the same experience compiles byte-identically, ids included", () => {

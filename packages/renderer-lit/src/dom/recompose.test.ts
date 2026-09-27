@@ -7,11 +7,14 @@ import {
   RendererRegistry,
   StatusBadge,
   type Widget,
+  type WidgetCatalog,
   blueprint$,
+  builtinCatalog,
   cell,
   flex,
   grid,
   stack,
+  validateBlueprint,
 } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
@@ -1301,8 +1304,32 @@ describe("renderBlueprintDom.update — a pass that cannot complete leaves nothi
 // its id-less siblings only. A kept container is moved, never re-created, so inserting or
 // reordering containers no longer costs the widgets inside the ones that shifted.
 
-/** A column of step containers, each a stack holding one widget (`<step>-note` is a textarea). */
+/** The widget catalogue these fixtures draw from: loom's built-ins plus the textarea kind. */
+const fixtureCatalog: WidgetCatalog = {
+  id: "recompose-fixtures",
+  entries: [...builtinCatalog.entries, { kind: "NoteInput", props: [], binding: "none" }],
+};
+/** Asserts `bp` is a VALID Blueprint — no error finding (a `duplicate-node-id` above all). */
+const valid = (bp: Blueprint): Blueprint => {
+  const errors = validateBlueprint(bp, fixtureCatalog).findings.filter(
+    (f) => f.severity === "error"
+  );
+  expect(errors).toEqual([]);
+  return bp;
+};
+
+/**
+ * A column of step containers, each a stack holding one widget (`<step>-note` is a textarea). A
+ * string step's container id is `step-<step>` — distinct from the widget inside it, since layout
+ * and widget ids share one namespace (ADR 0101 D2). Every fixture is checked valid; the one
+ * deliberately invalid case (a duplicate id) uses `stepsUnchecked`.
+ */
 const steps = (
+  list: ReadonlyArray<
+    string | { id?: string; step: string; type?: "stack" | "flex"; role?: string }
+  >
+): Blueprint => valid(stepsUnchecked(list));
+const stepsUnchecked = (
   list: ReadonlyArray<
     string | { id?: string; step: string; type?: "stack" | "flex"; role?: string }
   >
@@ -1315,7 +1342,7 @@ const steps = (
       id: "root",
       direction: "column",
       children: list.map((s) => {
-        const o = typeof s === "string" ? { id: s, step: s } : s;
+        const o = typeof s === "string" ? { id: `step-${s}`, step: s } : s;
         const children = [o.step === "payment" ? note(`${o.step}-note`) : metricOf(o.step)];
         const own = {
           ...(o.id !== undefined && { id: o.id }),
@@ -1350,7 +1377,8 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
     const next = steps(["account", "extra", "payment"]);
     const r = handle.update(next);
     expect(r.remounted).toEqual([]);
-    expect(r.identity.added).toEqual(["extra"]);
+    // loom's identity walk covers layout ids too (ADR 0101 D6): the new step AND its widget.
+    expect(r.identity.added).toEqual(["step-extra", "extra"]);
     expect(r.findings).toEqual([]);
     expect(calls).toEqual(["mount:extra"]);
     expect(host.querySelector("textarea[data-note='payment-note']")).toBe(ta);
@@ -1425,7 +1453,9 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
   it("a TYPE change under the same id remounts that container's widgets, and reports them", () => {
     const { host, handle } = setup(steps(["account", "payment"]));
     const ta = typeInto(host);
-    const r = handle.update(steps(["account", { id: "payment", step: "payment", type: "flex" }]));
+    const r = handle.update(
+      steps(["account", { id: "step-payment", step: "payment", type: "flex" }])
+    );
     expect(r.remounted).toEqual(["payment-note"]);
     expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);
     handle.dispose();
@@ -1434,7 +1464,9 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
   it("a ROLE change under the same id remounts that container's widgets, and reports them", () => {
     const { host, handle } = setup(steps(["account", "payment"]));
     const accountHost = widgetHost(host, "account");
-    const r = handle.update(steps([{ id: "account", step: "account", role: "boxed" }, "payment"]));
+    const r = handle.update(
+      steps([{ id: "step-account", step: "account", role: "boxed" }, "payment"])
+    );
     expect(r.remounted).toEqual(["account"]);
     expect(widgetHost(host, "account")).not.toBe(accountHost);
     handle.dispose();
@@ -1443,7 +1475,7 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
   it("an id CHANGE is a different container: remounted and reported — no positional fallback on a miss", () => {
     const { host, handle } = setup(steps(["account", "payment"]));
     const ta = typeInto(host);
-    const r = handle.update(steps(["account", { id: "payment-2", step: "payment" }]));
+    const r = handle.update(steps(["account", { id: "step-payment-2", step: "payment" }]));
     expect(r.remounted).toEqual(["payment-note"]);
     expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);
     handle.dispose();
@@ -1468,17 +1500,22 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
 
   it("mixed siblings: id'd ones match by id, id-less ones by ordinal among the id-less only — an id'd insertion shifts nothing", () => {
     const { host, handle } = setup(
-      steps([{ id: "k1", step: "k1" }, { step: "u1" }, { id: "k2", step: "k2" }, { step: "u2" }])
+      steps([
+        { id: "step-k1", step: "k1" },
+        { step: "u1" },
+        { id: "step-k2", step: "k2" },
+        { step: "u2" },
+      ])
     );
     const before = Object.fromEntries(
       ["k1", "u1", "k2", "u2"].map((id) => [id, widgetHost(host, id)] as const)
     );
     const r = handle.update(
       steps([
-        { id: "k3", step: "k3" },
+        { id: "step-k3", step: "k3" },
         { step: "u1" },
-        { id: "k2", step: "k2" },
-        { id: "k1", step: "k1" },
+        { id: "step-k2", step: "k2" },
+        { id: "step-k1", step: "k1" },
         { step: "u2" },
       ])
     );
@@ -1496,7 +1533,11 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
     const { host, handle, store, runtime } = setup(steps(["account", "payment"]));
     store.setValue("h-extra", 1, { state: "ready" });
     const accountHost = widgetHost(host, "account");
-    const next = steps(["account", { id: "account", step: "extra" }, "payment"]);
+    // Deliberately INVALID (loom's `duplicate-node-id`): the adapter must still never throw.
+    const next = stepsUnchecked(["account", { id: "step-account", step: "extra" }, "payment"]);
+    expect(validateBlueprint(next, fixtureCatalog).findings.map((f) => [f.code, f.nodeId])).toEqual(
+      [["duplicate-node-id", "step-account"]]
+    );
     const r = handle.update(next);
     expect(r.remounted).toEqual([]);
     expect(widgetHost(host, "account")).toBe(accountHost);
@@ -1508,24 +1549,26 @@ describe("renderBlueprintDom.update — containers keyed by id (IR 2.4.0)", () =
   it("a container moved to ANOTHER parent is remounted, and reported — ids key among siblings", () => {
     const { host, handle } = setup(steps(["account", "payment"]));
     const ta = typeInto(host);
-    const next = blueprint$({
-      id: "e@1",
-      title: "Board",
-      projections: [HYDRATION_PROJECTION_ID],
-      layout: flex({
-        id: "root",
-        direction: "column",
-        children: [
-          stack({
-            id: "account",
-            children: [
-              metricOf("account"),
-              stack({ id: "payment", children: [note("payment-note")] }),
-            ],
-          }),
-        ],
-      }),
-    });
+    const next = valid(
+      blueprint$({
+        id: "e@1",
+        title: "Board",
+        projections: [HYDRATION_PROJECTION_ID],
+        layout: flex({
+          id: "root",
+          direction: "column",
+          children: [
+            stack({
+              id: "step-account",
+              children: [
+                metricOf("account"),
+                stack({ id: "step-payment", children: [note("payment-note")] }),
+              ],
+            }),
+          ],
+        }),
+      })
+    );
     const r = handle.update(next);
     expect(r.remounted).toEqual(["payment-note"]);
     expect(host.querySelector("textarea[data-note='payment-note']")).not.toBe(ta);

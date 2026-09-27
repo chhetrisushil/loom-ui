@@ -11,7 +11,6 @@ import {
   customWidget$,
   flex,
   grid,
-  isLayoutId,
   isLayoutRole,
   validateBlueprint,
 } from "@loom/blueprint-runtime";
@@ -204,9 +203,11 @@ function compileContainer(
   // An id (IR 2.4.0, loom ADR 0101) is the container's node id — the same identity the
   // Experience already addresses it by, in the one namespace widget ids share — so a renderer can
   // keep the container (and every widget under it) across a recompose that inserts or reorders
-  // containers. loom-ui's `NodeId` rule (a non-empty string) IS loom's `isLayoutId`; the guard only
-  // matters for a hand-built node that bypassed the schema, which is keyed positionally instead.
-  const identified = isLayoutId(node.id) ? { id: node.id } : {};
+  // containers. loom-ui's `NodeId` rule (a non-empty string) IS loom's `isLayoutId`. A malformed
+  // id (a hand-built node that bypassed the schema) is passed through ON PURPOSE: loom's
+  // validateBlueprint pass below reports it as `loom:layout-id-invalid` (warn), and every renderer
+  // treats it as absent (keyed positionally) — dropping it here would lose it with no finding.
+  const identified = node.id !== undefined ? { id: node.id } : {};
   if (node.direction === "grid")
     return grid({
       ...identified,
