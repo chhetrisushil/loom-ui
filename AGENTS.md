@@ -115,7 +115,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
 - Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
   reported (`onDrift`), never repaired here; the app's durable execution applies `remapOperation`'s op and
   emits `SCHEMA_REPAIRED` (`inputDrift: "report-and-proceed"` still reports; it only lets a read-only
-  viewer publish). Pin `outputShapeHash` with `outputShapeHashOf` — nothing else — or declare
+  viewer publish). Drift kinds: `input` (a step's schema pin moved — `remapOperation` repairs it) and
+  `output` (the reshaping no longer works for the output: a failed shape pin, a failed value contract
+  (`contractKind`), or the reshaping itself failing on it (`reshapeFailure`) — only a planner repairs
+  it). A `reshapeFailure` record keeps the handle `error`, not `stale`, and the public finding unchanged;
+  it carries the raw output's shape and sample only, never a reshaped one. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else — or declare
   `outputCheck: "contract"`, whose kinds come from the bound nodes at execution time (`handleKinds`), never
   from the spec. A provider never reaches a browser: split hydration ships `handleInventory` and answers with
   `serveHandle`. Every new `ProviderSpec`/`MCPToolNode` field is optional with no default, so sealed

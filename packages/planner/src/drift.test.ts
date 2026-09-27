@@ -9,7 +9,8 @@ import {
 // The ONLY import of a loom runtime plugin in this package, and only in a test: the point of the
 // fixture below is that the drift record comes from hydration's REAL producer, and the producer
 // dispatches on loom's own tool id. `noLookups.test.ts` excludes test files for exactly this.
-import { tainted } from "@loom/classify";
+import { tainted, unwrapTainted } from "@loom/classify";
+import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
@@ -747,5 +748,115 @@ describe("reviseForDrift keeps the planner's own result type (G10)", () => {
         recordingContext()
       );
     expectTypeOf<Awaited<ReturnType<typeof call>>>().toEqualTypeOf<PlanResult>();
+  });
+});
+
+/**
+ * G11 — a reshaping that FAILS on the tool's output (a sandbox script crashed or hit a limit; a
+ * JSONPath selects nothing) is output drift carrying the raw output: it reaches `observed` and the
+ * fenced context like a failed pin, so the reference planner repairs it end to end.
+ */
+describe("a failed reshaping → revision (G11)", () => {
+  const scriptedExp = {
+    ...exp,
+    providers: {
+      ...exp.providers,
+      [handle]: { ...spec, reshaping: { engine: "QuickJS" as const, scriptRef: "sha256:script" } },
+    },
+  };
+  const failedDrift = async (
+    e: typeof exp,
+    reply: unknown,
+    channel = "hidden.channel: RAW-CHANNEL-TEXT"
+  ): Promise<DriftRecord[]> => {
+    const invoker: TransientInvoker = {
+      async invokeTransient<TIn, TOut>(toolId: string): Promise<TOut> {
+        if (toolId === MCP_INVOKE_TOOL_ID) return reply as TOut;
+        throw new TypedFailure(channel, { detail: "script threw" });
+      },
+    };
+    const outcome = await executeProvider(e.providers[handle] as ProviderSpec, {
+      invoker,
+      captureSample: true,
+    });
+    if (outcome.ok) throw new Error("expected the reshaping to fail");
+    return outcome.drift;
+  };
+  const repairTo = (path: string) =>
+    new ReferencePlanner({
+      model: scriptedModel([
+        JSON.stringify({
+          summary: "re-pathed",
+          nodes: [
+            { ...composedDraft.nodes[0], binding: { ...composedDraft.nodes[0]?.binding, path } },
+          ],
+        }),
+      ]),
+      modelId: "m",
+    });
+  const rebuilt = (ops: readonly unknown[]) =>
+    ((ops[0] as { materialized: Array<{ type: string; spec?: ProviderSpec }> }).materialized ?? [])
+      .filter((o) => o.type === "remapProvider")
+      .map((o) => o.spec as ProviderSpec);
+
+  it("the record reaches observedSamples and driftContext; the request says the reshaping failed, never the channel text", async () => {
+    const drift = await failedDrift(scriptedExp, driftedReply);
+    expect(drift.map((d) => d.reshapeFailure)).toEqual([
+      "reshape-hidden.channel: RAW-CHANNEL-TEXT",
+    ]);
+    expect(unwrapTainted(observedSamples(drift)[handle])).toEqual(driftedReply);
+    const [entry] = driftContext(drift);
+    expect(entry?.reshapeFailure).toBe("reshape-hidden.channel: RAW-CHANNEL-TEXT");
+    expect(entry?.observedRawShape).toBeDefined();
+    expect(entry?.observedShape).toBeUndefined();
+    const req = driftRequest(scriptedExp, drift);
+    expect(req.text).toContain("its reshaping FAILED");
+    expect(req.text).not.toContain("RAW-CHANNEL-TEXT");
+    expect(req.scopeNodeIds).toEqual(["orders"]);
+  });
+
+  it("the reference planner repairs a THROWING-SCRIPT handle end to end: re-pathed and pinned from the observed raw output", async () => {
+    const drift = await failedDrift(scriptedExp, driftedReply);
+    const result = await reviseForDrift(
+      repairTo("totals.count.value"),
+      {
+        experience: scriptedExp,
+        drift,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+      },
+      recordingContext()
+    );
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const [spec2] = rebuilt(result.ops);
+    expect(spec2?.reshaping).toEqual({ engine: "JSONPath", scriptRef: "totals.count.value" });
+    expect(spec2?.outputShapeHash).toBe(outputShapeHashOf(412));
+    const after = replay(scriptedExp, result.ops);
+    if (!after.ok) throw new Error(after.finding.message);
+    expect(isContainer(after.value.root) && after.value.root.children.map((c) => c.id)).toEqual([
+      "orders",
+    ]);
+    // The repaired provider now loads the drifted reply cleanly.
+    const reload = await executeProvider(spec2 as ProviderSpec, {
+      invoker: {
+        async invokeTransient<TIn, TOut>(): Promise<TOut> {
+          return driftedReply as TOut;
+        },
+      },
+    });
+    expect(reload.ok && reload.value).toBe(412);
+  });
+
+  it("a JSONPath that selects nothing on the new output is repaired the same way", async () => {
+    const moved = { window: "7d", summary: { orders: 412 } };
+    const drift = await failedDrift(exp, moved);
+    expect(drift.map((d) => d.reshapeFailure)).toEqual(["reshape-failed"]);
+    const result = await reviseForDrift(
+      repairTo("summary.orders"),
+      { experience: exp, drift, catalog: planningCatalog, capabilities: capabilitiesFixture },
+      recordingContext()
+    );
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(rebuilt(result.ops)[0]?.outputShapeHash).toBe(outputShapeHashOf(412));
   });
 });

@@ -36,6 +36,12 @@ import type { HandleLoadResult } from "./scheduler";
 // `remapOperation` (repair.ts) builds its operation. Output drift is never proceeded past.
 
 export interface DriftRecord {
+  /**
+   * `input`: a step's input-schema pin moved — a pin move `remapOperation` can repair. `output`:
+   * the reshaping no longer works for the tool's output — the reshaped value fails its shape pin
+   * or value contract, OR the reshaping itself failed on it (`reshapeFailure`) — which only a
+   * re-authored binding (a planner) can repair.
+   */
   readonly kind: "input" | "output";
   readonly handle: string;
   /**
@@ -54,8 +60,21 @@ export interface DriftRecord {
    */
   readonly contractKind?: string;
   /**
+   * Output drift only, set when the RESHAPING ITSELF failed on the tool's output (a sandbox script
+   * crashed, timed out or hit a limit; a JSONPath selected nothing; a Named reshaper threw): the
+   * failure's finding code (`reshape-<channel>` / `reshape-failed`). `expected` is then `reshape`
+   * and `observed` that same code, and there is no reshaped value, so `observedShape` is absent —
+   * the raw output (`observedRawShape`, `observedSample`) is what a repair is authored against.
+   * Not recorded for a failure the output did not cause: an unregistered Named reshaper
+   * (`reshape-unregistered`), a script missing from the store (`reshape-scriptMissing`), or an
+   * aborted load. The handle's status stays `error` (not `stale`): the drift is reported for repair
+   * (`onDrift`), but whether a failing script is transient is not known here.
+   */
+  readonly reshapeFailure?: string;
+  /**
    * Output drift only: the structural shape loom's `shapeOf` saw of the RESHAPED value — the one
-   * that failed the check, so it explains the mismatch. Absent when the value could not be walked.
+   * that failed the check, so it explains the mismatch. Absent when the value could not be walked,
+   * and on a `reshapeFailure` (there is no reshaped value).
    */
   readonly observedShape?: Shape;
   /**
@@ -168,6 +187,25 @@ function observedShapes(
   }
   return out;
 }
+
+/** The raw output's shape alone — a failed reshaping has no reshaped value to walk. */
+function observedRawShape(raw: unknown): { observedRawShape?: Shape } {
+  try {
+    return { observedRawShape: shapeOf(raw) };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Reshape failures the OUTPUT did not cause, so no drift is recorded for them: the host registered
+ * no such Named reshaper, or the sandbox store has no such script — the reshaping never ran
+ * against the output.
+ */
+const NOT_OUTPUT_DRIFT: ReadonlySet<string> = new Set([
+  "reshape-unregistered",
+  "reshape-scriptMissing",
+]);
 
 /**
  * The first finding (graph order) when every step that failed ON ITS OWN failed with the same
@@ -366,6 +404,21 @@ export async function executeProvider(
   });
   if (!shaped.ok) {
     findings.push(shaped.finding);
+    // The reshaping failed ON this output: output drift a planner can repair — so, like a failed
+    // pin, the record carries the raw output's shape and (under `captureSample`) its sample.
+    if (!NOT_OUTPUT_DRIFT.has(shaped.finding.code) && opts.signal?.aborted !== true)
+      drift.push({
+        kind: "output",
+        handle: spec.handle,
+        expected: "reshape",
+        observed: shaped.finding.code,
+        reshapeFailure: shaped.finding.code,
+        ...(terminals.length === 1 && { stepId: (terminals[0] as MCPToolNode).stepId }),
+        ...observedRawShape(raw),
+        ...(opts.captureSample === true && {
+          observedSample: tainted(raw, `provider:${spec.handle}`),
+        }),
+      });
     return { ok: false, finding: shaped.finding, drift, findings };
   }
 
@@ -487,7 +540,8 @@ function checkContract(
  * use, so split and in-process hydration cannot disagree: a value is `ready` (carrying the first
  * warning, e.g. a proceeded drift); an `upstream-empty` failure is `empty` — checked FIRST, and
  * carrying no value (loom ADR 0100: a producer MUST clear the value beside `empty`); a failure
- * with drift is `stale`, any other failure `error`.
+ * with drift is `stale` — unless its only drift is a failed reshaping (`reshapeFailure`), which
+ * stays `error` as it always was — and any other failure `error`.
  */
 export function outcomeResult(outcome: ProviderOutcome): HandleLoadResult {
   if (outcome.ok) {
@@ -498,5 +552,6 @@ export function outcomeResult(outcome: ProviderOutcome): HandleLoadResult {
   }
   if (outcome.finding.code === "upstream-empty")
     return { state: "empty", finding: outcome.finding };
-  return { state: outcome.drift.length > 0 ? "stale" : "error", finding: outcome.finding };
+  const stale = outcome.drift.some((d) => d.reshapeFailure === undefined);
+  return { state: stale ? "stale" : "error", finding: outcome.finding };
 }
