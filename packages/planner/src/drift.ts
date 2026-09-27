@@ -32,6 +32,14 @@ function boundNodeIds(exp: Experience, handle: string): string[] {
  * key names of, so it is data — `reviseForDrift` hands it over as `context`, which
  * `reviseMessages` renders inside a DATA fence.
  */
+/**
+ * Only the calls that were OBSERVED can be pinned this round (`ReviseInput.observed`): a node on a
+ * drifted tool with a new argument set has no output of its own to pin against and is dropped
+ * (`sample-not-observed`), so the model is told up front rather than invited into it.
+ */
+const NO_NEW_CALLS =
+  " Keep this binding's arguments: on a drifted tool, a new argument set has no observed output, so it is not bindable this round.";
+
 export function driftRequest(
   exp: Experience,
   drift: readonly DriftRecord[]
@@ -42,9 +50,9 @@ export function driftRequest(
     for (const n of nodes) scope.add(n);
     const spec = exp.providers[d.handle];
     if (d.kind === "output" && d.contractKind !== undefined)
-      return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer satisfies the value contract of kind "${d.contractKind}" (observed shape ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the contract, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output as a valid ${d.contractKind} value; keep the node id, label, type and props.`;
+      return `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer satisfies the value contract of kind "${d.contractKind}" (observed shape ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the contract, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output as a valid ${d.contractKind} value; keep the node id, label, type and props.${NO_NEW_CALLS}`;
     return d.kind === "output"
-      ? `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer matches the pinned shape ${d.expected} (observed ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the pin, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.`
+      ? `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) drifted: its reshaped output no longer matches the pinned shape ${d.expected} (observed ${d.observed}). Current path: "${spec?.reshaping.scriptRef ?? ""}". The CONTEXT DATA block lists this handle's observed shapes (the reshaped one that failed the pin, and the raw output shape a path is authored against). Re-author the binding's path so the node shows the same quantity from the new output; keep the node id, label, type and props.${NO_NEW_CALLS}`
       : `Provider "${d.handle}" (nodes: ${nodes.join(", ") || "none"}) has an input-schema drift on step ${d.stepId ?? "?"} (${d.toolName ?? "?"}): expected ${d.expected}, observed ${d.observed}. Re-bind it with the offered capability for that tool.`;
   });
   return { text: `Repair drifted providers.\n\n${lines.join("\n\n")}`, scopeNodeIds: [...scope] };
