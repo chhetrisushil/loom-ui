@@ -23,7 +23,7 @@ import type {
   PlannerUsage,
   ReviseInput,
 } from "./spi";
-import { readReportedUsage, totalUsage } from "./usage";
+import { addUsage, readReportedUsage, totalUsage } from "./usage";
 
 export const REFERENCE_POLICY = { id: "loom-ui.reference-planner", version: "1.0.0" } as const;
 export const REFERENCE_SOURCE = "loom-ui.planner.reference";
@@ -222,22 +222,17 @@ export class ReferencePlanner implements Planner {
       else if (read.usage !== undefined) {
         // Refused rather than saturated: the plan total must stay the EXACT sum of the
         // recorded attempts, and itself a valid PlannerUsage.
-        if (
-          spent.inputTokens + read.usage.inputTokens > Number.MAX_SAFE_INTEGER ||
-          spent.outputTokens + read.usage.outputTokens > Number.MAX_SAFE_INTEGER
-        )
+        const added = addUsage(spent, read.usage);
+        if (added.refused !== undefined)
           usageFindings.push(
             warn(
               "usage-invalid",
-              "the model reported usage that would overflow the plan total past Number.MAX_SAFE_INTEGER; it is not recorded"
+              `the model reported usage that ${added.refused}; it is not recorded`
             )
           );
         else {
           usage = read.usage;
-          spent = {
-            inputTokens: spent.inputTokens + usage.inputTokens,
-            outputTokens: spent.outputTokens + usage.outputTokens,
-          };
+          spent = added.total;
         }
       }
       const trace = (t: AttemptTrace): AttemptTrace => (usage === undefined ? t : { ...t, usage });
