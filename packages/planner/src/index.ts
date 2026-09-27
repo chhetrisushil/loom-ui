@@ -3,7 +3,13 @@ export type { ConformanceFixture } from "./conformance";
 export { DRAFT_ID, MAX_DRAFT_NODES, entryFor, parseModelJson, planSchema } from "./contract";
 export type { DraftBinding, DraftNode, Parsed, PlanDraft } from "./contract";
 export { planDecisionId } from "./decision";
-export { driftCapabilities, driftContext, driftRequest, reviseForDrift } from "./drift";
+export {
+  driftCapabilities,
+  driftContext,
+  driftRequest,
+  observedSamples,
+  reviseForDrift,
+} from "./drift";
 export type { DriftContextEntry } from "./drift";
 export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } from "./reference";
 export type { ReferencePlannerOptions } from "./reference";

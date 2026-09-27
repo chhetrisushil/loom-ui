@@ -13,6 +13,9 @@ import type { CapabilityRef, ComposeInput, ReviseInput } from "./spi";
  * model reasons from, and — decisively — `reviseForDrift` hands a NEW sample to a NEW revise
  * request, which already has its own id through `request`. Keying on the sample instead would
  * make every re-fetch of the same tool a different decision, so a replay would silently re-plan.
+ * The same holds for a revise's per-handle `observed` samples: only WHICH handles were observed is
+ * keyed (it decides which providers can be re-pinned at all), never the sample values — and only
+ * when there is at least one, so a revise without observations keeps the id it always had.
  */
 const capabilityKey = (c: CapabilityRef) => ({
   handle: c.handle,
@@ -45,6 +48,8 @@ export function planDecisionId(
     capabilities?: readonly CapabilityRef[];
     context?: unknown;
     surface?: Surface;
+    /** The handles `ReviseInput.observed` carries a sample for. */
+    observedHandles?: readonly string[];
   }
 ): string;
 export function planDecisionId(kind: "compose" | "revise", input: Record<string, unknown>): string {
@@ -68,6 +73,10 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
           ),
           context: input.context ?? null,
           surface,
+          ...(Array.isArray(input.observedHandles) &&
+            input.observedHandles.length > 0 && {
+              observedHandles: [...(input.observedHandles as readonly string[])].sort(),
+            }),
         };
   return `plan:${kind}:${fnv1a64(canonicalJson(key))}`;
 }

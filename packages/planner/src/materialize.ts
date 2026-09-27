@@ -13,11 +13,11 @@ import {
   replay,
   walk,
 } from "@loom-ui/core";
-import { jsonPathSelect, outputShapeHashOf } from "@loom-ui/hydration";
-import { strictest } from "@loom/classify";
+import { jsonPathSelect, outputShapeHashOf, terminalSteps } from "@loom-ui/hydration";
+import { strictest, unwrapTainted } from "@loom/classify";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import { type DraftBinding, type DraftNode, type PlanDraft, entryFor } from "./contract";
-import type { CapabilityRef } from "./spi";
+import type { CapabilityRef, ReviseInput } from "./spi";
 
 export const DEFAULT_TTL_SECONDS = 60;
 
@@ -119,6 +119,41 @@ export function buildProviderSpec(
 
 const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b);
 
+/** One CALL's identity: the tool AND the arguments it is called with. A sample belongs to a call. */
+const callKey = (toolName: string, toolVersion: string, args: unknown): string =>
+  `${toolName}@${toolVersion}#${canonicalJson(args)}`;
+
+const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+
+/**
+ * `observed` (per-handle raw samples) indexed by the CALL each handle's single terminal step
+ * makes. A handle with several terminals (its sample is a stepId-keyed record, not one call's
+ * output) or with no declared spec in `base` contributes nothing. Two handles making the same
+ * call with disagreeing samples leave that call unresolved (`undefined`) — no arbitrary pick.
+ */
+function indexObserved(base: Experience, observed: ReviseInput["observed"]) {
+  const byHandle = new Map<string, { call: string; sample: unknown }>();
+  const byCall = new Map<string, unknown>();
+  const conflicted = new Set<string>();
+  const tools = new Set<string>();
+  for (const handle of Object.keys(observed ?? {})) {
+    if (!own(base.providers, handle)) continue;
+    const terminals = terminalSteps((base.providers[handle] as ProviderSpec).executionGraph);
+    const step = terminals.length === 1 ? terminals[0] : undefined;
+    if (step === undefined) continue;
+    const sample = unwrapTainted((observed as NonNullable<typeof observed>)[handle]);
+    const call = callKey(step.toolName, step.toolVersion, step.arguments);
+    tools.add(`${step.toolName}@${step.toolVersion}`);
+    byHandle.set(handle, { call, sample });
+    if (conflicted.has(call)) continue;
+    if (byCall.has(call) && !sameJson(byCall.get(call), sample)) {
+      byCall.delete(call);
+      conflicted.add(call);
+    } else byCall.set(call, sample);
+  }
+  return { byHandle, byCall, tools };
+}
+
 /**
  * The providers a plan ORPHANS: every handle the base declares AND some base node binds, that no
  * node binds once `ops` apply. Computed EXACTLY, not approximated per op-type: `ops` is folded
@@ -176,12 +211,23 @@ export function orphanedProviders(base: Experience, ops: readonly Operation[]): 
  * (`sensitivity-not-lowered`) nor remove it (`sensitivity-not-removed`) — both warns, neither an
  * op. Only a type the catalogue marks `model-may-set` gets those warns; everywhere else the class
  * is the caller's and the model never saw it.
+ *
+ * `observed` (a revise's per-handle raw samples, `ReviseInput.observed`) pins each rebuilt
+ * provider against the output of THE CALL it makes, never against another call's. For a binding
+ * on a tool some handle observed: the node's own handle's sample when the draft keeps that call,
+ * else the sample every handle making the same call agrees on. With no observation of this call,
+ * the draft does not guess from the capability's (pre-drift, or another call's) sample: a handle
+ * the base already declares is kept with its current spec; an existing node the draft re-binds
+ * keeps its binding (`sample-not-observed`, warn — unrepaired, never mis-repaired); a new node is
+ * refused (`sample-not-observed`, error). Absent `observed`, or a tool nobody observed, the
+ * capability's `sampleOutput` pins as before.
  */
 export function materialize(
   draft: PlanDraft,
   base: Experience,
   catalog: SemanticCatalog,
-  capabilities: readonly CapabilityRef[]
+  capabilities: readonly CapabilityRef[],
+  observed?: ReviseInput["observed"]
 ): { ops: Operation[]; findings: Finding[] } {
   const ops: Operation[] = [];
   const findings: Finding[] = [];
@@ -215,11 +261,15 @@ export function materialize(
   // handle is caught as a conflict instead of one spec silently overwriting the other.
   const emittedThisRun = new Map<string, { spec: ProviderSpec; capability: string }>();
   const siblings: Array<{ order: string }> = [...root.children];
+  const observations = indexObserved(base, observed);
   const seen = new Set<string>();
 
   // Exactly a node's binding — the shape this resolver exists to produce — so `sensitivity`
   // cannot drift from what `insertNode` will carry.
-  const resolveBinding = (n: DraftNode): NonNullable<SemanticNode["binding"]> | undefined => {
+  const resolveBinding = (
+    n: DraftNode,
+    current: SemanticNode | undefined
+  ): NonNullable<SemanticNode["binding"]> | undefined => {
     if (n.binding === undefined) return undefined;
     const cap = caps.get(n.binding.capability);
     if (cap === undefined) {
@@ -232,7 +282,42 @@ export function materialize(
       );
       return undefined;
     }
-    const built = buildProviderSpec(cap, n.binding, n.id);
+    let pinFrom = cap;
+    if (observations.tools.has(`${cap.toolName}@${cap.toolVersion}`)) {
+      const call = callKey(cap.toolName, cap.toolVersion, n.binding.arguments);
+      const mine = current?.binding && observations.byHandle.get(current.binding.handle);
+      if (mine && mine.call === call) pinFrom = { ...cap, sampleOutput: mine.sample };
+      else if (observations.byCall.has(call))
+        pinFrom = { ...cap, sampleOutput: observations.byCall.get(call) };
+      else {
+        // Nothing observed THIS call; the capability's sample is pre-drift or another call's.
+        const handle = providerHandle(
+          cap.toolName,
+          cap.toolVersion,
+          cap.toolSchemaHash,
+          n.binding.arguments,
+          n.binding.path
+        );
+        if (own(base.providers, handle)) {
+          const kept = base.providers[handle] as ProviderSpec;
+          if (!emittedThisRun.has(handle))
+            emittedThisRun.set(handle, { spec: kept, capability: cap.handle });
+          return {
+            handle,
+            priority: n.binding.priority,
+            ...(n.binding.sensitivity !== undefined && { sensitivity: n.binding.sensitivity }),
+          };
+        }
+        const message = `node "${n.id}" re-binds ${cap.toolName}@${cap.toolVersion} with arguments no observed sample belongs to, while other calls of that tool were observed; it is not pinned from their output`;
+        if (current?.binding !== undefined) {
+          findings.push(warn("sample-not-observed", `${message} — its binding is kept`, n.id));
+          return current.binding;
+        }
+        findings.push(err("sample-not-observed", message, n.id));
+        return undefined;
+      }
+    }
+    const built = buildProviderSpec(pinFrom, n.binding, n.id);
     if (!built.ok) {
       findings.push(built.finding);
       return undefined;
@@ -306,7 +391,7 @@ export function materialize(
       );
       continue;
     }
-    const bound = resolveBinding(n);
+    const bound = resolveBinding(n, existingNode?.kind === "semantic" ? existingNode : undefined);
     if (existingNode === undefined) {
       // A new node's binding travels INSIDE its insertNode: one op, no intermediate artifact
       // that would trip `missing-binding` for a moment that never actually existed. `bindProvider`

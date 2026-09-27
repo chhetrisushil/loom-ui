@@ -103,6 +103,7 @@ export class ReferencePlanner implements Planner {
       capabilities: input.capabilities,
       ...(input.context !== undefined && { context: input.context }),
       ...(input.surface !== undefined && { surface: input.surface }),
+      ...(input.observed !== undefined && { observedHandles: Object.keys(input.observed) }),
     });
     if (input.experience.versionHash === "") {
       const report: PlanReport = {
@@ -153,6 +154,8 @@ export class ReferencePlanner implements Planner {
       catalog: ComposeInput["catalog"];
       capabilities: ComposeInput["capabilities"];
       surface?: ComposeInput["surface"];
+      /** Revise only: per-handle observed samples — each rebuilt provider pins from its own call's. */
+      observed?: ReviseInput["observed"];
     },
     messagesFor: (prev?: PreviousError) => {
       system: string;
@@ -244,7 +247,7 @@ export class ReferencePlanner implements Planner {
         previous = { error: parsed.error, raw: parsed.raw };
         continue;
       }
-      const m = materialize(parsed.value, base, input.catalog, input.capabilities);
+      const m = materialize(parsed.value, base, input.catalog, input.capabilities, input.observed);
       const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
       if (!applied.ok) findings.push(applied.finding);
