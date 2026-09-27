@@ -155,4 +155,13 @@ describe("planDecisionId", () => {
     expect(r1).toMatch(/^plan:revise:/);
     expect(r1).not.toBe(r2);
   });
+  it("revise ids key on WHICH handles were observed (order-free), never on the samples; none observed keeps the old id", () => {
+    const common = { versionHash: "sha256:a", request: { text: "repair" } };
+    const base = planDecisionId("revise", common);
+    expect(planDecisionId("revise", { ...common, observedHandles: [] })).toBe(base);
+    const ab = planDecisionId("revise", { ...common, observedHandles: ["p-a", "p-b"] });
+    expect(ab).not.toBe(base);
+    expect(planDecisionId("revise", { ...common, observedHandles: ["p-b", "p-a"] })).toBe(ab);
+    expect(planDecisionId("revise", { ...common, observedHandles: ["p-a"] })).not.toBe(ab);
+  });
 });

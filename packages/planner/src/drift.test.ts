@@ -12,10 +12,17 @@ import {
 import { tainted } from "@loom/classify";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { describe, expect, it } from "vitest";
-import { driftCapabilities, driftContext, driftRequest, reviseForDrift } from "./drift";
+import {
+  driftCapabilities,
+  driftContext,
+  driftRequest,
+  observedSamples,
+  reviseForDrift,
+} from "./drift";
 import { materialize } from "./materialize";
 import { reviseMessages } from "./prompt";
 import { ReferencePlanner } from "./reference";
+import type { Planner, ReviseInput } from "./spi";
 import {
   capabilitiesFixture,
   intentFixture,
@@ -385,5 +392,203 @@ describe("contract drift → revision", () => {
     const req = driftRequest(exp, outcome.drift);
     expect(req.text).toContain('value contract of kind "MetricCard"');
     expect(req.text).not.toContain("pinned shape");
+  });
+});
+
+/**
+ * G8 — observations belong to a HANDLE, not to a tool@version. Two nodes bind the SAME tool with
+ * DIFFERENT arguments (7d vs 30d), so each handle's drift carries its OWN raw output. A repair
+ * must pin each rebuilt spec against that handle's own sample, never another handle's.
+ */
+describe("per-handle drift samples (G8)", () => {
+  const twoDraft = {
+    summary: "s",
+    nodes: [
+      composedDraft.nodes[0] as (typeof composedDraft.nodes)[number],
+      {
+        ...(composedDraft.nodes[0] as (typeof composedDraft.nodes)[number]),
+        id: "orders30",
+        label: "Orders (30d)",
+        binding: {
+          ...(composedDraft.nodes[0] as (typeof composedDraft.nodes)[number]).binding,
+          arguments: { window: "30d" },
+        },
+      },
+    ],
+  };
+  const expTwo = (() => {
+    const g = genesis({ experienceId: "e2", intent: intentFixture, meta: metaFixture });
+    const r = replay(g, materialize(twoDraft, g, planningCatalog, capabilitiesFixture).ops);
+    if (!r.ok) throw new Error(r.finding.message);
+    return seal(r.value);
+  })();
+  const handleOf = (e: typeof expTwo, nodeId: string): string => {
+    const n = isContainer(e.root) ? e.root.children.find((c) => c.id === nodeId) : undefined;
+    const h = n?.kind === "semantic" ? n.binding?.handle : undefined;
+    if (h === undefined) throw new Error(`node ${nodeId} is unbound`);
+    return h;
+  };
+  const handleA = handleOf(expTwo, "orders");
+  const handleB = handleOf(expTwo, "orders30");
+  // Each window's reply drifts DIFFERENTLY: the 7d call nests `value`, the 30d call nests `n`.
+  const replyA = { window: "7d", totals: { count: { value: 412 } } };
+  const replyB = { window: "30d", totals: { count: { n: 9 } } };
+  const invokerReplying = (reply: unknown): TransientInvoker => ({
+    async invokeTransient<TIn, TOut>(): Promise<TOut> {
+      return reply as TOut;
+    },
+  });
+  const driftOf = async (h: string, reply: unknown): Promise<DriftRecord> => {
+    const outcome = await executeProvider(expTwo.providers[h] as ProviderSpec, {
+      invoker: invokerReplying(reply),
+      captureSample: true,
+    });
+    if (outcome.ok) throw new Error(`expected ${h} to drift`);
+    return outcome.drift[0] as DriftRecord;
+  };
+  const draftWithPaths = (pathA: string, pathB: string) =>
+    JSON.stringify({
+      summary: "re-pathed",
+      nodes: twoDraft.nodes.map((n) => ({
+        ...n,
+        binding: { ...n.binding, path: n.id === "orders" ? pathA : pathB },
+      })),
+    });
+  const revise = async (drift: DriftRecord[], reply: string) =>
+    reviseForDrift(
+      new ReferencePlanner({ model: scriptedModel([reply]), modelId: "m" }),
+      { experience: expTwo, drift, catalog: planningCatalog, capabilities: capabilitiesFixture },
+      recordingContext()
+    );
+  const applied = (ops: Parameters<typeof replay>[1]) => {
+    const r = replay(expTwo, ops);
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const remaps = (ops: readonly unknown[]) =>
+    (
+      (ops[0] as { materialized: Array<{ type: string; handle?: string; spec?: ProviderSpec }> })
+        .materialized ?? []
+    ).filter((o) => o.type === "remapProvider");
+
+  it("observedSamples keys each output drift's RAW sample by its handle, and drops a handle whose records disagree", async () => {
+    const a = await driftOf(handleA, replyA);
+    const b = await driftOf(handleB, replyB);
+    const observed = observedSamples([a, b]);
+    expect(Object.keys(observed).sort()).toEqual([handleA, handleB].sort());
+    expect(observed[handleA]).toBe(a.observedSample);
+    const { observedSample: _s, ...bNoSample } = b;
+    expect(Object.keys(observedSamples([a, bNoSample]))).toEqual([handleA]);
+    const conflicting = { ...a, observedSample: tainted({ other: 1 }, `provider:${handleA}`) };
+    expect(observedSamples([a, conflicting])).toEqual({});
+  });
+
+  it("driftContext carries the record's stepId, and still no sample", async () => {
+    const a = await driftOf(handleA, replyA);
+    const entry = driftContext([a])[0];
+    expect(entry?.stepId).toBe(a.stepId);
+    expect(JSON.stringify(entry)).not.toContain("412");
+  });
+
+  it("(i) both handles drift with DISAGREEING samples; the paths are kept: each handle is re-pinned against its OWN new output", async () => {
+    const drift = [await driftOf(handleA, replyA), await driftOf(handleB, replyB)];
+    const result = await revise(drift, draftWithPaths("totals.count", "totals.count"));
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const revised = applied(result.ops);
+    for (const [h, reply] of [
+      [handleA, replyA],
+      [handleB, replyB],
+    ] as const) {
+      const outcome = await executeProvider(revised.providers[h] as ProviderSpec, {
+        invoker: invokerReplying(reply),
+      });
+      expect(outcome.ok).toBe(true);
+    }
+  });
+
+  it("(i') both handles drift with DISAGREEING samples; the paths are re-authored: each new spec is pinned from its own handle's output", async () => {
+    const drift = [await driftOf(handleA, replyA), await driftOf(handleB, replyB)];
+    const result = await revise(drift, draftWithPaths("totals.count.value", "totals.count.n"));
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const revised = applied(result.ops);
+    for (const [nodeId, reply] of [
+      ["orders", replyA],
+      ["orders30", replyB],
+    ] as const) {
+      const outcome = await executeProvider(
+        revised.providers[handleOf(revised, nodeId)] as ProviderSpec,
+        { invoker: invokerReplying(reply) }
+      );
+      expect(outcome.ok).toBe(true);
+    }
+  });
+
+  it("(ii) B drifted WITHOUT a sample while A carries one: B is never pinned from A's output — reported and left unrepaired", async () => {
+    const a = await driftOf(handleA, replyA);
+    const { observedSample: _s, ...b } = await driftOf(handleB, replyB);
+    // The model re-authors BOTH to A's new path — exactly the draft that A's sample would "prove".
+    const result = await revise([a, b], draftWithPaths("totals.count.value", "totals.count.value"));
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const pinned = remaps(result.ops);
+    // Only A's call is re-pinned; nothing is pinned for the 30d call.
+    expect(pinned.map((o) => o.spec?.executionGraph[0]?.arguments)).toEqual([{ window: "7d" }]);
+    const revised = applied(result.ops);
+    expect(handleOf(revised, "orders30")).toBe(handleB);
+    expect(revised.providers[handleB]).toEqual(expTwo.providers[handleB]);
+    expect(result.findings.map((f) => f.code)).toContain("sample-not-observed");
+    expect(result.findings.map((f) => f.code)).toContain("drift-sample-missing");
+    // A is repaired against its own output.
+    const okA = await executeProvider(
+      revised.providers[handleOf(revised, "orders")] as ProviderSpec,
+      { invoker: invokerReplying(replyA) }
+    );
+    expect(okA.ok).toBe(true);
+  });
+
+  it("(ii') B drifted WITHOUT a sample and the model keeps B's path: B's spec is NOT re-pinned from A's output", async () => {
+    const a = await driftOf(handleA, replyA);
+    const { observedSample: _s, ...b } = await driftOf(handleB, replyB);
+    const result = await revise([a, b], draftWithPaths("totals.count.value", "totals.count"));
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(remaps(result.ops).some((o) => o.handle === handleB)).toBe(false);
+    const revised = applied(result.ops);
+    expect(revised.providers[handleB]).toEqual(expTwo.providers[handleB]);
+    expect(result.findings.find((f) => f.code === "drift-sample-missing")?.message).toContain(
+      handleB
+    );
+  });
+
+  it("driftCapabilities (the fallback for planners that ignore `observed`) never hands one handle's sample to a tool another drifted handle has no sample for", async () => {
+    const a = await driftOf(handleA, replyA);
+    const { observedSample: _s, ...b } = await driftOf(handleB, replyB);
+    const caps = driftCapabilities(capabilitiesFixture, expTwo, [a, b]);
+    expect(caps.find((c) => c.handle === "orders_summary")?.sampleOutput).toEqual(
+      capabilitiesFixture[0]?.sampleOutput
+    );
+  });
+
+  it("reviseForDrift hands the planner the per-handle samples on `observed`, OUTSIDE the fenced context", async () => {
+    const drift = [await driftOf(handleA, replyA), await driftOf(handleB, replyB)];
+    let seen: ReviseInput | undefined;
+    const spy: Planner = {
+      compose: () => Promise.reject(new Error("unused")),
+      revise: async (input) => {
+        seen = input;
+        return {
+          ops: [],
+          findings: [],
+          report: { decisionId: "d", attempts: [], firstAttemptValid: false, modelId: "m" },
+        };
+      },
+    };
+    await reviseForDrift(
+      spy,
+      { experience: expTwo, drift, catalog: planningCatalog, capabilities: capabilitiesFixture },
+      recordingContext()
+    );
+    expect(Object.keys(seen?.observed ?? {}).sort()).toEqual([handleA, handleB].sort());
+    expect(JSON.stringify(seen?.context)).not.toContain("412");
+    const { messages } = reviseMessages(seen as ReviseInput);
+    expect(messages.map((m) => m.content).join("\n")).not.toContain('"n": 9');
   });
 });

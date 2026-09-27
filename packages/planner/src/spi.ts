@@ -6,6 +6,7 @@ import type {
   SemanticCatalog,
   Surface,
 } from "@loom-ui/core";
+import type { TaintedValue } from "@loom/classify";
 
 /**
  * A tool the planner MAY bind a node to. The framework fetches nothing (spec §7.1: context is an
@@ -81,6 +82,16 @@ export interface ReviseInput {
   readonly capabilities: readonly CapabilityRef[];
   readonly context?: unknown;
   readonly surface?: Surface;
+  /**
+   * Observed RAW outputs, keyed by the PROVIDER HANDLE of `experience` that produced them
+   * (`observedSamples(drift)` builds it from `DriftRecord.observedSample`). Per handle, not per
+   * tool: one tool called with two argument sets returns two outputs, so a `CapabilityRef`'s one
+   * `sampleOutput` cannot say which call a sample came from. A planner pins a rebuilt provider
+   * against the sample of the call it rebuilds, never another handle's. A separate channel from
+   * `context`: these are pinning DATA, never rendered into a prompt (the shapes a model authors
+   * against travel in `context`), and — like `sampleOutput` — not part of a decision's id.
+   */
+  readonly observed?: Readonly<Record<string, TaintedValue<unknown>>>;
 }
 
 export interface AttemptTrace {

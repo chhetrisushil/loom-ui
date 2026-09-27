@@ -1,6 +1,6 @@
-import { type Experience, type MCPToolNode, experienceHandles } from "@loom-ui/core";
+import { type Experience, type Finding, type MCPToolNode, experienceHandles } from "@loom-ui/core";
 import { type DriftRecord, terminalSteps } from "@loom-ui/hydration";
-import { unwrapTainted } from "@loom/classify";
+import { type TaintedValue, unwrapTainted } from "@loom/classify";
 import { canonicalJson } from "@loom/core";
 import type { CapabilityRef, DecideContext, PlanResult, Planner, ReviseInput } from "./spi";
 
@@ -9,7 +9,8 @@ import type { CapabilityRef, DecideContext, PlanResult, Planner, ReviseInput } f
 // only be re-authored with judgment about what the node should now show. This module is the
 // planner half of that sentence: it turns a `DriftRecord[]` into a revise request the reference
 // planner (or any `Planner`) can act on, feeding it the observed shapes as fenced CONTEXT and,
-// when captured, the observed raw sample as the drifted capability's `sampleOutput`.
+// when captured, each handle's observed raw sample on `ReviseInput.observed` — keyed by HANDLE,
+// because an observation belongs to one call (tool AND arguments), not to a tool@version.
 
 /** Which nodes a drifted handle feeds — the revision's scope. */
 function boundNodeIds(exp: Experience, handle: string): string[] {
@@ -52,6 +53,8 @@ export function driftRequest(
 /** One drift record's shapes, for the fenced CONTEXT block. Samples are NEVER included here. */
 export interface DriftContextEntry {
   readonly handle: string;
+  /** The drifted (terminal) step, when the record names one — so a planner need not recompute it. */
+  readonly stepId?: string;
   readonly expected: string;
   readonly observed: string;
   readonly observedShape?: unknown;
@@ -68,11 +71,40 @@ export function driftContext(drift: readonly DriftRecord[]): DriftContextEntry[]
     .filter((d) => d.kind === "output")
     .map((d) => ({
       handle: d.handle,
+      ...(d.stepId !== undefined && { stepId: d.stepId }),
       expected: d.expected,
       observed: d.observed,
       ...(d.observedShape !== undefined && { observedShape: d.observedShape }),
       ...(d.observedRawShape !== undefined && { observedRawShape: d.observedRawShape }),
     }));
+}
+
+/**
+ * Each output drift's observed RAW sample, keyed by the handle that produced it — the value for
+ * `ReviseInput.observed`. Still tainted: it is tool-authored, and a planner that ever showed it to
+ * a model would have to fence it. A handle whose records carry DISAGREEING samples is left out
+ * rather than resolved to an arbitrary one; a record without a sample contributes nothing.
+ */
+export function observedSamples(
+  drift: readonly DriftRecord[]
+): Readonly<Record<string, TaintedValue<unknown>>> {
+  const byHandle = new Map<string, TaintedValue<unknown>>();
+  const conflicted = new Set<string>();
+  for (const d of drift) {
+    if (d.kind !== "output" || d.observedSample === undefined || conflicted.has(d.handle)) continue;
+    const prior = byHandle.get(d.handle);
+    if (
+      prior !== undefined &&
+      canonicalJson(unwrapTainted(prior)) !== canonicalJson(unwrapTainted(d.observedSample))
+    ) {
+      byHandle.delete(d.handle);
+      conflicted.add(d.handle);
+      continue;
+    }
+    if (prior === undefined) byHandle.set(d.handle, d.observedSample);
+  }
+  // `fromEntries` defines OWN properties, so a handle named like an Object.prototype key is data.
+  return Object.fromEntries(byHandle);
 }
 
 /** A drifted step's identity for sample matching: the tool AND the arguments it was called with. */
@@ -94,17 +126,17 @@ function driftedStep(graph: readonly MCPToolNode[], d: DriftRecord): MCPToolNode
 }
 
 /**
- * Give the planner the observed sample to pin against: a drifted provider's capability gets the
- * UNWRAPPED RAW sample as its `sampleOutput` (the prompt re-fences it as data), because a
- * capability's `sampleOutput` is RAW by contract — `buildProviderSpec` reshapes it with the
- * draft's `path` to pin `outputShapeHash`, so a reshaped sample would pin the wrong shape.
+ * The FALLBACK for a planner that does not read `ReviseInput.observed`: give a drifted tool's
+ * capability the UNWRAPPED RAW sample as its `sampleOutput` (the prompt re-fences it as data),
+ * because a capability's `sampleOutput` is RAW by contract — `buildProviderSpec` reshapes it with
+ * the draft's `path` to pin `outputShapeHash`, so a reshaped sample would pin the wrong shape.
  *
- * The match is keyed on the drifted step's `(toolName, toolVersion, arguments)`, not on
- * `tool@version` alone: one tool called with two different argument sets returns two different
- * outputs, so two such drifts carry two different samples and `tool@version` cannot say which one
- * belongs to a capability (a `CapabilityRef` declares no arguments — the draft's binding does).
- * When the drifted steps for one tool disagree, the capability keeps its OWN sample rather than
- * being handed an arbitrary one; the shapes in the CONTEXT block are still there to re-author from.
+ * A capability has ONE sample, but an observation belongs to a HANDLE (one call: tool AND
+ * arguments). So the swap happens only when the tool's drift amounts to a single observation:
+ * every drifted step of that tool carries a sample and they all agree. When the drifted steps
+ * disagree, or when one of them drifted WITHOUT a sample, the capability keeps its OWN sample —
+ * handing it another handle's output would pin that sample-less handle against a call it never
+ * made. `ReferencePlanner` does not rely on this: it pins each handle from `observed`.
  */
 export function driftCapabilities(
   capabilities: readonly CapabilityRef[],
@@ -113,12 +145,18 @@ export function driftCapabilities(
 ): CapabilityRef[] {
   // tool@version → the distinct samples the drifted steps for that tool produced, by step key.
   const byTool = new Map<string, Map<string, unknown>>();
+  // tool@version with at least one drifted step that carries NO sample.
+  const unsampled = new Set<string>();
   for (const d of drift) {
-    if (d.kind !== "output" || d.observedSample === undefined) continue;
+    if (d.kind !== "output") continue;
     const graph = exp.providers[d.handle]?.executionGraph;
     const step = graph && driftedStep(graph, d);
     if (!step) continue;
     const tool = `${step.toolName}@${step.toolVersion}`;
+    if (d.observedSample === undefined) {
+      unsampled.add(tool);
+      continue;
+    }
     const perStep = byTool.get(tool) ?? new Map<string, unknown>();
     perStep.set(
       stepKey(step.toolName, step.toolVersion, step.arguments),
@@ -127,14 +165,49 @@ export function driftCapabilities(
     byTool.set(tool, perStep);
   }
   return capabilities.map((c) => {
-    const perStep = byTool.get(`${c.toolName}@${c.toolVersion}`);
-    if (perStep === undefined || perStep.size === 0) return c;
+    const tool = `${c.toolName}@${c.toolVersion}`;
+    const perStep = byTool.get(tool);
+    if (perStep === undefined || perStep.size === 0 || unsampled.has(tool)) return c;
     const samples = [...perStep.values()];
     const first = samples[0];
     // Several argument sets drifted for this tool: only take the sample when they agree.
     if (samples.some((s) => canonicalJson(s) !== canonicalJson(first))) return c;
     return { ...c, sampleOutput: first };
   });
+}
+
+/**
+ * A drifted handle with NO sample of its own, on a tool other handles DID observe — under a
+ * different call, so no observation is its own. It is reported, not guessed: pinning it against
+ * another call's output would record a wrong repair as proven. (A sample-less drift on a tool
+ * nobody observed is the ordinary case — the planner re-authors from the shapes in `context`.)
+ */
+function unsampledDrift(exp: Experience, drift: readonly DriftRecord[]): Finding[] {
+  const observedTools = new Set<string>();
+  const observedCalls = new Set<string>();
+  const steps = drift.map((d) => {
+    const graph = exp.providers[d.handle]?.executionGraph;
+    const step = d.kind === "output" && graph ? driftedStep(graph, d) : undefined;
+    if (step && d.observedSample !== undefined) {
+      observedTools.add(`${step.toolName}@${step.toolVersion}`);
+      observedCalls.add(stepKey(step.toolName, step.toolVersion, step.arguments));
+    }
+    return step;
+  });
+  const findings: Finding[] = [];
+  drift.forEach((d, i) => {
+    const step = steps[i];
+    if (step === undefined || d.observedSample !== undefined) return;
+    const tool = `${step.toolName}@${step.toolVersion}`;
+    if (!observedTools.has(tool)) return;
+    if (observedCalls.has(stepKey(step.toolName, step.toolVersion, step.arguments))) return;
+    findings.push({
+      code: "drift-sample-missing",
+      severity: "warn",
+      message: `provider "${d.handle}" drifted without an observed sample of its own, while other providers on ${tool} observed a different call; it is not repaired from their output — re-run it with captureSample to repair it`,
+    });
+  });
+  return findings;
 }
 
 export async function reviseForDrift(
@@ -155,15 +228,19 @@ export async function reviseForDrift(
     drift: driftContext(input.drift),
     ...(input.context !== undefined && { caller: input.context }),
   };
-  return planner.revise(
+  const observed = observedSamples(input.drift);
+  const result = await planner.revise(
     {
       experience: input.experience,
       request: driftRequest(input.experience, input.drift),
       catalog: input.catalog,
       capabilities: driftCapabilities(input.capabilities, input.experience, input.drift),
       context,
+      ...(Object.keys(observed).length > 0 && { observed }),
       ...(input.surface !== undefined && { surface: input.surface }),
     },
     ctx
   );
+  const missing = unsampledDrift(input.experience, input.drift);
+  return missing.length === 0 ? result : { ...result, findings: [...result.findings, ...missing] };
 }
