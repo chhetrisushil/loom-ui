@@ -2,18 +2,19 @@ import { type ProviderSpec, genesis, isContainer, replay } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
 import {
   type DriftRecord,
-  SANDBOX_SCRIPT_ERROR_CHANNEL,
   type TransientInvoker,
   defineReshapers,
   executeProvider,
   outputShapeHashOf,
 } from "@loom-ui/hydration";
-// The ONLY import of a loom runtime plugin in this package, and only in a test: the point of the
-// fixture below is that the drift record comes from hydration's REAL producer, and the producer
-// dispatches on loom's own tool id. `noLookups.test.ts` excludes test files for exactly this.
+// The ONLY imports of loom runtime plugins in this package, and only in a test: the point of the
+// fixtures below is that the drift record comes from hydration's REAL producer, which dispatches
+// on loom's own tool id and classifies loom's own sandbox channels. `noLookups.test.ts` excludes
+// test files for exactly this.
 import { tainted, unwrapTainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { SANDBOX_ERRORS } from "@loom/plugin-sandbox";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   driftCapabilities,
@@ -770,7 +771,12 @@ describe("a failed reshaping → revision (G11)", () => {
     const invoker: TransientInvoker = {
       async invokeTransient<TIn, TOut>(toolId: string): Promise<TOut> {
         if (toolId === MCP_INVOKE_TOOL_ID) return reply as TOut;
-        throw new TypedFailure(SANDBOX_SCRIPT_ERROR_CHANNEL, { detail: "RAW-PAYLOAD-TEXT" });
+        // loom's own channel and a payload its schema accepts (script-authored, untrusted text).
+        const channel: keyof typeof SANDBOX_ERRORS = "scriptError";
+        throw new TypedFailure(
+          channel,
+          SANDBOX_ERRORS.scriptError.parse({ name: "TypeError", message: "RAW-PAYLOAD-TEXT" })
+        );
       },
     };
     const outcome = await executeProvider(e.providers[handle] as ProviderSpec, {

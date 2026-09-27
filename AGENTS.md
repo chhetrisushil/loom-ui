@@ -119,7 +119,9 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `output` (the reshaping no longer works for the output: a failed shape pin, a failed value contract
   (`contractKind`), or the reshaping itself failing BECAUSE of it (`reshapeFailure` + a typed
   `reshapeFailureKind`: script-error, selects-nothing, named-threw, limit-cpu/-memory/-output) — only a
-  planner repairs it). Classify from the typed channel/payload, never a message; an infrastructure or
+  planner repairs it). Classify from the typed channel/payload, never a message — the sandbox's channels are
+  loom's own (`keyof typeof SANDBOX_ERRORS`: `scriptError`, `limitExceeded`), never a local string, and a
+  `scriptError` payload is untrusted script text that is never copied into a drift record or request; an infrastructure or
   transient failure (wallClock, untyped throw, denial, missing script/reshaper, abort) is NOT drift. A
   `reshapeFailure` record keeps the handle `error`, not `stale`, and the public finding unchanged; it
   carries the raw output's shape and sample only. loom-ui never bounds repairs (apps dedupe on

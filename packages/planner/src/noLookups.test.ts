@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const FORBIDDEN = [
   "@loom/plugin-mcp",
+  "@loom/plugin-sandbox",
   "@loom/effect-runtime",
   "@loom/projection-runtime",
   "@loom/llm",

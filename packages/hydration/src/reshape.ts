@@ -1,7 +1,7 @@
 import type { Finding, ProviderSpec } from "@loom-ui/core";
 import { TypedFailure } from "@loom/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { SANDBOX_TOOL_ID, shapeHash } from "@loom/plugin-sandbox";
+import { type SANDBOX_ERRORS, SANDBOX_TOOL_ID, shapeHash } from "@loom/plugin-sandbox";
 import type { TransientInvoker } from "./invoker";
 import { resolvePath } from "./plan";
 
@@ -16,8 +16,8 @@ import { resolvePath } from "./plan";
 /**
  * Why a reshaping failed, when the tool OUTPUT demonstrably caused it — the failures a re-authored
  * binding can repair. Typed from the failure's channel and payload, never from message text:
- * `script-error` (the sandbox reports the script threw on this input: a `TypedFailure` on
- * `SANDBOX_SCRIPT_ERROR_CHANNEL`), `selects-nothing` (a JSONPath selects nothing), `named-threw`
+ * `script-error` (the sandbox reports the script threw on this input: a `TypedFailure` on loom's
+ * `scriptError` channel, `SANDBOX_ERRORS.scriptError`), `selects-nothing` (a JSONPath selects nothing), `named-threw`
  * (a Named reshaper threw), and the deterministic resource limits a script hit on this input
  * (`limit-cpu`, `limit-memory`, `limit-output`). Anything else — a `wallClock` limit (host-load
  * dependent), a missing script, an unregistered reshaper, an untyped throw (transport, worker
@@ -31,11 +31,16 @@ export type ReshapeFailureKind =
   | "limit-memory"
   | "limit-output";
 
+/** A channel loom's sandbox declares (`SANDBOX_ERRORS`) — a rename there fails to compile here. */
+type SandboxChannel = keyof typeof SANDBOX_ERRORS;
+
 /**
- * The typed channel a sandbox (or an invoker adapting one) raises when the SCRIPT itself threw on
- * its input. Recognised by channel only; its payload is never read.
+ * The channel loom's sandbox completes on when the SCRIPT itself threw on its input (its own
+ * exception, a SyntaxError, a ReferenceError for a global the VM lacks). Recognised by channel
+ * only: its payload (`{ name?, message }`) is script-authored, UNTRUSTED text and is never read.
  */
-export const SANDBOX_SCRIPT_ERROR_CHANNEL = "scriptError";
+const SCRIPT_ERROR: SandboxChannel = "scriptError";
+const LIMIT_EXCEEDED: SandboxChannel = "limitExceeded";
 
 export type ReshapeResult =
   | { ok: true; value: unknown }
@@ -48,8 +53,8 @@ export type ReshapeResult =
 
 /** A sandbox `TypedFailure` → the output-caused kind it proves, if any. Channel + payload only. */
 function sandboxFailureKind(e: TypedFailure): ReshapeFailureKind | undefined {
-  if (e.channel === SANDBOX_SCRIPT_ERROR_CHANNEL) return "script-error";
-  if (e.channel !== "limitExceeded") return undefined;
+  if (e.channel === SCRIPT_ERROR) return "script-error";
+  if (e.channel !== LIMIT_EXCEEDED) return undefined;
   const kind = (e.payload as { kind?: unknown } | null | undefined)?.kind;
   if (kind === "cpu") return "limit-cpu";
   if (kind === "memory") return "limit-memory";
