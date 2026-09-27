@@ -147,6 +147,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "HydrationCache",
       "HydrationController",
       "HydrationStore",
+      "SANDBOX_SCRIPT_ERROR_CHANNEL",
       "SCHEMA_REPAIRED",
       "SplitHydrationController",
       "checkParams",

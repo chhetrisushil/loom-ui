@@ -117,9 +117,13 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   emits `SCHEMA_REPAIRED` (`inputDrift: "report-and-proceed"` still reports; it only lets a read-only
   viewer publish). Drift kinds: `input` (a step's schema pin moved — `remapOperation` repairs it) and
   `output` (the reshaping no longer works for the output: a failed shape pin, a failed value contract
-  (`contractKind`), or the reshaping itself failing on it (`reshapeFailure`) — only a planner repairs
-  it). A `reshapeFailure` record keeps the handle `error`, not `stale`, and the public finding unchanged;
-  it carries the raw output's shape and sample only, never a reshaped one. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else — or declare
+  (`contractKind`), or the reshaping itself failing BECAUSE of it (`reshapeFailure` + a typed
+  `reshapeFailureKind`: script-error, selects-nothing, named-threw, limit-cpu/-memory/-output) — only a
+  planner repairs it). Classify from the typed channel/payload, never a message; an infrastructure or
+  transient failure (wallClock, untyped throw, denial, missing script/reshaper, abort) is NOT drift. A
+  `reshapeFailure` record keeps the handle `error`, not `stale`, and the public finding unchanged; it
+  carries the raw output's shape and sample only. loom-ui never bounds repairs (apps dedupe on
+  `(versionHash, handle)` and cap attempts), and a server `onDrift` never forwards `observedSample`. Pin `outputShapeHash` with `outputShapeHashOf` — nothing else — or declare
   `outputCheck: "contract"`, whose kinds come from the bound nodes at execution time (`handleKinds`), never
   from the spec. A provider never reaches a browser: split hydration ships `handleInventory` and answers with
   `serveHandle`. Every new `ProviderSpec`/`MCPToolNode` field is optional with no default, so sealed
@@ -145,7 +149,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   (`driftCapabilities`) when a tool's drift is a single observation.
 - `reviseForDrift<R extends PlanResult>(planner: DriftReviser<R>, …): Promise<R>` resolves to the
   planner's OWN revise result: a planner whose `revise` returns more than a `PlanResult` gets every
-  extra field back (only `findings` may grow). A planner reproducing it by hand composes the exported
+  extra field back (only `findings` may grow; plain-JSON results only — the re-spread drops prototype members). A planner reproducing it by hand composes the exported
   helpers: `driftRequest`, `driftContext`, `observedSamples`, `driftCapabilities`, `unsampledDrift`.
 - A widget that keeps its id and kind WITHIN ITS CONTAINER is never re-created: `renderBlueprintDom`'s `update` patches it in place, and the subtree holding the focused element never leaves the DOM. Containers are keyed by layout id (Blueprint IR 2.4.0, loom ADR 0101 — `compile` emits every container's node id, root included) plus type plus role, so inserting or reordering containers keeps every widget inside them; a layout WITHOUT an id (hand-built) falls back to its ordinal among its id-less siblings, and an id'd container never matches an id-less one (no positional fallback on an id miss). A widget that moves to another container, or whose container's id, type or role changes (or, id-less, whose ordinal shifts), IS re-created — and, like a renderer without `DomWidgetHandle.patch`, it is REPORTED in `RecomposeReport.remounted`, never silently.
 - User-entered state is DOM state. A renderer overwrites an input's value only when the BOUND value changed — never on `patch`, never on a re-render that the value did not cause (a Lit property binding such as `<input .value=${…}>` satisfies this — Lit dirty-checks property parts against the last value it set; an imperative `el.value = …` in `render()`/`updated()` that runs on every render does not).

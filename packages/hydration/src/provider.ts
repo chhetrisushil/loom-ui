@@ -19,7 +19,13 @@ import {
   providerParams,
 } from "./params";
 import { terminalSteps, topoWaves } from "./plan";
-import { type ReshaperRegistry, outputShapeHashOf, reshape, safeStringify } from "./reshape";
+import {
+  type ReshapeFailureKind,
+  type ReshaperRegistry,
+  outputShapeHashOf,
+  reshape,
+  safeStringify,
+} from "./reshape";
 import type { HandleLoadResult } from "./scheduler";
 
 // ── Executing one provider ────────────────────────────────────────────────────
@@ -60,17 +66,18 @@ export interface DriftRecord {
    */
   readonly contractKind?: string;
   /**
-   * Output drift only, set when the RESHAPING ITSELF failed on the tool's output (a sandbox script
-   * crashed, timed out or hit a limit; a JSONPath selected nothing; a Named reshaper threw): the
-   * failure's finding code (`reshape-<channel>` / `reshape-failed`). `expected` is then `reshape`
-   * and `observed` that same code, and there is no reshaped value, so `observedShape` is absent —
-   * the raw output (`observedRawShape`, `observedSample`) is what a repair is authored against.
-   * Not recorded for a failure the output did not cause: an unregistered Named reshaper
-   * (`reshape-unregistered`), a script missing from the store (`reshape-scriptMissing`), or an
-   * aborted load. The handle's status stays `error` (not `stale`): the drift is reported for repair
-   * (`onDrift`), but whether a failing script is transient is not known here.
+   * Output drift only, set when the RESHAPING ITSELF failed on the tool's output — and only when
+   * the output demonstrably caused it (`reshapeFailureKind`): the failure's finding code
+   * (`reshape-<channel>` / `reshape-failed`). `expected` is then `reshape` and `observed` that
+   * same code, and there is no reshaped value, so `observedShape` is absent — the raw output
+   * (`observedRawShape`, `observedSample`) is what a repair is authored against. Infrastructure
+   * and transient failures (a `wallClock` limit, an untyped throw, a denial, a missing script or
+   * reshaper, an abort) record no drift. The handle's status stays `error` (not `stale`) and the
+   * public finding is unchanged; the drift is reported for repair (`onDrift`).
    */
   readonly reshapeFailure?: string;
+  /** Beside `reshapeFailure`: WHY, typed — so a consumer can exclude a kind without parsing findings. */
+  readonly reshapeFailureKind?: ReshapeFailureKind;
   /**
    * Output drift only: the structural shape loom's `shapeOf` saw of the RESHAPED value — the one
    * that failed the check, so it explains the mismatch. Absent when the value could not be walked,
@@ -196,16 +203,6 @@ function observedRawShape(raw: unknown): { observedRawShape?: Shape } {
     return {};
   }
 }
-
-/**
- * Reshape failures the OUTPUT did not cause, so no drift is recorded for them: the host registered
- * no such Named reshaper, or the sandbox store has no such script — the reshaping never ran
- * against the output.
- */
-const NOT_OUTPUT_DRIFT: ReadonlySet<string> = new Set([
-  "reshape-unregistered",
-  "reshape-scriptMissing",
-]);
 
 /**
  * The first finding (graph order) when every step that failed ON ITS OWN failed with the same
@@ -404,15 +401,18 @@ export async function executeProvider(
   });
   if (!shaped.ok) {
     findings.push(shaped.finding);
-    // The reshaping failed ON this output: output drift a planner can repair — so, like a failed
-    // pin, the record carries the raw output's shape and (under `captureSample`) its sample.
-    if (!NOT_OUTPUT_DRIFT.has(shaped.finding.code) && opts.signal?.aborted !== true)
+    // Only a failure the OUTPUT demonstrably caused (typed by `reshape`, never read from a
+    // message) is output drift a planner can repair — so, like a failed pin, the record carries
+    // the raw output's shape and (under `captureSample`) its sample. Infrastructure and transient
+    // failures carry no `failureKind`, and stay an error with no drift.
+    if (shaped.failureKind !== undefined && opts.signal?.aborted !== true)
       drift.push({
         kind: "output",
         handle: spec.handle,
         expected: "reshape",
         observed: shaped.finding.code,
         reshapeFailure: shaped.finding.code,
+        reshapeFailureKind: shaped.failureKind,
         ...(terminals.length === 1 && { stepId: (terminals[0] as MCPToolNode).stepId }),
         ...observedRawShape(raw),
         ...(opts.captureSample === true && {

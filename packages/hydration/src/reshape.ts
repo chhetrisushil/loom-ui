@@ -13,7 +13,49 @@ import { resolvePath } from "./plan";
 // host code, trusted like the host, with no sandbox hop. Each engine has its own branch: an
 // engine this function does not know is never sent to the sandbox by default.
 
-export type ReshapeResult = { ok: true; value: unknown } | { ok: false; finding: Finding };
+/**
+ * Why a reshaping failed, when the tool OUTPUT demonstrably caused it — the failures a re-authored
+ * binding can repair. Typed from the failure's channel and payload, never from message text:
+ * `script-error` (the sandbox reports the script threw on this input: a `TypedFailure` on
+ * `SANDBOX_SCRIPT_ERROR_CHANNEL`), `selects-nothing` (a JSONPath selects nothing), `named-threw`
+ * (a Named reshaper threw), and the deterministic resource limits a script hit on this input
+ * (`limit-cpu`, `limit-memory`, `limit-output`). Anything else — a `wallClock` limit (host-load
+ * dependent), a missing script, an unregistered reshaper, an untyped throw (transport, worker
+ * pool, integrity), an authorization or quota denial, an abort — has no kind: it is not drift.
+ */
+export type ReshapeFailureKind =
+  | "script-error"
+  | "selects-nothing"
+  | "named-threw"
+  | "limit-cpu"
+  | "limit-memory"
+  | "limit-output";
+
+/**
+ * The typed channel a sandbox (or an invoker adapting one) raises when the SCRIPT itself threw on
+ * its input. Recognised by channel only; its payload is never read.
+ */
+export const SANDBOX_SCRIPT_ERROR_CHANNEL = "scriptError";
+
+export type ReshapeResult =
+  | { ok: true; value: unknown }
+  | {
+      ok: false;
+      finding: Finding;
+      /** Set only when the output demonstrably caused the failure (see `ReshapeFailureKind`). */
+      failureKind?: ReshapeFailureKind;
+    };
+
+/** A sandbox `TypedFailure` → the output-caused kind it proves, if any. Channel + payload only. */
+function sandboxFailureKind(e: TypedFailure): ReshapeFailureKind | undefined {
+  if (e.channel === SANDBOX_SCRIPT_ERROR_CHANNEL) return "script-error";
+  if (e.channel !== "limitExceeded") return undefined;
+  const kind = (e.payload as { kind?: unknown } | null | undefined)?.kind;
+  if (kind === "cpu") return "limit-cpu";
+  if (kind === "memory") return "limit-memory";
+  if (kind === "output") return "limit-output";
+  return undefined; // wallClock (host-load dependent) or an unknown kind
+}
 
 /** A host-registered reshaper: the raw terminal output in, the widget's value out. */
 export type Reshaper = (input: unknown) => unknown | Promise<unknown>;
@@ -87,6 +129,7 @@ async function runNamed(
   } catch (err) {
     return {
       ok: false,
+      failureKind: "named-threw",
       finding: {
         code: "reshape-failed",
         severity: "error",
@@ -116,6 +159,7 @@ export function jsonPathSelect(value: unknown, path: string): ReshapeResult {
   if (out === undefined)
     return {
       ok: false,
+      failureKind: "selects-nothing",
       finding: {
         code: "reshape-failed",
         severity: "error",
@@ -149,15 +193,18 @@ export async function reshape(
     );
     return { ok: true, value };
   } catch (err) {
-    if (err instanceof TypedFailure)
+    if (err instanceof TypedFailure) {
+      const failureKind = sandboxFailureKind(err);
       return {
         ok: false,
+        ...(failureKind !== undefined && { failureKind }),
         finding: {
           code: `reshape-${err.channel}`,
           severity: "error",
           message: `sandbox ${err.channel}: ${safeStringify(err.payload)}`,
         },
       };
+    }
     return {
       ok: false,
       finding: {
