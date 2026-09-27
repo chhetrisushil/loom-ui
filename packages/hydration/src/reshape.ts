@@ -37,7 +37,8 @@ type SandboxChannel = keyof typeof SANDBOX_ERRORS;
 /**
  * The channel loom's sandbox completes on when the SCRIPT itself threw on its input (its own
  * exception, a SyntaxError, a ReferenceError for a global the VM lacks). Recognised by channel
- * only: its payload (`{ name?, message }`) is script-authored, UNTRUSTED text and is never read.
+ * only: its payload (`{ name?, message }`) is script-authored, UNTRUSTED text — it can echo the
+ * raw output — so it is never read, and never copied into a finding message.
  */
 const SCRIPT_ERROR: SandboxChannel = "scriptError";
 const LIMIT_EXCEEDED: SandboxChannel = "limitExceeded";
@@ -206,7 +207,14 @@ export async function reshape(
         finding: {
           code: `reshape-${err.channel}`,
           severity: "error",
-          message: `sandbox ${err.channel}: ${safeStringify(err.payload)}`,
+          // A `scriptError` payload is script-authored text that can echo the raw output
+          // (possibly sensitive, untrusted): fixed text only, never its `name` or `message` —
+          // no finding, handle status or log hook ever carries it. The raw output travels only
+          // as the tainted drift sample. Other channels' payloads are loom-authored.
+          message:
+            failureKind === "script-error"
+              ? `reshape script ${reshaping.scriptRef} failed on the output (script-error)`
+              : `sandbox ${err.channel}: ${safeStringify(err.payload)}`,
         },
       };
     }
