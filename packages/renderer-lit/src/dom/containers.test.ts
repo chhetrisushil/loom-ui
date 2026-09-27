@@ -7,11 +7,14 @@ import {
   MetricCard,
   RendererRegistry,
   type Widget,
+  type WidgetCatalog,
   blueprint$,
+  builtinCatalog,
   cell,
   flex,
   grid,
   stack,
+  validateBlueprint,
 } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
@@ -144,7 +147,7 @@ const onboarding = (
     steps?: readonly string[];
     gap?: number;
     stepTitles?: Record<string, string>;
-    /** IR 2.4.0: give the roled column and every step a layout id (the step's name). */
+    /** IR 2.4.0: give the roled column (`steps`) and every step (`step-<name>`) a layout id. */
     ids?: boolean;
   } = {}
 ): Blueprint =>
@@ -166,7 +169,8 @@ const onboarding = (
             ...(opts.gap !== undefined && { gap: opts.gap }),
             children: (opts.steps ?? ["account", "payment", "pickup"]).map((s) =>
               stack({
-                ...(opts.ids && { id: s }),
+                // Distinct from the widget inside (`s`): one node-id namespace (ADR 0101 D2).
+                ...(opts.ids && { id: `step-${s}` }),
                 title: opts.stepTitles?.[s] ?? s,
                 children: [s === "payment" ? note(`${s}-note`) : metric(s)],
               })
@@ -736,6 +740,24 @@ describe("container renderers — dispose", () => {
 });
 
 describe("container renderers — containers keyed by id (IR 2.4.0, loom ADR 0101)", () => {
+  it("every id'd fixture is a VALID Blueprint — container ids never collide with widget ids", () => {
+    const catalog: WidgetCatalog = {
+      id: "container-fixtures",
+      entries: [...builtinCatalog.entries, { kind: "NoteInput", props: [], binding: "none" }],
+    };
+    for (const steps of [undefined, ["account", "payment"], ["account", "extra", "payment"]])
+      for (const role of [undefined, "stepped"]) {
+        const bp = onboarding({
+          ids: true,
+          ...(steps !== undefined && { steps }),
+          ...(role !== undefined && { role }),
+        });
+        expect(
+          validateBlueprint(bp, catalog).findings.filter((f) => f.severity === "error")
+        ).toEqual([]);
+      }
+  });
+
   it("a step inserted ABOVE the focused, typed-in step: nothing remounted, chrome kept, update once, focus and value kept", () => {
     const log: string[] = [];
     const { host, handle } = setup(
@@ -753,7 +775,8 @@ describe("container renderers — containers keyed by id (IR 2.4.0, loom ADR 010
       onboarding({ role: "stepped", ids: true, steps: ["account", "extra", "payment"] })
     );
     expect(r).toMatchObject({ remounted: [], findings: [] });
-    expect(r.identity.added).toEqual(["extra"]);
+    // loom's identity walk covers layout ids too (ADR 0101 D6): the new step AND its widget.
+    expect(r.identity.added).toEqual(["step-extra", "extra"]);
     expect(log).toEqual(["mount:2", "update:3"]); // one update: the child list changed
     expect(host.querySelector("nav")).toBe(nav);
     expect(host.querySelector("[data-widget-id='account']")).toBe(accountHost);
