@@ -7,15 +7,17 @@ draw. Composition is recorded as a content-addressed artifact plus the operation
 it, so a view can be replayed, revised without losing node identity, and rendered without a model
 in the path.
 
-| Package | Job |
-|---|---|
-| `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint`; `./log` subpath for content-addressed persistence |
-| `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects (MCP graph → sandbox/JSONPath/named reshape → a shape pin, or the bound kinds' value contracts), publishes them as one loom projection (`loom-ui.hydration`), schedules by priority, applies per-load params to overridable arguments and resolves relative-time tokens against an injected clock, caches per principal and per params, caps and de-duplicates tool calls, reports drift for the app's durable repair (or proceeds past an input drift for a read-only viewer) — in-process, or split across a trust boundary (`handleInventory` + `serveHandle` on the server, `SplitHydrationController` + a `HandleLoader` on the client, from the browser-safe `@loom-ui/hydration/client` subpath) |
-| `@loom-ui/renderer-lit` | A loom DOM renderer adapter (`renderBlueprintDom`, subpath `./dom`, with a container-renderer seam keyed by layout role — `DomRenderOptions.containers`) and Lit elements registered under loom kinds (`litRegistry`) — every built-in kind plus the framework kinds (`FRAMEWORK_KINDS`: `TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`); four app-level elements (time-range picker, locale picker, sandbox, A2UI view) |
-| `@loom-ui/renderer-terminal` | String renderers for every framework kind merged over loom's terminal registry, `renderExperience` (loom's status matrix — a declared channel with no value yet prints loom's loading row `⋯ <title>`, an `empty` status `○ <title>: <message>` — with the framework's value check in loom's `check` seam), and `watch` |
-| `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner that runs its model call as one `ctx.decide` per plan, a catalogue-derived output contract (a model may set `binding.sensitivity` only on a type whose entry declares `sensitivity: "model-may-set"`), plan-time pins, drift re-authoring (`reviseForDrift`), the conformance kit any planner must pass, and `interpretAction` (experience ops vs business actions) |
+## Packages
 
-Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
+| Package | Job | README |
+|---|---|---|
+| `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint` | [packages/core](packages/core/README.md) |
+| `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects and publishes them as one loom projection, in-process or split across a trust boundary | [packages/hydration](packages/hydration/README.md) |
+| `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner, drift re-authoring and a conformance kit | [packages/planner](packages/planner/README.md) |
+| `@loom-ui/renderer-lit` | A loom DOM renderer adapter plus Lit elements registered under loom's kinds and the framework's own kinds | [packages/renderer-lit](packages/renderer-lit/README.md) |
+| `@loom-ui/renderer-terminal` | String renderers for every framework kind, merged over loom's terminal registry, with hydration status | [packages/renderer-terminal](packages/renderer-terminal/README.md) |
+
+Full detail on each package's own README, below. Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
 
 ## Shape of a composition
 
@@ -157,12 +159,6 @@ relative specifiers (`./litRegistry`, not `./litRegistry.js`) that only a bundle
 completes — plain Node ESM resolution requires the extension. Its consumer is a bundler (Vite,
 webpack, …); that is the supported path, not a plain Node `import()`.
 
-## Consumers
-
-- [genUI](https://github.com/chhetrisushil/genUI) — generative dashboards and authoring; migrating onto loom-ui (loom `docs/requirements/2026-09-23-genui-migration-design.md`).
-
-Theming: every `lu-*` element reads `--lu-*` CSS custom properties (`--lu-text`, `--lu-text-dim`, `--lu-border`, `--lu-panel`, `--lu-panel-2`, `--lu-grid`, `--lu-accent`, `--lu-radius`, `--lu-delta-up`, `--lu-delta-up-bg`, `--lu-delta-down`, `--lu-delta-down-bg`, `--lu-delta-flat`, `--lu-delta-flat-bg`, `--lu-status-ok`, `--lu-status-warning`, `--lu-status-critical`); set them on any ancestor.
-
 ## Planning (illustrative — not a compiling snippet)
 
 ```ts
@@ -204,3 +200,11 @@ Samples are per HANDLE because an observation belongs to one CALL — a tool AND
 **A sample stays on the server.** `observedSample` is raw tool output. A server's `onDrift` must never forward it (or a `DriftReport` carrying it) to a client. The split response never includes it, but the hook's report does.
 
 `reviseForDrift` is generic over the planner's own result: `reviseForDrift<R extends PlanResult>(planner: DriftReviser<R>, input, ctx): Promise<R>`, where `DriftReviser<R>` is just `{ revise(input: ReviseInput, ctx: DecideContext): Promise<R> }` — every `Planner` satisfies it with `R = PlanResult`. A planner whose `revise` returns more (say, artifacts the caller must persist beside the ops) gets that result back with every extra field intact; only `findings` may grow (`unsampledDrift`'s `drift-sample-missing` warns are appended). A planner that must reproduce the function by hand composes the same exported helpers: `driftRequest`, `driftContext`, `observedSamples`, `driftCapabilities` and `unsampledDrift`. `findings` may grow, and the result is re-spread when it does, so return plain JSON data: a class instance's prototype members (methods, getters) are dropped.
+
+## Theming
+
+Every `lu-*` element reads `--lu-*` CSS custom properties (`--lu-text`, `--lu-text-dim`, `--lu-border`, `--lu-panel`, `--lu-panel-2`, `--lu-grid`, `--lu-accent`, `--lu-radius`, `--lu-delta-up`, `--lu-delta-up-bg`, `--lu-delta-down`, `--lu-delta-down-bg`, `--lu-delta-flat`, `--lu-delta-flat-bg`, `--lu-status-ok`, `--lu-status-warning`, `--lu-status-critical`); set them on any ancestor.
+
+## Consumers
+
+- [genUI](https://github.com/chhetrisushil/genUI) — generative dashboards and authoring; migrating onto loom-ui (loom `docs/requirements/2026-09-23-genui-migration-design.md`).
