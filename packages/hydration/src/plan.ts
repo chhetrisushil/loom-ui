@@ -10,22 +10,66 @@ import type { Finding, MCPToolNode } from "@loom-ui/core";
 // past the end of a present array is not a bad path — the upstream answered with no such row —
 // and is reported apart from every other miss (`walkPath`), so it can publish `empty`.
 
+/**
+ * Kahn's algorithm over step IDS, O(V + E): in-degree counts (distinct in-graph dependencies per
+ * step) and a dependents list built once, then a FIFO of ids whose level never decreases. A step's
+ * wave is 1 + the latest wave among its in-graph dependencies (0 with none); an id is placed at the
+ * earliest wave any step carrying it is ready. Waves are then filled in the input's own order, so a
+ * wave lists its steps exactly as the input does. This is the semantics of the original
+ * re-filtering loop, pinned by an equivalence test: a step whose id another step already placed in
+ * an EARLIER wave never runs (a duplicate id), and `cycle` lists — in input order — every step
+ * whose id is never placed (a cycle, or anything behind one).
+ */
 export function topoWaves(nodes: readonly MCPToolNode[]): {
   waves: MCPToolNode[][];
   cycle: string[];
 } {
   const ids = new Set(nodes.map((n) => n.stepId));
-  const placed = new Set<string>();
-  const waves: MCPToolNode[][] = [];
-  let remaining = [...nodes];
-  while (remaining.length > 0) {
-    const wave = remaining.filter((n) => n.dependsOn.every((d) => placed.has(d) || !ids.has(d)));
-    if (wave.length === 0) return { waves, cycle: remaining.map((n) => n.stepId) };
-    waves.push(wave);
-    for (const n of wave) placed.add(n.stepId);
-    remaining = remaining.filter((n) => !placed.has(n.stepId));
+  const pending = new Array<number>(nodes.length);
+  const readyAt = new Array<number>(nodes.length).fill(-1);
+  const latestDep = new Array<number>(nodes.length).fill(-1);
+  const dependents = new Map<string, number[]>();
+  const placedAt = new Map<string, number>();
+  const queue: string[] = [];
+  const ready = (i: number, level: number): void => {
+    readyAt[i] = level;
+    const id = (nodes[i] as MCPToolNode).stepId;
+    if (placedAt.has(id)) return;
+    placedAt.set(id, level);
+    queue.push(id);
+  };
+  nodes.forEach((n, i) => {
+    const deps = new Set(n.dependsOn.filter((d) => ids.has(d)));
+    pending[i] = deps.size;
+    for (const d of deps) {
+      const list = dependents.get(d);
+      if (list === undefined) dependents.set(d, [i]);
+      else list.push(i);
+    }
+  });
+  nodes.forEach((_, i) => {
+    if (pending[i] === 0) ready(i, 0);
+  });
+  for (let head = 0; head < queue.length; head++) {
+    const id = queue[head] as string;
+    const level = placedAt.get(id) as number;
+    for (const i of dependents.get(id) ?? []) {
+      latestDep[i] = Math.max(latestDep[i] as number, level);
+      pending[i] = (pending[i] as number) - 1;
+      if (pending[i] === 0) ready(i, (latestDep[i] as number) + 1);
+    }
   }
-  return { waves, cycle: [] };
+  const waves: MCPToolNode[][] = [];
+  const cycle: string[] = [];
+  nodes.forEach((n, i) => {
+    const at = placedAt.get(n.stepId);
+    if (at === undefined) cycle.push(n.stepId);
+    else if (readyAt[i] === at) {
+      while (waves.length <= at) waves.push([]);
+      (waves[at] as MCPToolNode[]).push(n);
+    }
+  });
+  return { waves, cycle };
 }
 
 export function terminalSteps(nodes: readonly MCPToolNode[]): MCPToolNode[] {
