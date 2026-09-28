@@ -10,6 +10,7 @@ import {
   validateExperience,
 } from "@loom-ui/core";
 import { outputShapeHashOf } from "@loom-ui/hydration";
+import { tainted } from "@loom/classify";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
 import {
@@ -1205,14 +1206,32 @@ describe("materialize — step references (multi-step providers)", () => {
     ],
   });
 
-  it("danglingStepReference names a reference to a step outside the graph, and one to a step the referrer does not depend on", () => {
+  it("danglingStepReference is hydration's own rule: a reference must name a step in a STRICTLY EARLIER wave", () => {
     expect(danglingStepReference([cursor, totals])).toBeUndefined();
     expect(danglingStepReference([{ ...totals, dependsOn: [] }])).toContain(
       "not in the provider's graph"
     );
+    // Same wave: both run together, so the referenced output does not exist yet.
     expect(danglingStepReference([cursor, { ...totals, dependsOn: [] }])).toContain(
-      "not among its dependencies"
+      "does not run before it"
     );
+    // Not a dependency, but in an earlier wave: the executor resolves it, so it is not refused.
+    const a = { ...cursor, stepId: "a" };
+    const b = { ...cursor, stepId: "b", dependsOn: ["a"] };
+    const c = {
+      ...totals,
+      stepId: "c",
+      dependsOn: ["b"],
+      arguments: { q: "{{steps.a.output.q}}" },
+    };
+    expect(danglingStepReference([a, b, c])).toBeUndefined();
+    // A cycle never schedules.
+    expect(
+      danglingStepReference([
+        { ...a, dependsOn: ["b"] },
+        { ...b, dependsOn: ["a"] },
+      ])
+    ).toContain("cycle");
   });
 
   it("a composed binding whose arguments reference a step the provider cannot carry is REFUSED by name — no provider is declared", () => {
@@ -1277,5 +1296,222 @@ describe("materialize — step references (multi-step providers)", () => {
     );
     expect(findings.map((f) => f.code)).toContain("dangling-step-reference");
     expect(ops.some((o) => o.type === "remapProvider")).toBe(false);
+  });
+  const boardOf = (specs: ProviderSpec[], nodes: Array<[string, string]>) => {
+    const g = base();
+    const r = replay(g, [
+      ...specs.map((spec) => ({ type: "remapProvider" as const, handle: spec.handle, spec })),
+      ...nodes.map(([id, handle], i) => ({
+        type: "insertNode" as const,
+        parentId: g.root.id,
+        node: {
+          id,
+          order: `a${i}`,
+          kind: "semantic" as const,
+          type: "Metric",
+          typeVersion: "1.0.0",
+          span: 4,
+          label: { key: `${id}.label`, fallback: id },
+          props: {},
+          binding: { handle, priority: "P0" as const },
+        },
+      })),
+    ]);
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const nodeDraft = (id: string, args: Record<string, unknown>, path = "totals.count") => ({
+    id,
+    type: "Metric",
+    label: id,
+    span: 4,
+    props: {},
+    binding: { capability: "orders_summary", arguments: args, path, priority: "P0" as const },
+  });
+  const behind = (handle: string, region: string): ProviderSpec => ({
+    ...chainSpec,
+    handle,
+    executionGraph: [
+      { ...cursor, stepId: "up", arguments: { region } },
+      { ...totals, arguments: { window: "7d" }, dependsOn: ["up"] },
+    ],
+    reshaping: { engine: "JSONPath", scriptRef: "totals.count" },
+    outputShapeHash: outputShapeHashOf(412),
+  });
+  const driftedSample = { window: "7d", totals: { count: { value: 9 } } };
+  const upstreamOf = (spec: ProviderSpec | undefined) =>
+    spec?.executionGraph.slice(0, -1).map((s) => s.arguments);
+
+  it("the same terminal behind DIFFERENT upstream steps is a different call: an observation of one never repairs (or re-roots) the other", () => {
+    const exp = boardOf(
+      [behind("h_eu", "eu"), behind("h_us", "us")],
+      [
+        ["a", "h_eu"],
+        ["b", "h_us"],
+      ]
+    );
+    const { ops, findings } = materialize(
+      {
+        summary: "s",
+        nodes: [
+          nodeDraft("a", { window: "7d" }, "totals.count.value"),
+          nodeDraft("b", { window: "7d" }, "totals.count.value"),
+        ],
+      },
+      exp,
+      planningCatalog,
+      capabilitiesFixture,
+      { h_us: tainted(driftedSample, "provider:h_us") }
+    );
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    // `a` was not observed: it keeps its binding, and is never moved onto the US steps.
+    expect(findings.filter((f) => f.code === "sample-not-observed").map((f) => f.nodeId)).toEqual([
+      "a",
+    ]);
+    expect(ops.some((o) => o.type === "bindProvider" && o.nodeId === "a")).toBe(false);
+    // `b` is repaired from its own observation, behind its own (US) steps.
+    const r = replay(exp, ops);
+    if (!r.ok) throw new Error(r.finding.message);
+    const handleOf = (id: string) => {
+      const n = isContainer(r.value.root)
+        ? r.value.root.children.find((c) => c.id === id)
+        : undefined;
+      return n?.kind === "semantic" ? n.binding?.handle : undefined;
+    };
+    expect(handleOf("a")).toBe("h_eu");
+    expect(upstreamOf(r.value.providers[handleOf("b") ?? ""])).toEqual([{ region: "us" }]);
+  });
+
+  it("a SINGLE-step node whose literal call equals an observed multi-step terminal's is not handed that observation, nor its upstream steps", () => {
+    const lone: ProviderSpec = {
+      ...behind("h_lone", "x"),
+      executionGraph: [{ ...totals, stepId: "s1", arguments: { window: "7d" }, dependsOn: [] }],
+    };
+    const exp = boardOf(
+      [lone, behind("h_us", "us")],
+      [
+        ["solo", "h_lone"],
+        ["b", "h_us"],
+      ]
+    );
+    const { ops, findings } = materialize(
+      {
+        summary: "s",
+        nodes: [
+          nodeDraft("solo", { window: "7d" }, "totals.count.value"),
+          nodeDraft("b", { window: "7d" }, "totals.count.value"),
+        ],
+      },
+      exp,
+      planningCatalog,
+      capabilitiesFixture,
+      { h_us: tainted(driftedSample, "provider:h_us") }
+    );
+    expect(findings.filter((f) => f.code === "sample-not-observed").map((f) => f.nodeId)).toEqual([
+      "solo",
+    ]);
+    expect(ops.some((o) => o.type === "bindProvider" && o.nodeId === "solo")).toBe(false);
+    for (const op of ops)
+      if (op.type === "remapProvider" && op.spec.executionGraph.length === 1)
+        throw new Error("no single-step provider should be rebuilt");
+  });
+
+  it("a kept call whose upstream steps form a CYCLE is refused, never emitted to fail at execution", () => {
+    const cyclic: ProviderSpec = {
+      ...chainSpec,
+      handle: "h_cyc",
+      executionGraph: [
+        { ...cursor, stepId: "u1", dependsOn: ["u2"] },
+        { ...cursor, stepId: "u2", dependsOn: ["u1"] },
+        { ...totals, arguments: { window: "7d" }, dependsOn: ["u1"] },
+      ],
+    };
+    const exp = boardOf([cyclic], [["orders", "h_cyc"]]);
+    const { ops, findings } = materialize(
+      { summary: "s", nodes: [nodeDraft("orders", { window: "7d" }, "totals.count")] },
+      exp,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.map((f) => f.code)).toContain("dangling-step-reference");
+    expect(findings.find((f) => f.code === "dangling-step-reference")?.message).toContain("cycle");
+    expect(ops.some((o) => o.type === "remapProvider")).toBe(false);
+  });
+
+  it("a rebuilt terminal keeps its OWN `idempotent` and `overridable` flags — multi-step and single-step alike", () => {
+    const flagged: ProviderSpec = {
+      ...chainSpec,
+      handle: "h_flag",
+      executionGraph: [cursor, { ...totals, idempotent: false, overridable: ["from", "to"] }],
+    };
+    const loneFlagged: ProviderSpec = {
+      ...chainSpec,
+      handle: "h_lone_flag",
+      executionGraph: [
+        {
+          ...totals,
+          stepId: "fetch",
+          arguments: { window: "7d" },
+          dependsOn: [],
+          overridable: ["window"],
+        },
+      ],
+    };
+    const exp = boardOf(
+      [flagged, loneFlagged],
+      [
+        ["orders", "h_flag"],
+        ["solo", "h_lone_flag"],
+      ]
+    );
+    const { ops, findings } = materialize(
+      {
+        summary: "s",
+        nodes: [
+          nodeDraft("orders", templated, "totals.revenueCents"),
+          nodeDraft("solo", { window: "7d" }, "totals.revenueCents"),
+        ],
+      },
+      exp,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    const remaps = ops.flatMap((o) => (o.type === "remapProvider" ? [o.spec] : []));
+    const multi = remaps.find((sp) => sp.executionGraph.length === 2);
+    const single = remaps.find((sp) => sp.executionGraph.length === 1);
+    expect(multi?.executionGraph[1]).toMatchObject({
+      stepId: "totals",
+      idempotent: false,
+      overridable: ["from", "to"],
+    });
+    expect(single?.executionGraph[0]).toMatchObject({ idempotent: true, overridable: ["window"] });
+  });
+
+  it("editing a LITERAL argument while keeping the template keeps the upstream steps — the call is plannable, under a new handle", () => {
+    const exp = boardOf(
+      [
+        {
+          ...chainSpec,
+          executionGraph: [cursor, { ...totals, arguments: { ...templated, limit: 10 } }],
+        },
+      ],
+      [["orders", "orders_chain"]]
+    );
+    const { ops, findings } = materialize(
+      { summary: "s", nodes: [nodeDraft("orders", { ...templated, limit: 20 })] },
+      exp,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    const remap = ops.find((o) => o.type === "remapProvider");
+    if (remap?.type !== "remapProvider") throw new Error("expected a remapProvider");
+    expect(remap.spec.executionGraph).toEqual([
+      cursor,
+      { ...totals, arguments: { ...templated, limit: 20 } },
+    ]);
+    expect(remap.handle).not.toBe("orders_chain");
+    expect(replay(exp, ops).ok).toBe(true);
   });
 });
