@@ -151,6 +151,12 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   such sample it is kept, dropped with a warn, or reported (`sample-not-observed` / `drift-sample-missing`), never pinned from
   another handle's output. `CapabilityRef.sampleOutput` (one per tool) is only the fallback
   (`driftCapabilities`) when a tool's drift is a single observation.
+- A call made behind upstream steps (a multi-step provider's terminal step) is rebuilt behind the SAME
+  steps: `materialize` keeps the terminal's dependency closure (`dependsOn` + `{{steps.<id>.output…}}`
+  references, transitively; ids, order and specs unchanged) and hashes it into the handle. It never
+  emits a provider with a dangling step reference (`danglingStepReference`): such a binding is refused
+  as `dangling-step-reference` (error), never flattened into a provider that replays but cannot run. A
+  drift test that stops at `replay` proves nothing about that — EXECUTE the repaired provider.
 - `reviseForDrift<R extends PlanResult>(planner: DriftReviser<R>, …): Promise<R>` resolves to the
   planner's OWN revise result: a planner whose `revise` returns more than a `PlanResult` gets every
   extra field back (only `findings` may grow; plain-JSON results only — the re-spread drops prototype members). A planner reproducing it by hand composes the exported

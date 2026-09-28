@@ -75,6 +75,25 @@ export function resolvePath(obj: unknown, dotted: string): unknown {
 export const STEP_TEMPLATE = /^\{\{steps\.([^.}]+)\.output(?:\.(.+))?\}\}$/;
 
 /**
+ * Every step id `arguments` references through a `{{steps.<id>.output…}}` template, in first-seen
+ * order, deduplicated — the same template grammar `resolveArguments` substitutes, so a planner can
+ * check a graph it builds refers only to steps it keeps (a reference to a step outside the graph,
+ * or not upstream of the referencing step, is `unresolved-step-reference` at execution).
+ */
+export function stepReferences(args: unknown): string[] {
+  const found = new Set<string>();
+  const visit = (v: unknown): void => {
+    if (typeof v === "string") {
+      const m = STEP_TEMPLATE.exec(v);
+      if (m) found.add(m[1] as string);
+    } else if (Array.isArray(v)) for (const x of v) visit(x);
+    else if (v !== null && typeof v === "object") for (const x of Object.values(v)) visit(x);
+  };
+  visit(args);
+  return [...found];
+}
+
+/**
  * Substitute every `{{steps.<id>.output.<path>}}` in the step's arguments. EVERY template is
  * walked: a bad path anywhere (`absent`, or a step with no output) is `unresolved-step-reference`
  * (an error) and wins; otherwise an index past the end of a present upstream array is

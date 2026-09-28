@@ -5,6 +5,7 @@ import {
   isContainer,
   nodeIds,
 } from "@loom-ui/core";
+import { terminalSteps } from "@loom-ui/hydration";
 import type { CapabilityRef, ComposeInput, PlannerMessage, ReviseInput } from "./spi";
 
 export interface PreviousError {
@@ -167,7 +168,12 @@ export function describeExperience(
       continue;
     }
     const spec = n.binding ? exp.providers[n.binding.handle] : undefined;
-    const step = spec?.executionGraph[0];
+    // The node's OWN call is its provider's terminal step — for a multi-step provider,
+    // `executionGraph[0]` is an upstream step the node never binds. Shown with its arguments as
+    // they are (templates included), so a draft that keeps the call keeps them byte-identical.
+    // A graph with several terminals has no single call; its first step is shown, as before.
+    const terminals = spec ? terminalSteps(spec.executionGraph) : [];
+    const step = terminals.length === 1 ? terminals[0] : spec?.executionGraph[0];
     const offered = step
       ? capabilities.find((c) => c.toolName === step.toolName && c.toolVersion === step.toolVersion)
       : undefined;

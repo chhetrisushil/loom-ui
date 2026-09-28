@@ -376,7 +376,178 @@ describe("drift → revision", () => {
     // (the upstream step) this would have carried the upstream tool's unrelated sample instead.
     expect(remap?.spec?.outputShapeHash).toBe(outputShapeHashOf(412));
     const after = replay(expTwoStep, result.ops);
-    expect(after.ok).toBe(true);
+    if (!after.ok) throw new Error(after.finding.message);
+    // Replaying is not repairing: the rebuilt provider must still RUN. Its upstream step is kept
+    // (same step id, same position) — flattening it to one step would drop a call the terminal
+    // was declared to depend on.
+    const node = isContainer(after.value.root) ? after.value.root.children[0] : undefined;
+    const repairedHandle = node?.kind === "semantic" ? node.binding?.handle : undefined;
+    const repaired = after.value.providers[repairedHandle ?? ""] as ProviderSpec;
+    expect(repaired.executionGraph.map((s) => s.stepId)).toEqual(["s0", "s1"]);
+    expect(repaired.executionGraph[1]?.dependsOn).toEqual(["s0"]);
+    const calls: string[] = [];
+    const rerun = await executeProvider(repaired, {
+      invoker: {
+        async invokeTransient<TIn, TOut>(_id: string, input: TIn): Promise<TOut> {
+          calls.push((input as { toolName: string }).toolName);
+          return driftedReply as unknown as TOut;
+        },
+      },
+    });
+    expect(rerun.ok && rerun.value).toBe(412);
+    expect(calls).toEqual(["orders.summary.upstream", "orders.summary"]);
+  });
+
+  /**
+   * The terminal step's ARGUMENTS reference earlier steps' outputs (`{{steps.<id>.output…}}`),
+   * through a two-deep chain. A repair that keeps the observed call must keep that call's whole
+   * dependency closure — flattening the provider to one step would keep an argument naming a step
+   * that no longer exists, which only fails when the repaired provider is EXECUTED.
+   */
+  it("reviseForDrift repairs a multi-step provider whose terminal step REFERENCES earlier steps: the dependency closure is kept, in order, with stable ids, and the repaired provider EXECUTES", async () => {
+    const cursorStep = {
+      stepId: "cursor-read",
+      toolName: "orders.cursor",
+      toolVersion: "1.0.0",
+      toolSchemaHash: "sha256:orders-cursor-1-0",
+      arguments: {},
+      dependsOn: [],
+      idempotent: true,
+    };
+    const windowStep = {
+      stepId: "window-resolve",
+      toolName: "orders.window",
+      toolVersion: "1.0.0",
+      toolSchemaHash: "sha256:orders-window-1-0",
+      arguments: { since: "{{steps.cursor-read.output.cursor.since}}" },
+      dependsOn: ["cursor-read"],
+      idempotent: true,
+    };
+    const terminalArgs = { window: "{{steps.window-resolve.output.window}}" };
+    const totalsStep = {
+      stepId: "totals",
+      toolName: "orders.summary",
+      toolVersion: "2.1.0",
+      toolSchemaHash: "sha256:orders-summary-2-1",
+      arguments: terminalArgs,
+      dependsOn: ["window-resolve"],
+      idempotent: true,
+    };
+    const chainSpec: ProviderSpec = {
+      handle: "orders_chain",
+      executionGraph: [cursorStep, windowStep, totalsStep],
+      reshaping: { engine: "JSONPath", scriptRef: "totals.count" },
+      outputShapeHash: outputShapeHashOf(412),
+      cachePolicy: { ttlSeconds: 60, scope: "principal" },
+    };
+    const g = genesis({ experienceId: "chain", intent: intentFixture, meta: metaFixture });
+    const built = replay(g, [
+      { type: "remapProvider", handle: "orders_chain", spec: chainSpec },
+      {
+        type: "insertNode",
+        parentId: g.root.id,
+        node: {
+          id: "orders",
+          order: "a",
+          kind: "semantic",
+          type: "Metric",
+          typeVersion: "1.0.0",
+          span: 4,
+          label: { key: "orders.label", fallback: "Orders" },
+          props: {},
+          binding: { handle: "orders_chain", priority: "P0" },
+        },
+      },
+    ]);
+    if (!built.ok) throw new Error(built.finding.message);
+    const board = seal(built.value);
+    // Each tool answers only when its templated input RESOLVED — a dangling reference cannot pass.
+    const chainInvoker = (drifted: boolean): TransientInvoker & { calls: string[] } => {
+      const calls: string[] = [];
+      return {
+        calls,
+        async invokeTransient<TIn, TOut>(_id: string, input: TIn): Promise<TOut> {
+          const { toolName, args } = input as {
+            toolName: string;
+            args: Record<string, unknown>;
+          };
+          calls.push(toolName);
+          if (toolName === "orders.cursor")
+            return { cursor: { since: "2026-09-01" } } as unknown as TOut;
+          if (toolName === "orders.window" && args.since === "2026-09-01")
+            return { window: "7d" } as unknown as TOut;
+          if (toolName === "orders.summary" && args.window === "7d")
+            return (drifted
+              ? { window: "7d", totals: { count: { value: 412 } } }
+              : { window: "7d", totals: { count: 412 } }) as unknown as TOut;
+          throw new Error(`unexpected call ${toolName} ${JSON.stringify(args)}`);
+        },
+      };
+    };
+    const outcome = await executeProvider(chainSpec, {
+      invoker: chainInvoker(true),
+      captureSample: true,
+    });
+    if (outcome.ok) throw new Error("expected drift");
+    expect(outcome.drift[0]?.stepId).toBe("totals");
+
+    // The model sees the node's OWN (terminal) call — with its templated arguments — and keeps it.
+    const reply = JSON.stringify({
+      summary: "re-pathed",
+      nodes: [
+        {
+          id: "orders",
+          type: "Metric",
+          label: "Orders",
+          span: 4,
+          props: {},
+          binding: {
+            capability: "orders_summary",
+            arguments: terminalArgs,
+            path: "totals.count.value",
+            priority: "P0",
+          },
+        },
+      ],
+    });
+    const planner = new ReferencePlanner({ model: scriptedModel([reply]), modelId: "m" });
+    const result = await reviseForDrift(
+      planner,
+      {
+        experience: board,
+        drift: outcome.drift,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+      },
+      recordingContext()
+    );
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const op = result.ops[0];
+    if (op?.type !== "prompt") throw new Error("expected one prompt op");
+    expect(op.materialized.map((o) => o.type)).toEqual([
+      "remapProvider",
+      "bindProvider",
+      "removeProvider",
+    ]);
+    const after = replay(board, result.ops);
+    if (!after.ok) throw new Error(after.finding.message);
+    const node = isContainer(after.value.root) ? after.value.root.children[0] : undefined;
+    const h = node?.kind === "semantic" ? node.binding?.handle : undefined;
+    const repaired = after.value.providers[h ?? ""] as ProviderSpec;
+    expect(repaired.executionGraph.map((s) => s.stepId)).toEqual([
+      "cursor-read",
+      "window-resolve",
+      "totals",
+    ]);
+    expect(repaired.executionGraph.slice(0, 2)).toEqual([cursorStep, windowStep]);
+    expect(repaired.executionGraph[2]?.arguments).toEqual(terminalArgs);
+    expect(repaired.executionGraph[2]?.dependsOn).toEqual(["window-resolve"]);
+    expect(repaired.reshaping.scriptRef).toBe("totals.count.value");
+    const invoker = chainInvoker(true);
+    const rerun = await executeProvider(repaired, { invoker });
+    if (!rerun.ok) throw new Error(rerun.finding.message);
+    expect(rerun.value).toBe(412);
+    expect(invoker.calls).toEqual(["orders.cursor", "orders.window", "orders.summary"]);
   });
 });
 

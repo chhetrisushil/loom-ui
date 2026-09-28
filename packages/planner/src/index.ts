@@ -20,10 +20,13 @@ export type { ExperiencePromotedPayload, Interpretation } from "./interaction";
 export {
   DEFAULT_TTL_SECONDS,
   buildProviderSpec,
+  callGraphOf,
+  danglingStepReference,
   materialize,
   orphanedProviders,
   providerHandle,
 } from "./materialize";
+export type { CallGraph } from "./materialize";
 export {
   COMPOSE_SYSTEM,
   MAX_FENCE_BODY,

@@ -1,6 +1,8 @@
 import {
   type ContainerNode,
+  type MCPToolNode,
   type Operation,
+  type ProviderSpec,
   apply,
   genesis,
   isContainer,
@@ -10,7 +12,13 @@ import {
 import { outputShapeHashOf } from "@loom-ui/hydration";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
-import { buildProviderSpec, materialize, orphanedProviders, providerHandle } from "./materialize";
+import {
+  buildProviderSpec,
+  danglingStepReference,
+  materialize,
+  orphanedProviders,
+  providerHandle,
+} from "./materialize";
 import type { CapabilityRef } from "./spi";
 import {
   capabilitiesFixture,
@@ -1125,5 +1133,149 @@ describe("materialize — revise (diff against the base)", () => {
       ];
       expect(orphanedProviders(exp, ops)).toEqual([]);
     });
+  });
+});
+
+/**
+ * A provider whose terminal step's arguments name an earlier step's output. `materialize` must
+ * never emit a provider whose graph cannot resolve such a reference — it replays, then fails at
+ * execution with `unresolved-step-reference`.
+ */
+describe("materialize — step references (multi-step providers)", () => {
+  const cursor: MCPToolNode = {
+    stepId: "cursor-read",
+    toolName: "orders.cursor",
+    toolVersion: "1.0.0",
+    toolSchemaHash: "sha256:orders-cursor-1-0",
+    arguments: {},
+    dependsOn: [],
+    idempotent: true,
+  };
+  const templated = { window: "{{steps.cursor-read.output.window}}" };
+  const totals: MCPToolNode = {
+    stepId: "totals",
+    toolName: "orders.summary",
+    toolVersion: "2.1.0",
+    toolSchemaHash: "sha256:orders-summary-2-1",
+    arguments: templated,
+    dependsOn: ["cursor-read"],
+    idempotent: true,
+  };
+  const chainSpec: ProviderSpec = {
+    handle: "orders_chain",
+    executionGraph: [cursor, totals],
+    reshaping: { engine: "JSONPath", scriptRef: "totals" },
+    outputShapeHash: outputShapeHashOf({ count: 412, revenueCents: 1 }),
+    cachePolicy: { ttlSeconds: 60, scope: "principal" },
+  };
+  const chainBoard = () => {
+    const g = base();
+    const r = replay(g, [
+      { type: "remapProvider", handle: "orders_chain", spec: chainSpec },
+      {
+        type: "insertNode",
+        parentId: g.root.id,
+        node: {
+          id: "orders",
+          order: "a",
+          kind: "semantic",
+          type: "Metric",
+          typeVersion: "1.0.0",
+          span: 4,
+          label: { key: "orders.label", fallback: "Orders" },
+          props: {},
+          binding: { handle: "orders_chain", priority: "P0" },
+        },
+      },
+    ]);
+    if (!r.ok) throw new Error(r.finding.message);
+    return r.value;
+  };
+  const bindingWith = (args: Record<string, unknown>, path = "totals.count"): PlanDraft => ({
+    summary: "s",
+    nodes: [
+      {
+        id: "orders",
+        type: "Metric",
+        label: "Orders",
+        span: 4,
+        props: {},
+        binding: { capability: "orders_summary", arguments: args, path, priority: "P0" },
+      },
+    ],
+  });
+
+  it("danglingStepReference names a reference to a step outside the graph, and one to a step the referrer does not depend on", () => {
+    expect(danglingStepReference([cursor, totals])).toBeUndefined();
+    expect(danglingStepReference([{ ...totals, dependsOn: [] }])).toContain(
+      "not in the provider's graph"
+    );
+    expect(danglingStepReference([cursor, { ...totals, dependsOn: [] }])).toContain(
+      "not among its dependencies"
+    );
+  });
+
+  it("a composed binding whose arguments reference a step the provider cannot carry is REFUSED by name — no provider is declared", () => {
+    const { ops, findings } = materialize(
+      bindingWith(templated),
+      base(),
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.map((f) => [f.code, f.severity])).toEqual([
+      ["dangling-step-reference", "error"],
+    ]);
+    expect(ops.some((o) => o.type === "remapProvider")).toBe(false);
+  });
+
+  it("a revise that keeps a multi-step node's call rebuilds it behind the SAME upstream steps (ids, order, specs), so it still runs", () => {
+    const exp = chainBoard();
+    const { ops, findings } = materialize(
+      bindingWith(templated, "totals.revenueCents"),
+      exp,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.filter((f) => f.severity === "error")).toEqual([]);
+    const remap = ops.find((o) => o.type === "remapProvider");
+    if (remap?.type !== "remapProvider") throw new Error("expected a remapProvider");
+    expect(remap.spec.executionGraph).toEqual([
+      cursor,
+      { ...totals, arguments: templated, dependsOn: ["cursor-read"] },
+    ]);
+    expect(danglingStepReference(remap.spec.executionGraph)).toBeUndefined();
+    const r = replay(exp, ops);
+    expect(r.ok && validateExperience(r.value, planningCatalog, "web").ok).toBe(true);
+  });
+
+  it("the upstream graph is part of the handle: the same call behind steps and alone are two providers", () => {
+    const alone = providerHandle(
+      "orders.summary",
+      "2.1.0",
+      "sha256:orders-summary-2-1",
+      templated,
+      "totals.count"
+    );
+    const behind = providerHandle(
+      "orders.summary",
+      "2.1.0",
+      "sha256:orders-summary-2-1",
+      templated,
+      "totals.count",
+      { stepId: "totals", dependsOn: ["cursor-read"], upstream: [cursor] }
+    );
+    expect(alone).not.toBe(behind);
+  });
+
+  it("a revise that CHANGES a multi-step node's arguments to a new templated call has no graph to run it in: refused, never flattened", () => {
+    const exp = chainBoard();
+    const { ops, findings } = materialize(
+      bindingWith({ window: "{{steps.other.output.w}}" }),
+      exp,
+      planningCatalog,
+      capabilitiesFixture
+    );
+    expect(findings.map((f) => f.code)).toContain("dangling-step-reference");
+    expect(ops.some((o) => o.type === "remapProvider")).toBe(false);
   });
 });
