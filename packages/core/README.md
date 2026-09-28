@@ -58,8 +58,11 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   `{ ok: true, value }` or `{ ok: false, finding }`.
 - `replay(genesis: Experience, ops: readonly Operation[]): OpResult<Experience>` — fold a whole
   operation log; stops at the first refusal.
-- `Operation`, `Provenance` — the operation's zod schema, and the `{ source, by?, at }`-shaped
-  provenance a recorded op may carry.
+- `Operation` — the operation's zod schema (the discriminated union documented above).
+- `Provenance` — `{ source: "user" | "agent" | "application" | "system", agentId?, modelId?,
+  ref? }`: who/what authored an op.
+- `RecordedOperation` — `{ op: Operation, by: Provenance, at: string }`: one op as a caller logs
+  it, `at` an ISO-8601 string.
 
 ### Reading the tree
 
@@ -67,8 +70,14 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   structural helpers.
 - `isPlaced`, `placementOf`, `placementProblems`, `roleProblem`, `GRID_COLUMNS` — grid placement
   and role validity; `placementProblems(node, columns = GRID_COLUMNS)` is width-parametric.
+- `Placement` — `Pick<SemanticNode, "row" | "rowSpan" | "column">`, what `placementOf` returns.
+- `Priority` — `"P0" | "P1" | "P2"`, a binding's load priority.
+- A `ContainerNode` may also carry `gap?: number`, the spacing between its children (alongside
+  `direction`, `span`, `row`/`rowSpan`/`column`, `title`, `role`).
 - `experienceNodeIds`, `preservesNodes` — the id set an Experience holds, and whether an edit kept
   every id an `IdentityReport` cares about (used by recompose reporting downstream).
+- `IdentityFinding` — one dropped-id finding inside an `IdentityReport` (`{ code:
+  "dropped-node-id", severity: "error", nodeId, message }`).
 
 ### The semantic catalogue
 
@@ -82,15 +91,23 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 - `validateExperience(exp, catalog, surface): ExperienceValidation` — the full structural +
   catalogue check (duplicate ids, tree depth, placement, roles, unresolved/degraded types); the
   result carries `nodes` (semantic nodes visited) so `ok` over zero nodes is visible, not silent.
-- `loomCatalogFor(catalog, surface)` — maps a `SemanticCatalog` to loom's `WidgetCatalog` shape,
-  for registering against a loom renderer.
+- `loomCatalogFor(catalog, surface, base = builtinCatalog)` — maps a `SemanticCatalog` to loom's
+  `WidgetCatalog` shape for one surface, for registering against a loom renderer; returns
+  `{ catalog, findings }` (`undeclared-kind-contract`, `binding-contract-conflict`,
+  `kind-contract-conflict` for a kind outside `base` that conflicts with or omits its own
+  contract).
+- `KindContract` — `{ kind, props?, binding? }`: the loom widget kind (plus, for a kind outside
+  loom's `builtinCatalog`, the contract loom checks against) a `SemanticEntry.surfaces[surface]`
+  resolves to.
 
 ### Compiling to a Blueprint
 
 - `compile(exp: Experience, opts: CompileOptions): CompileResult` — `{ blueprint, findings, ok }`
   for one surface. `opts.title` overrides the default `exp.intent.objective` (or
   `{ omit: true }` to compile `title: ""`); `opts.registry` turns an unregistered kind into a
-  `renderer-coverage` finding.
+  `renderer-coverage` finding; `opts.resolveLabel` resolves a `LocalizedText` (default: its
+  fallback text); `opts.baseCatalog` is the loom catalogue built-in kinds resolve against
+  (default `builtinCatalog`).
 - `hydrationPath`, `hydrationStatusPath`, `HYDRATION_VALUES_PREFIX`, `HYDRATION_STATUS_PREFIX` —
   the compiled projection paths a binding's `values.<handle>` / `status.<handle>` live at.
 - `experienceHandles(exp): HandleUse[]` — every bound handle, once, with its highest-priority use
@@ -128,13 +145,15 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 
 ### Ordering
 
-- `orderKeyBetween(a, b)`, `orderKeyAfterAll(keys)` — fractional order keys (`ExperienceNode.order`)
-  so concurrent inserts never collide.
+- `orderKeyBetween(a, b)` — a fractional order key strictly between `a` and `b` (either `null` for
+  ±∞); `orderKeyAfterAll(siblings: ReadonlyArray<{ order: string }>)` — the key that sorts after
+  every sibling, for an append. Order keys (`ExperienceNode.order`) let concurrent inserts never
+  collide.
 
 ## Examples
 
-Composing and compiling an Experience (illustrative — not a compiling snippet: it elides `meta`
-and a real catalogue):
+Composing and compiling an Experience (illustrative — not a compiling snippet: it elides a real
+catalogue):
 
 ```ts
 import { apply, compile, genesis } from "@loom-ui/core";
@@ -180,7 +199,7 @@ if (!put.ok) throw new Error(put.finding.message);
 ctx.emit(EXPERIENCE_COMPOSED, {
   ref: put.ref,
   parents: put.experience.parents,
-  ops: [{ op, by: { source: "user" }, at: Date.now() }],
+  ops: [{ op, by: { source: "user" }, at: new Date().toISOString() }],
 });
 ```
 

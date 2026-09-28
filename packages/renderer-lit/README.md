@@ -15,20 +15,26 @@ pnpm add @loom-ui/renderer-lit
 ```
 
 ```ts
-// The DOM adapter and Lit registry — the subpath a bundler resolves.
-import { renderBlueprintDom, litRegistry } from "@loom-ui/renderer-lit/dom";
+// The root entry carries both the custom elements (registered on import) and the DOM adapter —
+// `index.ts` re-exports everything `./dom` does, plus the elements, formatting, i18n and a11y
+// helpers.
+import { renderBlueprintDom, litRegistry, LuKpi, LuTimeRangePicker, measure } from "@loom-ui/renderer-lit";
 
-// Registering the custom elements (side-effect import) and reading their exported classes/types
-// is the root entry.
-import { LuKpi, LuTimeRangePicker, measure } from "@loom-ui/renderer-lit";
+// `./dom` is the same adapter (`renderBlueprintDom`, `litRegistry`, …) through a narrower
+// subpath — no `LuKpi`/`measure`/i18n/a11y re-exports, just the adapter and its types. It still
+// registers every custom element as a side effect (it imports the widgets module for that).
+import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/renderer-lit/dom";
 ```
 
 ## Key concepts
 
-- **Two layers.** The root entry defines and registers every `lu-*` custom element (a `LitElement`
-  subclass per kind) plus formatting/i18n/a11y helpers. The `./dom` subpath is the adapter that
-  mounts a loom `Blueprint` into the DOM using a `RendererRegistry` of element-mounting functions
-  — `litRegistry` is that registry, pre-wired to the `lu-*` elements.
+- **One surface, two entry points.** The root entry (`index.ts`) defines and registers every
+  `lu-*` custom element (a `LitElement` subclass per kind), the formatting/i18n/a11y helpers, and
+  re-exports everything the `./dom` subpath exports — so `renderBlueprintDom`, `litRegistry` and
+  the DOM adapter's types are all importable from `@loom-ui/renderer-lit` directly. The `./dom`
+  subpath is the same adapter alone, for a narrower import when you don't need the elements'
+  classes or the formatting/i18n/a11y helpers by name — `litRegistry` is a `RendererRegistry` of
+  element-mounting functions, pre-wired to the `lu-*` elements.
 - **`renderBlueprintDom` mirrors loom's React renderer.** Same grid placement (loom ADR 0098), same
   section-title wrapping, same status matrix (loading/empty/stale/error rows) — so a Blueprint
   renders identically whichever renderer draws it, modulo the widget implementation itself.
@@ -89,8 +95,8 @@ import { LuKpi, LuTimeRangePicker, measure } from "@loom-ui/renderer-lit";
   and the compact axis-tick form of a semantic number, both delegating to `@loom-ui/core`'s
   `formatSemanticNumber`/`effectiveFormat` so the DOM and terminal renderers never disagree.
 - `timeTick(iso, spanMs): string` — a compact time-axis tick label sized to the series' span.
-- `describeValue(kind, value, props)` — a spoken summary of a rendered value for a screen reader,
-  reading the same `format`/`unit` precedence the widget itself renders with.
+- `describeValue(kind, value, title, props?)` — a spoken summary of a rendered value for a screen
+  reader, reading the same `format`/`unit` precedence the widget itself renders with.
 
 ### Localization
 
@@ -148,9 +154,10 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 - **`@loom-ui/renderer-lit/dom` is bundler-only.** It has `moduleResolution: "Bundler"` output
   (extensionless relative specifiers); running it under plain Node ESM resolution fails — the
   supported path is a bundler like Vite or webpack.
-- **Value contracts are enforced, not assumed.** Every framework-kind widget checks its bound
-  value with `@loom-ui/core`'s `checkKindValue` before drawing it and shows a visible error state
-  on a mismatch, rather than rendering `undefined` fields silently.
+- **Value contracts are enforced, not assumed.** The shared `LuWidget` base every bound widget
+  extends checks its value with `@loom-ui/core`'s `checkKindValue` before drawing it and shows a
+  visible error state on a mismatch — the built-in kinds (`LuMetricCard`, `LuStatusBadge`,
+  `LuDataTable`, …) get this as much as the framework kinds, not only the latter.
 
 ## See also
 

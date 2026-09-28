@@ -29,7 +29,8 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   (`@loom-ui/hydration/client`, `src/client.ts`) carries only what split hydration needs in a
   browser: the split controller, the loader contract, the store, and param checks — nothing that
   imports the sandbox, MCP, `@loom/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
-  the *built* client bundle to enforce this, and keeps it under a size budget (~33 KB minified).
+  the *built* client bundle to enforce this, and keeps it under a 64 KB size budget (about 34 KB
+  minified today).
 - **The hydration projection.** Every handle publishes to one loom projection
   (`HYDRATION_PROJECTION_ID = "loom-ui.hydration"`, version `HYDRATION_PROJECTION_VERSION`) that a
   `HydrationStore` wraps; a compiled Blueprint's bindings read `values.<handle>` /
@@ -72,6 +73,13 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   controllers and `serveHandle`/`serveHandles` call underneath.
 - `ExecuteOptions`, `ProviderOutcome`, `DriftRecord`, `InputDriftMode` — the execution options and
   outcome/drift shapes `executeProvider` and `onDrift` use.
+- `DriftReport` — what `ControllerOptions.onDrift` actually receives: `{ experienceId,
+  versionHash, handle, spec, drift: readonly DriftRecord[], findings, proceeded }` — one or more
+  drift records for the handle, plus the provider spec that drifted and whether the load
+  retried and published (`inputDrift: "report-and-proceed"`).
+- `HandleLoadResult` — what every load resolves to and what both controllers publish:
+  `{ state: "ready", value, finding? } | { state: "stale" | "error", finding } | { state:
+  "empty", finding }`.
 - `HydrationCache`, `CacheVariant` — the per-principal, per-params cache `HydrationController` uses
   by default (inject your own, or a fresh one per controller).
 - `limitInvoker`, `memoInvoker`, `signalInvoker` — `TransientInvoker` wrappers: cap concurrency,
@@ -86,14 +94,19 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 
 ### Split hydration — server half
 
-- `handleInventory(exp, { revisionOf }): { inventory, findings }` — the client-safe inventory: per
-  bound handle, its priority, the overridable param names, and an opaque, keyed revision.
-  `revisionOf` MUST be a keyed hash (e.g. an HMAC over a server secret) — never the provider's own
-  content fingerprint, which a client could confirm a guessed provider against offline.
-- `serveHandle(exp, request, opts)`, `serveHandles(exp, requests, opts)` — answer one or many
-  `HandleLoadRequest`s; every request is treated as untrusted and re-checked server-side.
-  `DEFAULT_MAX_BATCH` (256) and `DEFAULT_MAX_CONCURRENT_CALLS` (32) are the defaults `ServeOptions`
-  overrides.
+- `handleInventory(exp, opts: InventoryOptions): { inventory, findings }` — the client-safe
+  inventory: per bound handle, its priority, the overridable param names, and an opaque, keyed
+  revision.
+- `InventoryOptions` — `{ revisionOf: RevisionFn }`.
+- `RevisionFn` — `(handle: string, fingerprint: string) => string`. MUST be a keyed hash (e.g. an
+  HMAC over a server secret) — never the provider's own content fingerprint, which a client could
+  confirm a guessed provider against offline; `handleInventory` throws if it returns a non-string,
+  an empty string, or the fingerprint itself.
+- `serveHandle(exp, request, opts: ServeOptions)`, `serveHandles(exp, requests, opts: ServeOptions)`
+  — answer one or many `HandleLoadRequest`s; every request is treated as untrusted and re-checked
+  server-side. `ServeOptions` extends `ExecuteOptions` (minus `params`/`kinds`) with `maxBatch?`
+  (default `DEFAULT_MAX_BATCH`, 256) and `maxConcurrentCalls?` (default
+  `DEFAULT_MAX_CONCURRENT_CALLS`, 32).
 - `publicFinding(handle, finding)` — the public form of a finding a client may see (fixed code,
   handle name only — never a tool, argument, script or exception text).
 
@@ -167,10 +180,12 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   (`handleInventory`) and answers requests (`serveHandle`); a client only ever sees a finding's
   PUBLIC form (fixed code + handle name) — the full finding (tool, step, script, exception text)
   reaches only the server's own `onFinding` hook.
-- **Drift is reported, never repaired here.** `onDrift` fires with a typed `DriftRecord`; applying
-  a fix (`remapOperation` for input drift, `@loom-ui/planner`'s `reviseForDrift` for output drift)
-  and emitting `SCHEMA_REPAIRED` is the app's job, inside its own durable execution. Nothing in
-  this package dedupes or bounds repairs — an app must dedupe on `(versionHash, handle)` and cap
+- **Drift is reported, never repaired here.** `onDrift` fires with a `DriftReport`
+  (`{ experienceId, versionHash, handle, spec, drift: readonly DriftRecord[], findings, proceeded
+  }`) — one or more typed `DriftRecord`s for the handle, not a single record. Applying a fix
+  (`remapOperation` for input drift, `@loom-ui/planner`'s `reviseForDrift` for output drift) and
+  emitting `SCHEMA_REPAIRED` is the app's job, inside its own durable execution. Nothing in this
+  package dedupes or bounds repairs — an app must dedupe on `(versionHash, handle)` and cap
   attempts itself.
 - **A `scriptError` payload is untrusted, unlogged text.** A reshaping script's own exception can
   echo the raw output; loom-ui classifies drift by the failure's typed channel alone and never
