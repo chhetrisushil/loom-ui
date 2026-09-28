@@ -41,10 +41,10 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   Experience: an `experience.op` action is admitted only if it parses as an `Operation`, is not
   `prompt`/`setRole`/a provider op, and does not touch the root; everything else passes through to
   loom's ordinary business-action path untouched.
-- **Drift re-authoring.** `reviseForDrift` turns a `DriftReport` from `@loom-ui/hydration` into a
-  revision request any `Planner` can serve, composing the same helpers (`driftRequest`,
-  `driftContext`, `observedSamples`, `driftCapabilities`, `unsampledDrift`) the reference planner
-  itself calls.
+- **Drift re-authoring.** `reviseForDrift` takes the `DriftRecord`s collected from one or more
+  `@loom-ui/hydration` `DriftReport`s (their `.drift` arrays) and turns them into a revision
+  request any `Planner` can serve, composing the same helpers (`driftRequest`, `driftContext`,
+  `observedSamples`, `driftCapabilities`, `unsampledDrift`) the reference planner itself calls.
 
 ## API
 
@@ -63,6 +63,14 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   a planner needs; any loom `ctx` satisfies it.
 - `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loom/llm`'s
   `LlmProvider.complete` a model must satisfy, and its token-usage shape.
+- `planDecisionId(kind, input): string` — the `ctx.decide` key `compose`/`revise` use: every input
+  that shapes the prompt (intent/request, catalogue CONTENT, the offered capabilities including
+  their tool-authored text, caller `context`, and `surface`), deliberately excluding a
+  capability's `sampleOutput` (a new sample is a new revision, never a silent re-plan). Overloaded
+  per `kind`: `"compose"` takes `{ intent, catalog, capabilities, context?, surface? }`;
+  `"revise"` takes `{ versionHash, request, catalog?, capabilities?, context?, surface?,
+  observedHandles? }`. `ReferencePlanner` calls it to key its own `ctx.decide`; a custom planner
+  can reuse it for the same replay-stability.
 
 ### Reference planner
 
@@ -124,10 +132,12 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 
 ### Usage accounting
 
-- `readReportedUsage(reply)`, `addUsage(a, b)`, `totalUsage(attempts)`, `isPlannerUsage(u)` — read
-  a model reply's `usage`, fold it into a running total (refusing rather than overflowing
-  `Number.MAX_SAFE_INTEGER`), sum an attempt list, and validate a `PlannerUsage` shape. Exactly
-  what `ReferencePlanner` itself calls — a custom planner need not re-derive any of it.
+- `readReportedUsage(reply)`, `addUsage(a, b)`, `totalUsage(attempts)` — read a model reply's
+  `usage`, fold it into a running total (refusing rather than overflowing
+  `Number.MAX_SAFE_INTEGER`), and sum an attempt list. Exactly what `ReferencePlanner` itself
+  calls — a custom planner need not re-derive any of it.
+- `isPlannerUsage(u)` — validate that a value has the `PlannerUsage` shape; exported for a
+  caller's own checks, not called by `ReferencePlanner` itself.
 
 ## Examples
 
@@ -152,13 +162,17 @@ Repairing drift a hydration `onDrift` reported (illustrative):
 
 ```ts
 import { reviseForDrift } from "@loom-ui/planner";
+import type { DriftReport } from "@loom-ui/hydration";
+
+// Collected from one or more DriftReports' `.drift` (e.g. every report for this experience
+// since the last repair).
+const drift = reports.flatMap((report: DriftReport) => report.drift);
 
 const repaired = await reviseForDrift(planner, {
   experience: current,
-  request: { text: "repair drift" },
+  drift,
   catalog,
   capabilities,
-  observed: observedSamplesFromReport,
 }, ctx);
 ```
 
