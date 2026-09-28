@@ -39,6 +39,81 @@ describe("topoWaves", () => {
     expect(waves.map((w) => w.map((s) => s.stepId))).toEqual([["c"]]);
     expect(cycle.sort()).toEqual(["a", "b"]);
   });
+  it("a long chain is one step per wave, in order — and scheduling it is linear, not a re-filter per wave", () => {
+    const n = 20_000;
+    const chain = Array.from({ length: n }, (_, i) => step(`s${i}`, i === 0 ? [] : [`s${i - 1}`]));
+    const { waves, cycle } = topoWaves([...chain].reverse());
+    expect(cycle).toEqual([]);
+    expect(waves).toHaveLength(n);
+    expect(waves.every((w, i) => w.length === 1 && w[0]?.stepId === `s${i}`)).toBe(true);
+  });
+  it("diamonds: a join waits for its LATEST branch, and a wave keeps the input's order", () => {
+    const { waves, cycle } = topoWaves([
+      step("join", ["left", "right"]),
+      step("right", ["root"]),
+      step("left", ["root"]),
+      step("deep", ["right"]),
+      step("late", ["deep", "left"]),
+      step("root"),
+    ]);
+    expect(waves.map((w) => w.map((s) => s.stepId))).toEqual([
+      ["root"],
+      ["right", "left"],
+      ["join", "deep"],
+      ["late"],
+    ]);
+    expect(cycle).toEqual([]);
+  });
+  it("absent dependsOn ids count as satisfied, repeated ones count once", () => {
+    const { waves, cycle } = topoWaves([
+      step("b", ["a", "a", "gone"]),
+      step("a", ["missing"]),
+      step("c", ["gone", "b"]),
+    ]);
+    expect(waves.map((w) => w.map((s) => s.stepId))).toEqual([["a"], ["b"], ["c"]]);
+    expect(cycle).toEqual([]);
+  });
+  it("is exactly the original re-filtering loop: same waves, same order within a wave, same cycle (randomised, incl. duplicate ids, self-deps, absent deps and cycles)", () => {
+    // The pre-Kahn implementation, kept verbatim as the oracle.
+    const reference = (nodes: readonly MCPToolNode[]) => {
+      const ids = new Set(nodes.map((n) => n.stepId));
+      const placed = new Set<string>();
+      const waves: MCPToolNode[][] = [];
+      let remaining = [...nodes];
+      while (remaining.length > 0) {
+        const wave = remaining.filter((n) =>
+          n.dependsOn.every((d) => placed.has(d) || !ids.has(d))
+        );
+        if (wave.length === 0) return { waves, cycle: remaining.map((n) => n.stepId) };
+        waves.push(wave);
+        for (const n of wave) placed.add(n.stepId);
+        remaining = remaining.filter((n) => !placed.has(n.stepId));
+      }
+      return { waves, cycle: [] as string[] };
+    };
+    let seed = 12345;
+    const rand = (k: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % k;
+    };
+    for (let trial = 0; trial < 2000; trial++) {
+      const size = 1 + rand(9);
+      const pool = Array.from({ length: size + 2 }, (_, i) => `n${i}`); // +2: absent ids
+      const nodes = Array.from({ length: size }, () =>
+        step(
+          pool[rand(size)] as string, // ids drawn with replacement → duplicates happen
+          Array.from({ length: rand(4) }, () => pool[rand(pool.length)] as string)
+        )
+      );
+      const got = topoWaves(nodes);
+      const want = reference(nodes);
+      expect(got.waves.length).toBe(want.waves.length);
+      expect(got.waves).toEqual(want.waves);
+      // Same step OBJECTS, in the same positions — not merely equal copies.
+      got.waves.forEach((w, i) => w.forEach((s, j) => expect(s).toBe(want.waves[i]?.[j])));
+      expect(got.cycle).toEqual(want.cycle);
+    }
+  });
   it("terminalSteps are the steps nothing depends on", () => {
     expect(
       terminalSteps([step("a"), step("b", ["a"]), step("c", ["a"])]).map((s) => s.stepId)
