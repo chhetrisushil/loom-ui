@@ -1,0 +1,192 @@
+# @loom-ui/hydration
+
+Resolves an Experience's provider handles through loom's transient effects and publishes them as
+one loom projection, so a renderer can bind to `values.<handle>` / `status.<handle>` and redraw as
+they arrive. It is the provider plane of the pipeline: `@loom-ui/core` compiles an Experience to a
+`Blueprint`; this package answers what the Blueprint's bindings need, in-process or split across a
+trust boundary; `@loom-ui/renderer-lit` and `@loom-ui/renderer-terminal` read the resulting
+projection state. Hydration is **read-only and log-free** — it never emits a durable event; drift
+repair is the app's own loom execution.
+
+## Install / import
+
+```
+pnpm add @loom-ui/hydration
+```
+
+```ts
+// Node / server: executes providers — imports loom's sandbox (QuickJS WASM) and MCP plugin.
+import { HydrationController, handleInventory, serveHandles } from "@loom-ui/hydration";
+
+// Browser: split hydration only. Never import the root entry from a browser bundle.
+import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/client";
+```
+
+## Key concepts
+
+- **Two entries, one trust boundary.** The root entry (`@loom-ui/hydration`) is server-side: it
+  executes providers, so its module graph reaches loom's sandbox and MCP plugin. The client entry
+  (`@loom-ui/hydration/client`, `src/client.ts`) carries only what split hydration needs in a
+  browser: the split controller, the loader contract, the store, and param checks — nothing that
+  imports the sandbox, MCP, `@loom/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
+  the *built* client bundle to enforce this, and keeps it under a size budget (~33 KB minified).
+- **The hydration projection.** Every handle publishes to one loom projection
+  (`HYDRATION_PROJECTION_ID = "loom-ui.hydration"`, version `HYDRATION_PROJECTION_VERSION`) that a
+  `HydrationStore` wraps; a compiled Blueprint's bindings read `values.<handle>` /
+  `status.<handle>` from it. A handle's `HandleState` is `"pending" | "ready" | "stale" | "error" |
+  "empty"`.
+- **In-process vs. split.** `HydrationController` executes providers directly through an injected
+  `TransientInvoker` (any loom `EffectRuntime` satisfies it structurally). `SplitHydrationController`
+  (client) talks to a `HandleLoader` — the app's transport — which calls `serveHandle`/`serveHandles`
+  (server) over that boundary; the server answers with the exact same `HandleLoadResult` shape the
+  in-process controller publishes, so the two paths cannot disagree.
+- **Scheduling.** Both controllers schedule by priority: P0 loads immediately, P1 batches within a
+  short window, P2 waits for `markVisible`. An identical step (same tool, same arguments) runs once
+  per pass no matter how many handles share it.
+- **Params, time tokens, drift.** A step declares which argument names a load may override
+  (`MCPToolNode.overridable`); `$now`/`$now±<n><s|m|h|d|w>` tokens resolve once per pass against an
+  injected clock; drift (an input schema pin that moved, or an output that no longer reshapes or
+  fits its contract) is reported through `onDrift`, never repaired here.
+
+## API
+
+### The projection and its store
+
+- `HYDRATION_PROJECTION_ID`, `HYDRATION_PROJECTION_VERSION`, `HYDRATION_SET_EVENT` — the fixed
+  projection id/version and the internal set event it folds.
+- `hydrationProjection()`, `HydrationState`, `HandleSlice`, `HandleState`, `HandleStatus`,
+  `HydrationScope` — the loom `Projection` itself and its state shape.
+- `HydrationStore` — wraps a `projectionRuntime` and exposes `.state()` and
+  `.runtimeSubscribe(fn)` for a renderer or `watch` to read/observe.
+- `isReservedHandle(handle)` — true for a handle name the projection itself reserves.
+
+### Running providers (server / Node only)
+
+- `HydrationController` — in-process controller. Constructor takes `ControllerOptions`
+  (`invoker`, `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`,
+  `maxConcurrentCalls?`, `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`,
+  `inputDrift?`, `argumentHook?`, `reshapers?`, `captureSample?`). Methods: `load(exp)`,
+  `recompose(next)`, `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`,
+  `inFlight()`, `dispose()` — each returns `{ findings: Finding[] }` where relevant.
+- `executeProvider` — runs one `ProviderSpec`'s execution graph and reshaping; what both
+  controllers and `serveHandle`/`serveHandles` call underneath.
+- `ExecuteOptions`, `ProviderOutcome`, `DriftRecord`, `InputDriftMode` — the execution options and
+  outcome/drift shapes `executeProvider` and `onDrift` use.
+- `HydrationCache`, `CacheVariant` — the per-principal, per-params cache `HydrationController` uses
+  by default (inject your own, or a fresh one per controller).
+- `limitInvoker`, `memoInvoker`, `signalInvoker` — `TransientInvoker` wrappers: cap concurrency,
+  de-duplicate identical calls within one pass, and bind an `AbortSignal`.
+- `defineReshapers(entries)`, `jsonPathSelect(value, path)`, `outputShapeHashOf(value)` — build a
+  `ReshaperRegistry` for `reshaping.engine: "Named"`, run a JSONPath reshape, and hash a value's
+  structural shape for pinning `ProviderSpec.outputShapeHash`.
+- `stepReferences`, `terminalSteps`, `topoWaves` — inspect an execution graph's `{{steps.…}}`
+  references, find its terminal step(s), and compute its topological waves.
+- `DEFAULT_TIME_RANGE`, `checkParams` — the default `{ from: "$now-24h", to: "$now" }` params, and
+  a params validity check.
+
+### Split hydration — server half
+
+- `handleInventory(exp, { revisionOf }): { inventory, findings }` — the client-safe inventory: per
+  bound handle, its priority, the overridable param names, and an opaque, keyed revision.
+  `revisionOf` MUST be a keyed hash (e.g. an HMAC over a server secret) — never the provider's own
+  content fingerprint, which a client could confirm a guessed provider against offline.
+- `serveHandle(exp, request, opts)`, `serveHandles(exp, requests, opts)` — answer one or many
+  `HandleLoadRequest`s; every request is treated as untrusted and re-checked server-side.
+  `DEFAULT_MAX_BATCH` (256) and `DEFAULT_MAX_CONCURRENT_CALLS` (32) are the defaults `ServeOptions`
+  overrides.
+- `publicFinding(handle, finding)` — the public form of a finding a client may see (fixed code,
+  handle name only — never a tool, argument, script or exception text).
+
+### Split hydration — client half (also on `@loom-ui/hydration/client`)
+
+- `SplitHydrationController` — same scheduling as `HydrationController`, over a `HandleInventory`,
+  loading through an injected `HandleLoader`. Methods: `load(inventory)`, `recompose(next)`,
+  `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`, `inFlight()`,
+  `dispose()`.
+- `HandleLoader` — the app's transport: `load(request, signal)` and `loadMany(requests, signal)`
+  (both required — loads the scheduler starts together go out as one `loadMany` round trip).
+- `HandleInventory`, `HandleRef`, `HandleLoadRequest`, `SplitControllerOptions` — the wire shapes.
+
+### Repair (app-side, durable)
+
+- `SCHEMA_REPAIRED`, `SchemaRepairedPayload` — the userspace event name and payload an app emits
+  after applying a repair, from inside a loom execution.
+- `remapOperation(spec, drift)` — turns an INPUT drift record into the `Operation` that repairs it
+  (refuses output/reshape drift with `repair-needs-planner` — that needs `@loom-ui/planner`'s
+  `reviseForDrift`).
+
+## Examples
+
+In-process hydration (illustrative — not a compiling snippet):
+
+```ts
+import { HydrationController, HydrationStore, SCHEMA_REPAIRED, remapOperation } from "@loom-ui/hydration";
+
+const store = new HydrationStore(projectionRuntime, {
+  experienceId: experience.experienceId,
+  principalId: viewer.id,
+});
+const controller = new HydrationController({
+  invoker: effectRuntime, // any EffectRuntime satisfies TransientInvoker
+  store,
+  principal: { id: viewer.id, chain: viewer.principalChain },
+  onDrift: (report) => durableRepair(report), // the app's own loom execution
+});
+controller.load(experience); // P0 now, P1 in ~50ms, P2 on markVisible
+```
+
+Split hydration, client side (illustrative):
+
+```ts
+import { HydrationStore, SplitHydrationController } from "@loom-ui/hydration/client";
+
+const split = new SplitHydrationController({
+  store,
+  loader: {
+    load: (request, signal) => postJson("/hydrate", request, signal),
+    loadMany: (requests, signal) => postJson("/hydrate/batch", requests, signal),
+  },
+});
+split.load(inventory); // fetched from the server's handleInventory(exp, { revisionOf })
+```
+
+## Notable behaviours and guarantees
+
+- **`empty` is an answer, not an error.** A step whose `{{steps.<id>.output.<path>}}` indexes past
+  the end of a real (but short) upstream array publishes `empty` — a warn (`upstream-empty`), no
+  value, never cached, never drift, never repaired. Every other miss (a bad key, `null` mid-path, a
+  step with no output) stays `unresolved-step-reference` → `error`.
+- **Relative time is read once per pass.** `$now`/`$now±<n><unit>` resolve against one clock read,
+  so two steps in the same load asking for "the last day" agree; anything else starting `$now` is
+  refused (`invalid-time-token`) before it reaches a tool.
+- **Calls are capped and de-duplicated.** `maxConcurrentCalls` bounds the whole controller (or one
+  server batch); beneath it, one step memo per pass runs an identical step once no matter how many
+  handles share it, ref-counted so one caller's abort never cancels another caller's still-pending
+  wait on the same call.
+- **A provider never reaches a browser.** Split hydration ships only the inventory
+  (`handleInventory`) and answers requests (`serveHandle`); a client only ever sees a finding's
+  PUBLIC form (fixed code + handle name) — the full finding (tool, step, script, exception text)
+  reaches only the server's own `onFinding` hook.
+- **Drift is reported, never repaired here.** `onDrift` fires with a typed `DriftRecord`; applying
+  a fix (`remapOperation` for input drift, `@loom-ui/planner`'s `reviseForDrift` for output drift)
+  and emitting `SCHEMA_REPAIRED` is the app's job, inside its own durable execution. Nothing in
+  this package dedupes or bounds repairs — an app must dedupe on `(versionHash, handle)` and cap
+  attempts itself.
+- **A `scriptError` payload is untrusted, unlogged text.** A reshaping script's own exception can
+  echo the raw output; loom-ui classifies drift by the failure's typed channel alone and never
+  copies that text into a finding message, handle status or drift record.
+- **Recompose keeps shared handles.** `controller.load(nextExperience)` (or
+  `SplitHydrationController.recompose`) aborts and drops handles the new artifact no longer binds
+  and keeps the ones still bound — no full re-hydrate on every revision.
+
+## See also
+
+- [../core/README.md](../core/README.md) — the Experience Model and `compile` this package
+  hydrates.
+- [../planner/README.md](../planner/README.md) — `reviseForDrift` repairs the output drift this
+  package reports.
+- [../renderer-lit/README.md](../renderer-lit/README.md) and
+  [../renderer-terminal/README.md](../renderer-terminal/README.md) — read the projection this
+  package publishes.
+- [../../README.md](../../README.md) — root overview, including the full hydration options
+  reference and split-hydration wiring.
