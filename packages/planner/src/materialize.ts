@@ -19,6 +19,7 @@ import {
   outputShapeHashOf,
   stepReferences,
   terminalSteps,
+  topoWaves,
 } from "@loom-ui/hydration";
 import { strictest, unwrapTainted } from "@loom/classify";
 import { canonicalJson, fnv1a64 } from "@loom/core";
@@ -41,24 +42,29 @@ const warn = (code: string, message: string, nodeId?: string): Finding => ({
 });
 
 /**
- * The steps a call runs BEHIND: when a binding's call is the terminal step of a multi-step
- * provider, `upstream` is that step's dependency closure (every step it depends on or references,
- * transitively, in the base graph's order, ids and specs unchanged) and `stepId` / `dependsOn` are
- * the terminal step's own. Rebuilding the call keeps all of it: the terminal's arguments may name
- * those steps' outputs (`{{steps.<id>.output…}}`), so a rebuild that dropped them would keep an
- * argument that no longer resolves. Absent for a single-step call.
+ * What a rebuilt call keeps of the step it replaces. When a binding's call is the terminal step
+ * of a multi-step provider, `upstream` is that step's dependency closure (every step it depends on
+ * or references, transitively, in the base graph's order, ids and specs unchanged) and `stepId` /
+ * `dependsOn` are the terminal's own: the terminal's arguments may name those steps' outputs
+ * (`{{steps.<id>.output…}}`), so a rebuild that dropped them would keep an argument that no longer
+ * resolves. `idempotent` (only when `false`) and `overridable` are the replaced step's own flags,
+ * carried so a rebuild never widens what may be retried or narrows what a per-load param may
+ * replace. `undefined` from `callGraphOf` means a plain single step with default flags.
  */
 export interface CallGraph {
   readonly stepId: string;
   readonly dependsOn: readonly string[];
   readonly upstream: readonly MCPToolNode[];
+  readonly idempotent?: false;
+  readonly overridable?: readonly string[];
 }
 
 /**
  * `terminal`'s call graph within `graph`: its transitive closure over `dependsOn` AND template
  * references, restricted to steps the graph declares (a `dependsOn` naming an absent step is
  * satisfied by hydration's scheduler, so there is nothing to keep), in the graph's own order.
- * `undefined` when the terminal stands alone — the single-step case needs no graph.
+ * A terminal with no upstream is normalised to `s1` with no `dependsOn` — the single-step layout —
+ * and to `undefined` when its flags are the defaults too, so a plain single step hashes as before.
  */
 export function callGraphOf(
   graph: readonly MCPToolNode[],
@@ -76,37 +82,46 @@ export function callGraphOf(
       stack.push(dep);
     }
   }
-  if (keep.size === 0) return undefined;
+  const flags = {
+    ...(terminal.idempotent === false && { idempotent: false as const }),
+    ...(terminal.overridable !== undefined && { overridable: [...terminal.overridable] }),
+  };
+  if (keep.size === 0) {
+    if (Object.keys(flags).length === 0) return undefined;
+    return { stepId: "s1", dependsOn: [], upstream: [], ...flags };
+  }
   return {
     stepId: terminal.stepId,
-    dependsOn: terminal.dependsOn,
+    dependsOn: [...terminal.dependsOn],
     upstream: graph.filter((s) => keep.has(s.stepId)),
+    ...flags,
   };
 }
 
 /**
- * The invariant every graph `materialize` emits must hold: each `{{steps.<id>.output…}}`
- * reference names a step the referencing step (transitively) depends on INSIDE the graph — the
- * only steps hydration guarantees have run first. Anything else is `unresolved-step-reference`
- * at execution: a provider that replays but cannot run. The first violation, or `undefined`.
+ * The invariant every graph `materialize` emits must hold — hydration's own rule, not a stricter
+ * one: the graph schedules (`topoWaves` finds no cycle), and each `{{steps.<id>.output…}}`
+ * reference names a step in a STRICTLY EARLIER wave than the referencing step — the only steps
+ * whose output exists when it runs. A reference to a step outside the graph, or in the same or a
+ * later wave, is `unresolved-step-reference` at execution: a provider that replays but cannot run.
+ * Linear in the graph. The first violation, or `undefined`.
  */
 export function danglingStepReference(graph: readonly MCPToolNode[]): string | undefined {
-  const byId = new Map(graph.map((s) => [s.stepId, s] as const));
+  const { waves, cycle } = topoWaves(graph);
+  if (cycle.length > 0) return `the graph has a dependency cycle through ${cycle.join(", ")}`;
+  const waveOf = new Map<string, number>();
+  waves.forEach((wave, i) => {
+    for (const step of wave) waveOf.set(step.stepId, i);
+  });
   for (const step of graph) {
-    const refs = stepReferences(step.arguments);
-    if (refs.length === 0) continue;
-    const ancestors = new Set<string>();
-    const stack = [...step.dependsOn];
-    while (stack.length > 0) {
-      const id = stack.pop() as string;
-      const dep = byId.get(id);
-      if (dep === undefined || ancestors.has(id)) continue;
-      ancestors.add(id);
-      stack.push(...dep.dependsOn);
+    const at = waveOf.get(step.stepId) as number;
+    for (const ref of stepReferences(step.arguments)) {
+      const refAt = waveOf.get(ref);
+      if (refAt === undefined)
+        return `step "${step.stepId}" references step "${ref}", which is not in the provider's graph`;
+      if (refAt >= at)
+        return `step "${step.stepId}" references step "${ref}", which does not run before it`;
     }
-    const missing = refs.find((r) => !ancestors.has(r));
-    if (missing !== undefined)
-      return `step "${step.stepId}" references step "${missing}", which is not ${byId.has(missing) ? "among its dependencies" : "in the provider's graph"}`;
   }
   return undefined;
 }
@@ -195,12 +210,14 @@ export function buildProviderSpec(
       toolSchemaHash: cap.toolSchemaHash,
       arguments: binding.arguments,
       dependsOn: [...(graph?.dependsOn ?? [])],
-      idempotent: true,
+      idempotent: graph?.idempotent ?? true,
+      ...(graph?.overridable !== undefined && { overridable: [...graph.overridable] }),
     },
   ];
-  // Never emit a provider that replays but cannot run: a binding whose arguments name a step
-  // this graph does not carry (a model-authored template, or a call rebuilt without the steps it
-  // was observed behind) is refused here, by name.
+  // THE enforcement point — every provider `materialize` emits is built here. Never emit one
+  // that replays but cannot run: a binding whose arguments name a step this graph does not carry
+  // (a model-authored template, or a call rebuilt without the steps it was observed behind), or a
+  // graph that cannot be scheduled, is refused here, by name.
   const dangling = danglingStepReference(executionGraph);
   if (dangling !== undefined)
     return {
@@ -229,6 +246,14 @@ const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canon
 const callKey = (toolName: string, toolVersion: string, args: unknown): string =>
   `${toolName}@${toolVersion}#${canonicalJson(args)}`;
 
+/** A call made behind upstream steps (`callGraphOf`): the graph is part of its identity. */
+const graphCallKey = (
+  toolName: string,
+  toolVersion: string,
+  args: unknown,
+  graph: CallGraph | undefined
+): string => `${callKey(toolName, toolVersion, args)}|${canonicalJson(graph ?? null)}`;
+
 const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 
 /**
@@ -238,8 +263,8 @@ const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.c
  * call with disagreeing samples leave that call unresolved (`undefined`) — no arbitrary pick.
  */
 function indexObserved(base: Experience, observed: ReviseInput["observed"]) {
-  const byHandle = new Map<string, { call: string; sample: unknown; graph?: CallGraph }>();
-  const byCall = new Map<string, { sample: unknown; graph?: CallGraph }>();
+  const byHandle = new Map<string, { call: string; sample: unknown }>();
+  const byCall = new Map<string, unknown>();
   const conflicted = new Set<string>();
   const tools = new Set<string>();
   for (const handle of Object.keys(observed ?? {})) {
@@ -248,18 +273,17 @@ function indexObserved(base: Experience, observed: ReviseInput["observed"]) {
     const step = terminals.length === 1 ? terminals[0] : undefined;
     if (step === undefined) continue;
     const sample = unwrapTainted((observed as NonNullable<typeof observed>)[handle]);
-    const call = callKey(step.toolName, step.toolVersion, step.arguments);
+    // The call INCLUDES the steps it runs behind: the same terminal behind different upstream
+    // steps resolves its templated arguments against different outputs — a different call.
     const graph = callGraphOf((base.providers[handle] as ProviderSpec).executionGraph, step);
-    const entry = { sample, ...(graph !== undefined && { graph }) };
+    const call = graphCallKey(step.toolName, step.toolVersion, step.arguments, graph);
     tools.add(`${step.toolName}@${step.toolVersion}`);
-    byHandle.set(handle, { call, ...entry });
+    byHandle.set(handle, { call, sample });
     if (conflicted.has(call)) continue;
-    // Same call behind DIFFERENT upstream steps is not one observation: its templated arguments
-    // resolve against different outputs.
-    if (byCall.has(call) && !sameJson(byCall.get(call), entry)) {
+    if (byCall.has(call) && !sameJson(byCall.get(call), sample)) {
       byCall.delete(call);
       conflicted.add(call);
-    } else byCall.set(call, entry);
+    } else byCall.set(call, sample);
   }
   return { byHandle, byCall, tools };
 }
@@ -396,32 +420,37 @@ export function materialize(
       return undefined;
     }
     let pinFrom = cap;
-    const call = callKey(cap.toolName, cap.toolVersion, n.binding.arguments);
-    // The node's CURRENT call, when the draft keeps it: a call made behind upstream steps is
-    // rebuilt behind the same steps (`CallGraph`), whether or not anything was observed.
+    // The node's CURRENT call graph, kept when the draft keeps the tool: a call made behind
+    // upstream steps is rebuilt behind the same steps (`CallGraph`) — with the draft's arguments,
+    // which may edit literals and keep, drop or re-point templates among those steps (one naming
+    // a step the graph lacks is refused by `buildProviderSpec`) — whether or not anything was
+    // observed. A different tool, or a new node, starts from no graph.
     const currentSpec =
       current?.binding !== undefined && own(base.providers, current.binding.handle)
         ? (base.providers[current.binding.handle] as ProviderSpec)
         : undefined;
     const currentTerminals = currentSpec ? terminalSteps(currentSpec.executionGraph) : [];
     const currentTerminal = currentTerminals.length === 1 ? currentTerminals[0] : undefined;
-    let graph =
+    const graph =
       currentSpec !== undefined &&
       currentTerminal !== undefined &&
-      callKey(currentTerminal.toolName, currentTerminal.toolVersion, currentTerminal.arguments) ===
-        call
-        ? callGraphOf(currentSpec.executionGraph, currentTerminal)
+      currentTerminal.toolName === cap.toolName &&
+      currentTerminal.toolVersion === cap.toolVersion
+        ? callGraphOf(currentSpec.executionGraph, {
+            ...currentTerminal,
+            arguments: n.binding.arguments,
+          })
         : undefined;
+    // Looked up with the node's OWN graph: an observation is only ever of the call this node
+    // makes — never the same terminal behind someone else's upstream steps, nor a lone call
+    // borrowing a multi-step observation (or the reverse).
+    const call = graphCallKey(cap.toolName, cap.toolVersion, n.binding.arguments, graph);
     if (observations.tools.has(`${cap.toolName}@${cap.toolVersion}`)) {
       const mine = current?.binding && observations.byHandle.get(current.binding.handle);
-      const theirs = observations.byCall.get(call);
-      if (mine && mine.call === call) {
-        pinFrom = { ...cap, sampleOutput: mine.sample };
-        graph = mine.graph;
-      } else if (theirs !== undefined) {
-        pinFrom = { ...cap, sampleOutput: theirs.sample };
-        graph = theirs.graph;
-      } else {
+      if (mine && mine.call === call) pinFrom = { ...cap, sampleOutput: mine.sample };
+      else if (observations.byCall.has(call))
+        pinFrom = { ...cap, sampleOutput: observations.byCall.get(call) };
+      else {
         // Nothing observed THIS call; the capability's sample is pre-drift or another call's.
         const handle = providerHandle(
           cap.toolName,
@@ -664,17 +693,6 @@ export function materialize(
   // Last of all: a remove or a rebind can leave a provider no node binds any more. Left in
   // place it keeps its stale pin forever, and a pin-freshness check fails on data nothing shows.
   ops.push(...orphanedProviders(base, ops));
-  // The invariant, over everything emitted: no provider this plan declares may carry a step
-  // reference its own graph cannot resolve. `buildProviderSpec` already refuses one; this is the
-  // backstop that keeps a future path from reintroducing an unrunnable provider silently.
-  for (const op of ops) {
-    if (op.type !== "remapProvider") continue;
-    const dangling = danglingStepReference(op.spec.executionGraph);
-    if (dangling !== undefined)
-      findings.push(
-        err("dangling-step-reference", `provider "${op.handle}" cannot run: ${dangling}`)
-      );
-  }
   return { ops, findings };
 }
 

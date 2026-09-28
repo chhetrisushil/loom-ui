@@ -166,6 +166,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "signalInvoker",
       "stepReferences",
       "terminalSteps",
+      "topoWaves",
     ]);
   });
 

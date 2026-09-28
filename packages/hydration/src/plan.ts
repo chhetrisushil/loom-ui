@@ -77,8 +77,9 @@ export const STEP_TEMPLATE = /^\{\{steps\.([^.}]+)\.output(?:\.(.+))?\}\}$/;
 /**
  * Every step id `arguments` references through a `{{steps.<id>.output…}}` template, in first-seen
  * order, deduplicated — the same template grammar `resolveArguments` substitutes, so a planner can
- * check a graph it builds refers only to steps it keeps (a reference to a step outside the graph,
- * or not upstream of the referencing step, is `unresolved-step-reference` at execution).
+ * check a graph it builds before it ships. At execution a reference resolves only against a step
+ * in a STRICTLY EARLIER `topoWaves` wave than the referencing step; a step outside the graph, or in
+ * the same or a later wave, has no output yet and is `unresolved-step-reference`.
  */
 export function stepReferences(args: unknown): string[] {
   const found = new Set<string>();
