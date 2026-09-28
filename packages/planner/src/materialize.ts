@@ -3,6 +3,7 @@ import {
   type Experience,
   type Finding,
   GRID_COLUMNS,
+  type MCPToolNode,
   type Operation,
   type ProviderSpec,
   type SemanticCatalog,
@@ -13,7 +14,12 @@ import {
   replay,
   walk,
 } from "@loom-ui/core";
-import { jsonPathSelect, outputShapeHashOf, terminalSteps } from "@loom-ui/hydration";
+import {
+  jsonPathSelect,
+  outputShapeHashOf,
+  stepReferences,
+  terminalSteps,
+} from "@loom-ui/hydration";
 import { strictest, unwrapTainted } from "@loom/classify";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import { type DraftBinding, type DraftNode, type PlanDraft, entryFor } from "./contract";
@@ -35,26 +41,110 @@ const warn = (code: string, message: string, nodeId?: string): Finding => ({
 });
 
 /**
+ * The steps a call runs BEHIND: when a binding's call is the terminal step of a multi-step
+ * provider, `upstream` is that step's dependency closure (every step it depends on or references,
+ * transitively, in the base graph's order, ids and specs unchanged) and `stepId` / `dependsOn` are
+ * the terminal step's own. Rebuilding the call keeps all of it: the terminal's arguments may name
+ * those steps' outputs (`{{steps.<id>.output…}}`), so a rebuild that dropped them would keep an
+ * argument that no longer resolves. Absent for a single-step call.
+ */
+export interface CallGraph {
+  readonly stepId: string;
+  readonly dependsOn: readonly string[];
+  readonly upstream: readonly MCPToolNode[];
+}
+
+/**
+ * `terminal`'s call graph within `graph`: its transitive closure over `dependsOn` AND template
+ * references, restricted to steps the graph declares (a `dependsOn` naming an absent step is
+ * satisfied by hydration's scheduler, so there is nothing to keep), in the graph's own order.
+ * `undefined` when the terminal stands alone — the single-step case needs no graph.
+ */
+export function callGraphOf(
+  graph: readonly MCPToolNode[],
+  terminal: MCPToolNode
+): CallGraph | undefined {
+  const byId = new Map(graph.map((s) => [s.stepId, s] as const));
+  const keep = new Set<string>();
+  const stack = [terminal];
+  while (stack.length > 0) {
+    const step = stack.pop() as MCPToolNode;
+    for (const id of [...step.dependsOn, ...stepReferences(step.arguments)]) {
+      const dep = byId.get(id);
+      if (dep === undefined || keep.has(id) || id === terminal.stepId) continue;
+      keep.add(id);
+      stack.push(dep);
+    }
+  }
+  if (keep.size === 0) return undefined;
+  return {
+    stepId: terminal.stepId,
+    dependsOn: terminal.dependsOn,
+    upstream: graph.filter((s) => keep.has(s.stepId)),
+  };
+}
+
+/**
+ * The invariant every graph `materialize` emits must hold: each `{{steps.<id>.output…}}`
+ * reference names a step the referencing step (transitively) depends on INSIDE the graph — the
+ * only steps hydration guarantees have run first. Anything else is `unresolved-step-reference`
+ * at execution: a provider that replays but cannot run. The first violation, or `undefined`.
+ */
+export function danglingStepReference(graph: readonly MCPToolNode[]): string | undefined {
+  const byId = new Map(graph.map((s) => [s.stepId, s] as const));
+  for (const step of graph) {
+    const refs = stepReferences(step.arguments);
+    if (refs.length === 0) continue;
+    const ancestors = new Set<string>();
+    const stack = [...step.dependsOn];
+    while (stack.length > 0) {
+      const id = stack.pop() as string;
+      const dep = byId.get(id);
+      if (dep === undefined || ancestors.has(id)) continue;
+      ancestors.add(id);
+      stack.push(...dep.dependsOn);
+    }
+    const missing = refs.find((r) => !ancestors.has(r));
+    if (missing !== undefined)
+      return `step "${step.stepId}" references step "${missing}", which is not ${byId.has(missing) ? "among its dependencies" : "in the provider's graph"}`;
+  }
+  return undefined;
+}
+
+/**
  * Identical (tool, version, SCHEMA PIN, arguments, path) → identical handle, so two nodes share
  * one fetch. The schema hash is part of the identity, not just the spec: two capabilities can
  * offer the same tool@version pinned to DIFFERENT input schemas (one stale, one current), and
  * without the pin in the hash they would collide on one handle whose spec pins whichever
  * capability materialised first — a silent mis-pin, where including it makes them two providers.
+ * A call made behind upstream steps (`graph`) is a different fetch from the same call alone, so
+ * its graph is part of the identity too; a single-step call hashes exactly as it always has.
  */
 export function providerHandle(
   toolName: string,
   toolVersion: string,
   toolSchemaHash: string,
   args: Record<string, unknown>,
-  path: string
+  path: string,
+  graph?: CallGraph
 ): string {
-  return `p-${fnv1a64(canonicalJson({ toolName, toolVersion, toolSchemaHash, args, path }))}`;
+  return `p-${fnv1a64(
+    canonicalJson({
+      toolName,
+      toolVersion,
+      toolSchemaHash,
+      args,
+      path,
+      ...(graph !== undefined && { graph }),
+    })
+  )}`;
 }
 
 export function buildProviderSpec(
   cap: CapabilityRef,
   binding: DraftBinding,
-  nodeId?: string
+  nodeId?: string,
+  graph?: CallGraph
 ): { ok: true; spec: ProviderSpec } | { ok: false; finding: Finding } {
   if (cap.sampleOutput === undefined)
     return {
@@ -93,23 +183,39 @@ export function buildProviderSpec(
     cap.toolVersion,
     cap.toolSchemaHash,
     binding.arguments,
-    binding.path
+    binding.path,
+    graph
   );
+  const executionGraph: MCPToolNode[] = [
+    ...(graph?.upstream ?? []),
+    {
+      stepId: graph?.stepId ?? "s1",
+      toolName: cap.toolName,
+      toolVersion: cap.toolVersion,
+      toolSchemaHash: cap.toolSchemaHash,
+      arguments: binding.arguments,
+      dependsOn: [...(graph?.dependsOn ?? [])],
+      idempotent: true,
+    },
+  ];
+  // Never emit a provider that replays but cannot run: a binding whose arguments name a step
+  // this graph does not carry (a model-authored template, or a call rebuilt without the steps it
+  // was observed behind) is refused here, by name.
+  const dangling = danglingStepReference(executionGraph);
+  if (dangling !== undefined)
+    return {
+      ok: false,
+      finding: err(
+        "dangling-step-reference",
+        `capability "${cap.handle}" cannot be bound as authored: ${dangling}`,
+        nodeId
+      ),
+    };
   return {
     ok: true,
     spec: {
       handle,
-      executionGraph: [
-        {
-          stepId: "s1",
-          toolName: cap.toolName,
-          toolVersion: cap.toolVersion,
-          toolSchemaHash: cap.toolSchemaHash,
-          arguments: binding.arguments,
-          dependsOn: [],
-          idempotent: true,
-        },
-      ],
+      executionGraph,
       reshaping: { engine: "JSONPath", scriptRef: binding.path },
       outputShapeHash,
       cachePolicy: { ttlSeconds: DEFAULT_TTL_SECONDS, scope: "principal" },
@@ -132,8 +238,8 @@ const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.c
  * call with disagreeing samples leave that call unresolved (`undefined`) — no arbitrary pick.
  */
 function indexObserved(base: Experience, observed: ReviseInput["observed"]) {
-  const byHandle = new Map<string, { call: string; sample: unknown }>();
-  const byCall = new Map<string, unknown>();
+  const byHandle = new Map<string, { call: string; sample: unknown; graph?: CallGraph }>();
+  const byCall = new Map<string, { sample: unknown; graph?: CallGraph }>();
   const conflicted = new Set<string>();
   const tools = new Set<string>();
   for (const handle of Object.keys(observed ?? {})) {
@@ -143,13 +249,17 @@ function indexObserved(base: Experience, observed: ReviseInput["observed"]) {
     if (step === undefined) continue;
     const sample = unwrapTainted((observed as NonNullable<typeof observed>)[handle]);
     const call = callKey(step.toolName, step.toolVersion, step.arguments);
+    const graph = callGraphOf((base.providers[handle] as ProviderSpec).executionGraph, step);
+    const entry = { sample, ...(graph !== undefined && { graph }) };
     tools.add(`${step.toolName}@${step.toolVersion}`);
-    byHandle.set(handle, { call, sample });
+    byHandle.set(handle, { call, ...entry });
     if (conflicted.has(call)) continue;
-    if (byCall.has(call) && !sameJson(byCall.get(call), sample)) {
+    // Same call behind DIFFERENT upstream steps is not one observation: its templated arguments
+    // resolve against different outputs.
+    if (byCall.has(call) && !sameJson(byCall.get(call), entry)) {
       byCall.delete(call);
       conflicted.add(call);
-    } else byCall.set(call, sample);
+    } else byCall.set(call, entry);
   }
   return { byHandle, byCall, tools };
 }
@@ -286,20 +396,40 @@ export function materialize(
       return undefined;
     }
     let pinFrom = cap;
+    const call = callKey(cap.toolName, cap.toolVersion, n.binding.arguments);
+    // The node's CURRENT call, when the draft keeps it: a call made behind upstream steps is
+    // rebuilt behind the same steps (`CallGraph`), whether or not anything was observed.
+    const currentSpec =
+      current?.binding !== undefined && own(base.providers, current.binding.handle)
+        ? (base.providers[current.binding.handle] as ProviderSpec)
+        : undefined;
+    const currentTerminals = currentSpec ? terminalSteps(currentSpec.executionGraph) : [];
+    const currentTerminal = currentTerminals.length === 1 ? currentTerminals[0] : undefined;
+    let graph =
+      currentSpec !== undefined &&
+      currentTerminal !== undefined &&
+      callKey(currentTerminal.toolName, currentTerminal.toolVersion, currentTerminal.arguments) ===
+        call
+        ? callGraphOf(currentSpec.executionGraph, currentTerminal)
+        : undefined;
     if (observations.tools.has(`${cap.toolName}@${cap.toolVersion}`)) {
-      const call = callKey(cap.toolName, cap.toolVersion, n.binding.arguments);
       const mine = current?.binding && observations.byHandle.get(current.binding.handle);
-      if (mine && mine.call === call) pinFrom = { ...cap, sampleOutput: mine.sample };
-      else if (observations.byCall.has(call))
-        pinFrom = { ...cap, sampleOutput: observations.byCall.get(call) };
-      else {
+      const theirs = observations.byCall.get(call);
+      if (mine && mine.call === call) {
+        pinFrom = { ...cap, sampleOutput: mine.sample };
+        graph = mine.graph;
+      } else if (theirs !== undefined) {
+        pinFrom = { ...cap, sampleOutput: theirs.sample };
+        graph = theirs.graph;
+      } else {
         // Nothing observed THIS call; the capability's sample is pre-drift or another call's.
         const handle = providerHandle(
           cap.toolName,
           cap.toolVersion,
           cap.toolSchemaHash,
           n.binding.arguments,
-          n.binding.path
+          n.binding.path,
+          graph
         );
         if (own(base.providers, handle)) {
           const kept = base.providers[handle] as ProviderSpec;
@@ -330,7 +460,7 @@ export function materialize(
         return undefined;
       }
     }
-    const built = buildProviderSpec(pinFrom, n.binding, n.id);
+    const built = buildProviderSpec(pinFrom, n.binding, n.id, graph);
     if (!built.ok) {
       findings.push(built.finding);
       return undefined;
@@ -534,6 +664,17 @@ export function materialize(
   // Last of all: a remove or a rebind can leave a provider no node binds any more. Left in
   // place it keeps its stale pin forever, and a pin-freshness check fails on data nothing shows.
   ops.push(...orphanedProviders(base, ops));
+  // The invariant, over everything emitted: no provider this plan declares may carry a step
+  // reference its own graph cannot resolve. `buildProviderSpec` already refuses one; this is the
+  // backstop that keeps a future path from reintroducing an unrunnable provider silently.
+  for (const op of ops) {
+    if (op.type !== "remapProvider") continue;
+    const dangling = danglingStepReference(op.spec.executionGraph);
+    if (dangling !== undefined)
+      findings.push(
+        err("dangling-step-reference", `provider "${op.handle}" cannot run: ${dangling}`)
+      );
+  }
   return { ops, findings };
 }
 

@@ -1,6 +1,13 @@
 import type { MCPToolNode } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
-import { resolveArguments, resolvePath, terminalSteps, topoWaves, walkPath } from "./plan";
+import {
+  resolveArguments,
+  resolvePath,
+  stepReferences,
+  terminalSteps,
+  topoWaves,
+  walkPath,
+} from "./plan";
 
 const step = (
   stepId: string,
@@ -153,5 +160,19 @@ describe("resolveArguments — upstream-empty vs a bad path", () => {
       const r = resolveArguments(step("x", ["top"], args), outs(rows));
       expect(!r.ok && r.finding.code).toBe("unresolved-step-reference");
     }
+  });
+});
+
+describe("stepReferences", () => {
+  it("lists every templated step id once, in first-seen order, through nested arrays and objects — and only whole-string templates", () => {
+    expect(
+      stepReferences({
+        a: "{{steps.b.output.x}}",
+        nested: { list: ["{{steps.a.output}}", "{{steps.b.output.y}}"] },
+        prose: "see {{steps.c.output.x}}",
+        n: 3,
+      })
+    ).toEqual(["b", "a"]);
+    expect(stepReferences({})).toEqual([]);
   });
 });

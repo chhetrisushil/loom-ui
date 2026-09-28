@@ -310,6 +310,37 @@ describe("prompt", () => {
     vocabularyFloor: { types: [] },
     meta: metaFixture,
   });
+  it("describeExperience shows a multi-step node's OWN (terminal) call with its templated arguments — never the upstream step's", () => {
+    const exp = classifiedNodeOfType("Metric");
+    const handle = Object.keys(exp.providers)[0] as string;
+    const spec = exp.providers[handle] as NonNullable<(typeof exp.providers)[string]>;
+    const terminal = spec.executionGraph[0] as (typeof spec.executionGraph)[number];
+    const upstream = {
+      ...terminal,
+      stepId: "up",
+      toolName: "orders.cursor",
+      toolVersion: "1.0.0",
+      arguments: {},
+    };
+    const templated = { window: "{{steps.up.output.window}}" };
+    const twoStep = {
+      ...exp,
+      providers: {
+        [handle]: {
+          ...spec,
+          executionGraph: [
+            upstream,
+            { ...terminal, stepId: "t", arguments: templated, dependsOn: ["up"] },
+          ],
+        },
+      },
+    };
+    const described = describeExperience(twoStep, capabilitiesFixture, planningCatalog) as {
+      nodes: Array<{ binding?: Record<string, unknown> }>;
+    };
+    expect(described.nodes[0]?.binding?.capability).toBe("orders_summary");
+    expect(described.nodes[0]?.binding?.arguments).toEqual(templated);
+  });
   it("describeExperience shows a binding's sensitivity so a revise can echo it back byte-identical", () => {
     const described = describeExperience(
       classifiedNodeOfType("Collection"),
