@@ -19,6 +19,7 @@ export type {
   HydrationScope,
   HydrationState,
 } from "./projection";
+export { HYDRATION_VALUES_PREFIX, handleOfPath } from "./path";
 export { DEFAULT_TIME_RANGE, checkParams } from "./params";
 export type { LoadParams } from "./params";
 export type { HandleLoadResult } from "./scheduler";

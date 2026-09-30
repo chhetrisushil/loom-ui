@@ -470,8 +470,9 @@ describe("compile", () => {
 });
 
 describe("hydrationPath / hydrationStatusPath", () => {
-  // No inverse: IR 2.0.0 puts the status channel on the artifact, so a renderer reads
-  // `binding.status.path` rather than parsing a handle back out of `binding.path`.
+  // The value path's inverse is `handleOfPath` in `@loom-ui/hydration/client` (browser-safe; core
+  // is CommonJS). There is none for status: IR 2.0.0 puts the status channel on the artifact, so a
+  // renderer reads `binding.status.path` rather than parsing a handle back out of it.
   it("names a handle's value and status channels under distinct prefixes", () => {
     for (const handle of ["latency-p99", "a.b", "values", "x:h"]) {
       expect(hydrationPath(handle)).toBe(`${HYDRATION_VALUES_PREFIX}.${handle}`);
