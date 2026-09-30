@@ -110,6 +110,8 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   (default `builtinCatalog`).
 - `hydrationPath`, `hydrationStatusPath`, `HYDRATION_VALUES_PREFIX`, `HYDRATION_STATUS_PREFIX` —
   the compiled projection paths a binding's `values.<handle>` / `status.<handle>` live at.
+  A browser client maps `values.<handle>` back with `handleOfPath` from
+  `@loom-ui/hydration/client`.
 - `experienceHandles(exp): HandleUse[]` — every bound handle, once, with its highest-priority use
   and the node ids that want it.
 - `handleKinds(exp, catalog, surface): Map<string, string[]>` — the widget kinds each bound handle

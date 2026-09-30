@@ -127,9 +127,11 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "HYDRATION_PROJECTION_ID",
       "HYDRATION_PROJECTION_VERSION",
       "HYDRATION_SET_EVENT",
+      "HYDRATION_VALUES_PREFIX",
       "HydrationStore",
       "SplitHydrationController",
       "checkParams",
+      "handleOfPath",
       "hydrationProjection",
       "isReservedHandle",
     ]);
@@ -168,6 +170,12 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "terminalSteps",
       "topoWaves",
     ]);
+  });
+
+  it("path.js reaches nothing at runtime: no core, no other module", () => {
+    // `@loom-ui/core` is CommonJS; a client that needs `handleOfPath` must not drag it in.
+    const src = readFileSync(resolve(DIST, "path.js"), "utf8");
+    expect([...src.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)]).toEqual([]);
   });
 
   it("bundles for the browser, small", async () => {
