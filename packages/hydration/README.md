@@ -123,9 +123,11 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   widget's binding path (`values.<handle>`) back to its hydration handle: the exact inverse of
   `@loom-ui/core`'s `hydrationPath`. `undefined` unless the path is `values.` plus a non-empty
   handle (the bare prefix, `status.<handle>` and near-misses like `valuesh` all give `undefined`);
-  everything after the first `values.` is the handle, dots included. Core is CommonJS and a
-  bundler's commonjs plugin cannot always resolve its named exports, so the browser takes these
-  from here. The prefix is defined in both packages (core cannot import hydration); a test pins
+  everything after the first `values.` is the handle, spelled exactly as `hydrationPath` spelled
+  it (a handle containing `.` round-trips here but will not resolve at render time, because
+  binding paths are resolved by splitting on `.` — keep handles dot-free). The browser takes these
+  from here so the client entry never pulls core's runtime graph into a bundle. The prefix is
+  defined in both packages (core cannot import hydration); a type-level `satisfies` and a test pin
   them equal.
 
 ### Repair (app-side, durable)

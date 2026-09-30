@@ -7,6 +7,8 @@ describe("handleOfPath", () => {
     expect(HYDRATION_VALUES_PREFIX).toBe(CORE_PREFIX);
   });
 
+  // Dotted handles are included to prove the STRING inverse; they do not resolve at render time
+  // (binding paths are split on `.`), which the README documents.
   it("is the exact inverse of core's hydrationPath", () => {
     const handles = [
       "latency-p99",
