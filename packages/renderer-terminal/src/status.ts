@@ -6,7 +6,7 @@ import {
   type WidgetValueCheck,
   renderBlueprintToString,
 } from "@loom/plugin-renderer-terminal";
-import { terminalRegistry } from "./registry";
+import { type TerminalRegistryOptions, terminalRegistry } from "./registry";
 
 // ── The status matrix is loom's ───────────────────────────────────────────────
 // Since Blueprint IR 2.0.0 (ADR 0097 D2) the eight-row decision table lives in loom's own
@@ -22,7 +22,13 @@ export const kindValueCheck: WidgetValueCheck = (widget, value) => {
   return c.ok ? undefined : { code: c.finding.code, message: c.finding.message };
 };
 
-export interface RenderExperienceOptions {
+export interface RenderExperienceOptions extends TerminalRegistryOptions {
+  /**
+   * Overrides the registry; then `chrome` is moot (it only configures the default registry).
+   * NOTE for `chrome: "host"`: the framework kinds' own renderings carry no title, but the rows
+   * loom's traversal itself writes — `✗`/`○`/`~`/`⋯` status lines and loom's eight built-in kinds —
+   * are loom's output and keep theirs. Drive a widget renderer directly for a fully title-free body.
+   */
   readonly registry?: RendererRegistry<TerminalWidgetRenderer>;
 }
 
@@ -48,7 +54,7 @@ export function renderExperience(
   for (const id of blueprint.projections)
     stateMap.set(id, id === HYDRATION_PROJECTION_ID ? state : undefined);
   return renderBlueprintToString(blueprint, stateMap, {
-    registry: opts.registry ?? terminalRegistry(),
+    registry: opts.registry ?? terminalRegistry(opts),
     check: kindValueCheck,
   });
 }

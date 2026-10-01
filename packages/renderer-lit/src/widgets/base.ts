@@ -11,6 +11,15 @@ import {
 } from "../a11y";
 import { localized } from "../i18n";
 
+/**
+ * Who draws the widget's title. `"widget"` (default) — the widget prints its own title in its
+ * body. `"host"` — the embedding app draws its own chrome (title bar, frame) around the widget,
+ * so the body carries NO visible title and the host's is the only one. The accessible name
+ * (`aria-label`, the screen-reader caption) still names the widget either way: chrome is a
+ * visual choice, not a reason to leave an assistive-technology reader without a name.
+ */
+export type TitleChrome = "widget" | "host";
+
 export type WidgetState = "loading" | "pending" | "stale" | "error" | "empty" | "ready";
 
 /** What one (value, status) pair renders as, plus the finding that explains a non-ready state. */
@@ -51,6 +60,8 @@ export abstract class LuWidget extends LitElement {
   @property({ attribute: false }) value: unknown = undefined;
   @property({ attribute: false }) status?: BindingStatus;
   @property({ attribute: false }) onAction?: (a: WidgetAction) => void;
+  /** Who draws the title — see {@link TitleChrome}. Default `"widget"`. */
+  @property({ reflect: true }) chrome: TitleChrome = "widget";
 
   abstract readonly kind: string;
   constructor() {
@@ -58,7 +69,21 @@ export abstract class LuWidget extends LitElement {
     localized(this);
   }
   protected get title_(): string {
-    return this.widget?.title ?? this.widget?.kind ?? "";
+    const title = this.widget?.title;
+    // A non-empty string is a title; `""` (or a stray non-string) is none, so the kind stands in
+    // — one rule for every widget, the same one the terminal renderer applies.
+    return typeof title === "string" && title !== "" ? title : (this.widget?.kind ?? "");
+  }
+
+  /** The visible title text, or `undefined` when the host draws it (`chrome="host"`). */
+  protected get visibleTitle(): string | undefined {
+    return this.chrome === "host" ? undefined : this.title_;
+  }
+
+  /** `Title: text` in the widget's own chrome, just `text` when the host owns the title. */
+  protected titled(text: string): string {
+    const title = this.visibleTitle;
+    return title === undefined ? text : `${title}: ${text}`;
   }
 
   /**
@@ -160,7 +185,7 @@ export abstract class LuWidget extends LitElement {
         class="state error"
         title=${s.finding ?? ""}
       >
-        ${this.title_}: ${s.finding ?? "error"}
+        ${this.titled(s.finding ?? "error")}
       </div>`;
     // "No data" is a result, not a failure: a POLITE live region (`role="status"`), exactly as
     // loom's React marker (ADR 0100 D3) — never `role="alert"`, and never the value renderer.
@@ -172,7 +197,7 @@ export abstract class LuWidget extends LitElement {
         class="state empty"
         title=${s.finding ?? ""}
       >
-        ${this.title_}: ${emptyStateText()}
+        ${this.titled(emptyStateText())}
       </div>`;
     // Stale with nothing to show: the marker, the reason, and an explicit "no value" — never
     // `renderReady()`, which would be handed `undefined` and read it as a value.
@@ -184,7 +209,7 @@ export abstract class LuWidget extends LitElement {
         class="state stale"
         title=${s.finding ?? ""}
       >
-        <span class="stale-marker">~</span> ${this.title_}: ${s.finding ?? "stale"} — no value
+        <span class="stale-marker">~</span> ${this.titled(s.finding ?? "stale")} — no value
       </div>`;
     const marker = s.state === "stale" ? "~" : s.state === "pending" ? "⋯" : undefined;
     return html`<div role="group" aria-label=${this.label()} data-state=${s.state}>

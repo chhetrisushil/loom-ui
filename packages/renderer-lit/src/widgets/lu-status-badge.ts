@@ -31,7 +31,9 @@ export class LuStatusBadge extends LuWidget {
     // Mirrors StatusBadgeRenderer: the title is a visible sibling span, not folded into the
     // accessible name alone.
     return html`${
-      this.widget.title ? html`<span class="badge-title">${this.widget.title}</span>` : nothing
+      this.visibleTitle !== undefined && this.widget.title
+        ? html`<span class="badge-title">${this.widget.title}</span>`
+        : nothing
     }<span class="badge" data-status=${status}>${status}</span>`;
   }
 }

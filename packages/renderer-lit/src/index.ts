@@ -8,6 +8,7 @@ export {
   resolvePointer,
 } from "./a2ui/plan";
 export * from "./dom/index";
+export type { TitleChrome } from "./widgets/base";
 export { measure, tick, timeTick } from "./format";
 export type { SemanticFormat } from "./format";
 export { currentLocale, isRtl, localeLabel, onLocaleChange, setLocale } from "./i18n";

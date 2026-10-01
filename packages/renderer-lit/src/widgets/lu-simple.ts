@@ -192,7 +192,7 @@ export class LuApproval extends LuWidget {
     // Gated on `Boolean(value)` like ApprovalCardRenderer: a resolved (or absent) approval
     // shows no actions, only the same "No pending approval" text React renders.
     const pending = Boolean(this.value);
-    return html`<div class="title">${this.title_}</div>
+    return html`${this.visibleTitle === undefined ? nothing : html`<div class="title">${this.visibleTitle}</div>`}
       ${
         pending
           ? html`<div class="actions">

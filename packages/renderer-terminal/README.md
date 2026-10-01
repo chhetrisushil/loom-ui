@@ -49,6 +49,12 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
   unsubscribe function.
 - `terminalRegistry(): RendererRegistry<TerminalWidgetRenderer>` — loom's built-in terminal
   registry merged with `loomUiTerminalRegistry`. Call it fresh each time you need one.
+  `terminalRegistry({ chrome: "host" })` (also on `renderExperience` and
+  `createLoomUiTerminalRegistry`) is for an app that draws its own title bar or frame: the
+  framework kinds print no `Title:` prefix — ready, error (`✗ msg`) or loading (`—`) — and a Kpi's
+  caption trails the figure. Default `"widget"` is unchanged. loom's own traversal rows (status
+  lines) and its eight built-in kinds are loom's output and keep their titles. A title that is
+  `""` is none (the kind stands in; a Note prints no title).
 - `loomUiTerminalRegistry` — just the framework kinds' renderers, unmerged, for a caller building
   its own composed registry.
 - `sparkline(values: readonly number[]): string` — an eight-level Unicode sparkline (`▁▂▃▄▅▆▇█`)

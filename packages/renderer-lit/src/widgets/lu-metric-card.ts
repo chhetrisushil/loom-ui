@@ -45,7 +45,7 @@ export class LuMetricCard extends LuWidget {
         <span class="value">${measure(v, fmt)}</span>
         ${suffix ? html`<span class="unit">${suffix}</span>` : nothing}
       </div>
-      <div class="label">${this.title_}</div>`;
+      ${this.visibleTitle === undefined ? nothing : html`<div class="label">${this.visibleTitle}</div>`}`;
   }
 }
 
