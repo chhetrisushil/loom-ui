@@ -130,8 +130,8 @@ describe("chrome: host — error, empty, stale and loading bodies", () => {
   });
 });
 
-describe("a falsy title is no title — one rule for every widget", () => {
-  for (const title of ["", 0 as unknown as string]) {
+describe("only a non-empty string is a title (not empty, 0 or 5) — one rule for every widget", () => {
+  for (const title of ["", 0 as unknown as string, 5 as unknown as string]) {
     it(`Note with title ${JSON.stringify(title)}: no title element, no empty aria-label`, async () => {
       const el = await mount("lu-note", { widget: widgetFor("Note", title) });
       expect(el.shadowRoot?.querySelector(".title")).toBeNull();
