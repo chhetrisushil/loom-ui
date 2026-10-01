@@ -203,7 +203,7 @@ Samples are per HANDLE because an observation belongs to one CALL — a tool AND
 
 ## Theming
 
-Every `lu-*` element reads `--lu-*` CSS custom properties (`--lu-text`, `--lu-text-dim`, `--lu-border`, `--lu-panel`, `--lu-panel-2`, `--lu-grid`, `--lu-accent`, `--lu-radius`, `--lu-delta-up`, `--lu-delta-up-bg`, `--lu-delta-down`, `--lu-delta-down-bg`, `--lu-delta-flat`, `--lu-delta-flat-bg`, `--lu-status-ok`, `--lu-status-warning`, `--lu-status-critical`); set them on any ancestor.
+Every `lu-*` element reads `--lu-*` CSS custom properties (`--lu-text`, `--lu-text-dim`, `--lu-text-caption` (a Kpi caption; defaults to `--lu-text-dim`), `--lu-border`, `--lu-panel`, `--lu-panel-2`, `--lu-grid`, `--lu-accent`, `--lu-radius`, `--lu-delta-up`, `--lu-delta-up-bg`, `--lu-delta-down`, `--lu-delta-down-bg`, `--lu-delta-flat`, `--lu-delta-flat-bg`, `--lu-status-ok`, `--lu-status-warning`, `--lu-status-critical`); set them on any ancestor.
 
 ## Consumers
 
