@@ -3,7 +3,7 @@ import {
   type TableValue,
   tableColumnFormat,
   tableColumnLabel,
-} from "@loom-ui/core";
+} from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";

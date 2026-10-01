@@ -1,4 +1,4 @@
-import type { BarChartValue } from "@loom-ui/core";
+import type { BarChartValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { SERIES_COLORS, linearScale, niceTicks } from "../charts/svg";

@@ -1,4 +1,4 @@
-import { FRAMEWORK_KINDS } from "@loom-ui/core";
+import { FRAMEWORK_KINDS } from "@loom-ui/core/browser";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import "../widgets/index";
 import type { TitleChrome } from "../widgets/base";

@@ -182,6 +182,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.4
+      esbuild:
+        specifier: 0.21.5
+        version: 0.21.5
       happy-dom:
         specifier: 'catalog:'
         version: 20.14.5

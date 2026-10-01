@@ -1,11 +1,11 @@
-import { DELTA_FORMAT, checkKindValue, deltaDirection, unitSuffix } from "@loom-ui/core";
+import { DELTA_FORMAT, checkKindValue, deltaDirection, unitSuffix } from "@loom-ui/core/browser";
 import type {
   BarChartValue,
   KpiValue,
   StatusCardValue,
   TableValue,
   TimeSeriesValue,
-} from "@loom-ui/core";
+} from "@loom-ui/core/browser";
 import { type SemanticFormat, effectiveFormat, measure } from "./format";
 import { t } from "./i18n";
 

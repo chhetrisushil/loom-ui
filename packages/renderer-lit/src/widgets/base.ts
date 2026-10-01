@@ -1,4 +1,4 @@
-import { checkKindValue } from "@loom-ui/core";
+import { checkKindValue } from "@loom-ui/core/browser";
 import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
