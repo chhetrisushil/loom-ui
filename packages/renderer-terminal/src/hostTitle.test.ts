@@ -109,3 +109,19 @@ describe("terminal chrome: host", () => {
     ).toBe(`${T}: [ok] H`);
   });
 });
+
+describe("terminal: a non-string title is none on EVERY kind", () => {
+  for (const [kind, value] of CASES) {
+    for (const t of ["", 0, 5, null, true] as unknown[]) {
+      it(`${kind} with title ${JSON.stringify(t)} renders as with no title`, () => {
+        const none = customWidget$({ kind, binding: b });
+        const bad = { ...none, title: t } as never;
+        for (const v of [value, undefined, { nope: 1 }]) {
+          expect(loomUiTerminalRegistry.get(kind)?.(bad, v)).toBe(
+            loomUiTerminalRegistry.get(kind)?.(none, v)
+          );
+        }
+      });
+    }
+  }
+});

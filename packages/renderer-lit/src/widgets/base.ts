@@ -10,6 +10,7 @@ import {
   staleStateText,
 } from "../a11y";
 import { localized } from "../i18n";
+import { titleText } from "../title";
 
 /**
  * Who draws the widget's title. `"widget"` (default) — the widget prints its own title in its
@@ -69,10 +70,9 @@ export abstract class LuWidget extends LitElement {
     localized(this);
   }
   protected get title_(): string {
-    const title = this.widget?.title;
     // A non-empty string is a title; `""` (or a stray non-string) is none, so the kind stands in
-    // — one rule for every widget, the same one the terminal renderer applies.
-    return typeof title === "string" && title !== "" ? title : (this.widget?.kind ?? "");
+    // — one rule for every widget (`titleText`), the same one the terminal renderer applies.
+    return titleText(this.widget?.title) ?? this.widget?.kind ?? "";
   }
 
   /** The visible title text, or `undefined` when the host draws it (`chrome="host"`). */

@@ -130,6 +130,22 @@ describe("chrome: host — error, empty, stale and loading bodies", () => {
   });
 });
 
+describe("non-string titles are no title on EVERY kind (default chrome)", () => {
+  for (const title of ["", 0, 5, null, true] as unknown[]) {
+    for (const [tag, kind, value] of KINDS) {
+      it(`${tag} with title ${JSON.stringify(title)} renders exactly as with no title`, async () => {
+        const none = await mount(tag, { widget: widgetFor(kind, undefined), value });
+        const w = { ...widgetFor(kind, undefined), title } as never;
+        const el = await mount(tag, { widget: w, value });
+        // Compared with the title-less widget (a digit title would collide with chart numbers).
+        expect(visible(el)).toBe(visible(none));
+        expect(names(el)).toBe(names(none));
+        expect(el.shadowRoot?.querySelector(".badge-title")).toBeNull();
+      });
+    }
+  }
+});
+
 describe("only a non-empty string is a title (not empty, 0 or 5) — one rule for every widget", () => {
   for (const title of ["", 0 as unknown as string, 5 as unknown as string]) {
     it(`Note with title ${JSON.stringify(title)}: no title element, no empty aria-label`, async () => {
