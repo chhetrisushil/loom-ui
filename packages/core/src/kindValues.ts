@@ -394,6 +394,21 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
 };
 
 /**
+ * Every issue (path, message, in order) the contract finds — what `checkKindValue` reports the
+ * first of. Exported from this module only (NOT from the package entries) so the differential
+ * fuzz test can compare the FULL list against zod's `safeParse().error.issues`.
+ *
+ * @internal
+ */
+export function checkKindValueIssues(kind: string, value: unknown): Out {
+  const contract = Object.hasOwn(CONTRACTS, kind) ? CONTRACTS[kind] : undefined;
+  if (contract === undefined || value === undefined) return [];
+  const issues: Out = [];
+  contract(value, [], issues);
+  return issues;
+}
+
+/**
  * `@loom-ui/core`'s `checkKindValue`, without zod: `undefined` is "not hydrated yet" and passes,
  * an unknown kind has no contract and passes, and a failure carries the same finding (code and
  * message) the zod-backed check produces — pinned by `kindValues.test.ts`.
@@ -402,11 +417,7 @@ export function checkKindValue(
   kind: string,
   value: unknown
 ): { ok: true } | { ok: false; finding: Finding } {
-  const contract = Object.hasOwn(CONTRACTS, kind) ? CONTRACTS[kind] : undefined;
-  if (contract === undefined || value === undefined) return { ok: true };
-  const issues: Out = [];
-  contract(value, [], issues);
-  const issue = issues[0];
+  const issue = checkKindValueIssues(kind, value)[0];
   if (issue === undefined) return { ok: true };
   const path = issue.path.join(".");
   return {

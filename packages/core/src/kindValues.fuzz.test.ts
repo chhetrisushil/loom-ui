@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkKindValue as lite } from "./kindValues";
-import { kindValueContracts, checkKindValue as zodCheck } from "./values";
+import { checkKindValue as lite, checkKindValueIssues as liteIssues } from "./kindValues";
+import { kindValueContract, kindValueContracts, checkKindValue as zodCheck } from "./values";
 
 // A SEEDED randomized differential test: the hand-written zod-free `checkKindValue` against the
 // zod contracts, for EVERY kind. It exists to catch drift — e.g. after a zod upgrade changes an
@@ -10,7 +10,7 @@ import { kindValueContracts, checkKindValue as zodCheck } from "./values";
 //   * then several simultaneous mutations at random depths (replace, delete, truncate),
 //   * deep junk: own `__proto__` keys, `then`/`catch` objects, NaN, ±Infinity, -0, Date, Map,
 //     Set, bigint, symbols, functions, cyclic-free nested structures,
-//   * the VERDICT and the MESSAGE must match.
+//   * the VERDICT, the MESSAGE and the FULL issue list (path, message, order) must match.
 //
 // Deterministic: one fixed seed, a fixed iteration count. On a mismatch the failure prints the
 // seed, the iteration and the offending value, so it replays exactly.
@@ -269,6 +269,7 @@ describe(`zod-free checker vs zod contracts — seeded fuzz (seed 0x${SEED.toStr
       const gen = GENERATORS[kind];
       expect(gen, `no generator for ${kind}`).toBeDefined();
       let failures = 0;
+      let multi = 0;
       for (let i = 0; i < ITERATIONS; i++) {
         const base = (gen as (r: Rng) => unknown)(r);
         // Half the corpus is the bare skeleton (valid or near-valid), half is multi-point mutated.
@@ -280,11 +281,31 @@ describe(`zod-free checker vs zod contracts — seeded fuzz (seed 0x${SEED.toStr
           got,
           `DRIFT for ${kind} — seed 0x${SEED.toString(16)}, iteration ${i}\nvalue: ${show(value)}\nzod:   ${JSON.stringify(want)}\nlite:  ${JSON.stringify(got)}`
         ).toEqual(want);
+        // The whole list, not just the first issue: a drift in the 2nd issue's wording or order
+        // would be invisible to the finding (which reports issues[0]) but is still drift.
+        const zr = kindValueContract(kind)?.safeParse(value);
+        const wantIssues =
+          value === undefined || zr === undefined || zr.success
+            ? []
+            : zr.error.issues.map((x) => ({ path: x.path, message: x.message }));
+        const gotIssues = liteIssues(kind, value).map((x) => ({
+          path: x.path,
+          message: x.message,
+        }));
+        if (wantIssues.length > 1) multi++;
+        expect(
+          gotIssues,
+          `ISSUE-LIST DRIFT for ${kind} — seed 0x${SEED.toString(16)}, iteration ${i}\nvalue: ${show(value)}`
+        ).toEqual(wantIssues);
       }
       // The corpus must exercise BOTH verdicts for every kind with a real contract.
       if (!["ApprovalCard", "A2UIView", "SandboxView"].includes(kind)) {
         expect(failures).toBeGreaterThan(ITERATIONS / 20);
         expect(failures).toBeLessThan(ITERATIONS);
+      }
+      // The full-list comparison is only meaningful if the corpus has multi-issue values.
+      if (["TimeSeries", "BarChart", "Table", "StatusCard", "Kpi"].includes(kind)) {
+        expect(multi, `${kind}: no multi-issue values in the corpus`).toBeGreaterThan(0);
       }
     });
   }
