@@ -11,7 +11,7 @@ const css = (ctor: unknown): string => {
   const s = (ctor as { styles?: unknown }).styles;
   const flat = (x: unknown): string =>
     Array.isArray(x) ? x.map(flat).join("\n") : ((x as { cssText?: string })?.cssText ?? "");
-  return flat(s).replace(/\/\*[\s\S]*?\*\//g, "");
+  return stripCssComments(flat(s));
 };
 const rules = (text: string): Array<{ selector: string; body: string }> =>
   [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
@@ -49,15 +49,222 @@ function defaultOf(token: string): string {
   return all[0] as string;
 }
 
+// ── Source scanning primitives ──────────────────────────────────────────────────────────────
+// Everything below is string-aware: a quote opens a string that a `/*`, `//` or a backtick inside
+// it cannot escape from, and templates nest (`html`..${cond ? html`..` : nothing}..``).
+
+/** Index just past the closing quote of the string literal starting at `i`. */
+function skipQuoted(src: string, i: number): number {
+  const q = src[i];
+  let j = i + 1;
+  while (j < src.length && src[j] !== q) j += src[j] === "\\" ? 2 : 1;
+  return j + 1;
+}
+/** Index just past the `}` closing the `${` expression whose body starts at `j`. */
+function skipExpr(src: string, from: number): number {
+  let j = from;
+  let depth = 1;
+  while (j < src.length) {
+    const c = src[j];
+    if (c === '"' || c === "'") j = skipQuoted(src, j);
+    else if (c === "`") j = skipTemplate(src, j);
+    else {
+      if (c === "{") depth++;
+      else if (c === "}" && --depth === 0) return j + 1;
+      j++;
+    }
+  }
+  return j;
+}
+/** Index just past the closing backtick of the template starting at `i`. */
+function skipTemplate(src: string, i: number): number {
+  let j = i + 1;
+  while (j < src.length && src[j] !== "`") {
+    if (src[j] === "\\") j += 2;
+    else if (src[j] === "$" && src[j + 1] === "{") j = skipExpr(src, j + 2);
+    else j++;
+  }
+  return j + 1;
+}
+
+/** TS source minus its `//` and `/* *\/` comments — never inside a string or a template. */
+function stripTsComments(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'") {
+      const j = skipQuoted(src, i);
+      out += src.slice(i, j);
+      i = j;
+    } else if (c === "`") {
+      const j = skipTemplate(src, i);
+      out += src.slice(i, j);
+      i = j;
+    } else if (c === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+    } else if (c === "/" && src[i + 1] === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end < 0 ? src.length : end + 2;
+      out += " ";
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** CSS minus its `/* *\/` comments (CSS has no `//`), never inside a quoted string. */
+function stripCssComments(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const j = skipQuoted(text, i);
+      out += text.slice(i, j);
+      i = j;
+    } else if (c === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 2;
+      out += " ";
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+interface Template {
+  readonly tag: "css" | "html" | "svg";
+  /** The static text; every `${…}` is replaced by a `__E__` placeholder. */
+  readonly text: string;
+}
+/** Every `css`/`html`/`svg` tagged template in `src` (comments already stripped), nested ones too. */
+function taggedTemplates(src: string, out: Template[] = []): Template[] {
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'") {
+      i = skipQuoted(src, i);
+    } else if (c === "`") {
+      const tag = /(?<![\w$.])(css|html|svg)$/.exec(src.slice(Math.max(0, i - 4), i))?.[1];
+      let text = "";
+      let j = i + 1;
+      while (j < src.length && src[j] !== "`") {
+        if (src[j] === "\\") {
+          text += src.slice(j, j + 2);
+          j += 2;
+        } else if (src[j] === "$" && src[j + 1] === "{") {
+          const end = skipExpr(src, j + 2);
+          taggedTemplates(src.slice(j + 2, end - 1), out); // a nested template is its own unit
+          text += "__E__";
+          j = end;
+        } else text += src[j++];
+      }
+      if (tag !== undefined) out.push({ tag: tag as Template["tag"], text });
+      i = j + 1;
+    } else i++;
+  }
+  return out;
+}
+
+/** `value` with every `url(...)` body emptied: ids like `#abcd` and data URIs are not colours. */
+function withoutUrls(value: string): string {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const m = /url\(/i.exec(value.slice(i));
+    if (!m) return out + value.slice(i);
+    const open = i + m.index + m[0].length;
+    out += `${value.slice(i, open)})`;
+    let depth = 1;
+    let j = open;
+    while (j < value.length && depth > 0) {
+      if (value[j] === '"' || value[j] === "'") j = skipQuoted(value, j);
+      else {
+        if (value[j] === "(") depth++;
+        else if (value[j] === ")") depth--;
+        j++;
+      }
+    }
+    i = j;
+  }
+}
+/** Every `fn(args)` call in a CSS value, nested ones included (balanced parentheses). */
+function cssCalls(value: string): Array<{ name: string; args: string }> {
+  const calls: Array<{ name: string; args: string }> = [];
+  for (const m of value.matchAll(/([a-z-]+)\(/gi)) {
+    let depth = 1;
+    let j = (m.index ?? 0) + m[0].length;
+    const start = j;
+    while (j < value.length && depth > 0) {
+      if (value[j] === "(") depth++;
+      else if (value[j] === ")") depth--;
+      j++;
+    }
+    calls.push({ name: (m[1] ?? "").toLowerCase(), args: value.slice(start, j - 1) });
+  }
+  return calls;
+}
+/** Does `args` have a `/` outside any nested parentheses — the alpha separator of `rgb(r g b / a)`? */
+function hasTopLevelSlash(args: string): boolean {
+  let depth = 0;
+  for (const c of args) {
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (c === "/" && depth === 0) return true;
+  }
+  return false;
+}
+
 // ── The opacity / alpha scan ────────────────────────────────────────────────────────────────
 // Text must get its colour from a TOKEN a host can override to reach AA, never from a stacked
-// alpha: opacity, `rgba()`/`hsla()`/slash-alpha colours, `color-mix(... transparent)`, 8/4-digit
-// hex, and the `opacity=` / `fill-opacity=` attributes of an SVG template.
+// alpha: opacity, `rgba()`/`hsla()`/slash-alpha colours (nested parentheses included),
+// `color-mix()` that mixes with `transparent` or an alpha colour (an OPAQUE mix is fine), 8/4-digit
+// hex, and the `opacity=` / `fill-opacity=` attributes of an SVG template. Only CSS and template
+// attributes are scanned — a TS object literal's `{ opacity: 1 }` is not styling.
 
-/** Properties that paint TEXT (HTML `color`, SVG text's `fill`). */
-const TEXT_PROPS = /^(color|fill|-webkit-text-fill-color|text-decoration-color|caret-color)$/;
-const ALPHA_COLOUR =
-  /\b(?:rgba|hsla)\s*\(|\b(?:rgb|hsl)\s*\([^)]*\/|color-mix\s*\(|transparent|#[0-9a-f]{8}\b|#[0-9a-f]{4}\b/i;
+/** Properties that paint TEXT. `fill`/`stroke` do so only on a text-bearing SVG element. */
+const TEXT_PROPS = new Set([
+  "color",
+  "fill",
+  "stroke",
+  "-webkit-text-fill-color",
+  "text-decoration-color",
+  "caret-color",
+]);
+const ALPHA_FNS = new Set(["rgb", "hsl", "hwb", "lab", "lch", "oklab", "oklch", "color"]);
+
+/** Does any comma-separated selector end in a text-bearing SVG element (`text`, `tspan`)? */
+function targetsSvgText(selector: string): boolean {
+  return selector.split(",").some((sel) => {
+    const compound =
+      sel
+        .trim()
+        .split(/[\s>+~]+/)
+        .pop() ?? "";
+    return /^(?:text|tspan)(?![\w-])/i.test(compound);
+  });
+}
+
+/** Can `value`, painted via `prop`, be translucent? (`prop` is already known to paint text.) */
+function isTranslucent(prop: string, value: string): boolean {
+  const v = withoutUrls(value);
+  for (const { name, args } of cssCalls(v)) {
+    if (name === "rgba" || name === "hsla") return true;
+    if (ALPHA_FNS.has(name) && hasTopLevelSlash(args)) return true;
+    // color-mix is translucent only if a mixed colour is: `transparent` here, or an alpha colour
+    // (caught by the checks above/below, since cssCalls and the hex test see inside it).
+    if (name === "color-mix" && /\btransparent\b/i.test(args)) return true;
+  }
+  if (/#[0-9a-f]{8}\b|#[0-9a-f]{4}\b/i.test(v)) return true;
+  // `transparent` is a legitimate text paint for gradient text (`-webkit-text-fill-color`, the
+  // text is painted by the background clip); anywhere else it hides the text.
+  return /\btransparent\b/i.test(v) && prop !== "-webkit-text-fill-color";
+}
 
 /** Declarations `prop: value` in a rule body. */
 function declarations(body: string): Array<[string, string]> {
@@ -67,30 +274,44 @@ function declarations(body: string): Array<[string, string]> {
     .filter(([k]) => k)
     .map(([k, v]) => [(k ?? "").toLowerCase(), v ?? ""]);
 }
-/** Selectors of the rules in `text` that paint TEXT with an alpha colour. */
+/** Selectors of the rules in `text` that paint TEXT with a translucent colour. */
 function alphaTextColours(text: string): string[] {
-  return rules(text.replace(/\s+/g, " ")).flatMap((r) =>
+  return rules(withoutUrlsEverywhere(stripCssComments(text)).replace(/\s+/g, " ")).flatMap((r) =>
     declarations(r.body)
-      .filter(([k, v]) => TEXT_PROPS.test(k) && ALPHA_COLOUR.test(v))
+      .filter(
+        ([k, v]) =>
+          TEXT_PROPS.has(k) &&
+          // fill/stroke paint text only on a text-bearing SVG element; anywhere else they are
+          // shapes (a grid line's stroke may be translucent).
+          (k !== "fill" && k !== "stroke" ? true : targetsSvgText(r.selector)) &&
+          isTranslucent(k, v)
+      )
       .map(([k]) => `${r.selector} ${k}`)
   );
 }
+/** A whole stylesheet with every `url(...)` body emptied (so a `;` inside a data URI cannot split a declaration). */
+const withoutUrlsEverywhere = withoutUrls;
+
 /** Every `opacity` use in source: CSS (`opacity: x`) and template attributes (`opacity=${x}`). */
 function opacityUses(source: string): string[] {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const uses: string[] = [];
-  for (const m of code.matchAll(/\b((?:fill-|stroke-)?opacity)\s*([=:])/g)) {
-    const before = code.slice(0, m.index);
-    if (m[2] === "=") {
-      const tag = [...before.matchAll(/<([a-zA-Z][\w-]*)/g)].pop()?.[1] ?? "?";
-      uses.push(`<${tag} ${m[1]}=>`);
-    } else {
-      const sel = before
-        .slice(Math.max(before.lastIndexOf("}"), before.lastIndexOf("`")) + 1)
-        .split("{")
-        .shift()
-        ?.trim();
-      uses.push(`${sel} { ${m[1]}: }`);
+  for (const tpl of taggedTemplates(stripTsComments(source))) {
+    const text =
+      tpl.tag === "css" ? stripCssComments(tpl.text) : tpl.text.replace(/<!--[\s\S]*?-->/g, "");
+    // `(?<![\w-])`: a custom property DEFINITION such as `--hover-opacity: .5` is a token, not a use.
+    for (const m of text.matchAll(/(?<![\w-])((?:fill-|stroke-)?opacity)\s*([=:])/g)) {
+      const before = text.slice(0, m.index);
+      if (m[2] === "=") {
+        const tag = [...before.matchAll(/<([a-zA-Z][\w-]*)/g)].pop()?.[1] ?? "?";
+        uses.push(`<${tag} ${m[1]}=>`);
+      } else {
+        const sel = before
+          .slice(before.lastIndexOf("}") + 1)
+          .split("{")
+          .shift()
+          ?.trim();
+        uses.push(`${sel} { ${m[1]}: }`);
+      }
     }
   }
   return uses;
@@ -180,14 +401,176 @@ describe("caption contrast", () => {
       "color: rgb(1 2 3 / 50%)",
       "color: color-mix(in srgb, red 50%, transparent)",
       "color: #11223380",
+      "color: #abcd",
       "color: transparent",
-    ])
-      expect(alphaTextColours(`.t { ${decl}; }`), decl).toEqual([`.t ${decl.split(":")[0]}`]);
+    ]) {
+      const [prop] = decl.split(":");
+      const sel = prop === "fill" ? "text" : ".t";
+      expect(alphaTextColours(`${sel} { ${decl}; }`), decl).toEqual([`${sel} ${prop}`]);
+    }
     // A background may be translucent: only TEXT is policed.
     expect(alphaTextColours(".t { background: rgba(1,2,3,.5); color: #112233; }")).toEqual([]);
     expect(opacityUses("css`.a { opacity: .5 }`")).toEqual([".a { opacity: }"]);
     expect(opacityUses("svg`<text fill-opacity=${x}>t</text>`")).toEqual(["<text fill-opacity=>"]);
     expect(opacityUses("svg`<text opacity=${x}>t</text>`")).toEqual(["<text opacity=>"]);
     expect(opacityUses("/* opacity: 1 */ // opacity: 2")).toEqual([]);
+  });
+
+  describe("color-mix: flagged only when it can produce transparency", () => {
+    it("flags a mix with transparent or with an alpha colour", () => {
+      for (const v of [
+        "color-mix(in srgb, red 50%, transparent)",
+        "color-mix(in srgb, transparent, red)",
+        "color-mix(in srgb, rgba(1,2,3,.5), red)",
+        "color-mix(in srgb, rgb(1 2 3 / 50%), red)",
+        "color-mix(in srgb, #11223380, red)",
+        "color-mix(in srgb, var(--a) 40%, color-mix(in srgb, red, transparent))",
+      ])
+        expect(alphaTextColours(`.t { color: ${v}; }`), v).toEqual([".t color"]);
+    });
+    it("does not flag an opaque mix", () => {
+      for (const v of [
+        "color-mix(in srgb, red 50%, blue)",
+        "color-mix(in srgb, var(--a) 40%, var(--b))",
+        "color-mix(in oklab, #112233, #445566)",
+        "color-mix(in srgb, var(--a, #fff), color-mix(in srgb, red, blue))",
+      ])
+        expect(alphaTextColours(`.t { color: ${v}; }`), v).toEqual([]);
+    });
+  });
+
+  describe("transparent: only a `color` it can hide", () => {
+    it("is allowed for gradient text and for non-text properties", () => {
+      expect(alphaTextColours(".g { -webkit-text-fill-color: transparent; }")).toEqual([]);
+      expect(alphaTextColours(".g { background: transparent; }")).toEqual([]);
+      expect(alphaTextColours("rect { fill: transparent; }")).toEqual([]);
+    });
+    it("is flagged for `color` and for the fill of an SVG text", () => {
+      expect(alphaTextColours(".g { color: transparent; }")).toEqual([".g color"]);
+      expect(alphaTextColours("text { fill: transparent; }")).toEqual(["text fill"]);
+    });
+    it("gradient text is not a loophole for a translucent fill colour", () => {
+      expect(alphaTextColours(".g { -webkit-text-fill-color: rgba(1,2,3,.5); }")).toEqual([
+        ".g -webkit-text-fill-color",
+      ]);
+    });
+  });
+
+  describe("fill and stroke: only on text-bearing SVG elements", () => {
+    it("ignores shapes, gridlines and look-alike selectors", () => {
+      for (const sel of ["rect", ".grid line", "path.area", ".context", "textarea", "text-box"])
+        for (const prop of ["fill", "stroke"])
+          expect(
+            alphaTextColours(`${sel} { ${prop}: rgba(1,2,3,.15); }`),
+            `${sel} ${prop}`
+          ).toEqual([]);
+    });
+    it("flags text and tspan, however nested or listed", () => {
+      for (const sel of ["text", ".axis text", "svg > text.tick", "g tspan", ".a rect, .b text"])
+        for (const prop of ["fill", "stroke"])
+          expect(
+            alphaTextColours(`${sel} { ${prop}: rgba(1,2,3,.15); }`),
+            `${sel} ${prop}`
+          ).toEqual([`${sel} ${prop}`]);
+    });
+    it("`color` is policed on every selector", () => {
+      expect(alphaTextColours("rect { color: rgba(1,2,3,.5); }")).toEqual(["rect color"]);
+    });
+  });
+
+  describe("url(#id) is a reference, not a colour", () => {
+    it("does not read an id, or a data URI, as hex or alpha", () => {
+      expect(alphaTextColours("text { fill: url(#abcd); }")).toEqual([]);
+      expect(alphaTextColours("text { fill: url(#abcd1234); }")).toEqual([]);
+      expect(alphaTextColours('text { fill: url("#abcd") #123456; }')).toEqual([]);
+      expect(
+        alphaTextColours(".t { color: #123456; background: url(data:image/png;base64,AAAA); }")
+      ).toEqual([]);
+    });
+    it("still reads a real 4/8-digit hex beside one", () => {
+      expect(alphaTextColours("text { fill: url(#abcd) #abcd; }")).toEqual(["text fill"]);
+    });
+  });
+
+  describe("nested parentheses: rgb(var(--x) / 50%)", () => {
+    it("flags a slash-alpha colour whose channels contain a function", () => {
+      expect(alphaTextColours(".t { color: rgb(var(--x) / 50%); }")).toEqual([".t color"]);
+      expect(
+        alphaTextColours(".t { color: hsl(var(--h) var(--s) var(--l) / var(--a, .5)); }")
+      ).toEqual([".t color"]);
+      expect(alphaTextColours(".t { color: var(--c, rgb(var(--x) / 50%)); }")).toEqual([
+        ".t color",
+      ]);
+    });
+    it("does not flag an opaque colour or a slash that is not the alpha separator", () => {
+      expect(alphaTextColours(".t { color: rgb(var(--x)); }")).toEqual([]);
+      expect(alphaTextColours(".t { color: rgb(1 2 3); }")).toEqual([]);
+      expect(alphaTextColours(".t { color: rgb(calc(10 / 2) 1 2); }")).toEqual([]);
+    });
+  });
+
+  describe("opacity: only CSS and template attributes", () => {
+    it("ignores a custom-property definition, but not its use", () => {
+      expect(opacityUses("css`.a { --lu-hover-opacity: .5; --fill-opacity: 1 }`")).toEqual([]);
+      expect(opacityUses("css`.a { opacity: var(--lu-hover-opacity) }`")).toEqual([
+        ".a { opacity: }",
+      ]);
+    });
+    it("ignores non-CSS TS object literals and expressions inside a template", () => {
+      expect(
+        opacityUses("const o = { opacity: 0.5, 'fill-opacity': 1, strokeOpacity: 1 };")
+      ).toEqual([]);
+      expect(opacityUses("function f() { return { opacity: 1 }; }")).toEqual([]);
+      expect(opacityUses("html`<p>${{ opacity: 1 }}</p>`")).toEqual([]);
+      expect(opacityUses("html`<p>${call({ opacity: 1 })}</p>`")).toEqual([]);
+    });
+    it("finds an opacity in a template nested inside an expression", () => {
+      expect(opacityUses("html`<g>${c ? svg`<rect opacity=${o}/>` : nothing}</g>`")).toEqual([
+        "<rect opacity=>",
+      ]);
+    });
+    it("finds the CSS and attribute spellings", () => {
+      expect(opacityUses("css`select:disabled { opacity: .65 }`")).toEqual([
+        "select:disabled { opacity: }",
+      ]);
+      expect(opacityUses('svg`<rect fill-opacity=${o} stroke-opacity="1"/>`')).toEqual([
+        "<rect fill-opacity=>",
+        "<rect stroke-opacity=>",
+      ]);
+    });
+  });
+
+  describe("the comment stripper is string-aware", () => {
+    it("a `/*` or `//` inside a string does not start a comment (so nothing after it is lost)", () => {
+      expect(
+        opacityUses('css`.a { content: "/*"; opacity: .5 } .b { color: red } /* real */`')
+      ).toEqual([".a { opacity: }"]);
+      expect(opacityUses('css`.a { background: url("http://x/a.png"); opacity: .5 }`')).toEqual([
+        ".a { opacity: }",
+      ]);
+      expect(opacityUses('const u = "http://a.b"; css`.a { opacity: .5 }`')).toEqual([
+        ".a { opacity: }",
+      ]);
+      expect(opacityUses('const s = "// not a comment"; css`.a { opacity: .5 }`')).toEqual([
+        ".a { opacity: }",
+      ]);
+      expect(opacityUses("const s = '/*'; css`.a { opacity: .5 }`; const t = '*/';")).toEqual([
+        ".a { opacity: }",
+      ]);
+    });
+    it("a real comment still hides what it contains", () => {
+      expect(opacityUses("/* css`.a { opacity: .5 }` */")).toEqual([]);
+      expect(opacityUses("// css`.a { opacity: .5 }`")).toEqual([]);
+      expect(opacityUses("css`.a { /* opacity: .5 */ color: red }`")).toEqual([]);
+      expect(opacityUses("css`.a { content: '*/'; /* x */ opacity: .5 }`")).toEqual([
+        ".a { opacity: }",
+      ]);
+    });
+    it("strips a CSS comment before the colour scan, but not a `/*` inside a string", () => {
+      expect(alphaTextColours(".t { /* color: rgba(1,2,3,.5) */ color: #112233; }")).toEqual([]);
+      expect(alphaTextColours('.t::after { content: "/*"; color: rgba(1,2,3,.5); }')).toEqual([
+        ".t::after color",
+      ]);
+    });
   });
 });
