@@ -3,6 +3,8 @@ import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
+import { t } from "../i18n";
+import { tPlural } from "../plural";
 import { LuWidget } from "./base";
 
 /** Cap DOM rows so a tool returning tens of thousands of rows can't build hundreds of
@@ -203,7 +205,7 @@ export class LuDataTable extends LuWidget {
       ${
         shown < total
           ? html`<div class="more">
-              Showing ${shown} of ${total} rows
+              ${t("Showing")} ${shown} ${t("of")} ${total} ${tPlural("row", total, { one: "row", other: "rows" })}
               <button @click=${this.showMore}>Show ${Math.min(ROW_STEP, total - shown)} more</button>
             </div>`
           : nothing
