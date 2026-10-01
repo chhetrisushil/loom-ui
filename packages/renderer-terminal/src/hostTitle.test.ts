@@ -65,7 +65,67 @@ describe("terminal chrome: host", () => {
     const ts = host.get("TimeSeries")?.(w("TimeSeries"), {
       series: [{ label: "p99", points: pts }],
     });
-    expect(ts).toMatch(/^ {4}p99\s+[▁▂▃▄▅▆▇█]{2}\s+4$/);
+    expect(ts).toMatch(/^p99\s+[▁▂▃▄▅▆▇█]{2}\s+4$/);
+  });
+  // G18: the 4-space hang exists only to sit rows under the `Title:` lead; host chrome has no lead.
+  const MULTI: ReadonlyArray<readonly [string, unknown]> = [
+    [
+      "TimeSeries",
+      {
+        series: [
+          { label: "p99", points: pts },
+          { label: "p50", points: pts },
+        ],
+      },
+    ],
+    [
+      "BarChart",
+      {
+        bars: [
+          { label: "a", value: 1 },
+          { label: "b", value: 2 },
+        ],
+      },
+    ],
+    [
+      "Table",
+      {
+        columns: ["db", "n"],
+        rows: [
+          ["orders", 1],
+          ["users", 2],
+        ],
+      },
+    ],
+  ];
+  const bigTable = {
+    columns: ["db"],
+    rows: Array.from({ length: 40 }, (_, i) => [`r${i}`]),
+  };
+  for (const [kind, value] of [...MULTI, ["Table", bigTable] as const]) {
+    it(`${kind}: host chrome has no leading indent on any line; default keeps the 4-space hang`, () => {
+      const own = host.get(kind)?.(w(kind), value) ?? "";
+      const lines = own.split("\n");
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines) expect(line).not.toMatch(/^\s/);
+      const dflt = (loomUiTerminalRegistry.get(kind)?.(w(kind), value) ?? "").split("\n");
+      expect(dflt[0]).toBe(`${T}:`);
+      for (const line of dflt.slice(1)) expect(line).toMatch(/^ {4}\S/);
+      // Host body is exactly the default body with the hang removed.
+      expect(lines).toEqual(dflt.slice(1).map((l) => l.slice(4)));
+    });
+  }
+  it("default output is byte-identical (exact pins)", () => {
+    const reg = loomUiTerminalRegistry;
+    expect(reg.get("Table")?.(w("Table"), { columns: ["db"], rows: [["orders"]] })).toBe(
+      `${T}:\n    db\n    orders`
+    );
+    expect(reg.get("BarChart")?.(w("BarChart"), { bars: [{ label: "a", value: 1 }] })).toBe(
+      `${T}:\n    a            ${"█".repeat(20)} 1`
+    );
+    expect(
+      reg.get("TimeSeries")?.(w("TimeSeries"), { series: [{ label: "p99", points: pts }] })
+    ).toMatch(new RegExp(`^${T}:\\n {4}p99\\s+[▁▂▃▄▅▆▇█]{2}\\s+4$`));
   });
   it('Note: host drops the title; a non-string or empty title ("", 0, 5) is none under either chrome', () => {
     const note = (title: unknown) =>

@@ -109,6 +109,13 @@ const lead =
   (w, rest) =>
     host ? rest : `${title(w)}: ${rest}`;
 
+/**
+ * The hanging indent that sets a multi-line body's rows under its `Title:` lead. Host chrome has no
+ * lead to hang under, so it gets none (G18) — one helper, so every multi-line kind agrees.
+ */
+const HANG = "    ";
+const hang = (host: boolean): string => (host ? "" : HANG);
+
 type Body = (w: Widget, v: unknown, lead: Lead, host: boolean) => string;
 
 const guarded =
@@ -152,7 +159,7 @@ const timeSeries = (host: boolean) =>
       // the widget's; a unit resolves only when neither format does.
       const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
       const marker = splitAxes && s.axis === "right" ? RIGHT_AXIS_MARKER : "";
-      return `    ${padLabelWithMarker(s.label, marker, 12)} ${sparkline(values)}  ${text}`;
+      return `${hang(host)}${padLabelWithMarker(s.label, marker, 12)} ${sparkline(values)}  ${text}`;
     });
     return (host ? lines : [`${title(w)}:`, ...lines]).join("\n");
   });
@@ -176,7 +183,7 @@ const barChart = (host: boolean) =>
     const lines = bars.map((b) => {
       const filled = Number.isFinite(b.value) ? Math.round((Math.abs(b.value) / max) * 20) : 0;
       const text = formatted(b.value, chartFormat, chartUnit);
-      return `    ${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${text}`;
+      return `${hang(host)}${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${text}`;
     });
     return (host ? lines : [`${title(w)}:`, ...lines]).join("\n");
   });
@@ -226,12 +233,12 @@ const table = (host: boolean) =>
       return Math.min(width, TABLE_COL_MAX);
     });
     const line = (cells: readonly string[]): string =>
-      `    ${cells.map((c, i) => pad(c, widths[i] ?? 0)).join("  ")}`.trimEnd();
+      `${hang(host)}${cells.map((c, i) => pad(c, widths[i] ?? 0)).join("  ")}`.trimEnd();
     const out = [...(host ? [] : [`${title(w)}:`]), line(labels), ...body.map(line)];
     if (t.rows.length > TABLE_ROWS) {
       const more = t.rows.length - TABLE_ROWS;
       // The terminal's one fixed locale (see LOCALE) decides the plural, like its numbers.
-      out.push(`    … ${more} more ${PLURALS.select(more) === "one" ? "row" : "rows"}`);
+      out.push(`${hang(host)}… ${more} more ${PLURALS.select(more) === "one" ? "row" : "rows"}`);
     }
     return out.join("\n");
   });
