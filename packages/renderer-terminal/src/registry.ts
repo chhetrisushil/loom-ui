@@ -45,6 +45,8 @@ const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s
  * rules the DOM renderer's `measure()` applies for its reader, without varying with the host's
  * own locale. */
 const LOCALE = "en-US";
+/** Plural category of a count, in the same fixed locale as every terminal number. */
+const PLURALS = new Intl.PluralRules(LOCALE);
 
 /**
  * A number exactly as the web's `measure()` would print it for the same value, format and unit —
@@ -226,7 +228,11 @@ const table = (host: boolean) =>
     const line = (cells: readonly string[]): string =>
       `    ${cells.map((c, i) => pad(c, widths[i] ?? 0)).join("  ")}`.trimEnd();
     const out = [...(host ? [] : [`${title(w)}:`]), line(labels), ...body.map(line)];
-    if (t.rows.length > TABLE_ROWS) out.push(`    … ${t.rows.length - TABLE_ROWS} more rows`);
+    if (t.rows.length > TABLE_ROWS) {
+      const more = t.rows.length - TABLE_ROWS;
+      // The terminal's one fixed locale (see LOCALE) decides the plural, like its numbers.
+      out.push(`    … ${more} more ${PLURALS.select(more) === "one" ? "row" : "rows"}`);
+    }
     return out.join("\n");
   });
 

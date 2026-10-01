@@ -12,9 +12,15 @@ let locale: string =
     : "en-US";
 const listeners = new Set<(locale: string) => void>();
 
-export function t(key: string): string {
-  return key;
+/**
+ * Today's translation seam: IDENTITY. There is no host override — a message catalogue is app
+ * infrastructure this package does not load. `fallback` is the English text of a structured key
+ * (`row.one`), so such a key never leaks as the spoken/visible string.
+ */
+export function t(key: string, fallback?: string): string {
+  return fallback ?? key;
 }
+
 export function currentLocale(): string {
   return locale;
 }

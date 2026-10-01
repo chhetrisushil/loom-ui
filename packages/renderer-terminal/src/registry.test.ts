@@ -93,6 +93,11 @@ describe("terminal registry", () => {
       rows: Array.from({ length: 25 }, (_, i) => [i]),
     });
     expect(many?.split("\n").at(-1)).toBe("    … 5 more rows");
+    // Exactly one past the cap is "1 more row", not "1 more rows".
+    const one = r?.(w, { columns: ["n"], rows: Array.from({ length: 21 }, (_, i) => [i]) });
+    expect(one?.split("\n").at(-1)).toBe("    … 1 more row");
+    const exact = r?.(w, { columns: ["n"], rows: Array.from({ length: 20 }, (_, i) => [i]) });
+    expect(exact).not.toContain("more row");
   });
   it("Table: integer grouping, percentage, currency and a null cell", () => {
     const r = loomUiTerminalRegistry.get("Table");

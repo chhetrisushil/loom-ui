@@ -163,7 +163,8 @@ describe("describeValue", () => {
     expect(spy.mock.calls.map(([k]) => k)).toEqual(
       expect.arrayContaining(["line chart", "bar chart"])
     );
-    // A host's translation reaches it: the phrase is a t() key, not a literal.
+    // The phrase is a t() key, not a literal: whatever `t` returns is what is spoken. (`t` is the
+    // package's identity seam today — there is no host override yet — so this mocks it.)
     spy.mockImplementation((k) => (k === "line chart" ? "Liniendiagramm" : k));
     expect(describeValue("TimeSeries", ts, "Sales")).toBe("Sales: Liniendiagramm, Revenue 3");
     spy.mockRestore();
@@ -181,5 +182,58 @@ describe("describeValue", () => {
     );
     expect(describeValue("Timeline", [{}], "Log")).toBe("Log: 1 entry");
     expect(describeValue("Timeline", [{}, {}], "Log")).toBe("Log: 2 entries");
+  });
+
+  describe("count phrases pick their plural category from the active locale (Intl.PluralRules)", () => {
+    // `t` is identity (no host override exists), so a mock stands in for a translation catalogue:
+    // it returns a marker for every plural KEY and the English fallback otherwise.
+    const keys = (n: number, locale: string): string[] => {
+      setLocale(locale);
+      const seen: string[] = [];
+      const spy = vi.spyOn(i18n, "t").mockImplementation((k: string, fb?: string) => {
+        seen.push(k);
+        return fb ?? k;
+      });
+      describeValue("Table", { columns: ["a"], rows: Array.from({ length: n }, () => ["x"]) }, "T");
+      spy.mockRestore();
+      setLocale("en-US");
+      return seen.filter((k) => k.startsWith("row."));
+    };
+    it("English: one / other", () => {
+      expect(keys(1, "en")).toEqual(["row.one"]);
+      expect(keys(0, "en")).toEqual(["row.other"]);
+      expect(keys(2, "en")).toEqual(["row.other"]);
+    });
+    it("Russian: one / few / many by the locale's own rules", () => {
+      expect(keys(1, "ru")).toEqual(["row.one"]);
+      expect(keys(21, "ru")).toEqual(["row.one"]);
+      expect(keys(3, "ru")).toEqual(["row.few"]);
+      expect(keys(5, "ru")).toEqual(["row.many"]);
+    });
+    it("French: zero is singular (a rule an n === 1 ternary cannot express)", () => {
+      expect(keys(0, "fr")).toEqual(["row.one"]);
+      expect(keys(1, "fr")).toEqual(["row.one"]);
+      expect(keys(2, "fr")).toEqual(["row.other"]);
+    });
+    it("a category the English text has no form for falls back to 'other'; a host's catalogue wins", () => {
+      setLocale("ru");
+      expect(describeValue("Table", { columns: ["a"], rows: [["x"], ["y"], ["z"]] }, "T")).toBe(
+        "T: table with 3 rows"
+      );
+      const spy = vi
+        .spyOn(i18n, "t")
+        .mockImplementation((k: string, fb?: string) =>
+          k === "row.few" ? "строки" : k === "table with" ? "таблица из" : (fb ?? k)
+        );
+      expect(describeValue("Table", { columns: ["a"], rows: [["x"], ["y"], ["z"]] }, "T")).toBe(
+        "T: таблица из 3 строки"
+      );
+      spy.mockRestore();
+      setLocale("en-US");
+    });
+    it("Timeline entries use the same helper", () => {
+      expect(describeValue("Timeline", [{}], "Log")).toBe("Log: 1 entry");
+      expect(describeValue("Timeline", [{}, {}], "Log")).toBe("Log: 2 entries");
+    });
   });
 });
