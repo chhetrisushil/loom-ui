@@ -197,7 +197,9 @@ describe("describeValue", () => {
       describeValue("Table", { columns: ["a"], rows: Array.from({ length: n }, () => ["x"]) }, "T");
       spy.mockRestore();
       setLocale("en-US");
-      return seen.filter((k) => k.startsWith("row."));
+      // The FIRST plural key asked is the locale's own category; with no translation tPlural then
+      // asks once more for the English-rule category (see plural.ts), which is not under test here.
+      return seen.filter((k) => k.startsWith("row.")).slice(0, 1);
     };
     it("English: one / other", () => {
       expect(keys(1, "en")).toEqual(["row.one"]);

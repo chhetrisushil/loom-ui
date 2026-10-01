@@ -123,7 +123,24 @@ describe("lu-table", () => {
     expect(more?.textContent?.replace(/\s+/g, " ").trim()).toContain("Showing 200 of 205 rows");
     expect(more?.querySelector("button")?.textContent?.trim()).toBe("Show 5 more");
     const calledWith = spy.mock.calls.map(([k]) => k);
-    expect(calledWith).toEqual(expect.arrayContaining(["Showing", "of", "rows", "Show", "more"]));
+    expect(calledWith).toEqual(
+      expect.arrayContaining(["Showing", "of", "row.other", "Show", "more"])
+    );
+    spy.mockRestore();
+  });
+  it("'Showing N of M rows' counts its noun through tPlural (the catalogue's row.* forms apply)", async () => {
+    // The footer renders only while some rows are hidden, so `total` is always > 200 in
+    // practice; drive tPlural's category through the widget with a catalogue that translates it.
+    const cat: Record<string, string> = { "row.one": "ROW", "row.other": "ROWS" };
+    const spy = vi.spyOn(i18n, "t").mockImplementation((k, fb) => cat[k] ?? fb ?? k);
+    const rows = Array.from({ length: 205 }, (_, i) => [`r${i}`]);
+    const el = await mount("lu-table", {
+      widget: customWidget$({ kind: "Table", id: "t-pl", title: "Pl", binding: b }),
+      value: { columns: ["id"], rows },
+    });
+    expect(
+      el.shadowRoot?.querySelector(".more")?.textContent?.replace(/\s+/g, " ").trim()
+    ).toContain("Showing 200 of 205 ROWS");
     spy.mockRestore();
   });
   it("a row shorter than the columns shows — for the missing cell; records are a contract error", async () => {
