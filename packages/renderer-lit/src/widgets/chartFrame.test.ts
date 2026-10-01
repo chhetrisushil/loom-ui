@@ -1,5 +1,5 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
-import type { CSSResultGroup } from "lit";
+import { type CSSResultGroup, css as css_ } from "lit";
 import { describe, expect, it } from "vitest";
 import { chartHostStyles } from "../charts/frame";
 import "./index";
@@ -24,19 +24,24 @@ function cssText(styles: CSSResultGroup | undefined): string {
 /** A declaration value with every whitespace run dropped — `var(--a, 16 / 9)` === `var(--a,16/9)`. */
 const squash = (v: string | undefined): string => (v ?? "").replace(/\s+/g, "");
 
-/** The declarations of the FIRST rule whose selector is exactly `selector`. */
+/**
+ * The declarations of EVERY rule whose selector is exactly `selector`, merged in source (cascade)
+ * order — a later rule overrides an earlier one, so a regression that re-adds `min-height: 0`
+ * further down a chart's styles is seen. (Equal specificity: the last declaration wins.)
+ */
 function rule(css: string, selector: string): Record<string, string> {
-  const m = new RegExp(
-    `(?:^|})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*{([^}]*)}`
-  ).exec(css);
-  expect(m, `rule ${selector}`).not.toBeNull();
-  return Object.fromEntries(
-    (m?.[1] ?? "")
-      .split(";")
-      .map((d) => d.split(/:(.+)/).map((x) => x?.trim() ?? ""))
-      .filter(([k]) => k)
-      .map(([k, v]) => [k, squash(v)])
-  ) as Record<string, string>;
+  const merged: Record<string, string> = {};
+  let found = 0;
+  for (const m of css.matchAll(/([^{}]+){([^{}]*)}/g)) {
+    if ((m[1] ?? "").trim() !== selector) continue;
+    found++;
+    for (const d of (m[2] ?? "").split(";")) {
+      const [k, v] = d.split(/:(.+)/).map((x) => x?.trim() ?? "");
+      if (k) merged[k] = squash(v);
+    }
+  }
+  expect(found, `rule ${selector}`).toBeGreaterThan(0);
+  return merged;
 }
 
 describe("chart host: a block size of its own when the container gives none", () => {
@@ -142,4 +147,56 @@ describe("the resize handler never feeds the plot back into its own measurement"
     await report(480, 270);
     expect(svgSize()).toEqual(first);
   });
+});
+
+describe("rule(): merges every :host rule in cascade order", () => {
+  it("a later :host rule overrides an earlier one, and untouched properties survive", () => {
+    const css = ":host { min-height: 120px; display: block } svg { x: 1 } :host { min-height: 0 }";
+    expect(rule(css, ":host")).toEqual({ "min-height": "0", display: "block" });
+  });
+  it("sees an override in a chart's own styles that follows the shared frame", () => {
+    const css = `${cssText(chartHostStyles)} ${cssText(css_`:host { min-height: 0; }`)}`;
+    expect(rule(css, ":host")["min-height"]).toBe("0");
+  });
+});
+
+describe("non-ready states reserve the same box as a ready chart", () => {
+  const b = { projectionId: "h", path: "values.h" };
+  const states: ReadonlyArray<readonly [string, unknown, unknown]> = [
+    ["loading", undefined, { state: "loading" }],
+    ["error", 5, { state: "error", finding: { code: "X", message: "boom" } }],
+    ["empty", undefined, { state: "empty" }],
+    ["stale, no value", undefined, { state: "stale", finding: { code: "S", message: "old" } }],
+  ];
+  for (const [tag, kind, ctor] of [
+    ["lu-timeseries", "TimeSeries", LuTimeseries],
+    ["lu-bar-chart", "BarChart", LuBarChart],
+  ] as const) {
+    for (const [name, value, status] of states) {
+      it(`${tag} (${name}): the box comes from the host rule, and the state body does not drop it`, async () => {
+        const el = document.createElement(tag) as unknown as HTMLElement & Record<string, unknown>;
+        el.widget = customWidget$({ kind, id: "x", title: "T", binding: b });
+        el.value = value;
+        el.status = status;
+        document.body.appendChild(el);
+        await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+        // The state is really the non-ready one (not a chart).
+        expect(el.shadowRoot?.querySelector("svg")).toBeNull();
+        expect(el.shadowRoot?.querySelector("[data-state]")?.getAttribute("data-state")).toBe(
+          name.split(",")[0]
+        );
+        // The reserved box is a HOST rule, so it holds in every state: it carries the aspect-ratio
+        // and the min-height, and no other :host(...) rule or inline style takes them away.
+        const css = cssText(ctor.styles);
+        const host = rule(css, ":host");
+        expect(host["min-height"]).toBe(squash("var(--lu-chart-min-height, 120px)"));
+        expect(host["aspect-ratio"]).toBe(squash("var(--lu-chart-aspect, 16 / 9)"));
+        expect(css).not.toMatch(/:host\(/);
+        expect(el.getAttribute("style")).toBeNull();
+        // The state body sits in flow inside the reserved box (a state line, not an absolute plot).
+        const body = el.shadowRoot?.querySelector("[data-state]") as HTMLElement;
+        expect(body.style.position).toBe("");
+      });
+    }
+  }
 });
