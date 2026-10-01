@@ -16,18 +16,18 @@ import { describe, expect, it } from "vitest";
 
 const DIST = resolve(__dirname, "../dist");
 const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist"));
-/** Core's authoring/server modules: they import zod, so none may be reachable from a browser. */
-const CORE_SERVER = new Set([
-  "index.js",
-  "values.js",
-  "node.js",
-  "experience.js",
-  "operations.js",
-  "catalog.js",
-  "compile.js",
-  "handles.js",
-  "identity.js",
-  "loomCatalog.js",
+/**
+ * The ONLY core modules a browser bundle may contain — an allowlist, not a denylist, so a server
+ * module added to core later (one that imports zod, or anything else heavy) is caught the moment
+ * the browser graph reaches it, with no list here to forget to update. These are `browser.ts` and
+ * the modules it re-exports from; none imports anything at runtime (their `import type`s are
+ * erased), which the zod assertion below double-checks.
+ */
+const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
+  "browser.js",
+  "format.js",
+  "kindValues.js",
+  "paths.js",
 ]);
 
 async function bundle(entry: string) {
@@ -52,14 +52,16 @@ describe("renderer-lit's browser entries carry no zod", () => {
     ["index.js", 160 * 1000],
     ["dom/index.js", 160 * 1000],
   ] as const) {
-    it(`${entry}: no zod, none of core's schema modules, under ${budget} bytes`, async () => {
+    it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);
       console.info(`@loom-ui/renderer-lit/${entry} browser bundle (minified, esm): ${bytes} bytes`);
       expect(inputs.filter((f) => /[\\/]zod[\\/]/.test(f))).toEqual([]);
-      const coreServer = inputs.filter(
-        (f) => f.startsWith(`${CORE_DIST}/`) && CORE_SERVER.has(relative(CORE_DIST, f))
-      );
-      expect(coreServer).toEqual([]);
+      // Every core module in the graph is on the allowlist — and nothing else of core's is.
+      const coreInGraph = inputs
+        .filter((f) => f.startsWith(`${CORE_DIST}/`))
+        .map((f) => relative(CORE_DIST, f))
+        .sort();
+      expect(coreInGraph.filter((m) => !CORE_BROWSER_MODULES.has(m))).toEqual([]);
       // It does take core's zod-free browser modules — a bundle with none would be vacuous.
       expect(inputs.some((f) => f === resolve(CORE_DIST, "browser.js"))).toBe(true);
       expect(bytes).toBeLessThan(budget);

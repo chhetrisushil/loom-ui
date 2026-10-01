@@ -55,7 +55,11 @@ interface Issue {
   readonly path: readonly (string | number)[];
   readonly message: string;
 }
-type Path = readonly (string | number)[];
+/**
+ * The path to the value being checked: ONE mutable stack, pushed and popped around each child,
+ * so a clean value allocates no per-node path. An issue copies it (`fail`); nothing else may keep it.
+ */
+type Path = (string | number)[];
 
 /** zod's `getParsedType` names, as they appear in its messages. */
 function parsedType(v: unknown): string {
@@ -93,12 +97,23 @@ const invalidType = (expected: string, received: string): string =>
   received === "undefined" ? "Required" : `Expected ${expected}, received ${received}`;
 
 type Out = Issue[];
+
+/**
+ * A sink that records nothing. Validators take their `out` as a parameter, so a caller that needs
+ * only the STATUS (a union's first pass) hands this one: no issue objects, no path copies. The
+ * issues are built only when something fails and someone will read them.
+ */
+const SINK: Out = Object.freeze([]) as unknown as Out;
+/** Record an issue — copying the (shared, mutable) path stack only when the issue is kept. */
+function fail(out: Out, path: Path, message: string): void {
+  if (out !== SINK) out.push({ path: path.slice(), message });
+}
 type Opt = { optional?: boolean; nullable?: boolean };
 
 function type(expected: string, v: unknown, path: Path, out: Out): Status {
   const got = parsedType(v);
   if (got === expected) return "valid";
-  out.push({ path, message: invalidType(expected, got) });
+  fail(out, path, invalidType(expected, got));
   return "aborted";
 }
 const string = (v: unknown, p: Path, out: Out): Status => type("string", v, p, out);
@@ -132,8 +147,11 @@ function object(
 ): Status {
   if (type("object", v, path, out) === "aborted") return "aborted";
   let status: Status = "valid";
-  for (const [key, check] of keys)
-    status = worst(status, check((v as Record<string, unknown>)[key], [...path, key], out));
+  for (const [key, check] of keys) {
+    path.push(key);
+    status = worst(status, check((v as Record<string, unknown>)[key], path, out));
+    path.pop();
+  }
   return status;
 }
 
@@ -145,8 +163,12 @@ function array(
 ): Status {
   if (type("array", v, path, out) === "aborted") return "aborted";
   let status: Status = "valid";
-  for (let i = 0; i < (v as unknown[]).length; i++)
-    status = worst(status, item((v as unknown[])[i], [...path, i], out));
+  const items = v as unknown[];
+  for (let i = 0; i < items.length; i++) {
+    path.push(i);
+    status = worst(status, item(items[i], path, out));
+    path.pop();
+  }
   return status;
 }
 
@@ -154,34 +176,45 @@ function enumOf(options: readonly string[]) {
   const joined = options.map((o) => `'${o}'`).join(" | ");
   return (v: unknown, path: Path, out: Out): Status => {
     if (typeof v !== "string") {
-      out.push({ path, message: invalidType(joined, parsedType(v)) });
+      fail(out, path, invalidType(joined, parsedType(v)));
       return "aborted";
     }
     if (options.includes(v)) return "valid";
-    out.push({ path, message: `Invalid enum value. Expected ${joined}, received '${v}'` });
+    fail(out, path, `Invalid enum value. Expected ${joined}, received '${v}'`);
     return "aborted";
   };
 }
 
-/** `z.union([a, b])`: first valid option wins; else the first DIRTY option's issues; else "Invalid input". */
+/**
+ * `z.union([a, b])`: first valid option wins; else the first DIRTY option's issues; else
+ * "Invalid input". The common case is a value that fits some option, so the first pass runs every
+ * option against the SINK (status only — no issue arrays, no path copies); only a value that fits
+ * none re-runs the options with real issue arrays, to build what the reader will see.
+ */
 function union(
   v: unknown,
   path: Path,
   out: Out,
   options: ReadonlyArray<(v: unknown, p: Path, out: Out) => Status>
 ): Status {
-  let dirty: Out | undefined;
+  let dirty = false;
   for (const option of options) {
-    const issues: Out = [];
-    const status = option(v, path, issues);
+    const status = option(v, path, SINK);
     if (status === "valid") return "valid";
-    if (status === "dirty" && dirty === undefined) dirty = issues;
+    if (status === "dirty") dirty = true;
   }
-  if (dirty !== undefined) {
-    out.push(...dirty);
-    return "dirty";
+  // Nobody reads the issues (we are inside another union's first pass): the status is the answer.
+  if (out === SINK) return dirty ? "dirty" : "aborted";
+  if (dirty) {
+    for (const option of options) {
+      const issues: Out = [];
+      if (option(v, path, issues) === "dirty") {
+        out.push(...issues);
+        return "dirty";
+      }
+    }
   }
-  out.push({ path, message: "Invalid input" });
+  fail(out, path, "Invalid input");
   return "aborted";
 }
 
@@ -199,15 +232,15 @@ function fractionDigits(v: unknown, path: Path, out: Out): Status {
   const n = v as number;
   let status: Status = "valid";
   if (!Number.isInteger(n)) {
-    out.push({ path, message: "Expected integer, received float" });
+    fail(out, path, "Expected integer, received float");
     status = "dirty";
   }
   if (n < 0) {
-    out.push({ path, message: "Number must be greater than or equal to 0" });
+    fail(out, path, "Number must be greater than or equal to 0");
     status = "dirty";
   }
   if (n > 20) {
-    out.push({ path, message: "Number must be less than or equal to 20" });
+    fail(out, path, "Number must be less than or equal to 20");
     status = "dirty";
   }
   return status;
@@ -217,7 +250,7 @@ function currencyCode(v: unknown, path: Path, out: Out): Status {
   if (v === undefined) return "valid";
   if (string(v, path, out) === "aborted") return "aborted";
   if (/^[A-Z]{3}$/.test(v as string)) return "valid";
-  out.push({ path, message: "Invalid" });
+  fail(out, path, "Invalid");
   return "dirty";
 }
 
@@ -236,25 +269,23 @@ function semanticFormat(v: unknown, path: Path, out: Out): Status {
   const min = f.minimumFractionDigits as number | undefined;
   const max = f.maximumFractionDigits as number | undefined;
   if (min !== undefined && max !== undefined && !(min <= max)) {
-    out.push({
-      path,
-      message: "minimumFractionDigits must not exceed maximumFractionDigits",
-    });
+    fail(out, path, "minimumFractionDigits must not exceed maximumFractionDigits");
     next = "dirty";
   }
   if (f.semanticType === "currency" && f.currency === undefined) {
-    out.push({
+    fail(
+      out,
       path,
-      message: "a currency format needs its ISO 4217 `currency` code — no currency is assumed",
-    });
+      "a currency format needs its ISO 4217 `currency` code — no currency is assumed"
+    );
     next = "dirty";
   }
   if (f.semanticType === "integer" && !((min ?? 0) === 0 && (max ?? 0) === 0)) {
-    out.push({
+    fail(
+      out,
       path,
-      message:
-        "an integer format takes no fraction digits (minimum/maximumFractionDigits must be 0)",
-    });
+      "an integer format takes no fraction digits (minimum/maximumFractionDigits must be 0)"
+    );
     next = "dirty";
   }
   return next;
