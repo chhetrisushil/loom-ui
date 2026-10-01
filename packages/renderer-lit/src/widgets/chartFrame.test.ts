@@ -16,8 +16,14 @@ import { LuTimeseries } from "./lu-timeseries";
 function cssText(styles: CSSResultGroup | undefined): string {
   if (styles === undefined) return "";
   if (Array.isArray(styles)) return styles.map((s) => cssText(s as CSSResultGroup)).join("\n");
-  return ((styles as { cssText?: string }).cssText ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+  // Comments out, whitespace runs collapsed: formatting (a reformat, a changed indent) is no change.
+  return ((styles as { cssText?: string }).cssText ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ");
 }
+/** A declaration value with every whitespace run dropped — `var(--a, 16 / 9)` === `var(--a,16/9)`. */
+const squash = (v: string | undefined): string => (v ?? "").replace(/\s+/g, "");
+
 /** The declarations of the FIRST rule whose selector is exactly `selector`. */
 function rule(css: string, selector: string): Record<string, string> {
   const m = new RegExp(
@@ -29,7 +35,7 @@ function rule(css: string, selector: string): Record<string, string> {
       .split(";")
       .map((d) => d.split(/:(.+)/).map((x) => x?.trim() ?? ""))
       .filter(([k]) => k)
-      .map(([k, v]) => [k, v])
+      .map(([k, v]) => [k, squash(v)])
   ) as Record<string, string>;
 }
 
@@ -38,8 +44,10 @@ describe("chart host: a block size of its own when the container gives none", ()
     const host = rule(cssText(chartHostStyles), ":host");
     expect(host.height).toBe("100%"); // a definite-height cell still wins
     expect(host.width).toBe("100%"); // no intrinsic width once the plot is out of flow
-    expect(host["aspect-ratio"]).toBe("var(--lu-chart-aspect, 16 / 9)");
-    expect(host["min-height"]).toBe("var(--lu-chart-min-height, 120px)");
+    // border-box, so `width: 100%` plus a host's padding/border never overflows its container
+    expect(host["box-sizing"]).toBe("border-box");
+    expect(host["aspect-ratio"]).toBe(squash("var(--lu-chart-aspect, 16 / 9)"));
+    expect(host["min-height"]).toBe(squash("var(--lu-chart-min-height, 120px)"));
     expect(host.display).toBe("block");
     expect(host.position).toBe("relative"); // the absolutely-placed plot anchors here
   });
@@ -52,9 +60,15 @@ describe("chart host: a block size of its own when the container gives none", ()
       const host = rule(css, ":host");
       expect(host["min-height"]).toContain("--lu-chart-min-height");
       expect(host["aspect-ratio"]).toContain("--lu-chart-aspect");
-      expect(css).not.toMatch(/min-height:\s*0\s*;[^}]*}\s*svg/); // the old `:host { min-height: 0 }`
+      expect(host["min-height"]).not.toBe("0"); // the old `:host { min-height: 0 }`
     });
   }
+  it("both charts inherit border-box from the shared frame (no per-chart override)", () => {
+    for (const ctor of [LuTimeseries, LuBarChart]) {
+      const host = rule(cssText(ctor.styles), ":host");
+      expect(host["box-sizing"]).toBe("border-box");
+    }
+  });
   it("the plot is out of flow in both charts, so what it draws cannot change what it measures", () => {
     expect(rule(cssText(LuBarChart.styles), "svg").position).toBe("absolute");
     expect(rule(cssText(LuTimeseries.styles), ".chart svg").position).toBe("absolute");

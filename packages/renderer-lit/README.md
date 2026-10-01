@@ -157,6 +157,11 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   height to resolve `height: 100%` against, a chart takes `aspect-ratio: var(--lu-chart-aspect,
   16 / 9)` floored by `min-height: var(--lu-chart-min-height, 120px)`; a definite-height grid cell
   still wins. Both properties are yours to set.
+  Behaviour changes from earlier releases: the `min-height` floor was `0` and is now `120px`
+  (a host that wants the old behaviour sets `--lu-chart-min-height: 0`), and a chart's non-ready
+  states (loading, error, empty) now reserve the same 16:9 box rather than collapsing to a line of
+  text, so a dashboard does not reflow when data arrives. The chart host is `box-sizing:
+  border-box`, so `width: 100%` plus padding or a border never overflows its container.
 - **A container renderer's failure never loses children.** A container renderer that throws on
   mount or `update` is disposed and the container falls back to the plain container in place;
   children stay mounted and subscribed, with a `mount-failed`/`patch-failed` finding reported.
