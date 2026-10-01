@@ -37,10 +37,12 @@ export function describeValue(
       return `${title}: ${String(value)}`;
     case "DataTable": {
       const rows = value as Record<string, unknown>[];
-      return `${title}: ${t("table with")} ${rows.length} ${t("rows")}`;
+      return `${title}: ${tableWith(rows.length)}`;
     }
-    case "Timeline":
-      return `${title}: ${(value as unknown[]).length} ${t("entries")}`;
+    case "Timeline": {
+      const n = (value as unknown[]).length;
+      return `${title}: ${n} ${t(n === 1 ? "entry" : "entries")}`;
+    }
     case "TimeSeries": {
       const v = value as TimeSeriesValue;
       const parts = v.series.map((s) => {
@@ -49,13 +51,15 @@ export function describeValue(
         const unit = s.unit ?? p?.unit;
         return `${s.label} ${last ? measure(last.value, fmt) : "—"}${spokenUnit(fmt, unit)}`;
       });
-      return `${title}: ${parts.join(", ")}`;
+      // The kind comes first, as for a table ("table with N rows"): the series names alone say
+      // WHAT is plotted, not that it is a line chart a reader cannot see.
+      return `${title}: ${t("line chart")}, ${parts.join(", ")}`;
     }
     case "BarChart": {
       const v = value as BarChartValue;
       const unit = v.unit ?? p?.unit;
       const fmt = effectiveFormat(v.format ?? p?.format, unit);
-      return `${title}: ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${spokenUnit(fmt, unit)}`;
+      return `${title}: ${t("bar chart")}, ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${spokenUnit(fmt, unit)}`;
     }
     case "Kpi": {
       const v = value as KpiValue;
@@ -77,7 +81,7 @@ export function describeValue(
       return `${name}: ${measure(v.value, fmt)}${spokenUnit(fmt, unit)}${change}`;
     }
     case "Table":
-      return `${title}: ${t("table with")} ${(value as TableValue).rows.length} ${t("rows")}`;
+      return `${title}: ${tableWith((value as TableValue).rows.length)}`;
     case "StatusCard": {
       const v = value as StatusCardValue;
       return `${title}: ${t(v.level)}, ${v.headline}${v.detail ? `. ${v.detail}` : ""}`;
@@ -85,6 +89,10 @@ export function describeValue(
     default:
       return title;
   }
+}
+/** One phrase for every table, so Table, DataTable and their <caption>s read alike. */
+function tableWith(rows: number): string {
+  return `${t("table with")} ${rows} ${t(rows === 1 ? "row" : "rows")}`;
 }
 /** The unit as spoken after a figure: core's `unitSuffix` rule, so it matches what is shown. */
 function spokenUnit(fmt: SemanticFormat | undefined, unit: string | undefined): string {
