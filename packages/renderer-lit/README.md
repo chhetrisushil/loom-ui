@@ -68,7 +68,9 @@ import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/rendere
 - `createLitRegistry({ chrome?: "widget" | "host" }): DomRegistry` — a new registry; `chrome: "host"`
   mounts every widget with `chrome="host"` for an app that draws its own title bar or frame: no
   VISIBLE title in the body (error/empty/stale text included), while the accessible name keeps it.
-  Settable per element too (`el.chrome = "host"`). `litRegistry` is `createLitRegistry()`.
+  Settable per element too (`el.chrome = "host"`). Only a non-empty string is a
+  title: `""` or a non-string (`0`, `5`) is none (the kind stands in; a Note shows no title) —
+  exactly as in the terminal renderer. `litRegistry` is `createLitRegistry()`.
 - `elementRenderer(tag, opts?): DomWidgetRenderer` — build a widget renderer that mounts a custom element
   and drives its properties; used to register a custom kind of your own.
 - `LIT_ONLY_KINDS`, `frameworkKindContracts` — the framework kinds this registry alone draws, and

@@ -53,8 +53,10 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
   `createLoomUiTerminalRegistry`) is for an app that draws its own title bar or frame: the
   framework kinds print no `Title:` prefix — ready, error (`✗ msg`) or loading (`—`) — and a Kpi's
   caption trails the figure. Default `"widget"` is unchanged. loom's own traversal rows (status
-  lines) and its eight built-in kinds are loom's output and keep their titles. A title that is
-  `""` is none (the kind stands in; a Note prints no title).
+  lines) and its eight built-in kinds are loom's output and keep their titles. Only a non-empty
+  string is a title: `""` or a non-string (`0`, `5`) is none — the kind stands in, a Note prints no
+  title — exactly as in the lit renderer. `renderExperience` throws if given both `chrome` and
+  `registry` (chrome would be silently ignored); use `terminalRegistry({ chrome })` for yours.
 - `loomUiTerminalRegistry` — just the framework kinds' renderers, unmerged, for a caller building
   its own composed registry.
 - `sparkline(values: readonly number[]): string` — an eight-level Unicode sparkline (`▁▂▃▄▅▆▇█`)

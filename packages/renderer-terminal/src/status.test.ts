@@ -3,6 +3,7 @@ import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
 import { MetricCard, blueprint$, cell, customWidget$, grid, stack } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
+import { terminalRegistry } from "./registry";
 import { kindValueCheck, renderExperience } from "./status";
 
 /** A binding on the hydration projection, with its status channel declared. */
@@ -27,6 +28,15 @@ const bp = blueprint$({
 });
 
 describe("renderExperience", () => {
+  it("refuses `chrome` together with `registry` (chrome only configures the default registry)", () => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
+    expect(() =>
+      renderExperience(bp, store, { chrome: "host", registry: terminalRegistry() })
+    ).toThrow(/chrome.*registry/);
+    // Either alone is fine.
+    expect(() => renderExperience(bp, store, { registry: terminalRegistry() })).not.toThrow();
+    expect(() => renderExperience(bp, store, { chrome: "host" })).not.toThrow();
+  });
   it("decorates each widget with its hydration status", () => {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
     store.setValue("ha", 412, { state: "ready" });

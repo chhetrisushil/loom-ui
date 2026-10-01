@@ -67,7 +67,7 @@ describe("terminal chrome: host", () => {
     });
     expect(ts).toMatch(/^ {4}p99\s+[▁▂▃▄▅▆▇█]{2}\s+4$/);
   });
-  it('Note: host drops the title; a falsy title ("", 0) is none under either chrome', () => {
+  it('Note: host drops the title; a non-string or empty title ("", 0, 5) is none under either chrome', () => {
     const note = (title: unknown) =>
       customWidget$({
         kind: "Note",
@@ -76,13 +76,13 @@ describe("terminal chrome: host", () => {
       });
     expect(loomUiTerminalRegistry.get("Note")?.(note(T), undefined)).toBe(`${T}: hi`);
     expect(host.get("Note")?.(note(T), undefined)).toBe("hi");
-    for (const t of ["", 0, undefined]) {
+    for (const t of ["", 0, 5, undefined]) {
       expect(loomUiTerminalRegistry.get("Note")?.(note(t), undefined)).toBe("hi");
       expect(host.get("Note")?.(note(t), undefined)).toBe("hi");
     }
   });
-  it("a falsy title on any other kind falls back to the kind, not `: value`", () => {
-    for (const t of ["", 0 as unknown as string]) {
+  it("a non-string or empty title on any other kind falls back to the kind, not `: value`", () => {
+    for (const t of ["", 0 as unknown as string, 5 as unknown as string]) {
       expect(
         loomUiTerminalRegistry.get("StatusCard")?.(w("StatusCard", t), {
           level: "ok",

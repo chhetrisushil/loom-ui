@@ -24,7 +24,8 @@ export const kindValueCheck: WidgetValueCheck = (widget, value) => {
 
 export interface RenderExperienceOptions extends TerminalRegistryOptions {
   /**
-   * Overrides the registry; then `chrome` is moot (it only configures the default registry).
+   * Overrides the registry. Passing it together with `chrome` throws — `chrome` only configures the
+   * default registry; build yours with `terminalRegistry({ chrome })` instead.
    * NOTE for `chrome: "host"`: the framework kinds' own renderings carry no title, but the rows
    * loom's traversal itself writes — `✗`/`○`/`~`/`⋯` status lines and loom's eight built-in kinds —
    * are loom's output and keep theirs. Drive a widget renderer directly for a fully title-free body.
@@ -47,6 +48,10 @@ export function renderExperience(
   store: HydrationStore,
   opts: RenderExperienceOptions = {}
 ): string {
+  if (opts.registry !== undefined && opts.chrome !== undefined)
+    throw new Error(
+      "renderExperience: `chrome` configures the default registry and would be ignored next to `registry` — pass one, or build your registry with terminalRegistry({ chrome })"
+    );
   const state = store.state();
   const stateMap = new Map<string, unknown>();
   // `HydrationStore` publishes under one well-known projection id; every other projection the
