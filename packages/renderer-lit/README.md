@@ -65,7 +65,11 @@ import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/rendere
 - `DomRenderHandle` — `{ element, update(next): RecomposeReport, dispose() }`.
 - `litRegistry: DomRegistry` — loom's built-in kinds plus every framework kind, mapped to `lu-*`
   elements via `elementRenderer`.
-- `elementRenderer(tag): DomWidgetRenderer` — build a widget renderer that mounts a custom element
+- `createLitRegistry({ chrome?: "widget" | "host" }): DomRegistry` — a new registry; `chrome: "host"`
+  mounts every widget with `chrome="host"` for an app that draws its own title bar or frame: no
+  VISIBLE title in the body (error/empty/stale text included), while the accessible name keeps it.
+  Settable per element too (`el.chrome = "host"`). `litRegistry` is `createLitRegistry()`.
+- `elementRenderer(tag, opts?): DomWidgetRenderer` — build a widget renderer that mounts a custom element
   and drives its properties; used to register a custom kind of your own.
 - `LIT_ONLY_KINDS`, `frameworkKindContracts` — the framework kinds this registry alone draws, and
   the loom `CatalogEntry` contracts (`kind`, `props`, `binding`) to copy onto a semantic entry's

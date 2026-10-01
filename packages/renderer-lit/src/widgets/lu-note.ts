@@ -48,9 +48,12 @@ export class LuNote extends LuWidget {
   }
 
   protected renderReady(): TemplateResult | typeof nothing {
-    const title = this.widget.title;
+    // Only a non-empty string is a title (`""` and a stray `0` are none, as for every widget); the
+    // accessible name keeps it even when the host draws the visible one.
+    const raw = this.widget.title;
+    const title = typeof raw === "string" && raw !== "" ? raw : undefined;
     return html`<div role="note" aria-label=${title ?? nothing}>
-      ${title ? html`<div class="title">${title}</div>` : nothing}
+      ${title !== undefined && this.chrome !== "host" ? html`<div class="title">${title}</div>` : nothing}
       <p class="text">${noteText((this.widget.props as { text?: unknown }).text)}</p>
     </div>`;
   }

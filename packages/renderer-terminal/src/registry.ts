@@ -23,7 +23,21 @@ import {
 } from "@loom/plugin-renderer-terminal";
 
 const SPARK = "▁▂▃▄▅▆▇█";
-const title = (w: Widget): string => w.title ?? w.kind;
+/**
+ * Who draws a widget's title: `"widget"` (default) prints `Title: …` in the body; `"host"` leaves
+ * the title to the embedding app's own chrome (a title bar, a frame), so the body carries none —
+ * error and empty renderings included. One rule for every kind either way.
+ */
+export type TitleChrome = "widget" | "host";
+
+export interface TerminalRegistryOptions {
+  /** Who draws each widget's title. Default `"widget"` — today's output, unchanged. */
+  readonly chrome?: TitleChrome;
+}
+
+/** A non-empty string is a title; `""` (or a stray non-string) is none, so the kind stands in. */
+const title = (w: Widget): string =>
+  typeof w.title === "string" && w.title !== "" ? w.title : w.kind;
 const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s.padEnd(n));
 
 /** One fixed, deterministic locale for every terminal number: the same grouping/rounding/currency
@@ -85,13 +99,23 @@ export function sparkline(values: readonly number[]): string {
     .join("");
 }
 
+/** Tag a body with its title — or leave it bare when the host draws the title. */
+type Lead = (w: Widget, rest: string) => string;
+const lead =
+  (host: boolean): Lead =>
+  (w, rest) =>
+    host ? rest : `${title(w)}: ${rest}`;
+
+type Body = (w: Widget, v: unknown, lead: Lead, host: boolean) => string;
+
 const guarded =
-  (kind: string, body: (w: Widget, v: unknown) => string): TerminalWidgetRenderer =>
+  (host: boolean, kind: string, body: Body): TerminalWidgetRenderer =>
   (w, v) => {
+    const l = lead(host);
     const check = checkKindValue(kind, v);
-    if (!check.ok) return `✗ ${title(w)}: ${check.finding.message}`;
-    if (v === undefined) return `${title(w)}: —`;
-    return body(w, v);
+    if (!check.ok) return `✗ ${l(w, check.finding.message)}`;
+    if (v === undefined) return l(w, "—");
+    return body(w, v, l, host);
   };
 
 // The right-axis marker is semantic information (which axis a series reads against), so it must
@@ -110,130 +134,153 @@ function padLabelWithMarker(label: string, marker: string, width: number): strin
   return `${truncatedLabel}${marker}`;
 }
 
-const timeSeries = guarded("TimeSeries", (w, v) => {
-  const { series } = v as TimeSeriesValue;
-  const props = w.props as { unit?: string; format?: SemanticFormat };
-  // Same rule as the web's lu-timeseries: a right axis exists only when some series is on the
-  // left to contrast it with; all-right falls back to one shared axis, so nothing is marked.
-  const splitAxes =
-    series.some((s) => s.axis !== "right") && series.some((s) => s.axis === "right");
-  const lines = series.map((s) => {
-    const values = s.points.map((p) => p.value);
-    const last = values.length > 0 ? (values[values.length - 1] as number) : Number.NaN;
-    // Same precedence as the web's `formatOf` (lu-timeseries.ts): this series' own format, else
-    // the widget's; a unit resolves only when neither format does.
-    const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
-    const marker = splitAxes && s.axis === "right" ? RIGHT_AXIS_MARKER : "";
-    return `    ${padLabelWithMarker(s.label, marker, 12)} ${sparkline(values)}  ${text}`;
+const timeSeries = (host: boolean) =>
+  guarded(host, "TimeSeries", (w, v, l) => {
+    const { series } = v as TimeSeriesValue;
+    const props = w.props as { unit?: string; format?: SemanticFormat };
+    // Same rule as the web's lu-timeseries: a right axis exists only when some series is on the
+    // left to contrast it with; all-right falls back to one shared axis, so nothing is marked.
+    const splitAxes =
+      series.some((s) => s.axis !== "right") && series.some((s) => s.axis === "right");
+    const lines = series.map((s) => {
+      const values = s.points.map((p) => p.value);
+      const last = values.length > 0 ? (values[values.length - 1] as number) : Number.NaN;
+      // Same precedence as the web's `formatOf` (lu-timeseries.ts): this series' own format, else
+      // the widget's; a unit resolves only when neither format does.
+      const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
+      const marker = splitAxes && s.axis === "right" ? RIGHT_AXIS_MARKER : "";
+      return `    ${padLabelWithMarker(s.label, marker, 12)} ${sparkline(values)}  ${text}`;
+    });
+    return (host ? lines : [`${title(w)}:`, ...lines]).join("\n");
   });
-  return [`${title(w)}:`, ...lines].join("\n");
-});
 
-const barChart = guarded("BarChart", (w, v) => {
-  const { bars, format, unit } = v as BarChartValue;
-  const props = w.props as { unit?: string; format?: SemanticFormat };
-  // Same precedence as the web's lu-bar-chart.ts: the chart's own value-level format, else the
-  // widget's props.format; a unit resolves only when neither format does. One format for every
-  // bar, exactly as the web computes it once and reuses it for every bar's `measure()` call.
-  const chartFormat = format ?? props.format;
-  const chartUnit = unit ?? props.unit;
-  // Single-pass max (never Math.max(...spread) — same argument-count hazard as sparkline's
-  // min/max), floored at 1 so an all-non-finite/zero series never divides by zero below.
-  let max = 1;
-  for (const b of bars) {
-    const abs = Math.abs(b.value);
-    if (Number.isFinite(abs) && abs > max) max = abs;
-  }
-  const lines = bars.map((b) => {
-    const filled = Number.isFinite(b.value) ? Math.round((Math.abs(b.value) / max) * 20) : 0;
-    const text = formatted(b.value, chartFormat, chartUnit);
-    return `    ${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${text}`;
+const barChart = (host: boolean) =>
+  guarded(host, "BarChart", (w, v, l) => {
+    const { bars, format, unit } = v as BarChartValue;
+    const props = w.props as { unit?: string; format?: SemanticFormat };
+    // Same precedence as the web's lu-bar-chart.ts: the chart's own value-level format, else the
+    // widget's props.format; a unit resolves only when neither format does. One format for every
+    // bar, exactly as the web computes it once and reuses it for every bar's `measure()` call.
+    const chartFormat = format ?? props.format;
+    const chartUnit = unit ?? props.unit;
+    // Single-pass max (never Math.max(...spread) — same argument-count hazard as sparkline's
+    // min/max), floored at 1 so an all-non-finite/zero series never divides by zero below.
+    let max = 1;
+    for (const b of bars) {
+      const abs = Math.abs(b.value);
+      if (Number.isFinite(abs) && abs > max) max = abs;
+    }
+    const lines = bars.map((b) => {
+      const filled = Number.isFinite(b.value) ? Math.round((Math.abs(b.value) / max) * 20) : 0;
+      const text = formatted(b.value, chartFormat, chartUnit);
+      return `    ${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${text}`;
+    });
+    return (host ? lines : [`${title(w)}:`, ...lines]).join("\n");
   });
-  return [`${title(w)}:`, ...lines].join("\n");
-});
 
-const kpi = guarded("Kpi", (w, v) => {
-  const k = v as KpiValue;
-  const props = w.props as { unit?: string; format?: SemanticFormat };
-  const delta = k.deltaPct ?? null;
-  const direction = delta === null ? undefined : deltaDirection(delta);
-  const arrow = direction === "up" ? "▲ " : direction === "down" ? "▼ " : "";
-  const change =
-    delta === null
-      ? ""
-      : `  ${arrow}${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, LOCALE)}`;
-  // The label is a caption beside the title, as on the web — the title stays.
-  const name = k.label ? `${title(w)} (${k.label})` : title(w);
-  return `${name}: ${formatted(k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}`;
-});
+const kpi = (host: boolean) =>
+  guarded(host, "Kpi", (w, v, l) => {
+    const k = v as KpiValue;
+    const props = w.props as { unit?: string; format?: SemanticFormat };
+    const delta = k.deltaPct ?? null;
+    const direction = delta === null ? undefined : deltaDirection(delta);
+    const arrow = direction === "up" ? "▲ " : direction === "down" ? "▼ " : "";
+    const change =
+      delta === null
+        ? ""
+        : `  ${arrow}${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, LOCALE)}`;
+    // The label is a caption beside the title, as on the web — the title stays.
+    const text = `${formatted(k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}`;
+    // Host-owned title: the caption (still information) trails the figure instead.
+    if (host) return k.label ? `${text}  (${k.label})` : text;
+    return `${k.label ? `${title(w)} (${k.label})` : title(w)}: ${text}`;
+  });
 
 /** Rows printed before the "… N more rows" line. */
 const TABLE_ROWS = 20;
 /** Widest a terminal column grows before its cells are cut. */
 const TABLE_COL_MAX = 24;
 
-const table = guarded("Table", (w, v) => {
-  const t = v as TableValue;
-  const labels = t.columns.map(tableColumnLabel);
-  const formats = t.columns.map(tableColumnFormat);
-  const cellText = (c: TableCell): string =>
-    c === null ? "—" : typeof c === "number" ? formatted(c, undefined, undefined) : c;
-  const body = t.rows.slice(0, TABLE_ROWS).map((row) =>
-    labels.map((_, i) => {
-      const c = row[i] ?? null;
-      const f = formats[i];
-      return typeof c === "number" && f !== undefined ? formatted(c, f, undefined) : cellText(c);
-    })
-  );
-  // Single pass per column (never Math.max(...spread)); capped so one long cell cannot push
-  // every other column off the screen.
-  const widths = labels.map((label, i) => {
-    let width = label.length;
-    for (const row of body) width = Math.max(width, (row[i] ?? "").length);
-    return Math.min(width, TABLE_COL_MAX);
+const table = (host: boolean) =>
+  guarded(host, "Table", (w, v, l) => {
+    const t = v as TableValue;
+    const labels = t.columns.map(tableColumnLabel);
+    const formats = t.columns.map(tableColumnFormat);
+    const cellText = (c: TableCell): string =>
+      c === null ? "—" : typeof c === "number" ? formatted(c, undefined, undefined) : c;
+    const body = t.rows.slice(0, TABLE_ROWS).map((row) =>
+      labels.map((_, i) => {
+        const c = row[i] ?? null;
+        const f = formats[i];
+        return typeof c === "number" && f !== undefined ? formatted(c, f, undefined) : cellText(c);
+      })
+    );
+    // Single pass per column (never Math.max(...spread)); capped so one long cell cannot push
+    // every other column off the screen.
+    const widths = labels.map((label, i) => {
+      let width = label.length;
+      for (const row of body) width = Math.max(width, (row[i] ?? "").length);
+      return Math.min(width, TABLE_COL_MAX);
+    });
+    const line = (cells: readonly string[]): string =>
+      `    ${cells.map((c, i) => pad(c, widths[i] ?? 0)).join("  ")}`.trimEnd();
+    const out = [...(host ? [] : [`${title(w)}:`]), line(labels), ...body.map(line)];
+    if (t.rows.length > TABLE_ROWS) out.push(`    … ${t.rows.length - TABLE_ROWS} more rows`);
+    return out.join("\n");
   });
-  const line = (cells: readonly string[]): string =>
-    `    ${cells.map((c, i) => pad(c, widths[i] ?? 0)).join("  ")}`.trimEnd();
-  const out = [`${title(w)}:`, line(labels), ...body.map(line)];
-  if (t.rows.length > TABLE_ROWS) out.push(`    … ${t.rows.length - TABLE_ROWS} more rows`);
-  return out.join("\n");
-});
 
-const statusCard = guarded("StatusCard", (w, v) => {
-  const s = v as StatusCardValue;
-  return `${title(w)}: [${s.level}] ${s.headline}${s.detail ? ` — ${s.detail}` : ""}`;
-});
+const statusCard = (host: boolean) =>
+  guarded(host, "StatusCard", (w, v, l) => {
+    const s = v as StatusCardValue;
+    return l(w, `[${s.level}] ${s.headline}${s.detail ? ` — ${s.detail}` : ""}`);
+  });
 
 // Never bound, so never `guarded`: loom calls a channel-less widget's renderer directly, with
 // `value === undefined`, and the text lives in props (a string after compile; an uncompiled
 // LocalizedText shows its fallback, never its key).
-const note: TerminalWidgetRenderer = (w) => {
-  const raw = w.props.text;
-  const parsed = LocalizedText.safeParse(raw);
-  const text = typeof raw === "string" ? raw : parsed.success ? parsed.data.fallback : "";
-  return w.title ? `${w.title}: ${text}` : text;
-};
+const note =
+  (host: boolean): TerminalWidgetRenderer =>
+  (w) => {
+    const raw = w.props.text;
+    const parsed = LocalizedText.safeParse(raw);
+    const text = typeof raw === "string" ? raw : parsed.success ? parsed.data.fallback : "";
+    // Only a non-empty string is a title — `""` and a stray `0` are none, as for every kind.
+    return typeof w.title === "string" && w.title !== "" && !host ? `${w.title}: ${text}` : text;
+  };
 
 // The A2UI tree and the sandboxed component are web surfaces: an interpreter this CommonJS
 // package cannot import, and code that cannot run in a terminal. Say so, don't fake it.
-const a2uiView = guarded("A2UIView", (w) => `${title(w)}: [A2UI view — rendered on the web]`);
-const sandboxView = guarded(
-  "SandboxView",
-  (w) => `${title(w)}: [sandboxed component — rendered on the web]`
-);
+const a2uiView = (host: boolean) =>
+  guarded(host, "A2UIView", (w, _v, l) => l(w, "[A2UI view — rendered on the web]"));
+const sandboxView = (host: boolean) =>
+  guarded(host, "SandboxView", (w, _v, l) => l(w, "[sandboxed component — rendered on the web]"));
+
+/** The framework kinds' renderers. A NEW registry each call — never mutate a shared one. */
+export function createLoomUiTerminalRegistry(
+  opts: TerminalRegistryOptions = {}
+): RendererRegistry<TerminalWidgetRenderer> {
+  const host = opts.chrome === "host";
+  return new RendererRegistry<TerminalWidgetRenderer>()
+    .register("TimeSeries", timeSeries(host))
+    .register("BarChart", barChart(host))
+    .register("Kpi", kpi(host))
+    .register("Table", table(host))
+    .register("StatusCard", statusCard(host))
+    .register("Note", note(host))
+    .register("A2UIView", a2uiView(host))
+    .register("SandboxView", sandboxView(host));
+}
 
 export const loomUiTerminalRegistry: RendererRegistry<TerminalWidgetRenderer> =
-  new RendererRegistry<TerminalWidgetRenderer>()
-    .register("TimeSeries", timeSeries)
-    .register("BarChart", barChart)
-    .register("Kpi", kpi)
-    .register("Table", table)
-    .register("StatusCard", statusCard)
-    .register("Note", note)
-    .register("A2UIView", a2uiView)
-    .register("SandboxView", sandboxView);
+  createLoomUiTerminalRegistry();
 
-/** loom's eight built-ins plus the framework's kinds. A NEW registry each call — never mutate a shared one. */
-export function terminalRegistry(): RendererRegistry<TerminalWidgetRenderer> {
-  return defaultTerminalRegistry.merge(loomUiTerminalRegistry);
+/**
+ * loom's eight built-ins plus the framework's kinds. A NEW registry each call — never mutate a shared one.
+ * With `chrome: "host"` the framework kinds print no title; loom's own eight built-ins are loom's
+ * renderers and keep theirs (the framework does not rewrite them).
+ */
+export function terminalRegistry(
+  opts: TerminalRegistryOptions = {}
+): RendererRegistry<TerminalWidgetRenderer> {
+  return defaultTerminalRegistry.merge(createLoomUiTerminalRegistry(opts));
 }

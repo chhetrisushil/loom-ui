@@ -84,9 +84,13 @@ export class LuKpi extends LuWidget {
             : nothing
         }
       </div>
-      <div class="label">
-        ${this.title_}${v.label ? html`<span class="caption">${v.label}</span>` : nothing}
-      </div>`;
+      ${
+        this.visibleTitle === undefined && !v.label
+          ? nothing
+          : html`<div class="label">
+              ${this.visibleTitle ?? nothing}${v.label ? html`<span class="caption">${v.label}</span>` : nothing}
+            </div>`
+      }`;
   }
 }
 

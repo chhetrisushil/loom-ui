@@ -1,17 +1,21 @@
 import { FRAMEWORK_KINDS } from "@loom-ui/core";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import "../widgets/index";
+import type { TitleChrome } from "../widgets/base";
 import type { DomRegistry, DomWidgetRenderer } from "./registry";
 
 /** A renderer that mounts `<tag>` and drives its `widget/value/status/onAction` properties. */
-export function elementRenderer(tag: string): DomWidgetRenderer {
+export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): DomWidgetRenderer {
+  const chrome = opts.chrome;
   return (host, props) => {
     const el = document.createElement(tag) as HTMLElement & {
       widget: unknown;
       value: unknown;
       status: BindingStatus | undefined;
       onAction: unknown;
+      chrome: TitleChrome;
     };
+    if (chrome !== undefined) el.chrome = chrome;
     el.widget = props.widget;
     el.value = props.value;
     el.status = props.status;
@@ -48,20 +52,36 @@ export const frameworkKindContracts: readonly CatalogEntry[] = [
   { kind: "SandboxView", props: ["code"], binding: "required" },
 ];
 
-export const litRegistry: DomRegistry = new RendererRegistry<DomWidgetRenderer>()
-  .register("MetricCard", elementRenderer("lu-metric-card"))
-  .register("StatusBadge", elementRenderer("lu-status-badge"))
-  .register("DataTable", elementRenderer("lu-data-table"))
-  .register("TimeSeries", elementRenderer("lu-timeseries"))
-  .register("BarChart", elementRenderer("lu-bar-chart"))
-  .register("Kpi", elementRenderer("lu-kpi"))
-  .register("Table", elementRenderer("lu-table"))
-  .register("StatusCard", elementRenderer("lu-status-card"))
-  .register("Note", elementRenderer("lu-note"))
-  .register("A2UIView", elementRenderer("lu-a2ui-widget"))
-  .register("SandboxView", elementRenderer("lu-sandbox-widget"))
-  .register("ProgressBar", elementRenderer("lu-progress"))
-  .register("AlertCard", elementRenderer("lu-alert"))
-  .register("StreamingText", elementRenderer("lu-text"))
-  .register("Timeline", elementRenderer("lu-list"))
-  .register("ApprovalCard", elementRenderer("lu-approval"));
+/** Options shared by every widget the registry mounts. */
+export interface LitRegistryOptions {
+  /**
+   * Who draws each widget's title: `"widget"` (default — today's behaviour) or `"host"`, for an
+   * app that draws its own title bar or frame and wants the body without a second title. The
+   * accessible name still carries the title. Also settable per element (`el.chrome = "host"`).
+   */
+  readonly chrome?: TitleChrome;
+}
+
+/** The widget registry, configured. A NEW registry each call; `litRegistry` is `createLitRegistry()`. */
+export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
+  const el = (tag: string): DomWidgetRenderer => elementRenderer(tag, opts);
+  return new RendererRegistry<DomWidgetRenderer>()
+    .register("MetricCard", el("lu-metric-card"))
+    .register("StatusBadge", el("lu-status-badge"))
+    .register("DataTable", el("lu-data-table"))
+    .register("TimeSeries", el("lu-timeseries"))
+    .register("BarChart", el("lu-bar-chart"))
+    .register("Kpi", el("lu-kpi"))
+    .register("Table", el("lu-table"))
+    .register("StatusCard", el("lu-status-card"))
+    .register("Note", el("lu-note"))
+    .register("A2UIView", el("lu-a2ui-widget"))
+    .register("SandboxView", el("lu-sandbox-widget"))
+    .register("ProgressBar", el("lu-progress"))
+    .register("AlertCard", el("lu-alert"))
+    .register("StreamingText", el("lu-text"))
+    .register("Timeline", el("lu-list"))
+    .register("ApprovalCard", el("lu-approval"));
+}
+
+export const litRegistry: DomRegistry = createLitRegistry();
