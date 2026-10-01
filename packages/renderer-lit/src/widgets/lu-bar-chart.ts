@@ -1,6 +1,7 @@
 import type { BarChartValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { chartHostStyles } from "../charts/frame";
 import { SERIES_COLORS, linearScale, niceTicks } from "../charts/svg";
 import {
   type SemanticFormat,
@@ -36,11 +37,14 @@ export class LuBarChart extends LuWidget {
 
   private ro?: ResizeObserver;
 
-  static styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      min-height: 0;
+  static styles = [
+    chartHostStyles,
+    css`
+    /* Out of flow: what the plot draws must not change what the host measures (charts/frame.ts) */
+    svg {
+      position: absolute;
+      top: 0;
+      inset-inline-start: 0;
     }
     text {
       fill: var(--lu-text-dim, #8b949e);
@@ -54,7 +58,8 @@ export class LuBarChart extends LuWidget {
       fill: var(--lu-text, #e6edf3);
       font-size: 10px;
     }
-  `;
+  `,
+  ];
 
   connectedCallback(): void {
     super.connectedCallback();

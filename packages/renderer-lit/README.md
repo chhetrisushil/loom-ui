@@ -151,6 +151,12 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 - **A focused subtree never moves.** During `handle.update`, the element holding
   `document.activeElement` is never remounted or relocated, even when its container reorders
   around it.
+- **Charts size themselves in an auto-height container.** `lu-timeseries` / `lu-bar-chart` draw an
+  SVG the size of their own box; the plot is out of flow, so it cannot feed back into that
+  measurement (the old behaviour grew without bound in a flex column or stack). With no definite
+  height to resolve `height: 100%` against, a chart takes `aspect-ratio: var(--lu-chart-aspect,
+  16 / 9)` floored by `min-height: var(--lu-chart-min-height, 120px)`; a definite-height grid cell
+  still wins. Both properties are yours to set.
 - **A container renderer's failure never loses children.** A container renderer that throws on
   mount or `update` is disposed and the container falls back to the plain container in place;
   children stay mounted and subscribed, with a `mount-failed`/`patch-failed` finding reported.

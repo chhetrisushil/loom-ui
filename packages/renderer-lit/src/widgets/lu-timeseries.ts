@@ -1,6 +1,7 @@
 import type { SemanticFormat, TimeSeriesValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { chartHostStyles } from "../charts/frame";
 import {
   SERIES_COLORS,
   type Scale,
@@ -39,12 +40,9 @@ export class LuTimeseries extends LuWidget {
 
   private ro?: ResizeObserver;
 
-  static styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      min-height: 0;
-    }
+  static styles = [
+    chartHostStyles,
+    css`
     svg {
       display: block;
     }
@@ -71,17 +69,26 @@ export class LuTimeseries extends LuWidget {
       border-radius: 2px;
       margin-inline-end: 4px;
     }
+    /* Fills the host's own box, however it got one (definite height or the chart-frame fallback) */
     .wrap {
-      position: relative;
-      height: 100%;
+      position: absolute;
+      inset: 0;
       display: flex;
       flex-direction: column;
     }
     .chart {
+      position: relative;
       flex: 1;
       min-height: 0;
     }
-  `;
+    /* Out of flow: what the plot draws must not change what the host measures (charts/frame.ts) */
+    .chart svg {
+      position: absolute;
+      top: 0;
+      inset-inline-start: 0;
+    }
+  `,
+  ];
 
   connectedCallback(): void {
     super.connectedCallback();
