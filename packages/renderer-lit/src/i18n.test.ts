@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as i18n from "./i18n";
 import {
   currentLocale,
   formattingLocale,
@@ -33,19 +34,67 @@ describe("locale shim", () => {
 
 describe("tPlural", () => {
   const rows = { one: "row", other: "rows" };
-  it("selects the category with Intl.PluralRules for the formatting locale", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setLocale("en-US");
+  });
+  /** A host catalogue: `t(key, fallback)` answers from `cat`, else returns the fallback (identity). */
+  const catalogue = (cat: Record<string, string>) =>
+    vi.spyOn(i18n, "t").mockImplementation((key, fallback) => cat[key] ?? fallback ?? key);
+
+  it("English: category by the English rules", () => {
     setLocale("en");
     expect(tPlural("row", 1, rows)).toBe("row");
     expect(tPlural("row", 0, rows)).toBe("rows");
-    setLocale("fr");
-    expect(tPlural("row", 0, rows)).toBe("row");
-    setLocale("ru");
-    expect(tPlural("row", 3, rows)).toBe("rows"); // `few` has no English form: falls back to other
-    setLocale("en-US");
+    expect(tPlural("row", 2, rows)).toBe("rows");
   });
-  it("survives a locale Intl cannot parse (falls back to other)", () => {
+  it("with no translation the English text is grammatical in EVERY locale (identity t)", () => {
+    // ja has only `other` (so n=1 would be "1 rows"); fr/pt treat 0 as `one` (so "0 row").
+    for (const l of [
+      "ja-JP",
+      "zh",
+      "fr",
+      "fr-FR",
+      "pt-BR",
+      "ru",
+      "ar-EG",
+      "pl",
+      "de-DE",
+      "en-GB",
+    ]) {
+      setLocale(l);
+      expect(tPlural("row", 1, rows), `${l} n=1`).toBe("row");
+      expect(tPlural("row", 0, rows), `${l} n=0`).toBe("rows");
+      expect(tPlural("row", 2, rows), `${l} n=2`).toBe("rows");
+      expect(tPlural("row", 5, rows), `${l} n=5`).toBe("rows");
+    }
+  });
+  it("a locale's plural category is used only where a translation exists for it", () => {
+    setLocale("ru");
+    // The host translates the three Russian categories it needs; `many`/`other` are absent.
+    catalogue({ "row.one": "строка", "row.few": "строки", "row.many": "строк" });
+    expect(tPlural("row", 1, rows)).toBe("строка"); // one
+    expect(tPlural("row", 3, rows)).toBe("строки"); // few
+    expect(tPlural("row", 5, rows)).toBe("строк"); // many
+    expect(tPlural("row", 21, rows)).toBe("строка"); // one again (ru rules)
+    // `other` (1.5) has no translation: the English rules answer, and they are grammatical.
+    expect(tPlural("row", 1.5, rows)).toBe("rows");
+  });
+  it("a translated French `one` covers 0, a French host without `other` still reads English", () => {
+    setLocale("fr");
+    catalogue({ "row.one": "ligne" });
+    expect(tPlural("row", 0, rows)).toBe("ligne");
+    expect(tPlural("row", 1, rows)).toBe("ligne");
+    expect(tPlural("row", 2, rows)).toBe("rows"); // `other` untranslated: English
+  });
+  it("a locale with a single category (ja) uses its translated `other` for every count", () => {
+    setLocale("ja-JP");
+    catalogue({ "row.other": "行" });
+    for (const n of [0, 1, 2, 10]) expect(tPlural("row", n, rows)).toBe("行");
+  });
+  it("survives a locale Intl cannot parse (English rules)", () => {
     setLocale("not a locale!!");
-    expect(tPlural("row", 1, rows)).toBe("rows");
-    setLocale("en-US");
+    expect(tPlural("row", 1, rows)).toBe("row");
+    expect(tPlural("row", 2, rows)).toBe("rows");
   });
 });

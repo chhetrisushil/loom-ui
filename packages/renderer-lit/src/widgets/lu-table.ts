@@ -9,6 +9,7 @@ import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
 import { formattingLocale, t } from "../i18n";
+import { tPlural } from "../plural";
 import { LuWidget } from "./base";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
@@ -202,7 +203,7 @@ export class LuTable extends LuWidget {
       ${
         shown < total
           ? html`<div class="more">
-              ${t("Showing")} ${shown} ${t("of")} ${total} ${t("rows")}
+              ${t("Showing")} ${shown} ${t("of")} ${total} ${tPlural("row", total, { one: "row", other: "rows" })}
               <button @click=${this.showMore}>
                 ${t("Show")} ${Math.min(ROW_STEP, total - shown)} ${t("more")}
               </button>
