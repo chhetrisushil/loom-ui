@@ -57,9 +57,12 @@ export class LuKpi extends LuWidget {
       color: var(--lu-text-dim, #8b949e);
       margin-top: 2px;
     }
+    /* A colour of its own, never an opacity over the dim token: opacity stacks on top of
+       --lu-text-dim, so a host could not lift the caption to AA without lifting ALL dim text.
+       Defaults to the dim token, which passes AA on the default panel (4.5:1+). */
     .caption {
       margin-inline-start: 6px;
-      opacity: 0.8;
+      color: var(--lu-text-caption, var(--lu-text-dim, #8b949e));
     }
   `;
 
