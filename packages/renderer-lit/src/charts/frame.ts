@@ -25,6 +25,7 @@ export const chartHostStyles = css`
   :host {
     display: block;
     position: relative;
+    box-sizing: border-box; /* width: 100% + a host's padding/border must not overflow */
     width: 100%;
     height: 100%;
     min-height: var(--lu-chart-min-height, 120px);
