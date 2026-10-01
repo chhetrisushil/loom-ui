@@ -8,6 +8,7 @@ import type {
 } from "@loom-ui/core/browser";
 import { type SemanticFormat, effectiveFormat, measure } from "./format";
 import { t } from "./i18n";
+import { tPlural } from "./plural";
 
 /**
  * A spoken summary of a rendered value — the accessible name a screen reader gets. `props` is
@@ -41,7 +42,7 @@ export function describeValue(
     }
     case "Timeline": {
       const n = (value as unknown[]).length;
-      return `${title}: ${n} ${t(n === 1 ? "entry" : "entries")}`;
+      return `${title}: ${n} ${tPlural("entry", n, { one: "entry", other: "entries" })}`;
     }
     case "TimeSeries": {
       const v = value as TimeSeriesValue;
@@ -92,7 +93,7 @@ export function describeValue(
 }
 /** One phrase for every table, so Table, DataTable and their <caption>s read alike. */
 function tableWith(rows: number): string {
-  return `${t("table with")} ${rows} ${t(rows === 1 ? "row" : "rows")}`;
+  return `${t("table with")} ${rows} ${tPlural("row", rows, { one: "row", other: "rows" })}`;
 }
 /** The unit as spoken after a figure: core's `unitSuffix` rule, so it matches what is shown. */
 function spokenUnit(fmt: SemanticFormat | undefined, unit: string | undefined): string {

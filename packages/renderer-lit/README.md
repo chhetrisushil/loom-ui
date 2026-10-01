@@ -163,8 +163,13 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   text, so a dashboard does not reflow when data arrives. The chart host is `box-sizing:
   border-box`, so `width: 100%` plus padding or a border never overflows its container.
 - **Accessible descriptions name the kind.** A chart's name reads `<title>: line chart, <series…>`
-  / `<title>: bar chart, <bars…>` (and a table's `<title>: table with N rows`, singular `1 row`),
-  every phrase a `t()` key so a host's translation reaches it.
+  / `<title>: bar chart, <bars…>` (and a table's `<title>: table with N rows`, singular `1 row`).
+  Every phrase passes through the package's `t()` seam, and counted nouns pick their plural
+  category with `Intl.PluralRules` for the active locale (keys `row.one` / `row.other`, plus
+  `few`/`many`/… where a locale has them). Today `t` is an identity function with no host
+  override, so the spoken text is English: a locale changes WHICH plural form is chosen, not the
+  words, and a category with no English form reads as `other`. A way for a host to supply
+  translations is a separate capability this package does not have yet.
 - **A container renderer's failure never loses children.** A container renderer that throws on
   mount or `update` is disposed and the container falls back to the plain container in place;
   children stay mounted and subscribed, with a `mount-failed`/`patch-failed` finding reported.
