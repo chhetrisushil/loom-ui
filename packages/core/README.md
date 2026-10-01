@@ -132,6 +132,17 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   number MEANS (`number` / `integer` / `decimal` / `percentage` / `currency`, with `notation` and
   fraction-digit bounds) and how every renderer formats, rounds and suffixes it identically.
 
+### Browser entry (`@loom-ui/core/browser`)
+
+The zod-free slice a browser renderer needs: number formatting (`formatSemanticNumber`,
+`effectiveFormat`, `unitSuffix`, `deltaDirection`, `DELTA_FORMAT`), `checkKindValue` (a hand-written
+twin of the main entry's, same verdict and same finding message — pinned by a differential test
+against the zod contracts), `FRAMEWORK_KINDS`, `tableColumnLabel`/`tableColumnFormat`,
+`isLocalizedText`, the `hydrationPath`/`hydrationStatusPath` spellings, and the value types. The
+main entry's zod schemas cannot be tree-shaken (~60 kB minified in a page), so a bundle that
+imports the main entry pays for them; `@loom-ui/renderer-lit` imports this subpath and a bundle
+test holds it zod-free.
+
 ### Content log (`@loom-ui/core/log`)
 
 - `mintVersionHash(exp)`, `seal(exp)` — the content address (parse, then canonicalise) and the

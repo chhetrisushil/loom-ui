@@ -1,4 +1,4 @@
-import { LocalizedText } from "@loom-ui/core";
+import { isLocalizedText } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { titleText } from "../title";
@@ -7,8 +7,7 @@ import { LuWidget } from "./base";
 /** Compile resolves a text prop to a string; an uncompiled `LocalizedText` shows its fallback, never its key. */
 function noteText(value: unknown): string {
   if (typeof value === "string") return value;
-  const parsed = LocalizedText.safeParse(value);
-  return parsed.success ? parsed.data.fallback : "";
+  return isLocalizedText(value) ? value.fallback : "";
 }
 
 // Static text from props. A Note is never bound, so an undefined value bypasses the status

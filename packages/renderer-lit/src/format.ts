@@ -6,7 +6,7 @@ import {
   formatFromUnit,
   semanticNumberFormatOptions,
   unitSuffix,
-} from "@loom-ui/core";
+} from "@loom-ui/core/browser";
 import { formattingLocale } from "./i18n";
 
 // One declaration of what a number means, and of the semantics→format-options mapping it

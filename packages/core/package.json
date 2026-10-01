@@ -7,10 +7,11 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./browser": { "types": "./dist/browser.d.ts", "default": "./dist/browser.js" },
     "./log": { "types": "./dist/log.d.ts", "default": "./dist/log.js" }
   },
   "typesVersions": {
-    "*": { "log": ["./dist/log.d.ts"] }
+    "*": { "browser": ["./dist/browser.d.ts"], "log": ["./dist/log.d.ts"] }
   },
   "scripts": {
     "build": "tsc --build",

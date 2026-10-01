@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { Finding } from "./experience";
+import { FRAMEWORK_KINDS, tableColumnFormat, tableColumnLabel } from "./kindValues";
+
+// The zod-free vocabulary lives in kindValues.ts (a browser bundle imports it without zod);
+// re-exported here so this module keeps its public surface.
+export { FRAMEWORK_KINDS, tableColumnFormat, tableColumnLabel };
 
 // ── Per-kind value contracts ──────────────────────────────────────────────────
 // A compiled widget binds to `values.<handle>`; the kind says what shape that value must have.
@@ -113,15 +118,6 @@ export const TableValue = z.object({
 });
 export type TableValue = z.infer<typeof TableValue>;
 
-/** A column's heading, whichever form it was written in. */
-export function tableColumnLabel(column: TableColumn): string {
-  return typeof column === "string" ? column : column.label;
-}
-/** A column's semantics, if it declared any. */
-export function tableColumnFormat(column: TableColumn): SemanticFormat | undefined {
-  return typeof column === "string" ? undefined : column.format;
-}
-
 export const StatusLevel = z.enum(["ok", "warning", "critical"]);
 export type StatusLevel = z.infer<typeof StatusLevel>;
 export const StatusCardValue = z.object({
@@ -130,17 +126,6 @@ export const StatusCardValue = z.object({
   detail: z.string().optional(),
 });
 export type StatusCardValue = z.infer<typeof StatusCardValue>;
-
-export const FRAMEWORK_KINDS = [
-  "TimeSeries",
-  "BarChart",
-  "Kpi",
-  "Table",
-  "StatusCard",
-  "Note",
-  "A2UIView",
-  "SandboxView",
-] as const;
 
 export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   MetricCard: z.number(),
