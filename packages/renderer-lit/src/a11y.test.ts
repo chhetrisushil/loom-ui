@@ -15,9 +15,9 @@ describe("describeValue", () => {
         { series: [{ label: "p99", unit: "ms", points: [{ timestamp: "t", value: 3 }] }] },
         "Latency"
       )
-    ).toBe("Latency: p99 3 ms");
+    ).toBe("Latency: line chart, p99 3 ms");
     expect(describeValue("BarChart", { bars: [{ label: "a", value: 1 }] }, "Bars")).toBe(
-      "Bars: a 1"
+      "Bars: bar chart, a 1"
     );
     expect(describeValue("MetricCard", undefined, "p99")).toBe("p99: loading");
     expect(describeValue("MetricCard", "not a number", "p99")).toBe("p99: error");
@@ -42,7 +42,7 @@ describe("describeValue", () => {
       describeValue("BarChart", { bars: [{ label: "a", value: 0.5 }] }, "Share", {
         format: { semanticType: "percentage" },
       })
-    ).toBe("Share: a 50%");
+    ).toBe("Share: bar chart, a 50%");
     // A series' own format still wins over the widget's props.
     expect(
       describeValue(
@@ -107,14 +107,14 @@ describe("describeValue", () => {
         },
         "Lat"
       )
-    ).toBe("Lat: p99 7 ms");
+    ).toBe("Lat: line chart, p99 7 ms");
     expect(
       describeValue(
         "BarChart",
         { unit: "ms", format: dec, bars: [{ label: "a", value: 7 }] },
         "Lat"
       )
-    ).toBe("Lat: a 7 ms");
+    ).toBe("Lat: bar chart, a 7 ms");
     expect(
       describeValue(
         "Kpi",
@@ -151,5 +151,35 @@ describe("describeValue", () => {
         "Revenue"
       )
     ).toBe("Revenue, vs last week: $1,234.50, up 12%");
+  });
+  it("names the chart kind, through t(), so a screen-reader reader knows what the figure is", () => {
+    setLocale("en-US");
+    const spy = vi.spyOn(i18n, "t");
+    const ts = { series: [{ label: "Revenue", points: [{ timestamp: "t", value: 3 }] }] };
+    expect(describeValue("TimeSeries", ts, "Sales")).toBe("Sales: line chart, Revenue 3");
+    expect(describeValue("BarChart", { bars: [{ label: "a", value: 1 }] }, "Bars")).toBe(
+      "Bars: bar chart, a 1"
+    );
+    expect(spy.mock.calls.map(([k]) => k)).toEqual(
+      expect.arrayContaining(["line chart", "bar chart"])
+    );
+    // A host's translation reaches it: the phrase is a t() key, not a literal.
+    spy.mockImplementation((k) => (k === "line chart" ? "Liniendiagramm" : k));
+    expect(describeValue("TimeSeries", ts, "Sales")).toBe("Sales: Liniendiagramm, Revenue 3");
+    spy.mockRestore();
+  });
+  it("the table descriptions share one pattern ('<title>: table with N rows') and agree on the singular", () => {
+    setLocale("en-US");
+    const table = { columns: ["a"], rows: [["x"]] };
+    expect(describeValue("Table", table, "Top")).toBe("Top: table with 1 row");
+    expect(describeValue("DataTable", [{ a: 1 }], "Top")).toBe("Top: table with 1 row");
+    expect(describeValue("Table", { columns: ["a"], rows: [["x"], ["y"]] }, "Top")).toBe(
+      "Top: table with 2 rows"
+    );
+    expect(describeValue("Table", { columns: ["a"], rows: [] }, "Top")).toBe(
+      "Top: table with 0 rows"
+    );
+    expect(describeValue("Timeline", [{}], "Log")).toBe("Log: 1 entry");
+    expect(describeValue("Timeline", [{}, {}], "Log")).toBe("Log: 2 entries");
   });
 });

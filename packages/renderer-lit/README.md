@@ -162,6 +162,9 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   states (loading, error, empty) now reserve the same 16:9 box rather than collapsing to a line of
   text, so a dashboard does not reflow when data arrives. The chart host is `box-sizing:
   border-box`, so `width: 100%` plus padding or a border never overflows its container.
+- **Accessible descriptions name the kind.** A chart's name reads `<title>: line chart, <series…>`
+  / `<title>: bar chart, <bars…>` (and a table's `<title>: table with N rows`, singular `1 row`),
+  every phrase a `t()` key so a host's translation reaches it.
 - **A container renderer's failure never loses children.** A container renderer that throws on
   mount or `update` is disposed and the container falls back to the plain container in place;
   children stay mounted and subscribed, with a `mount-failed`/`patch-failed` finding reported.
