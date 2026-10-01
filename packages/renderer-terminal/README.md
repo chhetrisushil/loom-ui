@@ -52,7 +52,9 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
   `terminalRegistry({ chrome: "host" })` (also on `renderExperience` and
   `createLoomUiTerminalRegistry`) is for an app that draws its own title bar or frame: the
   framework kinds print no `Title:` prefix — ready, error (`✗ msg`) or loading (`—`) — and a Kpi's
-  caption trails the figure. Default `"widget"` is unchanged. loom's own traversal rows (status
+  caption trails the figure, and multi-line bodies (Table, TimeSeries, BarChart) print with no
+  4-space hanging indent — that indent only sits rows under the `Title:` lead, which host chrome
+  does not have (so a narrow cell keeps its columns). Default `"widget"` is unchanged. loom's own traversal rows (status
   lines) and its eight built-in kinds are loom's output and keep their titles. Only a non-empty
   string is a title: `""` or a non-string (`0`, `5`) is none — the kind stands in, a Note prints no
   title — exactly as in the lit renderer. `renderExperience` throws if given both `chrome` and
