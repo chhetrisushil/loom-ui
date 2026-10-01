@@ -1,6 +1,7 @@
 import { LocalizedText } from "@loom-ui/core";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
+import { titleText } from "../title";
 import { LuWidget } from "./base";
 
 /** Compile resolves a text prop to a string; an uncompiled `LocalizedText` shows its fallback, never its key. */
@@ -50,8 +51,7 @@ export class LuNote extends LuWidget {
   protected renderReady(): TemplateResult | typeof nothing {
     // Only a non-empty string is a title (`""` and a stray `0` are none, as for every widget); the
     // accessible name keeps it even when the host draws the visible one.
-    const raw = this.widget.title;
-    const title = typeof raw === "string" && raw !== "" ? raw : undefined;
+    const title = titleText(this.widget.title);
     return html`<div role="note" aria-label=${title ?? nothing}>
       ${title !== undefined && this.chrome !== "host" ? html`<div class="title">${title}</div>` : nothing}
       <p class="text">${noteText((this.widget.props as { text?: unknown }).text)}</p>

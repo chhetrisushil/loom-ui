@@ -1,5 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
+import { titleText } from "../title";
 import { LuWidget } from "./base";
 
 @customElement("lu-status-badge")
@@ -30,9 +31,10 @@ export class LuStatusBadge extends LuWidget {
     const status = String(this.value);
     // Mirrors StatusBadgeRenderer: the title is a visible sibling span, not folded into the
     // accessible name alone.
+    const title = titleText(this.widget.title);
     return html`${
-      this.visibleTitle !== undefined && this.widget.title
-        ? html`<span class="badge-title">${this.widget.title}</span>`
+      this.visibleTitle !== undefined && title !== undefined
+        ? html`<span class="badge-title">${title}</span>`
         : nothing
     }<span class="badge" data-status=${status}>${status}</span>`;
   }

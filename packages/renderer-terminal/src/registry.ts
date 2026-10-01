@@ -36,8 +36,9 @@ export interface TerminalRegistryOptions {
 }
 
 /** A non-empty string is a title; `""` (or a stray non-string) is none, so the kind stands in. */
-const title = (w: Widget): string =>
-  typeof w.title === "string" && w.title !== "" ? w.title : w.kind;
+const titleText = (w: Widget): string | undefined =>
+  typeof w.title === "string" && w.title !== "" ? w.title : undefined;
+const title = (w: Widget): string => titleText(w) ?? w.kind;
 const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s.padEnd(n));
 
 /** One fixed, deterministic locale for every terminal number: the same grouping/rounding/currency
@@ -245,7 +246,8 @@ const note =
     const parsed = LocalizedText.safeParse(raw);
     const text = typeof raw === "string" ? raw : parsed.success ? parsed.data.fallback : "";
     // Only a non-empty string is a title — `""` and a stray `0` are none, as for every kind.
-    return typeof w.title === "string" && w.title !== "" && !host ? `${w.title}: ${text}` : text;
+    const t = titleText(w);
+    return t !== undefined && !host ? `${t}: ${text}` : text;
   };
 
 // The A2UI tree and the sandboxed component are web surfaces: an interpreter this CommonJS

@@ -11,6 +11,7 @@ import {
   resolveWidgetValue,
 } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
+import { titleText } from "../title";
 import { deepEqual } from "./deepEqual";
 import {
   type DomContainerChild,
@@ -231,7 +232,7 @@ export function layoutNodeId(layout: Layout): string {
 
 /** A layout's heading: a NON-EMPTY string title, or none — the rule loom's React and terminal renderers apply (ADR 0098 D4). */
 export function titleOf(layout: Layout): string | undefined {
-  return typeof layout.title === "string" && layout.title !== "" ? layout.title : undefined;
+  return titleText(layout.title);
 }
 
 /**
