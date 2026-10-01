@@ -143,6 +143,19 @@ describe("lu-table", () => {
     ).toContain("Showing 200 of 205 ROWS");
     spy.mockRestore();
   });
+  it("lu-data-table's 'Showing N of M rows' goes through t()/tPlural like lu-table's", async () => {
+    const cat: Record<string, string> = { Showing: "SHOWING", of: "OF", "row.other": "ROWS" };
+    const spy = vi.spyOn(i18n, "t").mockImplementation((k, fb) => cat[k] ?? fb ?? k);
+    const rows = Array.from({ length: 205 }, (_, i) => ({ id: `r${i}` }));
+    const el = await mount("lu-data-table", {
+      widget: customWidget$({ kind: "DataTable", id: "d-pl", title: "Pl", binding: b }),
+      value: rows,
+    });
+    expect(
+      el.shadowRoot?.querySelector(".more")?.textContent?.replace(/\s+/g, " ").trim()
+    ).toContain("SHOWING 200 OF 205 ROWS");
+    spy.mockRestore();
+  });
   it("a row shorter than the columns shows — for the missing cell; records are a contract error", async () => {
     const el = await mount("lu-table", {
       widget,
