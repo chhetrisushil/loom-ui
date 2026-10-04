@@ -584,6 +584,39 @@ describe("checkPlannerConformance", () => {
       });
       expect(f.map((x) => x.code)).toContain("scope-identity-mismatch");
     });
+    it("a planner that never calls ctx.decide is scope-unused, not blamed on the fixture", async () => {
+      replies = [compose, revise, compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
+      const inner = scopedPlanner(false);
+      // Decides on a private context of its own: the fixture's ctx is never asked.
+      const bypass: Planner = {
+        compose: (input) => inner.compose(input, recordingContext(scope)),
+        revise: (input) => inner.revise(input, recordingContext(scope)),
+      };
+      const f = await run(bypass, scope, "exec-1");
+      const codes = f.map((x) => x.code);
+      expect(codes).toContain("scope-unused");
+      expect(codes).not.toContain("fixture-ctx-not-fresh");
+      expect(f.find((x) => x.code === "scope-unused")?.message).toMatch(/ctx\.decide/);
+    });
+
+    it("a compose mismatch does not hide a separate revise mismatch", async () => {
+      replies = [compose, revise];
+      let n = 0;
+      // Every call is stamped as some other execution, in both phases.
+      const scope = stampingScope("exec-other", () => {
+        n += 1;
+        return { content: replies.shift() as string };
+      });
+      const f = await run(scopedPlanner(true), scope, "exec-1");
+      const mismatches = f.filter((x) => x.code === "scope-identity-mismatch");
+      expect(n).toBeGreaterThan(1);
+      expect(mismatches.map((m) => m.message)).toEqual([
+        expect.stringMatching(/^a scope call was stamped/),
+        expect.stringMatching(/during revise/),
+      ]);
+    });
+
     it("a pre-populated ctx is a fixture error, not scope-unused", async () => {
       replies = [compose, revise, compose, revise];
       const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
