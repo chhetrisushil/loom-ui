@@ -13,6 +13,7 @@ import { isControlPlaneError } from "./controlPlane";
 import { planDecisionId } from "./decision";
 import { materialize } from "./materialize";
 import { type PreviousError, composeMessages, reviseMessages } from "./prompt";
+import { type PlannerReach, declarePlannerReach } from "./reach";
 import type {
   AttemptTrace,
   ComposeInput,
@@ -41,6 +42,13 @@ export interface ReferencePlannerOptions {
   readonly modelId: string;
   /** Model calls per plan, parse and validation retries included. Default 2. */
   readonly maxAttempts?: number;
+  /**
+   * What this planner's deciders reach, declared for `@loom/verify` (loom L32): the toolIds the
+   * `model` factory calls through `scope.invokeTransient` (e.g. `{ transient: ["llm.complete"] }`).
+   * Only the caller knows them — the model is user-supplied. Omitted means NO declaration, so
+   * verify reports the hand-off as unresolved rather than trusting a partial claim.
+   */
+  readonly reach?: PlannerReach;
 }
 
 /** Ops are id-based and every genesis has the same root, so validation can run against a scratch lineage. */
@@ -60,6 +68,7 @@ export class ReferencePlanner implements Planner {
   private readonly maxAttempts: number;
   constructor(private readonly opts: ReferencePlannerOptions) {
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
+    if (opts.reach !== undefined) declarePlannerReach(this, opts.reach);
   }
 
   private modelFor(scope: DecideScope): PlannerModel {

@@ -94,6 +94,19 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   Pass a factory to make the model calls AS the deciding execution, e.g.
   `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req) =>
   inv.invokeTransient("llm.complete", req) }; }`; a plain model ignores the scope.
+- `reach?: { run?, transient? }` — the planner's **declared reach** for `@loom/verify` (loom L32). A
+  flow that calls `planner.compose(input, ctx)` hands its `ctx` to code the verifier cannot see
+  into; the planner declares what that code runs, and the verifier counts those tools against the
+  real grants and registry. The planner cannot know the model tool id (the `model` factory is
+  yours), so you declare it: `new ReferencePlanner({ model, modelId, reach: { transient:
+  ["llm.complete"] } })` — `transient` = toolIds called through `scope.invokeTransient` (the model
+  tool, plus any hydration / MCP / sandbox tool your model factory or wrappers call), `run` =
+  toolIds run through `ctx.run` / `ctx.execute`. **No `reach` option means NO declaration**: verify
+  then reports the hand-off as unresolved, which is honest; a partial guess would not be. The
+  declaration is attached structurally under `Symbol.for("loom.verify.reach")` (non-enumerable, a
+  copy), with no dependency on `@loom/verify`.
+- `declarePlannerReach(target, reach)` / `readPlannerReach(value)` / `REACH_DECLARATION` — the same
+  attachment for a custom `Planner` (or any object a flow hands `ctx` to).
 - `REFERENCE_POLICY`, `REFERENCE_SOURCE` — the fixed `{ id, version }` policy stamp and decision
   source this planner records.
 - `scratchGenesis(intent)` — a scratch-lineage `Experience` for validating a draft plan before it
@@ -119,6 +132,10 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   throws `error`) it also requires `compose` to REJECT with that error and record nothing
   (`denial-swallowed` / `denial-replaced` / `denial-recorded`). Omitting it means the
   control-plane contract is NOT checked.
+  With `fx.checkReach: true` (needs `scopeProbe` whose calls carry `toolId`) it also requires the
+  planner's declaration to list every toolId called through the scope during compose and revise
+  under `transient` (`reach-undeclared`; `reach-unprobed` when there is no probe). Omitting it
+  means reach is NOT checked.
 - `ConformanceFixture` — the fixture shape: `intent`, `catalog`, `capabilities`, `meta`, a
   `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`/`scopeProbe`/`denialProbe`.
 
@@ -151,6 +168,21 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   `describeExperience`, `capabilityDetailBlocks`, `fenceData`, `COMPOSE_SYSTEM`, `REVISE_SYSTEM`,
   `MAX_FENCE_BODY`, `PreviousError` — the prompt-assembly building blocks `ReferencePlanner` uses;
   exported so a custom planner can reuse the same fencing discipline rather than re-deriving it.
+
+### Wiring reach into verify
+
+`reviseForDrift(planner, input, ctx)` hands `ctx` to `planner.revise`, so the reach is the
+PLANNER's. Map whichever callee text a flow uses to the planner instance (the key is the callee
+text, or its leftmost identifier):
+
+```ts
+defineConfig({
+  checks: { verify: { reach: { planner, reviseForDrift: planner } } },
+});
+```
+
+`reviseForDrift` itself carries no declaration (it reaches only what the planner it is given
+reaches), so map it to the planner rather than to the function.
 
 ### Drift repair
 
