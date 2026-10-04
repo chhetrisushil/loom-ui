@@ -190,22 +190,26 @@ export async function checkPlannerConformance(
     surface,
   };
 
-  // With a probe, watch whether the decider actually ran: a pre-populated ctx serves compose from
-  // cache with zero scope calls, which is a broken fixture, not a planner that ignores the scope.
+  // With a probe, watch whether compose asked the ctx at all and whether the decider actually ran:
+  // a planner that never calls `ctx.decide` ignores the scope (its fault); one that calls it but
+  // whose decider never runs was served from a pre-populated ctx (a broken fixture).
+  let decideCalled = 0;
   let deciderRan = 0;
   const ctx: DecideContext =
     fx.scopeProbe === undefined
       ? fx.ctx
       : {
-          decide: (id, decider, opts) =>
-            fx.ctx.decide(
+          decide: (id, decider, opts) => {
+            decideCalled += 1;
+            return fx.ctx.decide(
               id,
               (scope) => {
                 deciderRan += 1;
                 return decider(scope);
               },
               opts
-            ),
+            );
+          },
         };
   const firstAttempt = await safely("compose", () => planner.compose(composeInput, ctx));
   if (!firstAttempt.ok) return [firstAttempt.finding];
@@ -236,7 +240,14 @@ export async function checkPlannerConformance(
   // itself later would make `replay-recalled-scope` unable to fire.
   const scopeAfterFirst = probe?.calls().length ?? 0;
   if (probe !== undefined) {
-    if (deciderRan === 0)
+    if (decideCalled === 0)
+      findings.push(
+        err(
+          "scope-unused",
+          "compose never called ctx.decide, so nothing it did ran through the decide scope as the deciding execution"
+        )
+      );
+    else if (deciderRan === 0)
       findings.push(
         err(
           "fixture-ctx-not-fresh",
@@ -299,6 +310,7 @@ export async function checkPlannerConformance(
     );
 
   const base = seal(composed.value);
+  const scopeBeforeRevise = probe?.calls().length ?? 0;
   const reviseAttempt = await safely("revise", () =>
     planner.revise(
       {
@@ -316,14 +328,13 @@ export async function checkPlannerConformance(
   );
   if (!reviseAttempt.ok) return [...findings, reviseAttempt.finding];
   const revised = reviseAttempt.value;
+  const reviseCalls = probe?.calls().slice(scopeBeforeRevise) ?? [];
   findings.push(...reportFindings("revise", revised.report, readUsage(revised.report)));
   // Identity only: whether revise must call the scope at all is the planner's business (a
   // deterministic revise legitimately decides without a model), but any call it DID make must
   // have run as the deciding execution.
-  if (
-    probe?.calls().some((c) => c.identity !== probe.identity) &&
-    !findings.some((f) => f.code === "scope-identity-mismatch")
-  )
+  // Only the calls revise made: a compose mismatch is already reported on its own.
+  if (probe !== undefined && reviseCalls.some((c) => c.identity !== probe.identity))
     findings.push(
       err(
         "scope-identity-mismatch",

@@ -106,10 +106,12 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   `firstAttemptValid` agreeing with the attempts, replay-stable `usage`, and — with `fx.ctx` a
   recording context — that a second `compose` with the same inputs replays rather than re-calls
   the model. With `fx.scopeProbe` (`{ identity, calls() }`, observing the scope behind `fx.ctx`) it
-  also requires the decider to call through the scope (`scope-unused`), every call to be stamped as
+  also requires compose to decide through `ctx.decide` and its decider to call through the scope
+  (`scope-unused` either way), every call to be stamped as
   the deciding execution (`scope-identity-mismatch`), and a replay to make none
   (`replay-recalled-scope`); calls made during `revise` must be stamped as the deciding execution
-  too (whether `revise` must call the scope at all is not checked). **Omitting `scopeProbe` means
+  too, reported separately from a compose mismatch (whether `revise` must call the scope at all
+  is not checked). **Omitting `scopeProbe` means
   the scope contract is NOT checked.** `fx.ctx` must be fresh: a ctx that already holds the
   compose decision serves it without running the decider, reported as `fixture-ctx-not-fresh`
   (not `scope-unused`). `calls()` may return a live array.
