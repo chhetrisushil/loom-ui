@@ -4,6 +4,7 @@ import { limitInvoker } from "@loom-ui/hydration";
 import { TypedFailure } from "@loom/core";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
+import * as pkg from "./index";
 import { ReferencePlanner } from "./reference";
 import { scopeInvoker } from "./scope";
 import type { Planner, PlannerModel } from "./spi";
@@ -223,5 +224,16 @@ describe("conformance: denialProbe", () => {
     const f = await run(swallowing, denied());
     expect(f.map((x) => x.code)).toContain("denial-swallowed");
     expect(f.map((x) => x.code)).toContain("denial-recorded");
+  });
+});
+
+describe("isControlPlaneError is public", () => {
+  // A host planner that wraps its own effect calls (sandbox proofs, MCP samples) must apply the
+  // SAME classification as ReferencePlanner, so the package root exports it.
+  it("is exported from the package root and classifies by name", () => {
+    expect(typeof pkg.isControlPlaneError).toBe("function");
+    const denied = Object.assign(new Error("no"), { name: "CapabilityDeniedError" });
+    expect(pkg.isControlPlaneError(denied)).toBe(true);
+    expect(pkg.isControlPlaneError(new Error("model said no"))).toBe(false);
   });
 });
