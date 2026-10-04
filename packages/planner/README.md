@@ -184,6 +184,23 @@ defineConfig({
 `reviseForDrift` itself carries no declaration (it reaches only what the planner it is given
 reaches), so map it to the planner rather than to the function.
 
+The `reach` option declares on the planner INSTANCE. A flow that calls a planner FACTORY
+(`planner("x").compose(input, ctx)`) is keyed by the factory's name, so the declaration must be
+on the factory function too:
+
+```ts
+const planner = declarePlannerReach((flowId: string) => makePlanner(flowId), {
+  transient: ["llm.complete"],
+});
+defineConfig({ checks: { verify: { reach: { planner } } } });
+```
+
+A declaration is an upper bound: listing a tool that is never called is allowed (as
+`@loom/verify`'s `assertReachMatches` without `exact`); only an UNDER-declaration is a finding.
+`{ run: [], transient: [] }` declares "reaches nothing"; `{}` (or a malformed declaration) is
+undeclared — exactly as `@loom/verify` reads it. `checkReach` also reports `reach-unprobed` when
+the probe's calls carry no `toolId`, so it cannot pass without observing a tool.
+
 ### Drift repair
 
 - `reviseForDrift<R extends PlanResult>(planner: DriftReviser<R>, input, ctx): Promise<R>` —

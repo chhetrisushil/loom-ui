@@ -405,6 +405,13 @@ export async function checkPlannerConformance(
       findings.push(
         err("reach-unprobed", "checkReach needs fx.scopeProbe: without it no tool call is observed")
       );
+    else if (probe.calls().length > 0 && probe.calls().every((c) => typeof c.toolId !== "string"))
+      findings.push(
+        err(
+          "reach-unprobed",
+          "checkReach needs scopeProbe calls that carry toolId: none of the observed calls does"
+        )
+      );
     else {
       const called = [
         ...new Set(
