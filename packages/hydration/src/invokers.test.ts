@@ -195,7 +195,9 @@ describe("memoInvoker", () => {
   });
 
   it("different labels never share: without `as` the label names the transient execution an authorizer may grant by", async () => {
-    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => ({ label: opts?.label }));
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => ({
+      label: opts?.label,
+    }));
     const memo = memoInvoker(inner);
     const [a, b] = await Promise.all([
       memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { label: "allowed" }),
@@ -206,8 +208,14 @@ describe("memoInvoker", () => {
     expect(b).toEqual({ label: "denied" });
     // conservative even when `as` names the execution: still a different key
     await Promise.all([
-      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as: { workflowId: "f", executionId: "e" }, label: "x" }),
-      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as: { workflowId: "f", executionId: "e" }, label: "y" }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), {
+        as: { workflowId: "f", executionId: "e" },
+        label: "x",
+      }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), {
+        as: { workflowId: "f", executionId: "e" },
+        label: "y",
+      }),
     ]);
     expect(inner.calls).toHaveLength(4);
   });
