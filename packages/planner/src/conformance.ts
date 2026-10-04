@@ -15,6 +15,7 @@ import type {
   ComposeInput,
   DecideContext,
   PlanReport,
+  PlanResult,
   Planner,
   PlannerUsage,
   ReviseInput,
@@ -41,6 +42,22 @@ export interface ScopeProbe {
   readonly calls: () => readonly { readonly identity: string }[];
 }
 
+/**
+ * Opts the planner into the control-plane contract: a decide scope that REFUSES every call (an
+ * authorisation denial, a budget refusal or an abort) must make `compose` REJECT with that error —
+ * not return a (failed) plan the runtime would record as the decision, which a later grant could
+ * never replace. Supplying it needs a second, FRESH recording context whose scope throws `error`.
+ * Omitting it means the control-plane contract is NOT checked.
+ */
+export interface DenialProbe {
+  /** A fresh recording context whose decide scope rejects every call with `error`. */
+  readonly ctx: DecideContext;
+  /** The refusal the scope raises; compose must reject with exactly it. */
+  readonly error: unknown;
+  /** How many decisions `ctx` has recorded; must stay 0. */
+  readonly decisions: () => number;
+}
+
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
   readonly catalog: ComposeInput["catalog"];
@@ -58,6 +75,8 @@ export interface ConformanceFixture {
   readonly surface?: ComposeInput["surface"];
   /** See {@link ScopeProbe}. */
   readonly scopeProbe?: ScopeProbe;
+  /** See {@link DenialProbe}. */
+  readonly denialProbe?: DenialProbe;
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
@@ -266,6 +285,37 @@ export async function checkPlannerConformance(
         err(
           "scope-identity-mismatch",
           `a scope call was stamped as other than the deciding execution "${probe.identity}"`
+        )
+      );
+  }
+
+  const denial = fx.denialProbe;
+  if (denial !== undefined) {
+    let outcome: { ok: true; value: PlanResult } | { ok: false; error: unknown };
+    try {
+      outcome = { ok: true, value: await planner.compose(composeInput, denial.ctx) };
+    } catch (error) {
+      outcome = { ok: false, error };
+    }
+    if (outcome.ok)
+      findings.push(
+        err(
+          "denial-swallowed",
+          "compose returned a plan when the decide scope refused its call; a refusal must reject so the runtime records no decision"
+        )
+      );
+    else if (outcome.error !== denial.error)
+      findings.push(
+        err(
+          "denial-replaced",
+          "compose rejected with an error other than the one the decide scope raised"
+        )
+      );
+    if (denial.decisions() !== 0)
+      findings.push(
+        err(
+          "denial-recorded",
+          "a refused compose still recorded a decision, which a later grant can never replace"
         )
       );
   }

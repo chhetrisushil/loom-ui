@@ -9,6 +9,7 @@ import {
   validateExperience,
 } from "@loom-ui/core";
 import { parseModelJson, planSchema } from "./contract";
+import { isControlPlaneError } from "./controlPlane";
 import { planDecisionId } from "./decision";
 import { materialize } from "./materialize";
 import { type PreviousError, composeMessages, reviseMessages } from "./prompt";
@@ -209,6 +210,7 @@ export class ReferencePlanner implements Planner {
     try {
       model = makeModel();
     } catch (e) {
+      if (isControlPlaneError(e)) throw e; // see ./controlPlane: never recorded as the decision
       const f = err(
         "model-error",
         `model construction failed: ${e instanceof Error ? e.message : String(e)}`
@@ -233,6 +235,7 @@ export class ReferencePlanner implements Planner {
         content = r.content;
         reply = r;
       } catch (e) {
+        if (isControlPlaneError(e)) throw e; // no retry, no recorded failed plan
         const f = err(
           "model-error",
           `model call failed: ${e instanceof Error ? e.message : String(e)}`

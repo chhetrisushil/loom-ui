@@ -1,5 +1,5 @@
 export { checkPlannerConformance } from "./conformance";
-export type { ConformanceFixture } from "./conformance";
+export type { ConformanceFixture, DenialProbe } from "./conformance";
 export { DRAFT_ID, MAX_DRAFT_NODES, entryFor, parseModelJson, planSchema } from "./contract";
 export type { DraftBinding, DraftNode, Parsed, PlanDraft } from "./contract";
 export { planDecisionId } from "./decision";
