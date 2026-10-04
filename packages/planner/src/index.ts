@@ -14,6 +14,7 @@ export {
 export type { DriftContextEntry, DriftReviser } from "./drift";
 export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } from "./reference";
 export type { ReferencePlannerOptions } from "./reference";
+export { isControlPlaneError } from "./controlPlane";
 export { scopeInvoker } from "./scope";
 export { addUsage, isPlannerUsage, readReportedUsage, totalUsage } from "./usage";
 export { EXPERIENCE_OP_ACTION, EXPERIENCE_PROMOTED, interpretAction } from "./interaction";
