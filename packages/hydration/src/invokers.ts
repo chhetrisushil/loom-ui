@@ -14,6 +14,18 @@ import type { TransientInvoker } from "./invoker";
 // so they add no settle latency on a free slot.
 
 /**
+ * The rejection for a call abandoned because its signal aborted. Named `AbortError` (the
+ * platform's own name for a cancelled operation) so a consumer classifies it by `name` — a
+ * planner's decider must propagate a cancellation, never retry it or record it as a failed
+ * plan. A plain `Error("aborted")` is indistinguishable from a provider failure. Message kept.
+ */
+function abortError(): Error {
+  const e = new Error("aborted");
+  e.name = "AbortError";
+  return e;
+}
+
+/**
  * At most `max` calls in flight through this invoker, across every caller. A queued call whose
  * signal aborts leaves the queue and rejects `"aborted"` without ever reaching `inner`. FIFO: a
  * finished call hands its slot straight to the oldest waiter.
@@ -36,7 +48,7 @@ export function limitInvoker(inner: TransientInvoker, max: number): TransientInv
   const acquire = (signal: AbortSignal | undefined): Promise<void> | undefined => {
     // Checked before capacity: an already-aborted caller must never take a slot (or reach
     // `inner`) just because one happened to be free — that slot belongs to the next live caller.
-    if (signal?.aborted === true) return Promise.reject(new Error("aborted"));
+    if (signal?.aborted === true) return Promise.reject(abortError());
     if (active < max) {
       active += 1;
       return undefined;
@@ -44,7 +56,7 @@ export function limitInvoker(inner: TransientInvoker, max: number): TransientInv
     return new Promise<void>((resolve, reject) => {
       const onAbort = (): void => {
         waiting.delete(grant);
-        reject(new Error("aborted"));
+        reject(abortError());
       };
       const grant = (): void => {
         signal?.removeEventListener("abort", onAbort);
@@ -101,7 +113,7 @@ export function signalInvoker(inner: TransientInvoker, signal: AbortSignal): Tra
       opts?: TransientInvokeOptions
     ): Promise<TOut> {
       const own = opts?.signal;
-      if (signal.aborted || own?.aborted === true) return Promise.reject(new Error("aborted"));
+      if (signal.aborted || own?.aborted === true) return Promise.reject(abortError());
       const ac = new AbortController();
       const abort = (): void => ac.abort();
       signal.addEventListener("abort", abort, { once: true });
@@ -237,7 +249,7 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
   ): Promise<TOut> => {
     if (signal?.aborted === true) {
       onCallerAbort(key, hit);
-      return Promise.reject(new Error("aborted"));
+      return Promise.reject(abortError());
     }
     return new Promise<TOut>((resolve, reject) => {
       let settled = false;
@@ -245,7 +257,7 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
         if (settled) return;
         settled = true;
         onCallerAbort(key, hit);
-        reject(new Error("aborted"));
+        reject(abortError());
       };
       signal?.addEventListener("abort", onAbort, { once: true });
       hit.promise.then(
@@ -305,7 +317,7 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
       // Mirrors limitInvoker's fast path: an already-aborted caller must never become the leader
       // — that would call `inner`, create an entry nobody asked to keep, and (since nothing here
       // would yet be subscribed to the resulting promise) risk an unhandled rejection.
-      if (opts?.signal?.aborted === true) return Promise.reject(new Error("aborted"));
+      if (opts?.signal?.aborted === true) return Promise.reject(abortError());
       const controller = new AbortController();
       let promise: Promise<TOut>;
       try {
