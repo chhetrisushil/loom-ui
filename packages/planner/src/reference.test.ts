@@ -74,6 +74,25 @@ describe("ReferencePlanner through the decide scope", () => {
     await planner.compose(input, ctx); // replay: served, no scope call
     expect(scope.calls).toHaveLength(1);
   });
+  it("a throwing model factory is a model-error finding like a throwing complete(), not a rejected compose", async () => {
+    let factoryCalls = 0;
+    const ctx = recordingContext(stampingScope("exec-9", () => ({ content: goodDraft })));
+    const planner = new ReferencePlanner({
+      modelId: "boom",
+      maxAttempts: 1,
+      model: () => {
+        factoryCalls += 1;
+        throw new Error("factory exploded");
+      },
+    });
+    const result = await planner.compose(input, ctx);
+    expect(result.findings.map((f) => f.code)).toContain("model-error");
+    expect(result.findings.find((f) => f.code === "model-error")?.message).toMatch(
+      /factory exploded/
+    );
+    await planner.compose(input, ctx); // replay: the decision is served, factory not called again
+    expect(factoryCalls).toBe(1);
+  });
 });
 
 describe("ReferencePlanner.compose", () => {

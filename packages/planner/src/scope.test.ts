@@ -31,13 +31,23 @@ describe("scopeInvoker", () => {
     expect(scope.calls[0]).toMatchObject({ toolId: "t", input: { a: 1 }, identity: "exec-1" });
     expect(scope.calls[0]?.signal).toBe(ac.signal);
   });
-  it("refuses an identity the scope already fixes: principal, as, resources", () => {
+  it("refuses an identity the scope already fixes: principal, as, resources (a rejection)", async () => {
     const inv = scopeInvoker(stampingScope("e", () => 1));
-    expect(() =>
+    await expect(
       inv.invokeTransient("t", {}, { as: { workflowId: "w", executionId: "x" } })
-    ).toThrow(/scope/);
-    expect(() => inv.invokeTransient("t", {}, { principal: {} as never })).toThrow(/scope/);
-    expect(() => inv.invokeTransient("t", {}, { resources: {} as never })).toThrow(/scope/);
+    ).rejects.toThrow(/scope/);
+    await expect(inv.invokeTransient("t", {}, { principal: {} as never })).rejects.toThrow(/scope/);
+    await expect(inv.invokeTransient("t", {}, { resources: {} as never })).rejects.toThrow(/scope/);
+  });
+  it("a refused option never throws synchronously and never reaches the scope", async () => {
+    const scope = stampingScope("e", () => 1);
+    const inv = scopeInvoker(scope);
+    let p: Promise<unknown> | undefined;
+    expect(() => {
+      p = inv.invokeTransient("t", {}, { principal: {} as never });
+    }).not.toThrow();
+    await expect(p).rejects.toBeInstanceOf(TypeError);
+    expect(scope.calls).toHaveLength(0);
   });
   it("accepts a label (a trace tag) without forwarding it", async () => {
     const scope = stampingScope("e", () => 1);
