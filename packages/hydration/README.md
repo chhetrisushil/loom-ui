@@ -84,9 +84,9 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   by default (inject your own, or a fresh one per controller).
 - `limitInvoker`, `memoInvoker`, `signalInvoker` — `TransientInvoker` wrappers: cap concurrency,
   de-duplicate identical calls within one pass, and bind an `AbortSignal`. `memoInvoker` keys on
-  the principal AND every other call option except `signal`/`label` (e.g. a stamped execution
-  identity `as`, which an authorizer may grant by), so calls made as different executions never
-  share a result.
+  the principal AND every other call option except `signal` (e.g. a stamped execution identity
+  `as`, or the `label` that names the transient execution when `as` is absent — an authorizer
+  may grant by either), so calls made as different executions never share a result.
 - `defineReshapers(entries)`, `jsonPathSelect(value, path)`, `outputShapeHashOf(value)` — build a
   `ReshaperRegistry` for `reshaping.engine: "Named"`, run a JSONPath reshape, and hash a value's
   structural shape for pinning `ProviderSpec.outputShapeHash`.
