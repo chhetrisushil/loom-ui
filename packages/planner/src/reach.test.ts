@@ -100,13 +100,47 @@ describe("declared reach (loom L32)", () => {
     expect(readPlannerReach(null)).toBeUndefined();
     expect(readPlannerReach("x")).toBeUndefined();
   });
-  it("the declaration is reachable through reviseForDrift's planner argument too", () => {
+  it("an app maps `reviseForDrift` to the PLANNER: the function itself carries no declaration", () => {
     const p = mk({ transient: ["llm.complete"] });
-    expect(readPlannerReach(p)).toBeDefined();
-    expect(typeof reviseForDrift).toBe("function");
+    // What an app writes in `checks.verify.reach`, resolved the way verify resolves a callee key.
+    const reachMap: Record<string, unknown> = { planner: p, reviseForDrift: p };
+    expect(readPlannerReach(reachMap.reviseForDrift)).toEqual({ transient: ["llm.complete"] });
+    expect(readPlannerReach(reviseForDrift)).toBeUndefined();
+  });
+
+  it("an attached `{}` is UNDECLARED (as @loom/verify reads it), not 'reaches nothing'", () => {
+    expect(readPlannerReach(declarePlannerReach({}, {}))).toBeUndefined();
+    expect(readPlannerReach(declarePlannerReach({}, { run: [], transient: [] }))).toEqual({
+      run: [],
+      transient: [],
+    });
+  });
+
+  it("a factory function can carry the declaration (map the factory's name)", () => {
+    const makePlanner = declarePlannerReach(() => mk(), { transient: ["llm.complete"] });
+    expect(readPlannerReach(makePlanner)).toEqual({ transient: ["llm.complete"] });
   });
 
   describe("conformance (checkReach)", () => {
+    it("NEGATIVE: a probe whose calls carry no toolId is reach-unprobed, not a pass", async () => {
+      const replies = [compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
+      const f = await checkPlannerConformance(mk(), {
+        intent: intentFixture,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+        meta: metaFixture,
+        revision: { text: "add an insight" },
+        ctx: recordingContext(scope),
+        scopeProbe: {
+          identity: "exec-1",
+          calls: () => scope.calls.map(({ identity }) => ({ identity })),
+        },
+        checkReach: true,
+      });
+      expect(f.map((x) => x.code)).toContain("reach-unprobed");
+    });
+
     it("passes when every scope toolId is declared", async () => {
       expect(await run(mk({ transient: ["llm.complete"] }), { checkReach: true })).toEqual([]);
     });

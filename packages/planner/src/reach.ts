@@ -32,7 +32,7 @@ export function declarePlannerReach<T extends object>(target: T, reach: PlannerR
   return target;
 }
 
-/** The declaration attached to `value`, or undefined when it has none (or a malformed one). */
+/** The declaration attached to `value`, or undefined when it has none, a malformed one, or `{}`. */
 export function readPlannerReach(value: unknown): PlannerReach | undefined {
   if (value === null || (typeof value !== "object" && typeof value !== "function"))
     return undefined;
@@ -41,5 +41,8 @@ export function readPlannerReach(value: unknown): PlannerReach | undefined {
   const { run, transient } = d as { run?: unknown; transient?: unknown };
   if ((run !== undefined && !isList(run)) || (transient !== undefined && !isList(transient)))
     return undefined;
+  // `{}` is UNDECLARED, exactly as @loom/verify reads it; `{ run: [], transient: [] }` is the
+  // explicit "reaches nothing".
+  if (run === undefined && transient === undefined) return undefined;
   return d as PlannerReach;
 }
