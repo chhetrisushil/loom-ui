@@ -10,6 +10,7 @@ import {
   validateExperience,
 } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
+import { readPlannerReach } from "./reach";
 import type {
   CapabilityRef,
   ComposeInput,
@@ -39,7 +40,7 @@ export interface ScopeProbe {
    * LIVE array that grows as calls are made: the kit reads `.length` at each checkpoint and never
    * holds the returned array across a planner call.
    */
-  readonly calls: () => readonly { readonly identity: string }[];
+  readonly calls: () => readonly { readonly identity: string; readonly toolId?: string }[];
 }
 
 /**
@@ -77,6 +78,14 @@ export interface ConformanceFixture {
   readonly scopeProbe?: ScopeProbe;
   /** See {@link DenialProbe}. */
   readonly denialProbe?: DenialProbe;
+  /**
+   * Opts into the reach contract (loom L32): needs `scopeProbe` whose calls carry `toolId`. The
+   * planner must DECLARE (`Symbol.for("loom.verify.reach")`, see `declarePlannerReach`) every
+   * toolId it called through the scope during compose and revise, under `transient`; a missing
+   * or short declaration is `reach-undeclared`. Omitting it means reach is NOT checked; asking for
+   * it without a `scopeProbe` is `reach-unprobed` (a check with no input must not pass).
+   */
+  readonly checkReach?: boolean;
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
@@ -391,6 +400,33 @@ export async function checkPlannerConformance(
         `a scope call made during revise was stamped as other than the deciding execution "${probe.identity}"`
       )
     );
+  if (fx.checkReach === true) {
+    if (probe === undefined)
+      findings.push(
+        err("reach-unprobed", "checkReach needs fx.scopeProbe: without it no tool call is observed")
+      );
+    else {
+      const called = [
+        ...new Set(
+          probe
+            .calls()
+            .map((c) => c.toolId)
+            .filter((t): t is string => typeof t === "string")
+        ),
+      ];
+      const declared = readPlannerReach(planner);
+      const missing = called.filter((t) => !(declared?.transient ?? []).includes(t));
+      if (missing.length > 0)
+        findings.push(
+          err(
+            "reach-undeclared",
+            declared === undefined
+              ? `the planner called ${missing.map((t) => `"${t}"`).join(", ")} through the decide scope but carries no reach declaration`
+              : `the planner called ${missing.map((t) => `"${t}"`).join(", ")} through the decide scope but its reach declaration does not list them under transient`
+          )
+        );
+    }
+  }
   if (revised.ops.length !== 1 || revised.ops[0]?.type !== "prompt") {
     findings.push(
       err(
