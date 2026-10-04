@@ -115,8 +115,12 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   the scope contract is NOT checked.** `fx.ctx` must be fresh: a ctx that already holds the
   compose decision serves it without running the decider, reported as `fixture-ctx-not-fresh`
   (not `scope-unused`). `calls()` may return a live array.
+  With `fx.denialProbe` (`{ ctx, error, decisions() }`: a second fresh recording context whose scope
+  throws `error`) it also requires `compose` to REJECT with that error and record nothing
+  (`denial-swallowed` / `denial-replaced` / `denial-recorded`). Omitting it means the
+  control-plane contract is NOT checked.
 - `ConformanceFixture` — the fixture shape: `intent`, `catalog`, `capabilities`, `meta`, a
-  `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`/`scopeProbe`.
+  `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`/`scopeProbe`/`denialProbe`.
 
 ### Interaction (widget actions vs. experience ops)
 
@@ -204,6 +208,16 @@ const repaired = await reviseForDrift(planner, {
 ```
 
 ## Notable behaviours and guarantees
+
+- **Error semantics: refusals propagate, model failures become findings.** A plain model failure
+  (provider error, unparseable or invalid output, `TypedFailure`) becomes a `model-error` /
+  `model-output-invalid` finding, is retried up to `maxAttempts`, and ends as a recorded failed
+  plan. A CONTROL-PLANE refusal is different: `CapabilityDeniedError` (the deciding execution has
+  no grant for the effect), `QuotaExceededError` (its budget refuses the call) and `AbortError`
+  (cancellation) are rethrown out of the decider at once — from the model call or the model
+  factory — with no retry. A throwing decider records nothing, so the flow fails with the real
+  error and, once the grant is fixed, a re-run decides afresh instead of replaying a failed plan.
+  They are matched by error `name`, so a second copy of loom's classes is still recognised.
 
 - **Replay serves the recorded plan.** Because every model call is one `ctx.decide`, a replayed
   execution never calls the model again — `checkPlannerConformance`'s recording-context assertion
