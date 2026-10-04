@@ -34,10 +34,26 @@ export interface DecideOptionsLike {
   readonly context?: Record<string, unknown>;
   readonly policy?: { readonly id: string; readonly version: string; readonly propensity?: number };
 }
+/**
+ * Structural subset of loom's `DecideScope` (workflow-runtime, L30): what `ctx.decide` hands its
+ * decider. A call through `invokeTransient` runs AS the deciding execution — its workflowId /
+ * executionId, full principal (delegation included), composed cancellation and budget snapshot —
+ * and is still transient (nothing is journalled; the decision is the one record). A decider that
+ * makes its model / tool / sandbox calls through the scope is authorised and metered as the flow
+ * that asked, not as an anonymous runtime-level caller. Loom's own `DecideScope` satisfies this.
+ */
+export interface DecideScope {
+  invokeTransient<TIn = unknown, TOut = unknown>(
+    toolId: string,
+    input: TIn,
+    opts?: { readonly signal?: AbortSignal }
+  ): Promise<TOut>;
+}
 export interface DecideContext {
   decide<T>(
     decisionId: string,
-    decider: () => T | Promise<T>,
+    // A decider that ignores its scope (`() => …`) is assignable: fewer parameters is always allowed.
+    decider: (scope: DecideScope) => T | Promise<T>,
     opts?: DecideOptionsLike
   ): Promise<T>;
 }

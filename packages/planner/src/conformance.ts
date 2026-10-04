@@ -21,6 +21,19 @@ import type {
 } from "./spi";
 import { snapshotUsage, totalUsage } from "./usage";
 
+/**
+ * Observes the decide scope behind a fixture's `ctx` (a fake that stamps identity, or a real loom
+ * runtime's recorder). Supplying it opts the planner into the scope contract: its decider must
+ * make at least one call through the scope, every call must carry `identity` (the deciding
+ * execution), and a replay must make none.
+ */
+export interface ScopeProbe {
+  /** The identity every scope call must be stamped with. */
+  readonly identity: string;
+  /** Every call made through the scope so far, with the identity it was stamped as. */
+  readonly calls: () => readonly { readonly identity: string }[];
+}
+
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
   readonly catalog: ComposeInput["catalog"];
@@ -36,6 +49,8 @@ export interface ConformanceFixture {
   /** Counts model calls; when given, the kit asserts the second compose adds none. */
   readonly modelCalls?: () => number;
   readonly surface?: ComposeInput["surface"];
+  /** See {@link ScopeProbe}. */
+  readonly scopeProbe?: ScopeProbe;
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
@@ -192,6 +207,25 @@ export async function checkPlannerConformance(
   if (!isContainer(composed.value.root) || composed.value.root.children.length === 0)
     findings.push(err("compose-empty", "compose produced no nodes"));
 
+  const probe = fx.scopeProbe;
+  const scopeAfterFirst = probe?.calls() ?? [];
+  if (probe !== undefined) {
+    if (scopeAfterFirst.length === 0)
+      findings.push(
+        err(
+          "scope-unused",
+          "compose made no call through the decide scope; calls made outside it do not run as the deciding execution"
+        )
+      );
+    if (scopeAfterFirst.some((c) => c.identity !== probe.identity))
+      findings.push(
+        err(
+          "scope-identity-mismatch",
+          `a scope call was stamped as other than the deciding execution "${probe.identity}"`
+        )
+      );
+  }
+
   const before = fx.modelCalls?.() ?? 0;
   const secondAttempt = await safely("compose (second call)", () =>
     planner.compose(composeInput, fx.ctx)
@@ -210,6 +244,13 @@ export async function checkPlannerConformance(
       err(
         "replay-recalled-model",
         "a second compose on the same recording context called the model again"
+      )
+    );
+  if (probe !== undefined && probe.calls().length !== scopeAfterFirst.length)
+    findings.push(
+      err(
+        "replay-recalled-scope",
+        "a second compose on the same recording context made another call through the decide scope"
       )
     );
   // Usage is part of the DECIDED value: a replay that serves the ops but re-derives (or drops)

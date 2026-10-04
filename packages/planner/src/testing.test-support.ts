@@ -8,6 +8,7 @@ import type {
   CapabilityRef,
   DecideContext,
   DecideOptionsLike,
+  DecideScope,
   PlannerModel,
   PlannerUsage,
 } from "./spi";
@@ -110,7 +111,7 @@ export function scriptedModel(
 }
 
 /** Records the first decider result per id; serves it on every later call without running the decider. */
-export function recordingContext(): DecideContext & {
+export function recordingContext(scope?: DecideScope): DecideContext & {
   decisions: Map<string, unknown>;
   opts: Map<string, DecideOptionsLike | undefined>;
   deciderCalls: number;
@@ -121,12 +122,12 @@ export function recordingContext(): DecideContext & {
     deciderCalls: 0,
     async decide<T>(
       id: string,
-      decider: () => T | Promise<T>,
+      decider: (scope: DecideScope) => T | Promise<T>,
       opts?: DecideOptionsLike
     ): Promise<T> {
       if (ctx.decisions.has(id)) return ctx.decisions.get(id) as T;
       ctx.deciderCalls += 1;
-      const value = await decider();
+      const value = await decider(scope ?? noScope);
       // Loom persists the choice as JSON — round-trip it so a non-serialisable value fails HERE.
       // The FIRST call returns the raw decider result (as loom's real ctx.decide does when it
       // actually runs the decider); only a cache hit (replay) returns the persisted JSON value.
@@ -139,4 +140,44 @@ export function recordingContext(): DecideContext & {
     },
   };
   return ctx;
+}
+
+/** A scope for contexts that never expect the decider to call through it: any call is a test bug. */
+const noScope: DecideScope = {
+  invokeTransient: () => Promise.reject(new Error("this test context hands the decider no scope")),
+};
+
+export interface ScopeCall {
+  readonly toolId: string;
+  readonly input: unknown;
+  readonly signal?: AbortSignal;
+  /** The deciding execution this call was stamped as (a stand-in for loom's `as`). */
+  readonly identity: string;
+}
+
+/**
+ * A scope that stamps every call with `identity`, as loom's real `ctx.decide` scope stamps the
+ * deciding execution's workflowId/executionId, and records it. `handler` answers the call.
+ */
+export function stampingScope(
+  identity: string,
+  handler: (toolId: string, input: unknown) => unknown | Promise<unknown>
+): DecideScope & { calls: ScopeCall[] } {
+  const scope = {
+    calls: [] as ScopeCall[],
+    async invokeTransient<TIn, TOut>(
+      toolId: string,
+      input: TIn,
+      opts?: { readonly signal?: AbortSignal }
+    ): Promise<TOut> {
+      scope.calls.push({
+        toolId,
+        input,
+        identity,
+        ...(opts?.signal !== undefined && { signal: opts.signal }),
+      });
+      return (await handler(toolId, input)) as TOut;
+    },
+  };
+  return scope;
 }

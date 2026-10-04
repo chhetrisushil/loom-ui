@@ -10,6 +10,7 @@ import {
   planningCatalog,
   recordingContext,
   scriptedModel,
+  stampingScope,
 } from "./testing.test-support";
 
 const compose = JSON.stringify({
@@ -503,5 +504,45 @@ describe("checkPlannerConformance", () => {
     });
     expect(findings.map((f) => f.code)).toContain("planner-threw");
     expect(findings.map((f) => f.code)).not.toContain("revise-not-prompt");
+  });
+  describe("decide scope", () => {
+    const scopedPlanner = (use: boolean) =>
+      new ReferencePlanner({
+        modelId: "m",
+        model: (scope) => ({
+          complete: async (req) => {
+            if (use) return scope.invokeTransient("llm.complete", req);
+            return { content: replies.shift() as string };
+          },
+        }),
+      });
+    let replies: string[] = [];
+    const run = (planner: Planner, scope: ReturnType<typeof stampingScope>, identity: string) =>
+      checkPlannerConformance(planner, {
+        intent: intentFixture,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+        meta: metaFixture,
+        revision: { text: "add an insight" },
+        ctx: recordingContext(scope),
+        scopeProbe: { identity, calls: () => scope.calls },
+      });
+    it("a planner that calls through the scope as the deciding execution passes", async () => {
+      replies = [compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
+      expect(await run(scopedPlanner(true), scope, "exec-1")).toEqual([]);
+    });
+    it("a planner that never uses the scope fails scope-unused", async () => {
+      replies = [compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: "" }));
+      const f = await run(scopedPlanner(false), scope, "exec-1");
+      expect(f.map((x) => x.code)).toContain("scope-unused");
+    });
+    it("calls stamped as a different execution fail scope-identity-mismatch", async () => {
+      replies = [compose, revise];
+      const scope = stampingScope("transient", () => ({ content: replies.shift() as string }));
+      const f = await run(scopedPlanner(true), scope, "exec-1");
+      expect(f.map((x) => x.code)).toContain("scope-identity-mismatch");
+    });
   });
 });

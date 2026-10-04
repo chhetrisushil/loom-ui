@@ -59,8 +59,20 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   stamps provenance from.
 - `CapabilityRef` — one bindable tool: `handle`, `toolName`, `toolVersion`, `toolSchemaHash`,
   optional `description`/`inputSchema`/`sampleOutput`.
-- `DecideContext`, `DecideOptionsLike` — the structural subset of loom's `ExecutionContext.decide`
-  a planner needs; any loom `ctx` satisfies it.
+- `DecideContext`, `DecideOptionsLike`, `DecideScope` — the structural subset of loom's
+  `ExecutionContext.decide` a planner needs; any loom `ctx` satisfies it. The decider is
+  `(scope: DecideScope) => T | Promise<T>`: `scope.invokeTransient(toolId, input, { signal? })`
+  runs the call AS the deciding execution (its workflowId/executionId, full principal including
+  delegation, composed cancellation, budget snapshot), still transient. A zero-arg decider remains
+  valid. A planner that makes its model / MCP / sandbox calls through the scope is authorised and
+  metered as the flow that asked, not as an anonymous runtime-level caller.
+- `scopeInvoker(scope): TransientInvoker` — adapts a `DecideScope` to the `TransientInvoker`
+  interface `@loom-ui/hydration` is written against, so its wrappers compose on top:
+  `memoInvoker(limitInvoker(scopeInvoker(scope), 4))`. Only `signal` is forwarded; `principal`,
+  `as` and `resources` throw (the scope IS the identity; a silent drop would run a call as
+  someone it did not ask to be), `label` is ignored. `memoInvoker` keys on every option except
+  `signal`, and the scope fixes the identity, so a memo built inside one decider is safe — never
+  share one memo across scopes (executions).
 - `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loom/llm`'s
   `LlmProvider.complete` a model must satisfy, and its token-usage shape.
 - `planDecisionId(kind, input): string` — the `ctx.decide` key `compose`/`revise` use: every input
@@ -74,8 +86,11 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 
 ### Reference planner
 
-- `ReferencePlanner` — implements `Planner`. Constructor: `{ model: PlannerModel, modelId: string,
-  maxAttempts?: number }` (default 2 attempts, parse/validation retries included).
+- `ReferencePlanner` — implements `Planner`. Constructor: `{ model: PlannerModel | ((scope: DecideScope) => PlannerModel),
+  modelId: string, maxAttempts?: number }` (default 2 attempts, parse/validation retries included).
+  Pass a factory to make the model calls AS the deciding execution, e.g.
+  `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req) =>
+  inv.invokeTransient("llm.complete", req) }; }`; a plain model ignores the scope.
 - `REFERENCE_POLICY`, `REFERENCE_SOURCE` — the fixed `{ id, version }` policy stamp and decision
   source this planner records.
 - `scratchGenesis(intent)` — a scratch-lineage `Experience` for validating a draft plan before it
@@ -87,9 +102,12 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   custom `Planner` through the contract a caller depends on: at least one attempt, a named model,
   `firstAttemptValid` agreeing with the attempts, replay-stable `usage`, and — with `fx.ctx` a
   recording context — that a second `compose` with the same inputs replays rather than re-calls
-  the model.
+  the model. With `fx.scopeProbe` (`{ identity, calls() }`, observing the scope behind `fx.ctx`) it
+  also requires the decider to call through the scope (`scope-unused`), every call to be stamped as
+  the deciding execution (`scope-identity-mismatch`), and a replay to make none
+  (`replay-recalled-scope`).
 - `ConformanceFixture` — the fixture shape: `intent`, `catalog`, `capabilities`, `meta`, a
-  `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`.
+  `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`/`scopeProbe`.
 
 ### Interaction (widget actions vs. experience ops)
 

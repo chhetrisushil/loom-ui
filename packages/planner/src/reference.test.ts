@@ -18,6 +18,7 @@ import {
   planningCatalog,
   recordingContext,
   scriptedModel,
+  stampingScope,
 } from "./testing.test-support";
 import { isPlannerUsage } from "./usage";
 
@@ -56,6 +57,24 @@ const input = {
   catalog: planningCatalog,
   capabilities: capabilitiesFixture,
 };
+
+describe("ReferencePlanner through the decide scope", () => {
+  it("a model factory receives the scope, so model calls run as the deciding execution", async () => {
+    const scope = stampingScope("exec-9", () => ({ content: goodDraft }));
+    const ctx = recordingContext(scope);
+    const planner = new ReferencePlanner({
+      modelId: "scoped",
+      model: (s) => ({
+        complete: (req) => s.invokeTransient<unknown, { content: string }>("llm.complete", req),
+      }),
+    });
+    const result = await planner.compose(input, ctx);
+    expect(result.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(scope.calls.map((c) => [c.toolId, c.identity])).toEqual([["llm.complete", "exec-9"]]);
+    await planner.compose(input, ctx); // replay: served, no scope call
+    expect(scope.calls).toHaveLength(1);
+  });
+});
 
 describe("ReferencePlanner.compose", () => {
   it("returns ops that replay to a valid experience, a clean report, and records ONE decision with the policy stamp", async () => {

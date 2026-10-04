@@ -16,6 +16,7 @@ import type {
   AttemptTrace,
   ComposeInput,
   DecideContext,
+  DecideScope,
   PlanReport,
   PlanResult,
   Planner,
@@ -29,7 +30,12 @@ export const REFERENCE_POLICY = { id: "loom-ui.reference-planner", version: "1.0
 export const REFERENCE_SOURCE = "loom-ui.planner.reference";
 
 export interface ReferencePlannerOptions {
-  readonly model: PlannerModel;
+  /**
+   * The model, or a factory called with the decider's {@link DecideScope} once per decision — so a
+   * model whose calls go through `scope.invokeTransient` (e.g. via `scopeInvoker`) runs as the
+   * deciding execution. A plain model ignores the scope.
+   */
+  readonly model: PlannerModel | ((scope: DecideScope) => PlannerModel);
   /** Recorded in every report so the caller can stamp `Provenance.modelId`. */
   readonly modelId: string;
   /** Model calls per plan, parse and validation retries included. Default 2. */
@@ -55,6 +61,11 @@ export class ReferencePlanner implements Planner {
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
   }
 
+  private modelFor(scope: DecideScope): PlannerModel {
+    const m = this.opts.model;
+    return typeof m === "function" ? m(scope) : m;
+  }
+
   private report(
     decisionId: string,
     attempts: readonly AttemptTrace[],
@@ -74,8 +85,9 @@ export class ReferencePlanner implements Planner {
     const decisionId = planDecisionId("compose", input);
     return ctx.decide(
       decisionId,
-      () =>
+      (scope) =>
         this.plan(
+          this.modelFor(scope),
           decisionId,
           scratchGenesis(input.intent),
           input,
@@ -125,8 +137,9 @@ export class ReferencePlanner implements Planner {
     }
     return ctx.decide(
       decisionId,
-      () =>
+      (scope) =>
         this.plan(
+          this.modelFor(scope),
           decisionId,
           input.experience,
           input,
@@ -148,6 +161,7 @@ export class ReferencePlanner implements Planner {
 
   /** The bounded loop. `request` present ⇒ revise: the primitives are wrapped in one `prompt` op. */
   private async plan(
+    model: PlannerModel,
     decisionId: string,
     base: Experience,
     input: {
@@ -198,7 +212,7 @@ export class ReferencePlanner implements Planner {
       let content: string;
       let reply: object;
       try {
-        const r = await this.opts.model.complete(messagesFor(previous));
+        const r = await model.complete(messagesFor(previous));
         content = r.content;
         reply = r;
       } catch (e) {
