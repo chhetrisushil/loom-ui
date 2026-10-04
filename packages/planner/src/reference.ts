@@ -87,7 +87,7 @@ export class ReferencePlanner implements Planner {
       decisionId,
       (scope) =>
         this.plan(
-          this.modelFor(scope),
+          () => this.modelFor(scope),
           decisionId,
           scratchGenesis(input.intent),
           input,
@@ -139,7 +139,7 @@ export class ReferencePlanner implements Planner {
       decisionId,
       (scope) =>
         this.plan(
-          this.modelFor(scope),
+          () => this.modelFor(scope),
           decisionId,
           input.experience,
           input,
@@ -161,7 +161,7 @@ export class ReferencePlanner implements Planner {
 
   /** The bounded loop. `request` present ⇒ revise: the primitives are wrapped in one `prompt` op. */
   private async plan(
-    model: PlannerModel,
+    makeModel: () => PlannerModel,
     decisionId: string,
     base: Experience,
     input: {
@@ -202,6 +202,23 @@ export class ReferencePlanner implements Planner {
           modelId: this.opts.modelId,
         },
       };
+    // The factory is part of "calling the model": its throw is a model-error finding, same as a
+    // throwing `complete()`. Called once per decision (never on replay) and not retried — a
+    // factory that throws will throw again, so a retry only repeats the failure.
+    let model: PlannerModel;
+    try {
+      model = makeModel();
+    } catch (e) {
+      const f = err(
+        "model-error",
+        `model construction failed: ${e instanceof Error ? e.message : String(e)}`
+      );
+      return {
+        ops: [],
+        findings: [f, err("plan-failed", "no valid plan: the model could not be constructed")],
+        report: this.report(decisionId, [{ parsed: false, findings: [f] }], false),
+      };
+    }
     const schema = planSchema(input.catalog, input.capabilities);
     const attempts: AttemptTrace[] = [];
     let previous: PreviousError | undefined;

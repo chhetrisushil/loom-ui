@@ -544,5 +544,72 @@ describe("checkPlannerConformance", () => {
       const f = await run(scopedPlanner(true), scope, "exec-1");
       expect(f.map((x) => x.code)).toContain("scope-identity-mismatch");
     });
+    it("a planner that makes an extra scope call outside ctx.decide on every compose fails replay-recalled-scope (live calls array)", async () => {
+      replies = [compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
+      const inner = scopedPlanner(true);
+      // Reaches the scope outside the decision on EVERY compose, replay included.
+      const leaky: Planner = {
+        compose: async (i, c) => {
+          const r = await inner.compose(i, c);
+          await scope.invokeTransient("side.effect", {});
+          return r;
+        },
+        revise: (i, c) => inner.revise(i, c),
+      };
+      const f = await run(leaky, scope, "exec-1"); // probe.calls returns the LIVE scope.calls
+      expect(f.map((x) => x.code)).toContain("replay-recalled-scope");
+    });
+    it("a scope call stamped as another execution during revise fails scope-identity-mismatch", async () => {
+      replies = [compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
+      const inner = scopedPlanner(true);
+      const extra: { identity: string }[] = [];
+      const planner: Planner = {
+        compose: (i, c) => inner.compose(i, c),
+        revise: async (i, c) => {
+          const r = await inner.revise(i, c);
+          extra.push({ identity: "someone-else" });
+          return r;
+        },
+      };
+      const f = await checkPlannerConformance(planner, {
+        intent: intentFixture,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+        meta: metaFixture,
+        revision: { text: "add an insight" },
+        ctx: recordingContext(scope),
+        scopeProbe: { identity: "exec-1", calls: () => [...scope.calls, ...extra] },
+      });
+      expect(f.map((x) => x.code)).toContain("scope-identity-mismatch");
+    });
+    it("a pre-populated ctx is a fixture error, not scope-unused", async () => {
+      replies = [compose, revise, compose, revise];
+      const scope = stampingScope("exec-1", () => ({ content: replies.shift() as string }));
+      const ctx = recordingContext(scope);
+      const planner = scopedPlanner(true);
+      await planner.compose(
+        {
+          intent: intentFixture,
+          catalog: planningCatalog,
+          capabilities: capabilitiesFixture,
+          surface: "web",
+        },
+        ctx
+      );
+      const f = await checkPlannerConformance(planner, {
+        intent: intentFixture,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+        meta: metaFixture,
+        revision: { text: "add an insight" },
+        ctx,
+        scopeProbe: { identity: "exec-1", calls: () => scope.calls },
+      });
+      const codes = f.map((x) => x.code);
+      expect(codes).toContain("fixture-ctx-not-fresh");
+      expect(codes).not.toContain("scope-unused");
+    });
   });
 });

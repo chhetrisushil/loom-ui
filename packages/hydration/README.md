@@ -41,6 +41,7 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   (client) talks to a `HandleLoader` — the app's transport — which calls `serveHandle`/`serveHandles`
   (server) over that boundary; the server answers with the exact same `HandleLoadResult` shape the
   in-process controller publishes, so the two paths cannot disagree.
+- **`scopeInvoker` and `principal`.** When the invoker is a planner `scopeInvoker` (a `ctx.decide` scope), do not configure `principal`: the scope already carries the execution's principal and the call is refused otherwise.
 - **Scheduling.** Both controllers schedule by priority: P0 loads immediately, P1 batches within a
   short window, P2 waits for `markVisible`. An identical step (same tool, same arguments) runs once
   per pass no matter how many handles share it.

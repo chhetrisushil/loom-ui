@@ -72,7 +72,10 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   `as` and `resources` throw (the scope IS the identity; a silent drop would run a call as
   someone it did not ask to be), `label` is ignored. `memoInvoker` keys on every option except
   `signal`, and the scope fixes the identity, so a memo built inside one decider is safe — never
-  share one memo across scopes (executions).
+  share one memo across scopes (executions). A refused option is a REJECTED promise, never a
+  synchronous throw. Do not configure `principal` on hydration / reshape when their invoker is a
+  `scopeInvoker` — the scope already carries the execution's principal, and the call is refused
+  otherwise (refusing beats running as someone else).
 - `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loom/llm`'s
   `LlmProvider.complete` a model must satisfy, and its token-usage shape.
 - `planDecisionId(kind, input): string` — the `ctx.decide` key `compose`/`revise` use: every input
@@ -105,7 +108,11 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   the model. With `fx.scopeProbe` (`{ identity, calls() }`, observing the scope behind `fx.ctx`) it
   also requires the decider to call through the scope (`scope-unused`), every call to be stamped as
   the deciding execution (`scope-identity-mismatch`), and a replay to make none
-  (`replay-recalled-scope`).
+  (`replay-recalled-scope`); calls made during `revise` must be stamped as the deciding execution
+  too (whether `revise` must call the scope at all is not checked). **Omitting `scopeProbe` means
+  the scope contract is NOT checked.** `fx.ctx` must be fresh: a ctx that already holds the
+  compose decision serves it without running the decider, reported as `fixture-ctx-not-fresh`
+  (not `scope-unused`). `calls()` may return a live array.
 - `ConformanceFixture` — the fixture shape: `intent`, `catalog`, `capabilities`, `meta`, a
   `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`/`scopeProbe`.
 
