@@ -77,6 +77,19 @@ describe("limitInvoker", () => {
     expect(inner.calls).toHaveLength(2); // first + third only — the aborted queued call never reached inner
   });
 
+  it("a refused-by-abort call rejects with an error NAMED AbortError (message kept)", async () => {
+    const inner = {
+      invokeTransient: () => Promise.resolve("never" as never),
+    };
+    const ac = new AbortController();
+    ac.abort();
+    const err = await limitInvoker(inner, 1)
+      .invokeTransient("t", {}, { signal: ac.signal })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toMatchObject({ name: "AbortError", message: "aborted" });
+  });
+
   it("refuses an already-aborted signal before ever taking a slot", async () => {
     const inner = new FakeInvoker().on("t", () => "ok");
     const limited = limitInvoker(inner, 1);
@@ -530,6 +543,27 @@ describe("memoInvoker", () => {
         }).not.toThrow();
         await expect(p).rejects.toThrow("sync boom");
       });
+  });
+});
+
+describe("abort rejections are named AbortError (all three wrappers)", () => {
+  const inner = new FakeInvoker().on("t", () => "ok");
+  const aborted = () => {
+    const ac = new AbortController();
+    ac.abort();
+    return ac.signal;
+  };
+  it("signalInvoker with an aborted lifetime", async () => {
+    const err = await signalInvoker(inner, aborted())
+      .invokeTransient("t", {})
+      .catch((e) => e);
+    expect(err).toMatchObject({ name: "AbortError", message: "aborted" });
+  });
+  it("memoInvoker with an aborted caller signal", async () => {
+    const err = await memoInvoker(new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => "ok"))
+      .invokeTransient(MCP_INVOKE_TOOL_ID, {}, { signal: aborted() })
+      .catch((e) => e);
+    expect(err).toMatchObject({ name: "AbortError", message: "aborted" });
   });
 });
 

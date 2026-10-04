@@ -218,6 +218,14 @@ const repaired = await reviseForDrift(planner, {
   factory — with no retry. A throwing decider records nothing, so the flow fails with the real
   error and, once the grant is fixed, a re-run decides afresh instead of replaying a failed plan.
   They are matched by error `name`, so a second copy of loom's classes is still recognised.
+  The set also names loom's `ExecutionCancelledError` / `DecideScopeClosedError` (its cancellation
+  errors) and the refusals `ExecutionDeniedError`, `CapabilityInvokeDeniedError`,
+  `EffectModeViolationError`, `EgressDeniedError`, `SafetyViolationError` and `UntrustedContentError`.
+  An `AbortError` thrown by the provider itself (say its own request timeout) is therefore ALSO
+  propagated and fails the flow: an `AbortError` is the platform's name for a cancelled call and
+  cannot be told from the execution's cancellation by name, retrying a cancelled call is the
+  caller's policy (not a draft to re-ask), and previously it was masked as a recorded failed plan.
+  `plan()` receives no cancellation signal, so classification rests on names alone.
 
 - **Replay serves the recorded plan.** Because every model call is one `ctx.decide`, a replayed
   execution never calls the model again — `checkPlannerConformance`'s recording-context assertion

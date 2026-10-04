@@ -1,9 +1,11 @@
 import { genesis } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
+import { limitInvoker } from "@loom-ui/hydration";
 import { TypedFailure } from "@loom/core";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { ReferencePlanner } from "./reference";
+import { scopeInvoker } from "./scope";
 import type { Planner, PlannerModel } from "./spi";
 import {
   capabilitiesFixture,
@@ -44,6 +46,17 @@ describe("control-plane errors propagate out of the decider", () => {
     ["capability denial", denied],
     ["abort", aborted],
     ["quota refusal", quota],
+    [
+      "loom's ExecutionCancelledError",
+      () => named("ExecutionCancelledError", "Execution cancelled"),
+    ],
+    ["loom's DecideScopeClosedError", () => named("DecideScopeClosedError", "decider settled")],
+    ["EffectModeViolationError", () => named("EffectModeViolationError", "journaled effect")],
+    ["ExecutionDeniedError", () => named("ExecutionDeniedError", "denied")],
+    ["CapabilityInvokeDeniedError", () => named("CapabilityInvokeDeniedError", "denied")],
+    ["EgressDeniedError", () => named("EgressDeniedError", "egress")],
+    ["SafetyViolationError", () => named("SafetyViolationError", "unsafe")],
+    ["UntrustedContentError", () => named("UntrustedContentError", "untrusted")],
   ] as const) {
     it(`${label}: compose rejects once, with no retry and nothing recorded`, async () => {
       const error = make();
@@ -57,15 +70,47 @@ describe("control-plane errors propagate out of the decider", () => {
     });
   }
 
-  it("a signal.reason that is not an Error is not mistaken for a plain failure", async () => {
+  it("an aborted signal's own reason propagates by identity: nothing recorded, one call", async () => {
     const ac = new AbortController();
     ac.abort();
+    const reason = ac.signal.reason;
+    expect(reason).toMatchObject({ name: "AbortError" });
     const scope = stampingScope("e", () => {
-      throw ac.signal.reason;
+      throw reason;
     });
     const ctx = recordingContext(scope);
-    await expect(scopedPlanner().compose(input, ctx)).rejects.toBeDefined();
+    await expect(scopedPlanner().compose(input, ctx)).rejects.toBe(reason);
     expect(scope.calls).toHaveLength(1);
+    expect(ctx.decisions.size).toBe(0);
+  });
+
+  it("a thrown non-Error value (a bare string reason) is NOT classified: it is a plain model failure", async () => {
+    const scope = stampingScope("e", () => {
+      throw "stop";
+    });
+    const ctx = recordingContext(scope);
+    const plan = await scopedPlanner().compose(input, ctx);
+    expect(scope.calls).toHaveLength(2);
+    expect(plan.findings.map((f) => f.code)).toContain("model-error");
+    expect(ctx.decisions.size).toBe(1);
+  });
+
+  it("limitInvoker over the scope with an already-aborted signal propagates: scope never reached, nothing recorded", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const scope = stampingScope("e", () => ({ content: "{}" }));
+    const ctx = recordingContext(scope);
+    const planner = new ReferencePlanner({
+      modelId: "limited",
+      model: (s): PlannerModel => {
+        const limited = limitInvoker(scopeInvoker(s), 1);
+        return {
+          complete: (req) => limited.invokeTransient("llm.complete", req, { signal: ac.signal }),
+        };
+      },
+    });
+    await expect(planner.compose(input, ctx)).rejects.toMatchObject({ name: "AbortError" });
+    expect(scope.calls).toHaveLength(0);
     expect(ctx.decisions.size).toBe(0);
   });
 
