@@ -1,3 +1,4 @@
+import { canonicalJson } from "@loom/core";
 import { InMemoryContentStore, encodeValue } from "@loom/plugin-content";
 import { describe, expect, it } from "vitest";
 import { type Experience, genesis } from "./experience";
@@ -255,5 +256,89 @@ describe("putExperience / getExperience", () => {
 
   it("names the userspace event and its payload shape", () => {
     expect(EXPERIENCE_COMPOSED).toBe("EXPERIENCE_COMPOSED");
+  });
+});
+
+// G19. The `versionHash` was always taken over canonical (key-sorted) JSON, but the STORED bytes —
+// and therefore the content address `ref` — followed key insertion order. A store that reorders
+// keys (e.g. a JSONB column) then yielded a different `ref` for the same experience.
+describe("canonical stored bytes (ref independent of key order)", () => {
+  const shuffle = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(shuffle)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.entries(v as Record<string, unknown>)
+              .reverse()
+              .map(([k, x]) => [k, shuffle(x)])
+          )
+        : v;
+  const rich = (): Experience => ({
+    ...g,
+    root: {
+      ...(g.root as ContainerNode),
+      children: [
+        {
+          id: "m",
+          order: "V",
+          kind: "semantic",
+          type: "Metric",
+          typeVersion: "1.0.0",
+          span: 4,
+          props: { unit: "ms", format: "short", nested: { b: 1, a: [{ y: 1, x: 2 }] } },
+        } as SemanticNode,
+      ],
+    },
+    providers: {
+      h: {
+        handle: "h",
+        executionGraph: [
+          {
+            stepId: "s1",
+            toolName: "t",
+            toolVersion: "1.0.0",
+            toolSchemaHash: "sha256:h",
+            arguments: { z: 1, a: { d: 1, c: 2 } },
+            dependsOn: [],
+            idempotent: true,
+          },
+        ],
+        reshaping: { engine: "JSONPath", scriptRef: "sha256:s" },
+        outputShapeHash: "sha256:o",
+        cachePolicy: { ttlSeconds: 60, scope: "global" },
+      },
+    },
+  });
+
+  it("the same experience in any key order (props, providers, step args) has one ref", async () => {
+    const a = ok(await putExperience(new InMemoryContentStore(), rich()));
+    const b = ok(await putExperience(new InMemoryContentStore(), shuffle(rich()) as Experience));
+    expect(b.ref.__loomContent).toBe(a.ref.__loomContent);
+  });
+
+  it("a round-trip through a key-reordering store (JSONB) names the same blob", async () => {
+    const store = new InMemoryContentStore();
+    const a = ok(await putExperience(store, rich()));
+    const reordered = shuffle(JSON.parse(JSON.stringify(a.experience))) as Experience;
+    const b = ok(await putExperience(store, reordered));
+    expect(b.ref.__loomContent).toBe(a.ref.__loomContent);
+    const back = await getExperience(store, a.ref);
+    expect(back.ok).toBe(true);
+  });
+
+  it("seal returns the experience in canonical key order", () => {
+    const s = seal(shuffle(rich()) as Experience);
+    expect(JSON.stringify(s)).toBe(canonicalJson(s));
+  });
+
+  it("a legacy blob written with insertion-order bytes still reads", async () => {
+    const store = new InMemoryContentStore();
+    const sealed = seal(shuffle(rich()) as Experience);
+    const legacy = new TextEncoder().encode(JSON.stringify(shuffle(sealed)));
+    expect(new TextDecoder().decode(legacy)).not.toBe(canonicalJson(sealed));
+    const ref = await store.put(legacy);
+    const r = await getExperience(store, ref);
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.experience.versionHash).toBe(sealed.versionHash);
   });
 });

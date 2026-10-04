@@ -49,13 +49,19 @@ export function mintVersionHash(exp: Experience): string {
 }
 
 /**
- * The same experience, PARSED, with its `versionHash` set — what is stored is exactly what was
- * hashed. Idempotent. Throws under the same conditions as {@link mintVersionHash}.
+ * The same experience, PARSED, with its `versionHash` set and every object key in canonical
+ * (sorted) order at every depth — so a caller that serialises it itself gets the same bytes
+ * `putExperience` stores. Idempotent. Throws under the same conditions as {@link mintVersionHash}.
  */
 export function seal(exp: Experience): Experience {
   const parsed = Experience.parse(exp);
-  return { ...parsed, versionHash: mintVersionHash(parsed) };
+  const sealed = { ...parsed, versionHash: mintVersionHash(parsed) };
+  return JSON.parse(canonicalJson(sealed)) as Experience;
 }
+
+/** The canonical stored bytes: sorted keys at every depth, arrays in order, UTF-8. */
+const canonicalBytes = (exp: Experience): Uint8Array =>
+  new TextEncoder().encode(canonicalJson(exp));
 
 const unhashable = (message: string): { ok: false; finding: Finding } => ({
   ok: false,
@@ -71,15 +77,21 @@ export async function putExperience(
   { ok: true; experience: Experience; ref: ContentRef } | { ok: false; finding: Finding }
 > {
   let experience: Experience;
+  let bytes: Uint8Array;
   try {
     experience = seal(exp);
+    bytes = canonicalBytes(experience);
   } catch (err) {
     return unhashable(`experience "${exp.experienceId}" cannot be hashed: ${reason(err)}`);
   }
   // What is STORED is the whole experience (meta included, so authorship is recoverable); what is
   // HASHED is the artifact. Identical artifacts from different authors therefore share a hash but
   // may store separately — the `ref` dedupes on stored bytes, the `versionHash` on identity.
-  const ref = await store.put(encodeValue(experience));
+  // The stored bytes are CANONICAL (sorted keys), like the hash input: the `ref` is a content
+  // address, so it must not depend on the key order the experience happened to arrive in (e.g.
+  // from a store that reorders keys, such as a JSONB column). `getExperience` reads any key
+  // order, so blobs written by the older insertion-order encoding remain readable.
+  const ref = await store.put(bytes);
   return { ok: true, experience, ref };
 }
 

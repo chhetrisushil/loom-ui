@@ -148,7 +148,11 @@ test holds it zod-free.
 - `mintVersionHash(exp)`, `seal(exp)` — the content address (parse, then canonicalise) and the
   sealed Experience carrying it.
 - `putExperience(store, exp)`, `getExperience(store, ref)` — total round-trip through a loom
-  `ContentStore`; both report a `Finding` (`artifact-unhashable`, `artifact-missing`,
+  `ContentStore`. The stored bytes are canonical JSON (keys sorted at every depth, arrays in
+  order), so the `ref` is independent of the key order the experience arrived in — including from
+  a store that reorders keys, e.g. a JSONB column. `seal` returns the experience in that same key
+  order. `getExperience` reads any key order, so blobs written by earlier versions (insertion
+  order) still load; they just keep their old `ref`; both report a `Finding` (`artifact-unhashable`, `artifact-missing`,
   `artifact-invalid`, `artifact-tampered`) instead of throwing on bad input.
 - `EXPERIENCE_COMPOSED`, `ExperienceComposedPayload` — the userspace event name and
   `{ ref, parents, ops }` payload an app emits after `putExperience`, from inside a loom
