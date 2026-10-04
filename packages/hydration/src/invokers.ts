@@ -176,12 +176,14 @@ function isPlainJsonValue(value: unknown, seen: WeakSet<object> = new WeakSet())
 
 /**
  * One call per identical MCP step for this invoker's lifetime (a PASS): same tool, same resolved
- * arguments, same schema pin, same principal — the canonical JSON of `[principal, mcp.invoke's
- * input]`, so argument key order does not matter. A joiner is served straight from the shared
- * promise — it never calls `inner` itself, so it never passes through whatever per-call authorizer
- * `inner` enforces. That is safe ONLY because the principal is already part of the key: every
- * joiner sharing one entry was, by construction, asking under the exact principal the leader's own
- * (sole) call to `inner` was authorized for. Settled results stay (a step in a later wave is still
+ * arguments, same schema pin, same call options — the canonical JSON of `[principal, every other
+ * option except signal and label, mcp.invoke's input]`, so key order does not matter. A joiner is
+ * served straight from the shared promise — it never calls `inner` itself, so it never passes
+ * through whatever per-call authorizer `inner` enforces. That is safe ONLY because every
+ * authorization input is part of the key: the principal, and also the stamped execution identity
+ * (`as` — an authorizer may grant by workflow) and anything else in the options. Every joiner
+ * sharing one entry was, by construction, asking with the exact inputs the leader's own (sole)
+ * call to `inner` was authorized for; an option that is not plain JSON passes through, uncached. Settled results stay (a step in a later wave is still
  * served) and failures are shared. Other effects (a sandbox reshape) always run, uncached.
  *
  * Cancellation is ref-counted, not leader-owned: `inner` is called once, through an internal
@@ -273,13 +275,22 @@ export function memoInvoker(inner: TransientInvoker): TransientInvoker {
       const passThrough = (): Promise<TOut> =>
         callSafely(() => inner.invokeTransient<TIn, TOut>(toolId, input, opts));
       if (toolId !== MCP_INVOKE_TOOL_ID) return passThrough();
-      const principal = opts?.principal ?? null;
+      // Everything in `opts` except the two fields that cannot change the answer (`signal`,
+      // `label`) is part of the key: the principal, the stamped identity (`as`, which an
+      // authorizer may key grants on), the budget snapshot, and any option added later. Keying
+      // on the remainder rather than a list of known fields is what keeps a joiner from being
+      // served a result authorized for a different input this function has never heard of.
+      const { signal: _signal, label: _label, principal = null, ...rest } = opts ?? {};
       let key: string;
       try {
         const seen = new WeakSet<object>();
-        if (!isPlainJsonValue(principal, seen) || !isPlainJsonValue(input, seen))
+        if (
+          !isPlainJsonValue(principal, seen) ||
+          !isPlainJsonValue(rest, seen) ||
+          !isPlainJsonValue(input, seen)
+        )
           return passThrough();
-        key = canonicalJson([principal, input]);
+        key = canonicalJson([principal, rest, input]);
       } catch {
         return passThrough();
       }

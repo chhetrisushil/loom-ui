@@ -160,6 +160,60 @@ describe("memoInvoker", () => {
     expect(b).toMatchObject({ principal: { actor: "bob" } });
   });
 
+  it("two callers stamped as different executions never share one call (the identity is an authz input)", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => ({ as: opts?.as }));
+    const memo = memoInvoker(inner);
+    const principal = { actor: "alice" };
+    const [a, b] = await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), {
+        principal,
+        as: { workflowId: "granted-flow", executionId: "e1" },
+      }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), {
+        principal,
+        as: { workflowId: "denied-flow", executionId: "e2" },
+      }),
+    ]);
+    expect(inner.calls).toHaveLength(2);
+    expect(a).toMatchObject({ as: { workflowId: "granted-flow" } });
+    expect(b).toMatchObject({ as: { workflowId: "denied-flow" } });
+  });
+
+  it("the same stamped identity still shares one call; signal and label are not part of the key", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ n: 1 }));
+    const memo = memoInvoker(inner);
+    const as = { workflowId: "f", executionId: "e1" };
+    await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as, label: "one" }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), {
+        as: { executionId: "e1", workflowId: "f" },
+        label: "two",
+        signal: new AbortController().signal,
+      }),
+    ]);
+    expect(inner.calls).toHaveLength(1);
+  });
+
+  it("any other option is part of the key too, so an input this memo does not know about never shares", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ n: 1 }));
+    const memo = memoInvoker(inner);
+    const opts = (v: number) => ({ futureAuthzInput: v }) as unknown as TransientInvokeOptions;
+    await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), opts(1)),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), opts(2)),
+    ]);
+    expect(inner.calls).toHaveLength(2);
+  });
+
+  it("an option that is not plain JSON passes through, uncached", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ n: 1 }));
+    const memo = memoInvoker(inner);
+    const opts = { futureAuthzInput: () => 1 } as unknown as TransientInvokeOptions;
+    await memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), opts);
+    await memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), opts);
+    expect(inner.calls).toHaveLength(2);
+  });
+
   it("nested-object and array key order do not affect the memo key", async () => {
     const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ n: 1 }));
     const memo = memoInvoker(inner);
