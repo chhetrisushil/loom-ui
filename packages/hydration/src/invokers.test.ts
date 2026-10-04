@@ -179,19 +179,55 @@ describe("memoInvoker", () => {
     expect(b).toMatchObject({ as: { workflowId: "denied-flow" } });
   });
 
-  it("the same stamped identity still shares one call; signal and label are not part of the key", async () => {
+  it("the same stamped identity still shares one call; only the signal is not part of the key", async () => {
     const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ n: 1 }));
     const memo = memoInvoker(inner);
     const as = { workflowId: "f", executionId: "e1" };
     await Promise.all([
-      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as, label: "one" }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as, label: "l" }),
       memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), {
         as: { executionId: "e1", workflowId: "f" },
-        label: "two",
+        label: "l",
         signal: new AbortController().signal,
       }),
     ]);
     expect(inner.calls).toHaveLength(1);
+  });
+
+  it("different labels never share: without `as` the label names the transient execution an authorizer may grant by", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (_input, opts) => ({ label: opts?.label }));
+    const memo = memoInvoker(inner);
+    const [a, b] = await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { label: "allowed" }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { label: "denied" }),
+    ]);
+    expect(inner.calls).toHaveLength(2);
+    expect(a).toEqual({ label: "allowed" });
+    expect(b).toEqual({ label: "denied" });
+    // conservative even when `as` names the execution: still a different key
+    await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as: { workflowId: "f", executionId: "e" }, label: "x" }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as: { workflowId: "f", executionId: "e" }, label: "y" }),
+    ]);
+    expect(inner.calls).toHaveLength(4);
+  });
+
+  it("the same identity under different principals, or different budget snapshots, never shares", async () => {
+    const inner = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ n: 1 }));
+    const memo = memoInvoker(inner);
+    const as = { workflowId: "f", executionId: "e1" };
+    await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as, principal: { actor: "alice" } }),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), { as, principal: { actor: "bob" } }),
+    ]);
+    expect(inner.calls).toHaveLength(2);
+    const withSpend = (usd: number) =>
+      ({ as, resources: { costUsd: usd } }) as unknown as TransientInvokeOptions;
+    await Promise.all([
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), withSpend(0)),
+      memo.invokeTransient(MCP_INVOKE_TOOL_ID, mcp("t"), withSpend(100)),
+    ]);
+    expect(inner.calls).toHaveLength(4);
   });
 
   it("any other option is part of the key too, so an input this memo does not know about never shares", async () => {
