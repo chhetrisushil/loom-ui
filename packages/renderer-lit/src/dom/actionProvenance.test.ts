@@ -261,6 +261,23 @@ describe("action provenance", () => {
     expect(seen[1]?.viewedVersion?.versionHash).toBe("sha256:v2");
   });
 
+  it("P3: a paused animation frame (background tab) does not hold the old id forever", async () => {
+    const realRaf = (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+    (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = () => 0; // never fires
+    try {
+      const { host, handle, seen } = mountBp(bpWith("e@sha256:v1", approvalAt("h-ap")));
+      await tick();
+      handle.update(bpWith("e@sha256:v2", { ...approvalAt("h-ap"), title: "Deploy 2" } as never));
+      click(host);
+      expect(seen[0]?.viewedVersion?.versionHash).toBe("sha256:v1");
+      await new Promise((r) => setTimeout(r, 300));
+      click(host);
+      expect(seen[1]?.viewedVersion?.versionHash).toBe("sha256:v2");
+    } finally {
+      (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = realRaf;
+    }
+  });
+
   it("P2-a: a 3P widget calling onAction after dispose (or after a remount) is dropped", () => {
     let kept: ((a: WidgetAction) => void) | undefined;
     const reg = createLitRegistry();

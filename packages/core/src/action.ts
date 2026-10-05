@@ -17,9 +17,9 @@ export interface ViewedBinding {
   readonly state: string;
   /**
    * The binding's sequence the widget was last DELIVERED (what the user saw, not what the store
-   * holds now). Monotonic per STORE (every write to the hydration store advances it), not per
-   * binding — so compare it for EQUALITY with the current one to detect "the data moved"; a
-   * difference may also come from an unrelated binding's write, which errs on the safe side.
+   * holds now). It is this binding's own status seq, drawn from a store-wide monotonic counter: a
+   * write to ANOTHER handle does not change it. Compare it for EQUALITY with the current one to
+   * detect "the data moved".
    */
   readonly seq?: number;
 }
@@ -94,6 +94,12 @@ export interface CompileFingerprintInput {
   readonly restrictedHandles?: readonly string[];
   /** The locale `resolveLabel` renders in. */
   readonly locale?: string;
+  /**
+   * Any other compile input the host varies per viewer and wants covered (e.g. `surface`, the
+   * catalogue version, `restrictedLabel`, a title override, the hydration projection version).
+   * Order-insensitive; omitted = the fingerprint is exactly what it was without this field.
+   */
+  readonly extra?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -105,7 +111,14 @@ export function compileFingerprint(input: CompileFingerprintInput): string {
   let canon: string;
   try {
     const handles = [...(input.restrictedHandles ?? [])].map(String).sort();
-    canon = JSON.stringify([input.clearance ?? null, handles, input.locale ?? null]);
+    const parts: unknown[] = [input.clearance ?? null, handles, input.locale ?? null];
+    if (input.extra !== undefined)
+      parts.push(
+        Object.entries(input.extra)
+          .map(([k, v]): [string, string] => [String(k), String(v)])
+          .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
+      );
+    canon = JSON.stringify(parts);
   } catch {
     canon = "?";
   }

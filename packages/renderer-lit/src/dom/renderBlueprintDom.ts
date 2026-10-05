@@ -108,9 +108,25 @@ export function buildStateMap(
 }
 
 /** Run `fn` once the browser has had a frame to paint; a macrotask where there is no frame. */
+/** The longest a kept widget's stamp may lag the commit when animation frames are paused. */
+const FRAME_DEADLINE_MS = 250;
+
+/**
+ * Run `fn` once, after the next frame — or after {@link FRAME_DEADLINE_MS} if no frame comes (a
+ * background tab or a `display:none` iframe pauses `requestAnimationFrame`, and a sandbox can still
+ * post actions there; without the deadline its stamp would stay on the old view indefinitely).
+ */
 function afterFrame(fn: () => void): void {
-  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => fn());
-  else setTimeout(fn, 0);
+  let done = false;
+  const once = (): void => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(once);
+    setTimeout(once, FRAME_DEADLINE_MS);
+  } else setTimeout(once, 0);
 }
 
 export function renderBlueprintDom(
