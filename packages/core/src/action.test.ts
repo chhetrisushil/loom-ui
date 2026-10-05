@@ -123,3 +123,19 @@ describe("action provenance", () => {
     expect(f({ restrictedHandles: ["a"] })).not.toBe(f({ restrictedHandles: ["a", "b"] }));
   });
 });
+
+describe("compileFingerprint extra inputs (U5 re-review)", () => {
+  it("folds host-supplied extra inputs in, order-insensitively, without moving fingerprints that omit them", () => {
+    const base = { clearance: "internal", restrictedHandles: ["b", "a"], locale: "en" };
+    const plain = compileFingerprint(base);
+    expect(compileFingerprint({ ...base })).toBe(plain);
+    const withExtra = compileFingerprint({ ...base, extra: { surface: "web", catalog: "1.2.0" } });
+    expect(withExtra).not.toBe(plain);
+    expect(compileFingerprint({ ...base, extra: { catalog: "1.2.0", surface: "web" } })).toBe(
+      withExtra
+    );
+    expect(
+      compileFingerprint({ ...base, extra: { surface: "terminal", catalog: "1.2.0" } })
+    ).not.toBe(withExtra);
+  });
+});

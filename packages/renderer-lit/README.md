@@ -64,13 +64,19 @@ Every action a widget emits reaches `onAction` as loom's `WidgetAction` (`type`,
 `blueprintId` / `experienceId` / `versionHash` of the view the user was looking at; for a bound
 widget `binding: { state, seq }` — the status the widget was last DELIVERED (not a mount-time
 snapshot); and `compile`, the fingerprint you declared (`DomRenderOptions.compile`). The version
-hash identifies the composition; the binding `seq` is monotonic per STORE (every hydration write
-advances it), so compare it for equality: a difference means "the data moved". A handler typed
-`(a: WidgetAction) => void` keeps working.
+hash identifies the composition; the binding `seq` is that binding's own status sequence (drawn
+from a store-wide counter, so a write to ANOTHER handle never changes it): compare it for equality —
+a difference means "the data moved". A bound widget with no `status.path` stamps no binding, so its
+data movement cannot be detected. A handler typed `(a: WidgetAction) => void` keeps working.
+Without `DomRenderOptions.compile` neither the stamp nor `head()` carries a compile fingerprint and
+no compile check runs (a weaker mode: a redacted and an unredacted view of the same artifact look
+the same) — supply it whenever compile inputs vary per viewer, and use `compileFingerprint`'s
+`extra` for inputs beyond clearance / restricted handles / locale (surface, catalogue, labels).
 
 What the stamp names is what was COMMITTED AND PAINTED: a widget kept across `update(v3)` is stamped
 `v2` until the new tree has had a frame (a sandbox message queued, or a click made, before then is
-an action on the old view); a widget mounted by the pass is stamped `v3`. A rebound widget stamps
+an action on the old view) — or at most 250 ms if frames are paused (a background tab), so a stamp
+never lags the commit indefinitely; a widget mounted by the pass is stamped `v3`. A rebound widget stamps
 its new binding. Actions from a widget that has been disposed, torn down or remounted (a 3P
 renderer calling `onAction` late) are dropped.
 
