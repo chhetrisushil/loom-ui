@@ -262,3 +262,38 @@ describe("a catalogue whose Note declares no text prop", () => {
     expect(r.ok).toBe(true);
   });
 });
+
+describe("compile for a viewer: tool-level class at read time (U10 round 3)", () => {
+  it("a sibling on a classified TOOL is redacted even though its own node is unclassified", () => {
+    const onTool = (handle: string) => ({
+      ...spec(handle),
+      executionGraph: [
+        {
+          stepId: "s",
+          toolName: "hr.payroll",
+          toolVersion: "1",
+          toolSchemaHash: "x",
+          arguments: { a: handle },
+          dependsOn: [],
+          idempotent: true,
+        },
+      ],
+    });
+    const open = sem("open", "Metric", { binding: { handle: "h-open", priority: "P1" } });
+    const secretOne = sem("secretOne", "Metric", {
+      binding: { handle: "h-secret", priority: "P1", sensitivity: "secret" },
+    });
+    const e = {
+      ...build([open, secretOne]),
+      providers: { "h-open": onTool("h-open"), "h-secret": onTool("h-secret") },
+    };
+    const r = compile(e, { ...opts, viewer: { clearance: "internal" } });
+    const w = widgets(r).find((x) => x.id === "open") as Widget;
+    expect(w.kind).toBe("Note");
+    expect(w.binding).toBeUndefined();
+    expect(JSON.stringify(r.blueprint)).not.toContain("h-open");
+    // a cleared viewer still sees it
+    const ok = compile(e, { ...opts, viewer: { clearance: "secret" } });
+    expect((widgets(ok).find((x) => x.id === "open") as Widget).kind).not.toBe("Note");
+  });
+});

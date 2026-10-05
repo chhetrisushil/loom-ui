@@ -261,8 +261,13 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   (keyed by `toolName` alone, so a version bump does not shed it, and over-classifying two
   servers' same-named tools rather than under-classifying) records the strictest class any handle
   on that tool ever carried, and `remapProvider` gives every new handle on such a tool that class
-  (the planner adds a `sensitivity-inherited` warn). Handles already on the tool are not
-  reclassified retroactively. **Lowering** is `declassifyHandle { handle, to?, tool? }`, the only
+  (the planner adds a `sensitivity-inherited` warn). The class is applied at READ time to every
+  handle (`experienceHandles`, the one choke point `compile` and hydration share): a handle's
+  effective class is the strictest of its live nodes, its sticky `handleClasses` entry and the class
+  of every tool its provider calls, so a sibling bound BEFORE its tool was classified is gated as
+  soon as the tool is. Limits: a class follows MCP tool NAMES only — a provider whose execution
+  graph calls no tool takes no tool class (it fetches nothing), and a different name for the same
+  data (an alias, a renamed tool, a different server's tool name) is not caught. **Lowering** is `declassifyHandle { handle, to?, tool? }`, the only
   op that does it: it lowers the handle, and with `tool: true` also its tools; lowering the handle
   alone is undone the next time a handle is remapped onto a still-classified tool, and a
   still-classified sibling handle keeps its tool classified, so lower both when both are set.
@@ -271,7 +276,9 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   `{ allowDeclassify: true }`. It is an argument of the call, never a field of the op, so a
   producer that controls only op data (a planner's `PlanResult.ops`, a client request) cannot mint
   it; the host applies untrusted ops without it and passes it only for ops it authored, or when
-  replaying a log of its own already-authorised ops. A `prompt` op carrying a declassify is
+  replaying a log of its own already-authorised ops — passing it to `replay` over a log an
+  untrusted party supplied gives that log full declassify power; prefer `apply`/`applyAt` for a
+  single trusted op. A `prompt` op carrying a declassify is
   refused even with it, and the reference planner never emits one. **When a hash changes:** only
   the part of the class maps that live nodes do NOT already imply is hashed, so an experience
   whose classified nodes are all still present hashes exactly as it did before classes were

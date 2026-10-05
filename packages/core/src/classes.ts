@@ -60,11 +60,42 @@ function liveToolClasses(exp: Experience, live: ReadonlyMap<string, DataClass>) 
  * carried (`toolClasses`) and what handles on it carry now. `undefined` = a clean tool.
  */
 export function inheritedClass(exp: Experience, spec: ProviderSpec): DataClass | undefined {
-  const live = liveToolClasses(exp, liveClasses(exp.root));
+  return toolClassOf(exp, spec, liveToolClasses(exp, liveClasses(exp.root)));
+}
+
+function toolClassOf(
+  exp: Experience,
+  spec: ProviderSpec,
+  liveTools: ReadonlyMap<string, DataClass>
+): DataClass | undefined {
   let c: DataClass | undefined;
   for (const k of toolsOf(spec))
-    c = strictestClass(c, strictestClass(own(exp.toolClasses, k), live.get(k)));
+    c = strictestClass(c, strictestClass(own(exp.toolClasses, k), liveTools.get(k)));
   return c;
+}
+
+/**
+ * The EFFECTIVE class of every handle, read at once (fail-closed, tool-level): its own class
+ * (live nodes + sticky `handleClasses`) joined with the class of every tool its provider calls.
+ * A handle bound before its tool was classified is gated as soon as the tool is: classification is
+ * a READ-time property, so no op order can leave a sibling on a classified tool open.
+ */
+export function effectiveClasses(exp: Experience): Map<string, DataClass> {
+  const live = liveClasses(exp.root);
+  const liveTools = liveToolClasses(exp, live);
+  const out = new Map<string, DataClass>();
+  const handles = new Set<string>([...live.keys(), ...Object.keys(exp.providers)]);
+  if (exp.handleClasses !== undefined)
+    for (const h of Object.keys(exp.handleClasses)) handles.add(h);
+  for (const h of handles) {
+    const spec = own(exp.providers, h);
+    const c = strictestClass(
+      ownClass(exp, live, h),
+      spec === undefined ? undefined : toolClassOf(exp, spec, liveTools)
+    );
+    if (c !== undefined) out.set(h, c);
+  }
+  return out;
 }
 
 /**
