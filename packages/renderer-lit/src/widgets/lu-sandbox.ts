@@ -1,3 +1,4 @@
+import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import {
@@ -35,6 +36,12 @@ export class LuSandbox extends LitElement {
   @property({ attribute: false }) code = "";
   /** The data model handed to the component (re-posted on change). */
   @property({ attribute: false }) data: unknown = {};
+  /**
+   * The host's action path (set by `lu-sandbox-widget` to the stamped `onAction`). The frame is
+   * untrusted: its `action`/`context` are carried under `payload` of a `SANDBOX_ACTION`, and the
+   * renderer stamps provenance — nothing the frame sends can set it.
+   */
+  @property({ attribute: false }) onAction?: (a: WidgetAction) => void;
 
   @query("iframe") private frame!: HTMLIFrameElement;
   @state() private frameHeight = 0;
@@ -93,6 +100,12 @@ export class LuSandbox extends LitElement {
         this.frameHeight = clampFrameHeight(msg.height);
         break;
       case "action":
+        this.onAction?.({
+          type: "SANDBOX_ACTION",
+          widgetId: "",
+          payload: { action: msg.action, context: msg.context },
+        });
+        // DEPRECATED: no provenance on the DOM event; prefer `onAction`.
         this.dispatchEvent(
           new CustomEvent("a2ui-action", {
             detail: { action: msg.action, context: msg.context },

@@ -191,6 +191,14 @@ test holds it zod-free.
   order. There is no key below `"0"` or between
   `k` and `k + "0"`; salted keys never end in `"0"` for that reason.
 
+### Action provenance
+
+`StampedAction`, `ViewedVersion`, `viewedVersionOf(blueprintId, binding?)`, `parseBlueprintId`,
+`actionFreshness(action, head): "fresh" | "stale" | "unstamped" | "unverifiable"` and the
+fail-closed `isStaleAction(action, head)` — renderers stamp every action with the version the user
+saw; a host compares it with the current Experience (`{ experienceId, versionHash }`) before acting.
+Also on `@loom-ui/core/browser` (no zod). See the renderer-lit README for the flow.
+
 ## Examples
 
 Composing and compiling an Experience (illustrative — not a compiling snippet: it elides a real

@@ -7,6 +7,19 @@
 // the binding-path spelling. Everything else — the Experience, operations, the catalogue, the
 // compiler — is server/authoring-side and stays on the main entry.
 export {
+  actionFreshness,
+  isStaleAction,
+  parseBlueprintId,
+  viewedVersionOf,
+} from "./action";
+export type {
+  ActionFreshness,
+  CurrentHead,
+  StampedAction,
+  ViewedBinding,
+  ViewedVersion,
+} from "./action";
+export {
   DELTA_FORMAT,
   deltaDirection,
   effectiveFormat,

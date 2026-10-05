@@ -1,3 +1,4 @@
+import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type TemplateResult, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { type A2UIRender, type A2UIView, planView } from "../a2ui/plan";
@@ -25,6 +26,12 @@ export class LuA2UIView extends LitElement {
   @property({ attribute: false }) view!: A2UIView;
   /** The data model bindings resolve against. */
   @property({ attribute: false }) data: unknown = {};
+  /**
+   * The host's action path (set by `lu-a2ui-widget` to the stamped `onAction`). A Button routes
+   * here as `{ type: "A2UI_ACTION", payload: { action, context } }` — the model-authored `action`
+   * name and `context` live ONLY under `payload`; provenance is stamped by the renderer.
+   */
+  @property({ attribute: false }) onAction?: (a: WidgetAction) => void;
 
   constructor() {
     super();
@@ -88,6 +95,13 @@ export class LuA2UIView extends LitElement {
 
   private emitAction(action: string, context: unknown): void {
     if (!action) return;
+    this.onAction?.({
+      type: "A2UI_ACTION",
+      widgetId: "",
+      payload: { action, context: context ?? undefined },
+    });
+    // DEPRECATED: the DOM event carries NO provenance. Kept for hosts that still listen for it;
+    // wire `onAction` instead (it carries `viewedVersion`).
     this.dispatchEvent(
       new CustomEvent("a2ui-action", {
         detail: { action, context: context ?? undefined },
