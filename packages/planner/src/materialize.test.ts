@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ContainerNode,
   type MCPToolNode,
@@ -11,6 +12,7 @@ import {
 } from "@loom-ui/core";
 import { outputShapeHashOf } from "@loom-ui/hydration";
 import { tainted } from "@loom/classify";
+import { canonicalJson } from "@loom/core";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
 import {
@@ -1515,3 +1517,40 @@ describe("materialize — step references (multi-step providers)", () => {
     expect(replay(exp, ops).ok).toBe(true);
   });
 });
+
+describe("materialize — order salt", () => {
+  const keysOf = (ops: Operation[]) =>
+    ops.flatMap((o) => (o.type === "insertNode" ? [o.node.order] : []));
+  const sha = (v: unknown) => createHash("sha256").update(canonicalJson(v)).digest("hex");
+  it("two authors (distinct salts) appending into the same gap mint distinct keys", () => {
+    const a = materialize(draft, base(), planningCatalog, capabilitiesFixture, undefined, {
+      orderSalt: "planner-alice",
+    });
+    const b = materialize(draft, base(), planningCatalog, capabilitiesFixture, undefined, {
+      orderSalt: "planner-bob",
+    });
+    const [ka, kb] = [keysOf(a.ops), keysOf(b.ops)];
+    expect(ka).toHaveLength(3);
+    for (let i = 0; i < ka.length; i++) expect(ka[i]).not.toBe(kb[i]);
+    // still strictly increasing within one plan, and replayable
+    expect([...ka].sort()).toEqual(ka);
+    expect(replay(base(), a.ops).ok).toBe(true);
+  });
+  it("the default (no salt) is byte-identical to the pre-salt planner output", () => {
+    const { ops } = materialize(draft, base(), planningCatalog, capabilitiesFixture);
+    // Pinned from the build before the option existed (main).
+    expect(keysOf(ops)).toEqual(PINNED_DEFAULT_KEYS);
+    expect(sha(ops)).toBe(PINNED_DEFAULT_OPS_SHA);
+    const explicit = materialize(
+      draft,
+      base(),
+      planningCatalog,
+      capabilitiesFixture,
+      undefined,
+      {}
+    );
+    expect(sha(explicit.ops)).toBe(PINNED_DEFAULT_OPS_SHA);
+  });
+});
+const PINNED_DEFAULT_KEYS = ["V", "k", "s"];
+const PINNED_DEFAULT_OPS_SHA = "b935ac5378d21b9ff14bd2bc81c336ae7645f52ff73698809aba27cd79155649";

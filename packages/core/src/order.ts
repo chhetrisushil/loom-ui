@@ -9,10 +9,14 @@
 //     gap get the SAME key (that is the legacy behaviour, and it is kept so recorded ops and
 //     content addresses never move);
 //   - WITH a `salt` (an author / replica / session id) two authors with DIFFERENT salts get
-//     different keys for the same gap (up to a 62^3 hash collision of the salts, which is why
-//     sibling order is ALSO totalled by node id — see `compareSiblings` in node.ts);
+//     different keys for the same gap (up to a collision of the salt hashes: the suffix
+//     space is 62 * 62 * 61 ~ 235k, which is why the RENDER order is ALSO totalled by node id —
+//     see `compareSiblings` in node.ts). A salt identifies an AUTHOR, not an insert: the same
+//     author inserting twice into the same gap mints the same key — a tie, resolved at render;
 //   - keys are minted when an op is AUTHORED and travel inside the op (`insertNode.node.order`,
-//     `moveNode.newOrder`); `apply` and `replay` never mint one, so replay is deterministic.
+//     `moveNode.newOrder`); `apply` and `replay` never mint one, so replay is deterministic;
+//   - there is NO key below "0" and none strictly between k and k + "0", so a prepend before a
+//     "0..." key (or a split at such a gap) cannot be satisfied; salted keys never end in "0".
 
 const BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const RADIX = BASE.length; // 62
@@ -24,7 +28,7 @@ export interface OrderKeyOptions {
    * authors minting for the same gap do not collide. Any non-empty string; empty or absent = the
    * unsalted legacy key.
    */
-  readonly salt?: string;
+  readonly salt?: string | undefined;
 }
 
 /** FNV-1a over UTF-16 code units, rendered as {@link SALT_LENGTH} base-62 chars, last never "0". */

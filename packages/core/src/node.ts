@@ -255,25 +255,40 @@ export function nodeIds(root: ExperienceNode): string[] {
   return ids;
 }
 
+type Sibling = { order: string; id: string };
+
+/**
+ * LEGACY sibling order: by `order` key ONLY. Used with a STABLE sort, so tied keys keep their
+ * insertion order. This is the order every HASHED or FOLDED path uses (`experienceArtifact`,
+ * `apply`/`replay`): changing how ties resolve there would move the content address of every
+ * stored experience that has tied sibling keys.
+ */
+export function compareByOrder(x: Sibling, y: Sibling): number {
+  return x.order < y.order ? -1 : x.order > y.order ? 1 : 0;
+}
+
 /**
  * TOTAL sibling order: by `order` key, then by node id on a tie. Equal keys (legacy data, or a
- * salt collision) therefore never leave sibling order to insertion order or the engine's sort.
+ * salt collision) therefore never leave sibling order to insertion order. Use it ONLY where order
+ * must be total and nothing is hashed — the render / compile boundary.
  */
-export function compareSiblings(
-  x: { order: string; id: string },
-  y: { order: string; id: string }
-): number {
-  if (x.order !== y.order) return x.order < y.order ? -1 : 1;
+export function compareSiblings(x: Sibling, y: Sibling): number {
+  const byKey = compareByOrder(x, y);
+  if (byKey !== 0) return byKey;
   return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
 }
 
 /**
  * Structural copy (children re-sorted; `props` shallow-copied; `label`/`binding` shared) with
- * children sorted by `order` at every level. Never mutates its input.
+ * children sorted at every level — by `order` only (stable, legacy; the hash path) unless a
+ * `compare` is given (the render boundary passes {@link compareSiblings}). Never mutates its input.
  */
-export function normalize(node: ExperienceNode): ExperienceNode {
+export function normalize(
+  node: ExperienceNode,
+  compare: (x: Sibling, y: Sibling) => number = compareByOrder
+): ExperienceNode {
   if (!isContainer(node)) return { ...node, props: { ...node.props } };
-  const children = [...node.children].map(normalize).sort(compareSiblings);
+  const children = node.children.map((c) => normalize(c, compare)).sort(compare);
   return { ...node, children };
 }
 

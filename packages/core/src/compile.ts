@@ -29,6 +29,7 @@ import {
   GRID_COLUMNS,
   LocalizedText,
   MAX_TREE_DEPTH,
+  compareSiblings,
   normalize,
   placementOf,
   placementProblems,
@@ -124,7 +125,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   const catalogByKind = new Map(derived.catalog.entries.map((e) => [e.kind, e] as const));
 
   const layout = compileContainer(
-    normalize(exp.root) as ContainerNode,
+    normalize(exp.root, compareSiblings) as ContainerNode,
     opts,
     resolveLabel,
     catalogByKind,

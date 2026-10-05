@@ -362,7 +362,13 @@ export function materialize(
   base: Experience,
   catalog: SemanticCatalog,
   capabilities: readonly CapabilityRef[],
-  observed?: ReviseInput["observed"]
+  observed?: ReviseInput["observed"],
+  /**
+   * `orderSalt`: an AUTHOR id mixed into the order keys of the nodes this plan inserts, so two
+   * planners (authors) appending into the same gap mint different keys. Absent = the unsalted
+   * legacy key, so ops (and every hash over them) are byte-identical to before.
+   */
+  mint: { readonly orderSalt?: string } = {}
 ): { ops: Operation[]; findings: Finding[] } {
   const ops: Operation[] = [];
   const findings: Finding[] = [];
@@ -571,7 +577,7 @@ export function materialize(
       // is reserved for an EXISTING node whose binding changed (the revise diff, below).
       const node: SemanticNode = {
         id: n.id,
-        order: orderKeyAfterAll(siblings),
+        order: orderKeyAfterAll(siblings, { salt: mint.orderSalt }),
         kind: "semantic",
         type: entry.name,
         typeVersion: entry.version,
