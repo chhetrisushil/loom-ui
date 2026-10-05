@@ -5,7 +5,7 @@ import {
   isContainer,
   nodeIds,
 } from "@loom-ui/core";
-import { terminalSteps } from "@loom-ui/hydration";
+import { terminalSteps } from "@loom-ui/hydration/client";
 import type { CapabilityRef, ComposeInput, PlannerMessage, ReviseInput } from "./spi";
 
 export interface PreviousError {

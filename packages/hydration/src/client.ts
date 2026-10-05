@@ -23,6 +23,12 @@ export { HYDRATION_VALUES_PREFIX, handleOfPath } from "./path";
 export { DEFAULT_TIME_RANGE, checkParams } from "./params";
 export type { LoadParams } from "./params";
 export type { HandleLoadResult } from "./scheduler";
+export { stepReferences, terminalSteps, topoWaves } from "./plan";
+export { jsonPathSelect } from "./select";
+export type { ReshapeFailureKind, ReshapeResult } from "./select";
+export { outputShapeHashOf } from "./shape";
+export type { TransientInvoker } from "./invoker";
+export type { DriftRecord } from "./provider";
 export { SplitHydrationController } from "./split/client";
 export type {
   HandleInventory,

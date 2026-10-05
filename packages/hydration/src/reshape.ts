@@ -1,9 +1,9 @@
 import type { Finding, ProviderSpec } from "@loom-ui/core";
 import { TypedFailure } from "@loom/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { type SANDBOX_ERRORS, SANDBOX_TOOL_ID, shapeHash } from "@loom/plugin-sandbox";
+import { type SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
 import type { TransientInvoker } from "./invoker";
-import { resolvePath } from "./plan";
+import { type ReshapeFailureKind, type ReshapeResult, jsonPathSelect } from "./select";
 
 // ── Reshaping ─────────────────────────────────────────────────────────────────
 // `QuickJS`: a content-addressed script runs in loom's sandbox (the effect-local middleware,
@@ -12,35 +12,6 @@ import { resolvePath } from "./plan";
 // the scriptRef names a reshaper the HOST registered (`defineReshapers`); it runs in-process as
 // host code, trusted like the host, with no sandbox hop. Each engine has its own branch: an
 // engine this function does not know is never sent to the sandbox by default.
-
-/**
- * Why a reshaping failed, when the tool OUTPUT demonstrably caused it — the failures a re-authored
- * binding can repair. Typed from the failure's channel and payload, never from message text:
- *
- * - `script-error`: the sandbox reports the script threw on this input (a `TypedFailure` on loom's
- *   `scriptError` channel, `SANDBOX_ERRORS.scriptError`).
- * - `selects-nothing`: a JSONPath selects nothing from the output.
- * - `uncloneable-output`: the output holds a value `structuredClone` cannot copy (a function, say),
- *   so a Named reshaper is never handed it. Recorded WITHOUT a sample: such a value is not a data
- *   observation a planner can author against.
- * - `limit-cpu`, `limit-memory`, `limit-output`: a deterministic resource limit the script hit on
- *   this input. `limit-cpu` is measured against the host's instruction-count `interruptBudget`,
- *   not time — deterministic for a given budget, so LOWERING the budget surfaces as output drift.
- *
- * Anything else has no kind and is not drift. That includes a `wallClock` limit (host-load
- * dependent — on a loaded host a script can trip `wallClock` before `cpu`, and then no drift is
- * reported that time), a Named reshaper's own throw (host code: a host bug or its own I/O is not
- * proven output-caused, and must never get the host's reshaper replaced by a model-authored
- * binding), a missing script, an unregistered reshaper, an untyped throw (transport, worker pool,
- * integrity), an authorization or quota denial, and an abort.
- */
-export type ReshapeFailureKind =
-  | "script-error"
-  | "selects-nothing"
-  | "uncloneable-output"
-  | "limit-cpu"
-  | "limit-memory"
-  | "limit-output";
 
 /** A channel loom's sandbox declares (`SANDBOX_ERRORS`) — a rename there fails to compile here. */
 type SandboxChannel = keyof typeof SANDBOX_ERRORS;
@@ -53,15 +24,6 @@ type SandboxChannel = keyof typeof SANDBOX_ERRORS;
  */
 const SCRIPT_ERROR: SandboxChannel = "scriptError";
 const LIMIT_EXCEEDED: SandboxChannel = "limitExceeded";
-
-export type ReshapeResult =
-  | { ok: true; value: unknown }
-  | {
-      ok: false;
-      finding: Finding;
-      /** Set only when the output demonstrably caused the failure (see `ReshapeFailureKind`). */
-      failureKind?: ReshapeFailureKind;
-    };
 
 /** A sandbox `TypedFailure` → the output-caused kind it proves, if any. Channel + payload only. */
 function sandboxFailureKind(e: TypedFailure): ReshapeFailureKind | undefined {
@@ -172,22 +134,6 @@ export function safeStringify(v: unknown): string {
   }
 }
 
-export function jsonPathSelect(value: unknown, path: string): ReshapeResult {
-  if (path === "" || path === "$") return { ok: true, value };
-  const out = resolvePath(value, path);
-  if (out === undefined)
-    return {
-      ok: false,
-      failureKind: "selects-nothing",
-      finding: {
-        code: "reshape-failed",
-        severity: "error",
-        message: `JSONPath "${path}" selects nothing from the tool output`,
-      },
-    };
-  return { ok: true, value: out };
-}
-
 export async function reshape(
   reshaping: ProviderSpec["reshaping"],
   raw: unknown,
@@ -242,7 +188,6 @@ export async function reshape(
   }
 }
 
-/** The output-shape fingerprint. The planner pins `ProviderSpec.outputShapeHash` with THIS function. */
-export function outputShapeHashOf(value: unknown): string {
-  return shapeHash(value);
-}
+export { outputShapeHashOf } from "./shape";
+export { jsonPathSelect } from "./select";
+export type { ReshapeFailureKind, ReshapeResult } from "./select";

@@ -31,6 +31,11 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   imports the sandbox, MCP, `@loom/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
   the *built* client bundle to enforce this, and keeps it under a 64 KB size budget (about 34 KB
   minified today).
+  The client entry also carries the pure helpers other client-side packages need (`terminalSteps`,
+  `stepReferences`, `topoWaves`, `jsonPathSelect`, `outputShapeHashOf`, a client-safe mirror of the
+  sandbox's shape hash, parity-tested). `@loom-ui/planner`, `renderer-terminal`, `renderer-lit` and
+  `core` import ONLY `@loom-ui/hydration/client`; `clientConsumers.test.ts` fails if any of them
+  reaches the root entry, QuickJS or the MCP plugin, by source import or built module graph.
 - **The hydration projection.** Every handle publishes to one loom projection
   (`HYDRATION_PROJECTION_ID = "loom-ui.hydration"`, version `HYDRATION_PROJECTION_VERSION`) that a
   `HydrationStore` wraps; a compiled Blueprint's bindings read `values.<handle>` /
