@@ -21,7 +21,7 @@ const node = (id: string, handle: string, sensitivity?: "secret" | "internal"): 
 });
 const ins = (n: SemanticNode): Operation => ({ type: "insertNode", parentId: "root", node: n });
 const run = (ops: Operation[], from = base()) => {
-  const r = replay(from, ops);
+  const r = replay(from, ops, { allowDeclassify: true }); // the trusted caller
   if (!r.ok) throw new Error(r.finding.message);
   return r.value;
 };

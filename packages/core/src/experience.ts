@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { classResidue } from "./classes";
 import {
   type ContainerNode,
   ExperienceNode,
@@ -100,10 +101,20 @@ export const Experience = z.object({
    * class any node EVER bound it with, so removing (or rebinding away) every node that carried a
    * class does not declassify it. Folded in by `insertNode` / `removeNode` / `bindProvider`
    * (`strictest`, never lower); only the explicit `declassifyHandle` op lowers an entry, and no
-   * planner path emits it. Optional with no default and omitted from the hash when empty: an
-   * Experience that never classified a handle hashes the same as before this field existed.
+   * planner path emits it. Optional with no default; only the part the live nodes do not imply is
+   * hashed, so an Experience whose classified nodes are all still present hashes the same as before
+   * this field existed.
    */
   handleClasses: z.record(z.string(), Sensitivity).optional(),
+  /**
+   * The confidentiality class of each TOOL (by `toolName`), sticky like `handleClasses`: a handle id
+   * hashes its arguments and path, so a changed argument is a NEW handle, and without this the new
+   * handle would be born unclassified. Folded in by the provider and binding ops; a NEW handle on
+   * a tool that ever carried a class inherits the strictest one (`remapProvider`), with a
+   * `sensitivity-inherited` warn from the planner. Lowered only by `declassifyHandle { tool: true }`.
+   * Optional, and only the part live nodes do not imply is hashed (see `experienceArtifact`).
+   */
+  toolClasses: z.record(z.string(), Sensitivity).optional(),
   vocabularyFloor: VocabularyFloor,
   meta: z.object({ author: z.string(), createdAt: z.string(), sourceKind: z.string() }),
 });
@@ -126,8 +137,10 @@ export function experienceArtifact(exp: Experience): unknown {
     root: normalize(exp.root),
     providers: exp.providers,
     vocabularyFloor: exp.vocabularyFloor,
-    ...(exp.handleClasses !== undefined &&
-      Object.keys(exp.handleClasses).length > 0 && { handleClasses: exp.handleClasses }),
+    // Only the class residue beyond what live nodes imply: an experience whose classified nodes are
+    // all still present hashes exactly as it did before classes were stored. The hash changes only
+    // when a class outlives the node that carried it (removed or rebound) or is inherited by tool.
+    ...classResidue(exp),
   };
 }
 

@@ -19,7 +19,7 @@ import { limitInvoker, memoInvoker } from "../invokers";
 import { providerParams, relevantParams, snapshotParams } from "../params";
 import { isReservedHandle } from "../projection";
 import { type ExecuteOptions, executeProvider, outcomeResult } from "../provider";
-import { partitionByViewer, restrictedFinding } from "../restricted";
+import { partitionByViewer, restrictedFinding, snapshotViewer } from "../restricted";
 import { type HandleLoadResult, tooDeep } from "../scheduler";
 import type { HandleInventory, HandleLoadRequest, HandleRef } from "./client";
 import { errorMessage, refuse, reservedFinding } from "./shared";
@@ -69,7 +69,7 @@ export function handleInventory(
   if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
     findings.push(tooDeep(exp.experienceId, MAX_TREE_DEPTH));
   } else {
-    const split = partitionByViewer(experienceHandles(exp), opts.viewer);
+    const split = partitionByViewer(experienceHandles(exp), snapshotViewer(opts.viewer));
     findings.push(...split.advisory);
     for (const use of split.allowed) {
       if (isReservedHandle(use.handle)) {
@@ -477,7 +477,9 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     exec,
     bound: new Set(experienceHandles(exp).map((u) => u.handle)),
     restricted: new Set(
-      partitionByViewer(experienceHandles(exp), opts.viewer).restricted.map((u) => u.handle)
+      partitionByViewer(experienceHandles(exp), snapshotViewer(opts.viewer)).restricted.map(
+        (u) => u.handle
+      )
     ),
     kinds:
       outputKinds === undefined

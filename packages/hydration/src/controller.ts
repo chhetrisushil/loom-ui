@@ -24,7 +24,7 @@ import {
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type DriftRecord, type InputDriftMode, executeProvider, outcomeResult } from "./provider";
 import type { ReshaperRegistry } from "./reshape";
-import { partitionByViewer } from "./restricted";
+import { partitionByViewer, snapshotViewer } from "./restricted";
 import {
   type HandleLoadResult,
   HandleScheduler,
@@ -418,16 +418,5 @@ export class HydrationController {
       ...(this.opts.captureSample !== undefined && { captureSample: this.opts.captureSample }),
     });
     return { ...outcomeResult(outcome), drift: outcome.drift ?? [], findings: outcome.findings };
-  }
-}
-
-/** A copy of the viewer holding only a clearance read once; a throwing getter reads as none. */
-function snapshotViewer(viewer: Viewer | undefined): Viewer | undefined {
-  if (viewer === undefined) return undefined;
-  try {
-    const clearance = viewer.clearance;
-    return clearance === undefined ? {} : { clearance };
-  } catch {
-    return {};
   }
 }

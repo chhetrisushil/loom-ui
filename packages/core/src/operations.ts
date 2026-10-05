@@ -1,5 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { z } from "zod";
+import { inheritedClass, liveClasses, ownClass, toolsOf } from "./classes";
 import { type Experience, type Finding, ProviderSpec } from "./experience";
 import {
   type ContainerNode,
@@ -61,11 +62,14 @@ export type Operation =
       sensitivity?: DataClass;
     }
   /**
-   * The ONLY op that lowers a handle's class: sets it to `to`, or clears it, on the handle and on
-   * every node that binds it. Caller-only by construction: the planner never emits it and a
-   * `prompt` op carrying one is refused (`declassify-in-prompt`).
+   * The ONLY op that lowers a class: sets it to `to`, or clears it, on the handle and on every
+   * node that binds it. With `tool: true` it lowers the handle's TOOLS the same way; a handle's
+   * class is also held by its tool, so lowering a handle alone is undone by the next provider
+   * change on that tool — lower both when both are set. Caller-only: `apply`/`replay` refuse it
+   * unless the caller passes `{ allowDeclassify: true }` (`declassify-not-allowed`), the planner
+   * never emits it, and a `prompt` op carrying one is refused (`declassify-in-prompt`).
    */
-  | { type: "declassifyHandle"; handle: string; to?: DataClass }
+  | { type: "declassifyHandle"; handle: string; to?: DataClass; tool?: boolean }
   | { type: "remapProvider"; handle: string; spec: z.infer<typeof ProviderSpec> }
   | { type: "removeProvider"; handle: string }
   | { type: "prompt"; text: string; scopeNodeIds?: string[]; materialized: Operation[] };
@@ -110,6 +114,7 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       type: z.literal("declassifyHandle"),
       handle: z.string().min(1),
       to: Sensitivity.optional(),
+      tool: z.boolean().optional(),
     }),
     z.object({ type: z.literal("remapProvider"), handle: z.string().min(1), spec: ProviderSpec }),
     z.object({ type: z.literal("removeProvider"), handle: z.string().min(1) }),
@@ -185,7 +190,7 @@ function carriesDeclassify(ops: readonly Operation[]): boolean {
  */
 function next(
   base: Experience,
-  patch: Partial<Pick<Experience, "root" | "providers" | "handleClasses">>
+  patch: Partial<Pick<Experience, "root" | "providers" | "handleClasses" | "toolClasses">>
 ): Experience {
   return {
     ...base,
@@ -310,7 +315,54 @@ function place(n: ExperienceNode, op: SetPlacement): ExperienceNode {
   return { ...kept, ...set } as unknown as ExperienceNode;
 }
 
-export function apply(base: Experience, rawOp: Operation): OpResult<Experience> {
+/**
+ * Who is applying an op. `allowDeclassify` is the trust boundary for lowering a class: it is an
+ * argument of the CALL, never a field of the op, so a producer that only controls op data (a
+ * planner's `PlanResult.ops`, a client) cannot mint it. The host passes it only for ops it
+ * authored itself, or when replaying a log of its own already-authorised ops.
+ */
+export interface ApplyOptions {
+  readonly allowDeclassify?: boolean;
+}
+
+/** Fold the classes the current handles carry into their tools, so a later retirement keeps them. */
+function foldTools(exp: Experience): Experience {
+  const live = liveClasses(exp.root);
+  let tools = exp.toolClasses;
+  for (const [handle, spec] of Object.entries(exp.providers)) {
+    const c = ownClass(exp, live, handle);
+    if (c === undefined) continue;
+    for (const k of toolsOf(spec)) {
+      const had = tools !== undefined && Object.hasOwn(tools, k) ? tools[k] : undefined;
+      const merged = strictestClass(had, c);
+      if (merged === had || merged === undefined) continue;
+      tools = { ...tools, [k]: merged };
+    }
+  }
+  return tools === exp.toolClasses
+    ? exp
+    : { ...exp, ...(tools !== undefined && { toolClasses: tools }) };
+}
+
+const BEFORE_FOLD = new Set<string>(["removeProvider", "remapProvider", "bindProvider"]);
+const AFTER_FOLD = new Set<string>(["insertNode", "remapProvider", "bindProvider"]);
+
+export function apply(
+  base: Experience,
+  rawOp: Operation,
+  opts: ApplyOptions = {}
+): OpResult<Experience> {
+  // Tool classes are folded from the handles that exist BEFORE an op that can retire or re-point a
+  // provider, and from the ones that exist AFTER an op that can introduce a class or a provider.
+  const type = (rawOp as { type?: unknown } | null)?.type;
+  const pre = typeof type === "string" && BEFORE_FOLD.has(type) ? foldTools(base) : base;
+  const r = applyOp(pre, rawOp, opts);
+  return r.ok && typeof type === "string" && AFTER_FOLD.has(type)
+    ? { ok: true, value: foldTools(r.value) }
+    : r;
+}
+
+function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResult<Experience> {
   // Depth first, and before `Operation.safeParse`: zod's parse of `insertNode.node` is itself
   // recursive, so an over-deep subtree must be refused before the schema ever sees it.
   const baseDepth = treeDepth(base.root);
@@ -560,6 +612,11 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       };
     }
     case "declassifyHandle": {
+      if (opts.allowDeclassify !== true)
+        return refuse(
+          "declassify-not-allowed",
+          "declassifyHandle lowers a class and only a trusted caller may apply it (pass { allowDeclassify: true } for ops the host authored itself)"
+        );
       const root = rebuild(base.root, (n) => {
         if (n.kind !== "semantic" || n.binding?.handle !== op.handle) return n;
         const { sensitivity: _drop, ...rest } = n.binding;
@@ -568,16 +625,35 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       const { [op.handle]: _gone, ...others } = base.handleClasses ?? {};
       const kept = { ...others, ...(op.to !== undefined && { [op.handle]: op.to }) };
       const { handleClasses: _old, ...withoutMap } = base;
-      const nextBase: Experience =
+      let nextBase: Experience =
         Object.keys(kept).length > 0 ? { ...withoutMap, handleClasses: kept } : withoutMap;
+      const spec = Object.hasOwn(base.providers, op.handle) ? base.providers[op.handle] : undefined;
+      if (op.tool === true && spec !== undefined) {
+        const lowered = Object.fromEntries(
+          Object.entries(base.toolClasses ?? {}).filter(([k]) => !toolsOf(spec).includes(k))
+        );
+        for (const k of toolsOf(spec)) if (op.to !== undefined) lowered[k] = op.to;
+        const { toolClasses: _t, ...rest } = nextBase;
+        nextBase = Object.keys(lowered).length > 0 ? { ...rest, toolClasses: lowered } : rest;
+      }
       return { ok: true, value: next(nextBase, { root }) };
     }
     case "remapProvider": {
       if (op.spec.handle !== op.handle)
         return refuse("handle-mismatch", "remapProvider: spec.handle must equal handle");
+      // A handle on a tool that ever carried a class carries it too, however it got here: a
+      // changed argument or path is a different handle id, and must not shed the class.
+      const inherited = inheritedClass(base, op.spec);
+      const handleClasses = foldClasses(
+        base.handleClasses,
+        inherited === undefined ? [] : [[op.handle, inherited]]
+      );
       return {
         ok: true,
-        value: next(base, { providers: { ...base.providers, [op.handle]: op.spec } }),
+        value: next(base, {
+          providers: { ...base.providers, [op.handle]: op.spec },
+          ...(handleClasses !== undefined && { handleClasses }),
+        }),
       };
     }
     case "removeProvider": {
@@ -616,7 +692,7 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       // never having happened; `next` produces the unsealed child the other cases do.
       return op.materialized.length === 0
         ? { ok: true, value: next(base, {}) }
-        : replay(base, op.materialized);
+        : replay(base, op.materialized); // no authority forwarded: a declassify was refused above
   }
 }
 
@@ -634,7 +710,7 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
 export function applyAt(
   base: Experience,
   rawOp: Operation,
-  opts: { readonly baseVersion?: string } = {}
+  opts: { readonly baseVersion?: string } & ApplyOptions = {}
 ): OpResult<Experience> {
   const declared = opts.baseVersion;
   if (declared !== undefined && declared !== base.versionHash)
@@ -644,15 +720,19 @@ export function applyAt(
         ? `the op declares base version ${declared} but the artifact is unsealed, so it cannot be verified`
         : `the op was authored against ${declared} but the artifact is now ${base.versionHash}; re-read and re-author it`
     );
-  return apply(base, rawOp);
+  return apply(base, rawOp, opts);
 }
 
 /** Fold ops onto a genesis. Deterministic and zero model invocations, by construction. */
-export function replay(genesis: Experience, ops: readonly Operation[]): OpResult<Experience> {
+export function replay(
+  genesis: Experience,
+  ops: readonly Operation[],
+  opts: ApplyOptions = {}
+): OpResult<Experience> {
   let cur = genesis;
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i] as Operation;
-    const r = apply(cur, op);
+    const r = apply(cur, op, opts);
     if (!r.ok)
       return {
         ok: false,

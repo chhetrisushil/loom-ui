@@ -36,7 +36,8 @@ export {
   genesis,
 } from "./experience";
 export type { Finding, GenesisInput } from "./experience";
-export { Operation, Provenance, apply, applyAt, replay } from "./operations";
+export { type ApplyOptions, Operation, Provenance, apply, applyAt, replay } from "./operations";
+export { inheritedClass } from "./classes";
 export type { OpResult, RecordedOperation } from "./operations";
 export { experienceNodeIds, preservesNodes } from "./identity";
 export type { IdentityFinding, IdentityReport } from "./identity";
