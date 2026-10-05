@@ -19,6 +19,15 @@ export { defineReshapers, jsonPathSelect, outputShapeHashOf } from "./reshape";
 export type { ReshapeFailureKind, ReshapeResult, Reshaper, ReshaperRegistry } from "./reshape";
 export { DEFAULT_TIME_RANGE, checkParams } from "./params";
 export type { ArgumentHook, ArgumentHookContext, LoadParams } from "./params";
+export {
+  DEFAULT_DATA_PROVIDERS,
+  checkDataProviderConformance,
+  defineDataProviders,
+  mcpProvider,
+} from "./dataProvider";
+export type { DataProvider, DataProviderCall, DataProviderRegistry } from "./dataProvider";
+export { LOOM_EFFECT_KIND, TARGET_UNREGISTERED, loomEffectProvider } from "./loomEffectProvider";
+export type { LoomEffectProviderOptions } from "./loomEffectProvider";
 export { executeProvider } from "./provider";
 export { stepReferences, terminalSteps, topoWaves } from "./plan";
 export type { DriftRecord, ExecuteOptions, InputDriftMode, ProviderOutcome } from "./provider";

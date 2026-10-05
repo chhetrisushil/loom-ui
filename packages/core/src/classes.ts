@@ -1,6 +1,7 @@
 import type { DataClass } from "@loom/classify";
 import type { Experience, ProviderSpec } from "./experience";
 import { type ExperienceNode, walk } from "./node";
+import { toolKey } from "./steps";
 import { strictestClass } from "./viewer";
 
 // ── Where a class lives ───────────────────────────────────────────────────────
@@ -14,12 +15,13 @@ const own = <V>(rec: Readonly<Record<string, V>> | undefined, key: string): V | 
   rec !== undefined && Object.hasOwn(rec, key) ? rec[key] : undefined;
 
 /**
- * The tools a provider calls, by NAME. Name only, not name@version: a version bump (or an MCP
+ * The tools a provider calls, by `toolKey`: the NAME for an MCP step, `<kind>:<name>` for any other
+ * kind (a class sticks to a target within its kind). Name only, not name@version: a version bump (or an MCP
  * server re-listing the same tool) must not shed a class, and the spec carries no server
  * identity, so two servers' same-named tools share a class — which over-classifies, fail-closed.
  */
 export function toolsOf(spec: ProviderSpec): string[] {
-  return [...new Set(spec.executionGraph.map((s) => s.toolName))];
+  return [...new Set(spec.executionGraph.map(toolKey))];
 }
 
 /** The strictest class each handle's LIVE nodes carry. */

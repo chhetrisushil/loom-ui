@@ -14,6 +14,7 @@ import {
   nodeIds,
   orderKeyAfterAll,
   replay,
+  toolKey,
   walk,
 } from "@loom-ui/core";
 import {
@@ -196,7 +197,7 @@ export function buildProviderSpec(
     };
   }
   const handle = providerHandle(
-    cap.toolName,
+    toolKey(cap),
     cap.toolVersion,
     cap.toolSchemaHash,
     binding.arguments,
@@ -207,6 +208,7 @@ export function buildProviderSpec(
     ...(graph?.upstream ?? []),
     {
       stepId: graph?.stepId ?? "s1",
+      ...(cap.kind !== undefined && { kind: cap.kind }),
       toolName: cap.toolName,
       toolVersion: cap.toolVersion,
       toolSchemaHash: cap.toolSchemaHash,
@@ -278,8 +280,8 @@ function indexObserved(base: Experience, observed: ReviseInput["observed"]) {
     // The call INCLUDES the steps it runs behind: the same terminal behind different upstream
     // steps resolves its templated arguments against different outputs — a different call.
     const graph = callGraphOf((base.providers[handle] as ProviderSpec).executionGraph, step);
-    const call = graphCallKey(step.toolName, step.toolVersion, step.arguments, graph);
-    tools.add(`${step.toolName}@${step.toolVersion}`);
+    const call = graphCallKey(toolKey(step), step.toolVersion, step.arguments, graph);
+    tools.add(`${toolKey(step)}@${step.toolVersion}`);
     byHandle.set(handle, { call, sample });
     if (conflicted.has(call)) continue;
     if (byCall.has(call) && !sameJson(byCall.get(call), sample)) {
@@ -448,7 +450,7 @@ export function materialize(
     const graph =
       currentSpec !== undefined &&
       currentTerminal !== undefined &&
-      currentTerminal.toolName === cap.toolName &&
+      toolKey(currentTerminal) === toolKey(cap) &&
       currentTerminal.toolVersion === cap.toolVersion
         ? callGraphOf(currentSpec.executionGraph, {
             ...currentTerminal,
@@ -458,8 +460,8 @@ export function materialize(
     // Looked up with the node's OWN graph: an observation is only ever of the call this node
     // makes — never the same terminal behind someone else's upstream steps, nor a lone call
     // borrowing a multi-step observation (or the reverse).
-    const call = graphCallKey(cap.toolName, cap.toolVersion, n.binding.arguments, graph);
-    if (observations.tools.has(`${cap.toolName}@${cap.toolVersion}`)) {
+    const call = graphCallKey(toolKey(cap), cap.toolVersion, n.binding.arguments, graph);
+    if (observations.tools.has(`${toolKey(cap)}@${cap.toolVersion}`)) {
       const mine = current?.binding && observations.byHandle.get(current.binding.handle);
       if (mine && mine.call === call) pinFrom = { ...cap, sampleOutput: mine.sample };
       else if (observations.byCall.has(call))
@@ -467,7 +469,7 @@ export function materialize(
       else {
         // Nothing observed THIS call; the capability's sample is pre-drift or another call's.
         const handle = providerHandle(
-          cap.toolName,
+          toolKey(cap),
           cap.toolVersion,
           cap.toolSchemaHash,
           n.binding.arguments,
@@ -484,7 +486,7 @@ export function materialize(
             ...(n.binding.sensitivity !== undefined && { sensitivity: n.binding.sensitivity }),
           };
         }
-        const message = `node "${n.id}" re-binds ${cap.toolName}@${cap.toolVersion} with arguments no observed sample belongs to, while other calls of that tool were observed; it is not pinned from their output`;
+        const message = `node "${n.id}" re-binds ${toolKey(cap)}@${cap.toolVersion} with arguments no observed sample belongs to, while other calls of that tool were observed; it is not pinned from their output`;
         if (current?.binding !== undefined) {
           findings.push(warn("sample-not-observed", `${message} — its binding is kept`, n.id));
           return current.binding;

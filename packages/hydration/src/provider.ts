@@ -4,12 +4,17 @@ import {
   type ProviderSpec,
   checkKindValue,
   kindValueContract,
+  stepKind,
 } from "@loom-ui/core";
 import { type TaintedValue, tainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { type Shape, shapeOf } from "@loom/plugin-sandbox";
+import {
+  DEFAULT_DATA_PROVIDERS,
+  type DataProvider,
+  type DataProviderRegistry,
+} from "./dataProvider";
 import type { TransientInvoker } from "./invoker";
 import {
   type ArgumentHook,
@@ -58,6 +63,12 @@ export interface DriftRecord {
    */
   readonly stepId?: string;
   readonly toolName?: string;
+  /**
+   * Input drift only, and ONLY for a step whose kind is not MCP: that kind (`step.kind`), so a
+   * repairer knows `toolName` is a target of that kind, not an MCP tool. Absent for MCP — a record
+   * for an MCP step is exactly what it was before kinds existed.
+   */
+  readonly providerKind?: string;
   readonly expected: string;
   readonly observed: string;
   /**
@@ -136,6 +147,12 @@ export interface ExecuteOptions {
   readonly inputDrift?: InputDriftMode;
   /** Where `reshaping.engine: "Named"` looks its reshaper up. */
   readonly reshapers?: ReshaperRegistry;
+  /**
+   * The data-provider kinds this host composed (`defineDataProviders`). Default: MCP only, which is
+   * every step of an experience written before kinds existed. A step naming a kind not in here
+   * fails the whole provider as `provider-kind-unregistered`, before any step runs.
+   */
+  readonly providers?: DataProviderRegistry;
 }
 
 async function mapLimit<T, R>(
@@ -254,6 +271,21 @@ export async function executeProvider(
       findings,
     };
 
+  const registry = opts.providers ?? DEFAULT_DATA_PROVIDERS;
+  // Every kind is resolved BEFORE any step runs: an unregistered one must not leave the steps
+  // before it having called their targets for an answer nobody will publish.
+  const unregistered = [...new Set(steps.map(stepKind))].filter((k) => !registry.has(k)).sort();
+  if (unregistered.length > 0)
+    return {
+      ok: false,
+      finding: err(
+        "provider-kind-unregistered",
+        `provider "${spec.handle}" has steps of kind ${unregistered.map((k) => `"${k}"`).join(", ")}, which no data provider is registered for`
+      ),
+      drift,
+      findings,
+    };
+
   const now = opts.now ?? Date.now();
   const supplied: LoadParams = opts.params ?? {};
   const names = providerParams(spec);
@@ -309,10 +341,11 @@ export async function executeProvider(
         return;
       }
       for (const f of args.findings) warn(node.stepId, f);
-      const call = (expectedSchemaHash: string): Promise<unknown> =>
-        opts.invoker.invokeTransient(
-          MCP_INVOKE_TOOL_ID,
-          { toolName: node.toolName, args: args.args, expectedSchemaHash },
+      const dataProvider = registry.get(stepKind(node)) as DataProvider;
+      const call = (expectedPin: string): Promise<unknown> =>
+        dataProvider.invoke(
+          { stepId: node.stepId, target: node.toolName, args: args.args, expectedPin },
+          opts.invoker,
           invokeOpts
         );
       try {
@@ -328,6 +361,7 @@ export async function executeProvider(
           handle: spec.handle,
           stepId: node.stepId,
           toolName: node.toolName,
+          ...(node.kind !== undefined && { providerKind: node.kind }),
           expected: node.toolSchemaHash,
           observed: observed ?? "",
         });

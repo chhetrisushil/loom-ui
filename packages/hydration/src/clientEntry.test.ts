@@ -35,6 +35,8 @@ const FORBIDDEN_PACKAGES = new Set([
 const SERVER_FILES = new Set([
   "split/server.js",
   "provider.js",
+  "dataProvider.js",
+  "loomEffectProvider.js",
   "controller.js",
   "invokers.js",
   "reshape.js",
@@ -145,6 +147,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
   it("the root entry still exports everything it did", () => {
     const mod = load(resolve(DIST, "index.js")) as Record<string, unknown>;
     expect(Object.keys(mod).sort()).toEqual([
+      "DEFAULT_DATA_PROVIDERS",
       "DEFAULT_MAX_BATCH",
       "DEFAULT_MAX_CONCURRENT_CALLS",
       "DEFAULT_TIME_RANGE",
@@ -154,9 +157,13 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "HydrationCache",
       "HydrationController",
       "HydrationStore",
+      "LOOM_EFFECT_KIND",
       "SCHEMA_REPAIRED",
       "SplitHydrationController",
+      "TARGET_UNREGISTERED",
+      "checkDataProviderConformance",
       "checkParams",
+      "defineDataProviders",
       "defineReshapers",
       "executeProvider",
       "handleInventory",
@@ -164,6 +171,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "isReservedHandle",
       "jsonPathSelect",
       "limitInvoker",
+      "loomEffectProvider",
+      "mcpProvider",
       "memoInvoker",
       "outputShapeHashOf",
       "publicFinding",

@@ -47,6 +47,7 @@ export {
   Intent,
   MCPToolNode,
   ProviderSpec,
+  ProviderStep,
   VocabularyFloor,
   experienceArtifact,
   genesis,
@@ -54,6 +55,7 @@ export {
 export type { Finding, GenesisInput } from "./experience";
 export { type ApplyOptions, Operation, Provenance, apply, applyAt, replay } from "./operations";
 export { inheritedClass } from "./classes";
+export { DEFAULT_STEP_KIND, STEP_KIND_PATTERN, stepKind, toolKey } from "./steps";
 export type { OpResult, RecordedOperation } from "./operations";
 export { experienceNodeIds, preservesNodes } from "./identity";
 export type { IdentityFinding, IdentityReport } from "./identity";

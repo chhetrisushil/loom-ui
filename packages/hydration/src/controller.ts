@@ -12,6 +12,7 @@ import {
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
+import type { DataProviderRegistry } from "./dataProvider";
 import type { TransientInvoker } from "./invoker";
 import { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
 import {
@@ -105,6 +106,8 @@ export interface ControllerOptions {
   readonly argumentHook?: ArgumentHook;
   /** Where `Named` reshaping looks its reshapers up. */
   readonly reshapers?: ReshaperRegistry;
+  /** The data-provider kinds composed for this controller (default: MCP only). */
+  readonly providers?: DataProviderRegistry;
   /**
    * Attach the RAW terminal output to each output-drift record `onDrift` reports, as a tainted
    * sample (`DriftRecord.observedSample`) — what a planner repair pins against. Default false.
@@ -415,6 +418,7 @@ export class HydrationController {
       ...(this.opts.inputDrift !== undefined && { inputDrift: this.opts.inputDrift }),
       ...(this.opts.argumentHook !== undefined && { argumentHook: this.opts.argumentHook }),
       ...(this.opts.reshapers !== undefined && { reshapers: this.opts.reshapers }),
+      ...(this.opts.providers !== undefined && { providers: this.opts.providers }),
       ...(this.opts.captureSample !== undefined && { captureSample: this.opts.captureSample }),
     });
     return { ...outcomeResult(outcome), drift: outcome.drift ?? [], findings: outcome.findings };

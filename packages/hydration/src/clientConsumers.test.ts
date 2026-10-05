@@ -25,6 +25,8 @@ const SERVER_FILES = new Set(
     "index.js",
     "split/server.js",
     "provider.js",
+    "dataProvider.js",
+    "loomEffectProvider.js",
     "controller.js",
     "invokers.js",
     "reshape.js",

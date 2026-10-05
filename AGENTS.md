@@ -131,7 +131,12 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `outputCheck: "contract"`, whose kinds come from the bound nodes at execution time (`handleKinds`), never
   from the spec. A provider never reaches a browser: split hydration ships `handleInventory` and answers with
   `serveHandle`. Every new `ProviderSpec`/`MCPToolNode` field is optional with no default, so sealed
-  Experiences keep their hashes (`experience.test.ts` guards it).
+  Experiences keep their hashes (`experience.test.ts`, `providerKind.test.ts` guard it).
+  A step's data source is its optional `kind` (absent = MCP, no key, so no hash change): hydration runs it
+  through the `DataProvider` registered for the kind (`defineDataProviders`, composition-time; MCP first,
+  `loomEffectProvider` second). A kind MUST honour the pin (`schemaDrift` on a mismatch — see
+  `checkDataProviderConformance`); class stickiness keys on `toolKey(step)`. Server-only kind code stays
+  off `./client`.
 - A handle's status is `pending` | `ready` | `stale` | `error` | `empty` (`HandleState`). `empty` (loom
   ADR 0100) is ONLY a dependent step whose `{{steps.…}}` path indexes past the end of a real upstream
   array (`walkPath`'s `out-of-range`) — finding `upstream-empty`, a warn. Every other path miss stays
