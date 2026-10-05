@@ -179,6 +179,17 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 
 ## Notable behaviours and guarantees
 
+- **A classified handle is never fetched for a viewer who may not see it (fail-closed).** Pass
+  `viewer: { clearance }` (`@loom-ui/core`'s `Viewer`) to `HydrationController`, `handleInventory`
+  and `serveHandle`/`serveHandles`. A handle bound by any node whose `sensitivity` is above the
+  clearance is not planned, not cached and its provider is never invoked: the controller publishes
+  `error` with the fixed `restricted` finding (no handle, class or tool in it); `handleInventory`
+  omits it (the client learns neither name nor revision); the server answers a client that names it
+  anyway exactly as for a handle the experience does not bind (`unknown-handle`, no existence
+  oracle) and logs the full `restricted` finding to `onFinding`. No viewer = no clearance, with one
+  `viewer-not-supplied` warn when anything is classified; unclassified handles are unaffected. Use
+  the same viewer you pass to `compile`, and one store per viewer.
+
 - **`empty` is an answer, not an error.** A step whose `{{steps.<id>.output.<path>}}` indexes past
   the end of a real (but short) upstream array publishes `empty` — a warn (`upstream-empty`), no
   value, never cached, never drift, never repaired. Every other miss (a bad key, `null` mid-path, a

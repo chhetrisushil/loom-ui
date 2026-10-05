@@ -22,6 +22,7 @@ import {
   validateExperience,
 } from "./catalog";
 import type { Experience, Finding } from "./experience";
+import { experienceHandles } from "./handles";
 import { loomCatalogFor } from "./loomCatalog";
 import {
   type ContainerNode,
@@ -49,6 +50,7 @@ import {
 // blueprint derived.
 
 import { hydrationPath, hydrationStatusPath } from "./paths";
+import { type Viewer, mayView } from "./viewer";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,
@@ -77,9 +79,29 @@ export interface CompileOptions {
    * same fallback. `{ omit: true }` drops it: loom's Blueprint requires `title` as a string, so
    * this compiles to `""`, which every renderer treats as untitled (loom ADR 0098 D4;
    * `DomRenderOptions.title: "none"` on the web).
+   *
+   * An explicit override is the app's own text and is never gated. The DEFAULT is gated: when
+   * `intent.sensitivity` is set and `viewer` may not see that class, the default is `""`
+   * (untitled) instead of the objective.
    */
   readonly title?: LocalizedText | { readonly omit: true };
+  /**
+   * Who the Blueprint is for (see `viewer.ts`). A semantic node whose binding handle is classified
+   * above the viewer's clearance is REDACTED: it compiles to a static `Note` placeholder with the
+   * same id, the same grid cell and a neutral "restricted" text, carrying no binding, props,
+   * label, type or handle of the node it replaces. Layout and ids are unchanged, so a renderer
+   * keeps its place and a recompose still lines up. FAIL-CLOSED: absent = a viewer with no
+   * clearance, so every classified binding is redacted (and one `viewer-not-supplied` warn says
+   * so); unclassified nodes are never affected. Pass `{ clearance: "secret" }` for full access.
+   * The Experience itself is unredacted — compile for a restricted viewer on the trusted side.
+   */
+  readonly viewer?: Viewer;
+  /** The placeholder's title and text. Default: `{ key: "restricted", fallback: "Restricted" }`. */
+  readonly restrictedLabel?: LocalizedText;
 }
+
+/** The default `CompileOptions.restrictedLabel`. */
+export const RESTRICTED_LABEL: LocalizedText = { key: "restricted", fallback: "Restricted" };
 
 export interface CompileResult {
   readonly blueprint: Blueprint;
@@ -95,6 +117,12 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   // never of the (possibly-capped) tree.
   const resolveLabel = opts.resolveLabel ?? ((l: LocalizedText) => l.fallback);
   const title = resolveBlueprintTitle(exp, opts, resolveLabel);
+  if (title.leakAvoided)
+    findings.push({
+      code: "title-restricted",
+      severity: "warn",
+      message: "the default title (the intent objective) is classified above this viewer; omitted",
+    });
   // Before `validateExperience`, `normalize` or any recursive descent: a tree past the cap is a
   // finding with an empty blueprint, never a `RangeError` thrown out of a total function.
   const depth = treeDepth(exp.root);
@@ -102,7 +130,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     return {
       blueprint: blueprint$({
         id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
-        title,
+        title: title.text,
         layout: flex({ direction: "column", children: [] }),
         projections: [opts.hydrationProjectionId],
         projectionVersions: { [opts.hydrationProjectionId]: opts.hydrationProjectionVersion },
@@ -122,18 +150,60 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   findings.push(...semantic.findings);
   const derived = loomCatalogFor(opts.catalog, opts.surface, opts.baseCatalog);
   findings.push(...derived.findings);
-  const catalogByKind = new Map(derived.catalog.entries.map((e) => [e.kind, e] as const));
+  // The strictest class of each handle (a handle carries one value for every node that binds it),
+  // read once; a handle the viewer may not see is restricted for EVERY node that binds it.
+  const restrictedHandles = new Set<string>();
+  let classified = false;
+  for (const use of experienceHandles(exp)) {
+    if (use.sensitivity === undefined) continue;
+    classified = true;
+    if (!mayView(opts.viewer, use.sensitivity)) restrictedHandles.add(use.handle);
+  }
+  if (classified && opts.viewer === undefined)
+    findings.push({
+      code: "viewer-not-supplied",
+      severity: "warn",
+      message:
+        "the experience has classified bindings and no viewer was supplied: they are redacted (no viewer is the most restrictive viewer)",
+    });
+  const loomCatalog =
+    restrictedHandles.size > 0 && !derived.catalog.entries.some((e) => e.kind === PLACEHOLDER_KIND)
+      ? {
+          ...derived.catalog,
+          entries: [
+            ...derived.catalog.entries,
+            { kind: PLACEHOLDER_KIND, props: ["text"], binding: "none" as const },
+          ],
+        }
+      : derived.catalog;
+  const catalogByKind = new Map(loomCatalog.entries.map((e) => [e.kind, e] as const));
+  // The placeholder says "restricted" in the kind's `text` prop where the catalogue declares one
+  // (both renderers draw it); a catalogue whose `Note` declares no props still gets the title,
+  // and one warn that a host-chrome renderer will show an empty body.
+  const placeholderHasText = (catalogByKind.get(PLACEHOLDER_KIND)?.props ?? []).includes("text");
+  if (restrictedHandles.size > 0 && !placeholderHasText)
+    findings.push({
+      code: "restricted-placeholder-no-text",
+      severity: "warn",
+      message: `the catalogue's "${PLACEHOLDER_KIND}" declares no "text" prop: a restricted node is drawn with its title only`,
+    });
+  const redaction: Redaction = {
+    handles: restrictedHandles,
+    label: opts.restrictedLabel ?? RESTRICTED_LABEL,
+    text: placeholderHasText,
+  };
 
   const layout = compileContainer(
     normalize(exp.root, compareSiblings) as ContainerNode,
     opts,
     resolveLabel,
     catalogByKind,
-    findings
+    findings,
+    redaction
   );
   const blueprint = blueprint$({
     id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
-    title,
+    title: title.text,
     layout,
     projections: [opts.hydrationProjectionId],
     projectionVersions: { [opts.hydrationProjectionId]: opts.hydrationProjectionVersion },
@@ -141,7 +211,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
 
   // loom's own check, against the framework's catalogue: a compiler defect that emits an
   // off-catalogue kind or an undeclared prop is caught here rather than trusted.
-  const loomReport = validateBlueprint(blueprint, derived.catalog);
+  const loomReport = validateBlueprint(blueprint, loomCatalog);
   for (const f of loomReport.findings) {
     if (findings.some((g) => g.nodeId === f.nodeId && sameDefect(g.code, f.code))) continue; // already reported semantically
     findings.push({
@@ -152,12 +222,12 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     });
   }
   if (opts.registry) {
-    const cov = catalogCoverage(derived.catalog, opts.registry);
+    const cov = catalogCoverage(loomCatalog, opts.registry);
     for (const kind of cov.missing)
       findings.push({
         code: "renderer-coverage",
         severity: "error",
-        message: `no renderer registered for "${kind}" (declared by ${derived.catalog.id})`,
+        message: `no renderer registered for "${kind}" (declared by ${loomCatalog.id})`,
       });
   }
   return { blueprint, findings, ok: findings.every((f) => f.severity !== "error") };
@@ -166,16 +236,28 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
 /**
  * The compiled Blueprint's `title`: `opts.title` when given (a `LocalizedText`, resolved through
  * `resolveLabel` like any other label; `{ omit: true }`, which loom's `title: string` renders as
- * `""`), else `exp.intent.objective` — today's default, carried over unchanged.
+ * `""`), else `exp.intent.objective` — unless the intent is classified above the viewer, when it
+ * is `""` and `leakAvoided` says the default was withheld.
  */
 function resolveBlueprintTitle(
   exp: Experience,
   opts: CompileOptions,
   resolveLabel: (l: LocalizedText) => string
-): string {
-  if (opts.title === undefined) return exp.intent.objective;
-  if ("omit" in opts.title) return "";
-  return resolveLabel(opts.title);
+): { text: string; leakAvoided: boolean } {
+  if (opts.title !== undefined)
+    return { text: "omit" in opts.title ? "" : resolveLabel(opts.title), leakAvoided: false };
+  if (!mayView(opts.viewer, exp.intent.sensitivity)) return { text: "", leakAvoided: true };
+  return { text: exp.intent.objective, leakAvoided: false };
+}
+
+/** The static kind a redacted node compiles to: unbound, one `text` prop, drawn by every renderer. */
+const PLACEHOLDER_KIND = "Note";
+
+interface Redaction {
+  readonly handles: ReadonlySet<string>;
+  readonly label: LocalizedText;
+  /** Whether the placeholder kind's contract declares the `text` prop. */
+  readonly text: boolean;
 }
 
 /** loom's finding codes that restate one this compiler already reported for the same node. */
@@ -195,7 +277,8 @@ function compileContainer(
   opts: CompileOptions,
   resolveLabel: (l: LocalizedText) => string,
   catalogByKind: ReadonlyMap<string, CatalogEntry>,
-  findings: Finding[]
+  findings: Finding[],
+  redaction: Redaction
 ): Layout {
   // Each compiled child is paired with the SOURCE node it came from, because a grid needs the
   // child's own `span` and placement to wrap it in a `GridCell` and the compiled Widget/Layout no
@@ -203,7 +286,7 @@ function compileContainer(
   // skipped — its finding was already recorded.
   const compiled: Array<{ from: ExperienceNode; child: Widget | Layout }> = [];
   for (const child of node.children) {
-    const out = compileNode(child, opts, resolveLabel, catalogByKind, findings);
+    const out = compileNode(child, opts, resolveLabel, catalogByKind, findings, redaction);
     if (out !== undefined) compiled.push({ from: child, child: out });
   }
   // A container title resolves like a label: the locale is a compile input, and the blueprint
@@ -256,10 +339,29 @@ function compileNode(
   opts: CompileOptions,
   resolveLabel: (l: LocalizedText) => string,
   catalogByKind: ReadonlyMap<string, CatalogEntry>,
-  findings: Finding[]
+  findings: Finding[],
+  redaction: Redaction
 ): Widget | Layout | undefined {
   if (node.kind === "container")
-    return compileContainer(node, opts, resolveLabel, catalogByKind, findings);
+    return compileContainer(node, opts, resolveLabel, catalogByKind, findings, redaction);
+  // Before resolution, props, label or binding are read: a restricted node contributes NOTHING of
+  // its own to the output but its id (and, in the parent, its cell), so it can neither leak nor
+  // reflow its neighbours.
+  if (node.binding !== undefined && redaction.handles.has(node.binding.handle)) {
+    findings.push({
+      code: "node-restricted",
+      severity: "warn",
+      message: `node "${node.id}" is restricted for this viewer`,
+      nodeId: node.id,
+    });
+    const text = resolveLabel(redaction.label);
+    return customWidget$({
+      kind: PLACEHOLDER_KIND,
+      id: node.id,
+      title: text,
+      props: redaction.text ? { text } : {},
+    });
+  }
   const r = resolveSurface(opts.catalog, node.type, node.typeVersion, opts.surface, node.id);
   if (!r.ok) return undefined; // the finding was recorded by validateExperience; the node is omitted, never faked
   // A resolved kind with no entry in the derived catalogue (loomCatalogFor already reported

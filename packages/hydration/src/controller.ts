@@ -5,6 +5,7 @@ import {
   type ProviderSpec,
   type SemanticCatalog,
   type Surface,
+  type Viewer,
   experienceHandles,
   handleKinds,
   treeDepth,
@@ -23,6 +24,7 @@ import {
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type DriftRecord, type InputDriftMode, executeProvider, outcomeResult } from "./provider";
 import type { ReshaperRegistry } from "./reshape";
+import { partitionByViewer, restrictedFinding } from "./restricted";
 import {
   type HandleLoadResult,
   HandleScheduler,
@@ -78,6 +80,14 @@ export interface ControllerOptions {
     readonly chain?: TransientInvokeOptions["principal"];
   };
   readonly cache?: HydrationCache;
+  /**
+   * Who the data is for (`@loom-ui/core`'s `Viewer`). A handle bound by any node classified above
+   * the viewer's clearance is never loaded: its provider is not invoked, nothing is cached for it,
+   * and its status is `error` with the fixed `restricted` finding. FAIL-CLOSED: absent = a viewer
+   * with no clearance (and `load` reports one `viewer-not-supplied` warn if anything is
+   * classified); unclassified handles are unaffected. Pass `{ clearance: "secret" }` for full access.
+   */
+  readonly viewer?: Viewer;
   readonly onDrift?: (report: DriftReport) => void;
   /**
    * Where `outputCheck: "contract"` providers get their kinds: every bound node resolved on this
@@ -224,7 +234,11 @@ export class HydrationController {
     // one exactly as it was, not half-torn-down between two experiences.
     if (treeDepth(next.root) > MAX_TREE_DEPTH)
       return { findings: [tooDeep(next.experienceId, MAX_TREE_DEPTH)] };
-    this.sched.retain(new Set(experienceHandles(next).map((h) => h.handle)));
+    this.sched.retain(
+      new Set(
+        partitionByViewer(experienceHandles(next), this.opts.viewer).allowed.map((h) => h.handle)
+      )
+    );
     return this.bind(next);
   }
 
@@ -307,8 +321,15 @@ export class HydrationController {
     const { jobs, findings, missing } = this.plan(exp);
     for (const m of missing)
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
+    // Refused handles: their status says so (and nothing else), and no job exists for them.
+    const { restricted, advisory } = partitionByViewer(experienceHandles(exp), this.opts.viewer);
+    for (const r of restricted) {
+      if (isReservedHandle(r.handle)) continue;
+      this.opts.store.remove(r.handle);
+      this.opts.store.setStatus(r.handle, { state: "error", finding: restrictedFinding() });
+    }
     this.sched.schedule(jobs);
-    return { findings };
+    return { findings: [...findings, ...advisory] };
   }
 
   /** Pure: the jobs `exp` asks for right now, and the handles that cannot load (with why). */
@@ -320,7 +341,8 @@ export class HydrationController {
     const jobs: ProviderJob[] = [];
     const findings: Finding[] = [];
     const missing: Array<{ handle: string; finding: Finding }> = [];
-    for (const use of experienceHandles(exp)) {
+    // A restricted handle is not a job: it never reaches the scheduler, the cache or a provider.
+    for (const use of partitionByViewer(experienceHandles(exp), this.opts.viewer).allowed) {
       if (isReservedHandle(use.handle)) {
         findings.push({
           code: "invalid-handle",

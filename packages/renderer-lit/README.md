@@ -145,6 +145,11 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 
 ## Notable behaviours and guarantees
 
+- **A restricted node is a `Note`.** `compile({ viewer })` replaces a node the viewer may not see
+  with a static, unbound `Note` (title and `text` "Restricted"), which `lu-note` draws with
+  `role="note"` and that text as its accessible name — no value, label or binding of the original.
+  Redaction happens in `compile` and hydration, not here; a renderer draws what it is given.
+
 - **User-entered state is DOM state.** A renderer overwrites a bound input's value only when the
   value actually changed — never on an unrelated `patch` or re-render — so typed text, caret
   position and scroll survive a recompose the change did not cause.
