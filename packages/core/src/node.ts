@@ -26,8 +26,11 @@ export const GridLine = z.number().int().min(1);
 export const GridColumn = z.number().int().min(1).max(GRID_COLUMNS);
 /**
  * A binding's confidentiality class, `@loom/classify`'s vocabulary. DECLARED here and carried onto
- * the compiled `DataBinding.sensitivity` (loom ADR 0097 D4) so an audience check downstream reads
- * it off the artifact; nothing in this package enforces it.
+ * the compiled `DataBinding.sensitivity` (loom ADR 0097 D4). It IS enforced, at the two places
+ * viewer-visible output is produced: `compile` redacts a node the `Viewer` may not see
+ * (`CompileOptions.viewer`), and hydration refuses to fetch or serve its handle
+ * (`ControllerOptions.viewer`, `ServeOptions.viewer`). No viewer is the most restrictive viewer.
+ * See `viewer.ts`.
  */
 export const Sensitivity = z.enum(["secret", "sensitive", "internal"]);
 

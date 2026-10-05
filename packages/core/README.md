@@ -111,10 +111,14 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 
 - `compile(exp: Experience, opts: CompileOptions): CompileResult` — `{ blueprint, findings, ok }`
   for one surface. `opts.title` overrides the default `exp.intent.objective` (or
-  `{ omit: true }` to compile `title: ""`); `opts.registry` turns an unregistered kind into a
+  `{ omit: true }` to compile `title: ""`); `opts.viewer` is who the Blueprint is for (see
+  "Sensitivity is enforced" below) and `opts.restrictedLabel` the placeholder's text; `opts.registry` turns an unregistered kind into a
   `renderer-coverage` finding; `opts.resolveLabel` resolves a `LocalizedText` (default: its
   fallback text); `opts.baseCatalog` is the loom catalogue built-in kinds resolve against
   (default `builtinCatalog`).
+- `Viewer` (`{ clearance?: DataClass }`), `mayView(viewer, sensitivity)`, `strictestClass` — who may
+  see which `Sensitivity` class (`@loom/classify`'s `secret > sensitive > internal`).
+  `Intent.sensitivity` classifies the objective text itself.
 - `hydrationPath`, `hydrationStatusPath`, `HYDRATION_VALUES_PREFIX`, `HYDRATION_STATUS_PREFIX` —
   the compiled projection paths a binding's `values.<handle>` / `status.<handle>` live at.
   A browser client maps `values.<handle>` back with `handleOfPath` from
@@ -241,6 +245,23 @@ ctx.emit(EXPERIENCE_COMPOSED, {
 ```
 
 ## Notable behaviours and guarantees
+
+- **Sensitivity is enforced (at the output boundaries), fail-closed.** A binding's `sensitivity`
+  is checked against a `Viewer` in two places: `compile` (here) and hydration (`@loom-ui/hydration`).
+  A viewer's `clearance` is the strictest class it may see; one with none sees only unclassified
+  bindings, and **no viewer at all is a viewer with no clearance**. Unclassified bindings are never
+  affected, so an experience that classifies nothing compiles byte-identically. A handle carries
+  one value for every node that binds it, so its class is the strictest of those nodes' (and a
+  node is redacted when ITS handle is). In `compile` a restricted node becomes a static `Note`
+  placeholder: same id, same grid cell (no reflow), neutral "Restricted" title/text
+  (`restrictedLabel`), and no binding, props, label, type or handle of the node it replaced; a
+  `node-restricted` warn names only the node id. The classified-but-no-viewer case adds one
+  `viewer-not-supplied` warn. The default Blueprint title (`intent.objective`) is withheld (`""`,
+  `title-restricted` warn) when `intent.sensitivity` is above the viewer; an explicit `opts.title`
+  is the app's own text and always wins. The `Experience` artifact itself is NOT redacted —
+  compile for a restricted viewer on the trusted side and send only the Blueprint. Pass
+  `viewer: { clearance: "secret" }` for full access. Enforcement is the output boundary's job, not
+  a renderer's: a renderer draws what it is given.
 
 - **Deterministic replay.** The same base plus the same ops always fold to a byte-identical
   Experience; `apply`/`replay` report every rejection as a `Finding`, never a thrown exception, so

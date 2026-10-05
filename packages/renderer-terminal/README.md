@@ -94,6 +94,11 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
 
 ## Notable behaviours and guarantees
 
+- **A restricted node prints as a `Note`.** `compile({ viewer })` replaces a node the viewer may
+  not see with a static, unbound `Note`, printed as `Restricted: Restricted` (or `Restricted` under
+  `chrome: "host"`); it is bound to nothing, so a value the store happens to hold is never read.
+  Enforcement is `compile`'s and hydration's, not the renderer's.
+
 - **A declared channel with no value yet prints loom's loading row** (`⋯ <title>`); an `empty`
   status prints `○ <title>: <message>` — both are loom's own rows, not this package's.
 - **A value that fails its kind's contract shows a visible error**, never a silent blank: every

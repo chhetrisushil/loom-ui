@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { type ContainerNode, ExperienceNode, MAX_TREE_DEPTH, normalize, treeDepth } from "./node";
+import {
+  type ContainerNode,
+  ExperienceNode,
+  MAX_TREE_DEPTH,
+  Sensitivity,
+  normalize,
+  treeDepth,
+} from "./node";
 
 // ── The artifact ──────────────────────────────────────────────────────────────
 // `experienceId` names a LINEAGE; `versionHash` names one ARTIFACT — the sha256 of everything
@@ -12,6 +19,13 @@ export const Intent = z.object({
   objective: z.string().min(1),
   source: z.enum(["user", "agent", "application", "system"]),
   constraints: z.array(z.unknown()).optional(),
+  /**
+   * The confidentiality class of the objective text itself. The objective is the default
+   * Blueprint title, so a classified one is shown only to a viewer cleared for it (`compile`
+   * omits the title otherwise). Optional with no default: an Experience written before this
+   * field hashes the same.
+   */
+  sensitivity: Sensitivity.optional(),
 });
 export type Intent = z.infer<typeof Intent>;
 

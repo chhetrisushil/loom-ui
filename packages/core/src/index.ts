@@ -71,6 +71,7 @@ export type { DeltaDirection } from "./format";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,
+  RESTRICTED_LABEL,
   compile,
   hydrationPath,
   hydrationStatusPath,
@@ -96,3 +97,5 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./values";
+export { mayView, strictestClass } from "./viewer";
+export type { Viewer } from "./viewer";

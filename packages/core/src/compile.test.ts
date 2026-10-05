@@ -348,7 +348,7 @@ describe("compile", () => {
     expect(r.ok).toBe(false);
   });
   // IR 2.0.0 D4: a binding's confidentiality class is DECLARED on the artifact an audience check
-  // will later read. The compiler carries it through; it enforces nothing.
+  // will later read. The compiler carries it through for a viewer cleared for it (see viewer.test.ts).
   it("carries a binding's sensitivity class onto the compiled binding, and omits the key when absent", () => {
     const e = withRoot(exp, {
       ...root,
@@ -360,7 +360,7 @@ describe("compile", () => {
         sem("plainMetric", "Metric", { props: { unit: "ms" } }),
       ],
     });
-    const r = compile(e, opts);
+    const r = compile(e, { ...opts, viewer: { clearance: "sensitive" } });
     expect(r.findings).toEqual([]);
     const byId = new Map(widgetsOf(r.blueprint).map((w) => [w.id, w] as const));
     expect(byId.get("secretMetric")?.binding).toEqual({

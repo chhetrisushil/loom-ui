@@ -5,6 +5,7 @@ import {
   type ProviderSpec,
   type SemanticCatalog,
   type Surface,
+  type Viewer,
   experienceHandles,
   handleKinds,
   treeDepth,
@@ -18,6 +19,7 @@ import { limitInvoker, memoInvoker } from "../invokers";
 import { providerParams, relevantParams, snapshotParams } from "../params";
 import { isReservedHandle } from "../projection";
 import { type ExecuteOptions, executeProvider, outcomeResult } from "../provider";
+import { partitionByViewer, restrictedFinding } from "../restricted";
 import { type HandleLoadResult, tooDeep } from "../scheduler";
 import type { HandleInventory, HandleLoadRequest, HandleRef } from "./client";
 import { errorMessage, refuse, reservedFinding } from "./shared";
@@ -39,6 +41,13 @@ export type RevisionFn = (handle: string, fingerprint: string) => string;
 
 export interface InventoryOptions {
   readonly revisionOf: RevisionFn;
+  /**
+   * Who the inventory is for. A handle classified above the viewer's clearance is OMITTED — not
+   * listed with a placeholder, so the client learns neither its name nor its revision. FAIL-CLOSED:
+   * absent = no clearance (one `viewer-not-supplied` warn is returned if anything is classified).
+   * Pass the same viewer to `serveHandles`, which refuses such a handle even if a client names it.
+   */
+  readonly viewer?: Viewer;
 }
 
 /**
@@ -60,7 +69,9 @@ export function handleInventory(
   if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
     findings.push(tooDeep(exp.experienceId, MAX_TREE_DEPTH));
   } else {
-    for (const use of experienceHandles(exp)) {
+    const split = partitionByViewer(experienceHandles(exp), opts.viewer);
+    findings.push(...split.advisory);
+    for (const use of split.allowed) {
       if (isReservedHandle(use.handle)) {
         findings.push(reservedFinding(use.handle));
         continue;
@@ -123,6 +134,14 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
   /** Kinds for `"contract"` providers: the nodes binding the handle, resolved on this surface. */
   readonly outputKinds?: { readonly catalog: SemanticCatalog; readonly surface: Surface };
   readonly cache?: HydrationCache;
+  /**
+   * Who the answers are for. A handle bound by any node classified above the viewer's clearance is
+   * refused BEFORE its provider is looked up, cached or invoked, and the client is told exactly
+   * what it is told for a handle the experience does not bind (`unknown-handle`) — no oracle for
+   * which handles exist but are restricted; the full `restricted` finding goes to `onFinding`.
+   * FAIL-CLOSED: absent = no clearance. Unclassified handles are unaffected.
+   */
+  readonly viewer?: Viewer;
   /** Keys a `principal`-scoped cache entry; without it such a provider is never cached. */
   readonly principalId?: string;
   readonly onDrift?: (report: DriftReport) => void;
@@ -317,6 +336,8 @@ function publicResult(
 interface ServePass {
   readonly exec: ExecuteOptions;
   readonly bound: ReadonlySet<string>;
+  /** Handles bound by a node the viewer may not see: refused before anything else about them. */
+  readonly restricted: ReadonlySet<string>;
   readonly kinds: ReadonlyMap<string, readonly string[]>;
 }
 
@@ -447,6 +468,9 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
   return {
     exec,
     bound: new Set(experienceHandles(exp).map((u) => u.handle)),
+    restricted: new Set(
+      partitionByViewer(experienceHandles(exp), opts.viewer).restricted.map((u) => u.handle)
+    ),
     kinds:
       outputKinds === undefined
         ? new Map()
@@ -471,6 +495,12 @@ async function serveOne(
       );
     const handle = request.handle;
     if (isReservedHandle(handle)) return { state: "error", finding: reservedFinding(handle) };
+    // Checked first, before the provider is even looked up: a restricted handle is never loaded,
+    // cached or invoked, for any request, whatever its params.
+    if (pass.restricted.has(handle)) {
+      report(restrictedFinding());
+      return refuse("unknown-handle", `"${handle}" is not a handle this experience binds`);
+    }
     // Only what a node binds is served: a provider no node binds is not the client's to ask for.
     const spec =
       pass.bound.has(handle) && Object.hasOwn(exp.providers, handle)
