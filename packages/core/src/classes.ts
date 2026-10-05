@@ -35,6 +35,19 @@ export function liveClasses(root: ExperienceNode): Map<string, DataClass> {
   return out;
 }
 
+/** The strictest class each projection's LIVE nodes carry (by the node's own declared class). */
+export function liveProjectionClasses(root: ExperienceNode): Map<string, DataClass> {
+  const out = new Map<string, DataClass>();
+  walk(root, (n) => {
+    if (n.kind !== "semantic" || n.projection?.sensitivity === undefined) return;
+    out.set(
+      n.projection.id,
+      strictestClass(out.get(n.projection.id), n.projection.sensitivity) as DataClass
+    );
+  });
+  return out;
+}
+
 /** What `handle` is, from its own record: live nodes joined with the sticky per-handle class. */
 export function ownClass(
   exp: Experience,
@@ -106,6 +119,7 @@ export function effectiveClasses(exp: Experience): Map<string, DataClass> {
 export function classResidue(exp: Experience): {
   handleClasses?: Record<string, DataClass>;
   toolClasses?: Record<string, DataClass>;
+  projectionClasses?: Record<string, DataClass>;
 } {
   const live = liveClasses(exp.root);
   const handles: Record<string, DataClass> = {};
@@ -115,8 +129,13 @@ export function classResidue(exp: Experience): {
   const tools: Record<string, DataClass> = {};
   for (const [k, c] of Object.entries(exp.toolClasses ?? {}))
     if (strictestClass(implied.get(k), c) !== implied.get(k)) tools[k] = c;
+  const liveP = liveProjectionClasses(exp.root);
+  const projections: Record<string, DataClass> = {};
+  for (const [id, c] of Object.entries(exp.projectionClasses ?? {}))
+    if (strictestClass(liveP.get(id), c) !== liveP.get(id)) projections[id] = c;
   return {
     ...(Object.keys(handles).length > 0 && { handleClasses: handles }),
+    ...(Object.keys(projections).length > 0 && { projectionClasses: projections }),
     ...(Object.keys(tools).length > 0 && { toolClasses: tools }),
   };
 }

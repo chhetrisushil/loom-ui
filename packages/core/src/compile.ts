@@ -117,6 +117,12 @@ export interface CompileResult {
   readonly findings: readonly Finding[];
   /** True iff there are no error-severity findings. The blueprint is produced either way, so a caller can degrade. */
   readonly ok: boolean;
+  /**
+   * Ids of the projection-bound nodes compiled to the restricted placeholder for this viewer
+   * (restricted, unknown or version-drifted), sorted. Feed it to `compileFingerprint` so a change
+   * in what the viewer is denied moves the stamp.
+   */
+  readonly restrictedProjectionNodes: readonly string[];
 }
 
 export function compile(exp: Experience, opts: CompileOptions): CompileResult {
@@ -153,6 +159,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
         },
       ],
       ok: false,
+      restrictedProjectionNodes: [],
     };
   }
   const semantic = validateExperience(exp, opts.catalog, opts.surface);
@@ -251,7 +258,16 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
         message: `no renderer registered for "${kind}" (declared by ${loomCatalog.id})`,
       });
   }
-  return { blueprint, findings, ok: findings.every((f) => f.severity !== "error") };
+  const restrictedProjectionNodes = [...projectionPlan.verdicts.entries()]
+    .filter(([, v]) => v.kind === "restricted")
+    .map(([id]) => id)
+    .sort();
+  return {
+    blueprint,
+    findings,
+    ok: findings.every((f) => f.severity !== "error"),
+    restrictedProjectionNodes,
+  };
 }
 
 /**

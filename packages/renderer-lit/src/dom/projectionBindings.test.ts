@@ -10,7 +10,7 @@ import { InMemoryProjectionRuntime, type Projection } from "@loom/projection-run
 import { afterEach, describe, expect, it } from "vitest";
 import "../widgets/index";
 import { litRegistry } from "./litRegistry";
-import { renderBlueprintDom } from "./renderBlueprintDom";
+import { buildStateMap, renderBlueprintDom } from "./renderBlueprintDom";
 
 type EventEnvelope = Parameters<InMemoryProjectionRuntime["handleEvent"]>[0];
 
@@ -184,5 +184,44 @@ describe("renderBlueprintDom with a non-hydration projection", () => {
     publish(runtime, "pe", "a1", "secret-state", 1);
     expect(host.textContent).not.toContain("secret-state");
     expect(host.textContent).not.toContain("agent-status");
+  });
+
+  it("a projection redacted for the viewer is never read: absent from buildStateMap, no getState call", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    runtime.register(agentProjection);
+    const reads: string[] = [];
+    const spy = new Proxy(runtime, {
+      get(t, k, r) {
+        if (k === "getState")
+          return (id: string, ex: string) => {
+            reads.push(id);
+            return t.getState(id, ex);
+          };
+        const v = Reflect.get(t, k, r);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    // Two nodes on one projection, only ONE of which declares a class: both are redacted together.
+    const two = {
+      ...exp(node({ projection: { ...node().projection!, sensitivity: "secret" } })),
+    } as ReturnType<typeof exp>;
+    const second = node({ id: "ph2", order: "B" });
+    (two.root as ContainerNode).children = [...(two.root as ContainerNode).children, second];
+    const { blueprint } = compile(two, {
+      ...compileOpts,
+      projections: [{ id: "agent-status", version: "2" }], // the catalogue does not classify it
+      viewer: {},
+    });
+    expect(blueprint.projections).toEqual(["loom-ui.hydration"]);
+    expect(buildStateMap(blueprint, spy, "pe").stateMap.has("agent-status")).toBe(false);
+    const host = mount();
+    renderBlueprintDom(host, blueprint, {
+      projectionRuntime: spy,
+      executionId: "pe",
+      registry: litRegistry,
+    });
+    publish(runtime, "pe", "a1", "leaky-state", 1);
+    expect(reads).not.toContain("agent-status");
+    expect(host.textContent).not.toContain("leaky-state");
   });
 });
