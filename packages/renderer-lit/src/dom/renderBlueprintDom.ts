@@ -1,3 +1,4 @@
+import type { StampedAction } from "@loom-ui/core/browser";
 import {
   type Blueprint,
   type IdentityReport,
@@ -34,7 +35,11 @@ export interface DomRenderOptions {
    * `DomContainerRenderer` for who owns what. Fixed for the handle's lifetime, like `registry`.
    */
   readonly containers?: DomContainerRegistry;
-  readonly onAction?: (action: WidgetAction) => void;
+  /**
+   * Every action carries `viewedVersion` (see `StampedAction`); a handler typed `(a: WidgetAction)`
+   * still works. Compare it with the current head (`isStaleAction`) before acting.
+   */
+  readonly onAction?: (action: StampedAction & WidgetAction) => void;
   /**
    * Whether the Blueprint's own title renders as the root `<h1>`. Default `"heading"` — today's
    * behaviour, unchanged. `"none"` mounts no `<h1>` at all: an app with its own page header, or
@@ -100,6 +105,8 @@ export function renderBlueprintDom(
     executionId: opts.executionId,
     stateMap,
     ...(opts.onAction && { onAction: opts.onAction }),
+    // Read at action time: `state.current` advances on a successful `update`.
+    blueprintId: () => state.current.id,
   };
   const root: ContainerEntry = mountContainer(blueprint.layout, ctx, () => {});
 

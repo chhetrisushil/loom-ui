@@ -57,6 +57,35 @@ import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/rendere
 
 ## API
 
+### The action contract and the stale-view flow
+
+Every action a widget emits reaches `onAction` as loom's `WidgetAction` (`type`, `widgetId`,
+`payload`) plus an additive `viewedVersion` (`StampedAction`, from `@loom-ui/core`): the
+`blueprintId` / `experienceId` / `versionHash` the user was looking at, and for a bound widget the
+`binding: { state, seq }` they saw. The version hash identifies the composition; the binding `seq`
+(monotonic per binding) lets a host also notice that the DATA moved under an unchanged composition.
+A handler typed `(a: WidgetAction) => void` keeps working.
+
+Recommended host flow: before acting on an action, compare it with the CURRENT head and refuse a
+stale one, then pass `action.viewedVersion` into the flow's resume payload so the flow can check it
+too (loom-side binding of approvals to the viewed version is tracked as R13):
+
+```ts
+import { actionFreshness, isStaleAction } from "@loom-ui/core";
+if (isStaleAction(action, currentExperience)) return refuse(actionFreshness(action, currentExperience));
+```
+
+`isStaleAction` fails closed: anything but `fresh` (stale, unstamped, or an unsealed experience with
+no `versionHash` to compare) is refused. The stamp is written ONLY by the renderer, after the
+widget: `widgetId` and `viewedVersion` are overwritten, so A2UI trees and sandbox code (model- or
+author-produced, untrusted) cannot spoof provenance — their own `action`/`context` live nested under
+`payload`. The stamp is a staleness aid, not authentication of the actor.
+
+A2UI Buttons emit `{ type: "A2UI_ACTION", payload: { action, context } }` and sandbox frames emit
+`{ type: "SANDBOX_ACTION", payload: { action, context } }` through the same `onAction`. The DOM
+`a2ui-action` / `sandbox-error` events still fire but are **deprecated** for actions: they carry no
+provenance. `@loom-ui/renderer-terminal` is read-only (no interactive actions), so it emits none.
+
 ### The DOM adapter (`@loom-ui/renderer-lit/dom`)
 
 - `renderBlueprintDom(host, blueprint, opts: DomRenderOptions): DomRenderHandle` — mounts a

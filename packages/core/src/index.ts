@@ -1,3 +1,16 @@
+export {
+  actionFreshness,
+  isStaleAction,
+  parseBlueprintId,
+  viewedVersionOf,
+} from "./action";
+export type {
+  ActionFreshness,
+  CurrentHead,
+  StampedAction,
+  ViewedBinding,
+  ViewedVersion,
+} from "./action";
 export { orderKeyAfterAll, orderKeyBetween } from "./order";
 export type { OrderKeyOptions } from "./order";
 export {

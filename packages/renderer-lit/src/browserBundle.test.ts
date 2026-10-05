@@ -24,6 +24,7 @@ const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist"));
  * erased), which the zod assertion below double-checks.
  */
 const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
+  "action.js",
   "browser.js",
   "format.js",
   "kindValues.js",

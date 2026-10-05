@@ -27,7 +27,8 @@ export class LuA2UIWidget extends LuWidget {
 
   protected renderReady(): TemplateResult | typeof nothing {
     const view = (this.widget.props as { view?: A2UIView }).view;
-    return html`<lu-a2ui-view .view=${view} .data=${this.value}></lu-a2ui-view>`;
+    return html`<lu-a2ui-view .view=${view} .data=${this.value}
+      .onAction=${this.onAction}></lu-a2ui-view>`;
   }
 }
 
@@ -51,7 +52,7 @@ export class LuSandboxWidget extends LuWidget {
     const code = (this.widget.props as { code?: unknown }).code;
     if (typeof code !== "string" || code.length === 0)
       return html`<span class="missing">${t("no component code")}</span>`;
-    return html`<lu-sandbox .code=${code} .data=${this.value}></lu-sandbox>`;
+    return html`<lu-sandbox .code=${code} .data=${this.value} .onAction=${this.onAction}></lu-sandbox>`;
   }
 }
 

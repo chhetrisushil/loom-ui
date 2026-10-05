@@ -28,7 +28,7 @@ describe("@loom-ui/core/browser", () => {
     const graph = [...reach(resolve(DIST, "browser.js"))];
     expect(graph.filter((g) => g.startsWith("pkg:"))).toEqual([]);
     const files = graph.map((g) => g.replace(`${DIST}/`, "")).sort();
-    expect(files).toEqual(["browser.js", "format.js", "kindValues.js", "paths.js"]);
+    expect(files).toEqual(["action.js", "browser.js", "format.js", "kindValues.js", "paths.js"]);
   });
 
   it("is the same vocabulary as the main entry, not a fork", async () => {

@@ -1,3 +1,4 @@
+import { type StampedAction, viewedVersionOf } from "@loom-ui/core/browser";
 import {
   type BindingStatus,
   type Layout,
@@ -36,7 +37,37 @@ export interface MountContext {
   readonly executionId: string;
   /** Every projection the blueprint declares → its state; rebuilt by the caller before each mount/update. */
   readonly stateMap: Map<string, unknown>;
-  readonly onAction?: (action: WidgetAction) => void;
+  /**
+   * Called with every action a widget emits, AFTER the renderer has stamped it. Typed as
+   * `StampedAction` (a `WidgetAction` plus `viewedVersion`), which a plain `(a: WidgetAction)`
+   * handler accepts unchanged.
+   */
+  readonly onAction?: (action: StampedAction & WidgetAction) => void;
+  /** The id of the Blueprint currently on screen — read at ACTION time, so it follows `update`. */
+  readonly blueprintId?: () => string;
+}
+
+/**
+ * The ONE place an action gets its provenance. The renderer, not the widget, owns `widgetId` and
+ * `viewedVersion`: whatever a widget (or the A2UI tree / sandbox code behind it) put in those
+ * top-level fields is overwritten, and their own data stays nested under `payload`.
+ */
+export function stampAction(
+  action: WidgetAction,
+  widget: Widget,
+  ctx: MountContext
+): StampedAction & WidgetAction {
+  const status = resolveWidgetStatus(widget, ctx.stateMap);
+  const binding = status && {
+    state: status.state,
+    ...(status.seq !== undefined && { seq: status.seq }),
+  };
+  return {
+    type: action.type,
+    widgetId: widget.id,
+    ...(action.payload !== undefined && { payload: action.payload }),
+    viewedVersion: viewedVersionOf(ctx.blueprintId?.() ?? "", binding),
+  };
 }
 export interface WidgetEntry {
   readonly kind: "widget";
@@ -472,7 +503,9 @@ export function renderInto(
       widget,
       value,
       ...(status && { status }),
-      ...(ctx.onAction && { onAction: ctx.onAction }),
+      ...(ctx.onAction && {
+        onAction: (a: WidgetAction) => ctx.onAction?.(stampAction(a, widget, ctx)),
+      }),
     });
     if (!handle || typeof handle.update !== "function")
       throw new Error("renderer returned no handle");
