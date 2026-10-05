@@ -8,6 +8,7 @@ import {
   normalize,
   treeDepth,
 } from "./node";
+import { DEFAULT_STEP_KIND, MAX_STEP_KIND_LENGTH, STEP_KIND_PATTERN } from "./steps";
 
 // ── The artifact ──────────────────────────────────────────────────────────────
 // `experienceId` names a LINEAGE; `versionHash` names one ARTIFACT — the sha256 of everything
@@ -30,8 +31,28 @@ export const Intent = z.object({
 });
 export type Intent = z.infer<typeof Intent>;
 
+/**
+ * One step of a provider's graph. Named for the original (MCP) kind, but it is the step of EVERY
+ * kind (`ProviderStep` is the same schema under its general name): the fields mean, for a kind
+ * other than MCP, `toolName` = the target's id WITHIN that kind (a loom effect id, say) and
+ * `toolSchemaHash` = the kind's pin of the target's contract (the drift detector).
+ */
 export const MCPToolNode = z.object({
   stepId: z.string().min(1),
+  /**
+   * Which data provider runs this step (U3). Absent = MCP, the original kind: an MCP step has no
+   * `kind` key, so an Experience written before this field hashes the same. A kind is an id
+   * (`STEP_KIND_PATTERN`) the host registered a provider for; one nobody registered is a finding
+   * at load time, never a throw. `"mcp"` itself is refused: the default has exactly one spelling.
+   */
+  kind: z
+    .string()
+    .max(MAX_STEP_KIND_LENGTH)
+    .regex(STEP_KIND_PATTERN)
+    .refine((k) => k !== DEFAULT_STEP_KIND, {
+      message: `kind "${DEFAULT_STEP_KIND}" is the default; omit it`,
+    })
+    .optional(),
   toolName: z.string().min(1),
   toolVersion: z.string(),
   toolSchemaHash: z.string().min(1), // pinned at plan time — makes drift detectable
@@ -47,6 +68,9 @@ export const MCPToolNode = z.object({
   overridable: z.array(z.string().min(1)).optional(),
 });
 export type MCPToolNode = z.infer<typeof MCPToolNode>;
+/** The step of any kind — `MCPToolNode` under its general name. */
+export const ProviderStep = MCPToolNode;
+export type ProviderStep = MCPToolNode;
 
 export const ProviderSpec = z.object({
   handle: z.string().min(1),

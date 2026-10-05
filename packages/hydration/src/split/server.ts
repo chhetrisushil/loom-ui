@@ -183,6 +183,8 @@ const RESHAPE_CHANNELS: ReadonlySet<string> = new Set(Object.keys(SANDBOX_ERRORS
  */
 const FIXED_CODES: ReadonlySet<string> = new Set([
   "tool-failed",
+  "tool-targetUnregistered",
+  "provider-kind-unregistered",
   "reshape-failed",
   "reshape-unregistered",
   "schema-drift",
@@ -245,6 +247,10 @@ function publicText(code: string, severity: Finding["severity"]): string {
       return "the output is served unchecked";
     case "output-contract-unbound":
       return "the output cannot be checked";
+    case "provider-kind-unregistered":
+      return "no data provider is registered for this view's source";
+    case "tool-targetUnregistered":
+      return "this view's source is not available";
     case "reshape-unregistered":
       return "the output could not be reshaped: the named reshaper is not registered";
     case "upstream-empty":
@@ -472,6 +478,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     ...(opts.argumentHook !== undefined && { argumentHook: opts.argumentHook }),
     ...(opts.inputDrift !== undefined && { inputDrift: opts.inputDrift }),
     ...(opts.reshapers !== undefined && { reshapers: opts.reshapers }),
+    ...(opts.providers !== undefined && { providers: opts.providers }),
   };
   return {
     exec,

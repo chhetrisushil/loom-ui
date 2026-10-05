@@ -57,8 +57,11 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 - `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report }`; the report's
   `decisionId`, `attempts`, `firstAttemptValid`, `modelId` and summed `usage` are what a caller
   stamps provenance from.
-- `CapabilityRef` — one bindable tool: `handle`, `toolName`, `toolVersion`, `toolSchemaHash`,
-  optional `description`/`inputSchema`/`sampleOutput`.
+- `CapabilityRef` — one bindable tool: `handle`, optional `kind`, `toolName`, `toolVersion`,
+  `toolSchemaHash`, optional `description`/`inputSchema`/`sampleOutput`. `kind` (absent = MCP) names the
+  data-provider kind (see hydration): the planner treats it as opaque, copies it onto the step it emits,
+  and keys handles, decision ids and observation matching by it (`toolKey`), so the same name under two
+  kinds is two providers. An MCP capability keeps every id it had.
 - `DecideContext`, `DecideOptionsLike`, `DecideScope` — the structural subset of loom's
   `ExecutionContext.decide` a planner needs; any loom `ctx` satisfies it. The decider is
   `(scope: DecideScope) => T | Promise<T>`: `scope.invokeTransient(toolId, input, { signal? })`

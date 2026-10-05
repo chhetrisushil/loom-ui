@@ -128,6 +128,18 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 - `handleKinds(exp, catalog, surface): Map<string, string[]>` — the widget kinds each bound handle
   feeds on one surface; what an `outputCheck: "contract"` provider is checked against.
 
+### Data-provider kinds on a step
+
+`MCPToolNode` (also exported as `ProviderStep`) is the step of every kind. `kind` is optional: absent
+means MCP, so an MCP step has NO `kind` key and an Experience written before kinds existed hashes
+byte-identically (pinned in `providerKind.test.ts`). `kind: "mcp"` spelled out is refused — one meaning,
+one spelling, one content address. Any other kind is an id (`STEP_KIND_PATTERN`) the host registered a
+hydration `DataProvider` for; `toolName` is then the target's id within that kind and `toolSchemaHash`
+the kind's pin of its contract. `stepKind(step)` reads the kind (default `"mcp"`); `toolKey(step)` is
+the identity `toolClasses` keys on — bare `toolName` for MCP, `<kind>:<toolName>` otherwise. An
+older reader parsing a kinded step drops the unknown key and would run it as MCP (and fail on an
+unknown tool); upgrade readers before authoring non-MCP steps.
+
 ### Binding to any projection (not only hydration)
 
 A semantic node binds either a hydrated **handle** (`binding`) or **any other loom projection**

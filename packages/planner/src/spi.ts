@@ -17,9 +17,17 @@ import type { TaintedValue } from "@loom/classify";
 export interface CapabilityRef {
   /** The name the model cites; short, `[a-z][a-z0-9_-]*`. Distinct per capability. */
   readonly handle: string;
+  /**
+   * The data-provider kind that runs this capability (U3): absent = MCP, the original — then
+   * `toolName` is an MCP tool. Any other kind is an id the host registered a hydration
+   * `DataProvider` for, and `toolName` is the target's id WITHIN that kind (a loom effect id, say);
+   * `toolSchemaHash` is that kind's pin of the target's contract. The planner treats the kind as
+   * opaque: it copies it onto the step it emits and keys identity by it, nothing more.
+   */
+  readonly kind?: string;
   readonly toolName: string;
   readonly toolVersion: string;
-  /** Pinned into every MCPToolNode that uses this capability — makes input drift detectable. */
+  /** Pinned into every step (of any kind) that uses this capability — makes input drift detectable. */
   readonly toolSchemaHash: string;
   readonly description?: string;
   readonly inputSchema?: Record<string, unknown>;

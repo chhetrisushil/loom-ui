@@ -1,4 +1,10 @@
-import { type Experience, type Finding, type MCPToolNode, experienceHandles } from "@loom-ui/core";
+import {
+  type Experience,
+  type Finding,
+  type MCPToolNode,
+  experienceHandles,
+  toolKey,
+} from "@loom-ui/core";
 import {
   type DriftRecord,
   type ReshapeFailureKind,
@@ -191,20 +197,20 @@ export function driftCapabilities(
     const graph = exp.providers[d.handle]?.executionGraph;
     const step = graph && driftedStep(graph, d);
     if (!step) continue;
-    const tool = `${step.toolName}@${step.toolVersion}`;
+    const tool = `${toolKey(step)}@${step.toolVersion}`;
     if (d.observedSample === undefined) {
       unsampled.add(tool);
       continue;
     }
     const perStep = byTool.get(tool) ?? new Map<string, unknown>();
     perStep.set(
-      stepKey(step.toolName, step.toolVersion, step.arguments),
+      stepKey(toolKey(step), step.toolVersion, step.arguments),
       unwrapTainted(d.observedSample)
     );
     byTool.set(tool, perStep);
   }
   return capabilities.map((c) => {
-    const tool = `${c.toolName}@${c.toolVersion}`;
+    const tool = `${toolKey(c)}@${c.toolVersion}`;
     const perStep = byTool.get(tool);
     if (perStep === undefined || perStep.size === 0 || unsampled.has(tool)) return c;
     const samples = [...perStep.values()];
@@ -228,8 +234,8 @@ export function unsampledDrift(exp: Experience, drift: readonly DriftRecord[]): 
     const graph = exp.providers[d.handle]?.executionGraph;
     const step = d.kind === "output" && graph ? driftedStep(graph, d) : undefined;
     if (step && d.observedSample !== undefined) {
-      observedTools.add(`${step.toolName}@${step.toolVersion}`);
-      observedCalls.add(stepKey(step.toolName, step.toolVersion, step.arguments));
+      observedTools.add(`${toolKey(step)}@${step.toolVersion}`);
+      observedCalls.add(stepKey(toolKey(step), step.toolVersion, step.arguments));
     }
     return step;
   });
@@ -237,9 +243,9 @@ export function unsampledDrift(exp: Experience, drift: readonly DriftRecord[]): 
   drift.forEach((d, i) => {
     const step = steps[i];
     if (step === undefined || d.observedSample !== undefined) return;
-    const tool = `${step.toolName}@${step.toolVersion}`;
+    const tool = `${toolKey(step)}@${step.toolVersion}`;
     if (!observedTools.has(tool)) return;
-    if (observedCalls.has(stepKey(step.toolName, step.toolVersion, step.arguments))) return;
+    if (observedCalls.has(stepKey(toolKey(step), step.toolVersion, step.arguments))) return;
     findings.push({
       code: "drift-sample-missing",
       severity: "warn",

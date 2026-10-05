@@ -19,6 +19,8 @@ import type { CapabilityRef, ComposeInput, ReviseInput } from "./spi";
  */
 const capabilityKey = (c: CapabilityRef) => ({
   handle: c.handle,
+  // Only a non-MCP kind adds a key: a capability with none keeps the decision id it always had.
+  ...(c.kind !== undefined && { kind: c.kind }),
   toolName: c.toolName,
   toolVersion: c.toolVersion,
   toolSchemaHash: c.toolSchemaHash,

@@ -4,6 +4,7 @@ import {
   findEntry,
   isContainer,
   nodeIds,
+  toolKey,
 } from "@loom-ui/core";
 import { terminalSteps } from "@loom-ui/hydration/client";
 import type { CapabilityRef, ComposeInput, PlannerMessage, ReviseInput } from "./spi";
@@ -85,7 +86,7 @@ export function describeCapabilities(caps: readonly CapabilityRef[]): string {
   return caps
     .map((c) => {
       const bindable = c.sampleOutput === undefined ? "bindable: no (no sample)" : "bindable: yes";
-      return `- ${c.handle} → ${c.toolName}@${c.toolVersion} (schema ${c.toolSchemaHash}); ${bindable}`;
+      return `- ${c.handle} → ${toolKey(c)}@${c.toolVersion} (schema ${c.toolSchemaHash}); ${bindable}`;
     })
     .join("\n");
 }
@@ -176,7 +177,7 @@ export function describeExperience(
     const terminals = spec ? terminalSteps(spec.executionGraph) : [];
     const step = terminals.length === 1 ? terminals[0] : spec?.executionGraph[0];
     const offered = step
-      ? capabilities.find((c) => c.toolName === step.toolName && c.toolVersion === step.toolVersion)
+      ? capabilities.find((c) => toolKey(c) === toolKey(step) && c.toolVersion === step.toolVersion)
       : undefined;
     nodes.push({
       id: n.id,
@@ -190,7 +191,7 @@ export function describeExperience(
             binding: {
               capability: offered
                 ? offered.handle
-                : `(not offered) ${step.toolName}@${step.toolVersion}`,
+                : `(not offered) ${toolKey(step)}@${step.toolVersion}`,
               arguments: step.arguments,
               ...(spec.reshaping.engine === "JSONPath"
                 ? { path: spec.reshaping.scriptRef }

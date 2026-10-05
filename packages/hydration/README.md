@@ -72,7 +72,7 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 - `HydrationController` — in-process controller. Constructor takes `ControllerOptions`
   (`invoker`, `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`,
   `maxConcurrentCalls?`, `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`,
-  `inputDrift?`, `argumentHook?`, `reshapers?`, `captureSample?`). Methods: `load(exp)`,
+  `inputDrift?`, `argumentHook?`, `reshapers?`, `providers?`, `captureSample?`). Methods: `load(exp)`,
   `recompose(next)`, `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`,
   `inFlight()`, `dispose()` — each returns `{ findings: Finding[] }` where relevant.
 - `executeProvider` — runs one `ProviderSpec`'s execution graph and reshaping; what both
@@ -100,6 +100,47 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   references, find its terminal step(s), and compute its topological waves.
 - `DEFAULT_TIME_RANGE`, `checkParams` — the default `{ from: "$now-24h", to: "$now" }` params, and
   a params validity check.
+
+### The data plane: data-provider kinds (server / Node only)
+
+A provider step used to be an MCP tool call and nothing else. A step now names a **kind**
+(`step.kind`; absent = `mcp`, the original) and hydration runs it through the `DataProvider`
+registered for that kind. A loom app whose data lives in a loom effect (a `tool$`, a read-model
+query, an A2A call) binds it directly, without wrapping it as an MCP server.
+
+- `DataProvider` — `{ kind, invoke(call, invoker, opts) }`. `call` is `{ stepId, target, args,
+  expectedPin }`: `target` is the step's `toolName` (its id WITHIN the kind), `args` the prepared
+  arguments (params, time tokens, templates, hook already applied), `expectedPin` the step's
+  `toolSchemaHash`. `invoke` runs the target THROUGH the transient `invoker` it is handed with
+  `opts` (signal, principal, label) — so the invoker's authoriser, budget and per-principal
+  identity stay in force, the read path stays log-free, and a kind never sees the runtime.
+- **The pin is the contract.** `invoke` MUST compare `expectedPin` with the target's current pin and
+  throw `TypedFailure("schemaDrift", { observedHash })` BEFORE running the target. That is what makes
+  drift a `DriftRecord` (`kind: "input"`, `providerKind` set for a non-MCP kind), what
+  `remapOperation` repairs, and what `inputDrift: "report-and-proceed"` retries on. A kind that cannot
+  say what its target's contract is must not be registered: there is no unpinned kind.
+  `checkDataProviderConformance(provider, { target, pin, invoker })` returns the violations
+  (empty = conformant); run it in a kind's own tests.
+- `defineDataProviders(providers)` → `DataProviderRegistry` (`has`/`get`/`kinds`) — composition-time
+  only, no discovery, no later registration; a malformed or duplicate kind id throws. Pass it as
+  `providers` to `HydrationController`, `serveHandle(s)` or `executeProvider`. Default
+  (`DEFAULT_DATA_PROVIDERS`): MCP only, byte-identical to before kinds.
+- `mcpProvider` — the first registered kind: `mcp.invoke` with `expectedPin` as
+  `expectedSchemaHash` (the plugin verifies it per call).
+- `loomEffectProvider({ effects: { "<effect id>": "<pin>" } })` — the second kind, `loom-effect`
+  (`LOOM_EFFECT_KIND`): a step whose `toolName` is a registered loom effect id, invoked via
+  `invokeTransient`. `effects` is an ALLOWLIST with each effect's current pin (your fingerprint of
+  its input contract — whatever changes exactly when callers must re-author): a stored or
+  planner-authored step can name any string, so "any registered effect" is a host decision. An
+  unlisted target fails `tool-targetUnregistered` and nothing runs; `mcp.invoke` and the sandbox
+  effect cannot be listed (they have their own planes). An effect call is not memoised within a
+  pass (`memoInvoker` coalesces `mcp.invoke` only).
+- An unregistered kind fails the WHOLE provider as `provider-kind-unregistered` before any step runs
+  (never a throw, no partial calls); served publicly as a fixed text naming neither kind nor target.
+
+A step's class identity is `toolKey(step)` (core): the bare `toolName` for MCP — every class recorded
+before kinds still applies — and `<kind>:<toolName>` otherwise, so `toolClasses` stickiness and
+`effectiveClasses` cover every kind and a loom effect never shares a class with a same-named MCP tool.
 
 ### Split hydration — server half
 

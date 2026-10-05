@@ -20,6 +20,8 @@ import {
   specFingerprint,
 } from "./cache";
 import { type DriftReport, HydrationController } from "./controller";
+import { defineDataProviders, mcpProvider } from "./dataProvider";
+import { loomEffectProvider } from "./loomEffectProvider";
 import { HydrationStore } from "./projection";
 import type { HandleLoadResult } from "./scheduler";
 import {
@@ -250,6 +252,40 @@ describe("handleInventory", () => {
     expect(inventory.handles.find((r) => r.handle === "archive")?.finding?.code).toBe(
       "unknown-handle"
     );
+  });
+});
+
+describe("serveHandle with a non-MCP data provider kind (U3)", () => {
+  const effectStep: MCPToolNode = {
+    ...mcpStep("s", "stations.latest", {}),
+    kind: "loom-effect",
+    toolSchemaHash: "pin-1",
+  };
+  const exp = () => board({ latest: contract("latest", effectStep, "kpi") });
+  const providers = defineDataProviders([
+    mcpProvider,
+    loomEffectProvider({ effects: { "stations.latest": "pin-1" } }),
+  ]);
+
+  it("serves a handle whose step is a loom effect, with no MCP call at all", async () => {
+    const e = exp();
+    const inv = new FakeInvoker().on("stations.latest", () => ({ kpi: { value: 3, unit: "C" } }));
+    const r = await serveHandle(e, req(e, "latest"), {
+      invoker: inv,
+      now: NOW,
+      outputKinds,
+      providers,
+    });
+    expect(r).toEqual({ state: "ready", value: { value: 3, unit: "C" } });
+    expect(inv.calls.map((c) => c.toolId)).toEqual(["stations.latest"]);
+  });
+
+  it("without the kind registered the client gets a fixed public finding and nothing runs", async () => {
+    const e = exp();
+    const inv = new FakeInvoker();
+    const r = await serveHandle(e, req(e, "latest"), { invoker: inv, now: NOW, outputKinds });
+    expect(r).toMatchObject({ state: "error", finding: { code: "provider-kind-unregistered" } });
+    expect(inv.calls).toHaveLength(0);
   });
 });
 
