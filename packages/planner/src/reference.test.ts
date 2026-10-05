@@ -95,6 +95,24 @@ describe("ReferencePlanner through the decide scope", () => {
   });
 });
 
+describe("ReferencePlanner orderSalt", () => {
+  const keys = async (orderSalt?: string) => {
+    const planner = new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+      ...(orderSalt !== undefined && { orderSalt }),
+    });
+    const r = await planner.compose(input, recordingContext());
+    return r.ops.flatMap((o) => (o.type === "insertNode" ? [o.node.order] : []));
+  };
+  it("two planners with distinct author ids mint distinct keys into the same gap; none = legacy", async () => {
+    const [alice, bob, none] = [await keys("alice"), await keys("bob"), await keys()];
+    expect(alice).toHaveLength(2);
+    for (let i = 0; i < 2; i++) expect(alice[i]).not.toBe(bob[i]);
+    expect(none).toEqual(["V", "k"]);
+  });
+});
+
 describe("ReferencePlanner.compose", () => {
   it("returns ops that replay to a valid experience, a clean report, and records ONE decision with the policy stamp", async () => {
     const model = scriptedModel([goodDraft]);

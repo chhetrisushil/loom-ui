@@ -174,11 +174,17 @@ test holds it zod-free.
   for an append. Guarantees: always strictly between the bounds; WITHOUT a salt the key is a pure
   function of the bounds (two authors minting for one gap get the SAME key — the legacy behaviour);
   WITH a salt (an author/replica id, hashed to a 3-char suffix) authors with different salts get
-  different keys for one gap (a salt-hash collision is possible, 1 in 62³, hence the tie-break
-  below). Keys are minted when an op is authored and recorded in the op (`node.order`, `newOrder`);
-  `apply`/`replay` never mint one. Sibling order is TOTAL: by `order`, then by node id, so equal keys
-  (legacy data, a collision) are never ambiguous. Existing keys stay valid and no content address
-  moves for experiences whose sibling keys are distinct. There is no key below `"0"` or between
+  different keys for one gap — the suffix space is 62·62·61 ≈ 235k, so a salt-hash collision is possible and the
+  render order is also totalled by id. A salt identifies an AUTHOR, not an insert: the same author
+  inserting twice into one gap mints the same key (a tie, resolved at render by id). Keys are minted
+  when an op is authored and recorded in the op (`node.order`, `newOrder`); `apply`/`replay` never
+  mint one. The planner takes the salt as `ReferencePlannerOptions.orderSalt` (concurrent planners
+  should each pass a distinct author id; omitted = unsalted legacy keys, output byte-identical).
+  Two orderings, by design: everything HASHED or FOLDED (`normalize` in `experienceArtifact`,
+  `apply`/`replay`) sorts by `order` only with a stable sort, so tied keys keep insertion order and
+  NO stored experience's content address moves — ties included. Only the render/compile boundary
+  (`compile`) uses the total order (`order`, then node id), so a render never depends on insertion
+  order. There is no key below `"0"` or between
   `k` and `k + "0"`; salted keys never end in `"0"` for that reason.
 
 ## Examples

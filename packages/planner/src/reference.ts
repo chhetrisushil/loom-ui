@@ -49,6 +49,15 @@ export interface ReferencePlannerOptions {
    * verify reports the hand-off as unresolved rather than trusting a partial claim.
    */
   readonly reach?: PlannerReach;
+  /**
+   * An AUTHOR id (a replica / agent / session id) mixed into the order keys of the nodes this
+   * planner inserts. Planners that write concurrently into one experience should each pass a
+   * DISTINCT value, so their appends into the same gap get distinct keys instead of tying.
+   * It identifies an author, not an insert: one planner inserting twice into one gap mints the
+   * same key twice (a tie, resolved at render by node id). Omitted = unsalted legacy keys,
+   * and the planner's output is byte-identical to before this option existed.
+   */
+  readonly orderSalt?: string;
 }
 
 /** Ops are id-based and every genesis has the same root, so validation can run against a scratch lineage. */
@@ -290,7 +299,14 @@ export class ReferencePlanner implements Planner {
         previous = { error: parsed.error, raw: parsed.raw };
         continue;
       }
-      const m = materialize(parsed.value, base, input.catalog, input.capabilities, input.observed);
+      const m = materialize(
+        parsed.value,
+        base,
+        input.catalog,
+        input.capabilities,
+        input.observed,
+        this.opts.orderSalt === undefined ? {} : { orderSalt: this.opts.orderSalt }
+      );
       const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
       if (!applied.ok) findings.push(applied.finding);

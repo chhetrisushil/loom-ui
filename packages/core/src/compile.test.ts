@@ -161,6 +161,21 @@ const widgetsOf = (bp: Blueprint): Widget[] => {
 };
 
 describe("compile", () => {
+  it("renders tied sibling keys in a TOTAL order (by id), whatever the stored insertion order", () => {
+    const tied = (first: string, second: string) =>
+      withRoot(exp, {
+        ...root,
+        children: [
+          { ...sem(first, "Metric"), order: "a" },
+          { ...sem(second, "Metric"), order: "a" },
+        ],
+      });
+    const a = compile(tied("zzz", "aaa"), opts);
+    const b = compile(tied("aaa", "zzz"), opts);
+    const order = (r: CompileResult) => widgetsOf(r.blueprint).map((w) => w.id);
+    expect(order(a)).toEqual(["aaa", "zzz"]);
+    expect(order(b)).toEqual(["aaa", "zzz"]);
+  });
   it("emits a loom Blueprint with node ids preserved, bindings into the hydration projection, and the pin", () => {
     const { blueprint, findings, ok } = compile(exp, opts);
     expect(ok).toBe(true);

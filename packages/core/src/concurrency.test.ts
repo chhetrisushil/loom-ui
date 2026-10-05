@@ -1,8 +1,9 @@
+import { canonicalJson } from "@loom/core";
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
 import { mintVersionHash, seal } from "./log";
 import type { ContainerNode, SemanticNode } from "./node";
-import { type Operation, apply, applyAt, replay } from "./operations";
+import { type Operation, type RecordedOperation, apply, applyAt, replay } from "./operations";
 import { orderKeyAfterAll, orderKeyBetween } from "./order";
 
 const meta = { author: "alice", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
@@ -66,18 +67,6 @@ describe("concurrent order keys", () => {
       orderKeyAfterAll(sib, { salt: "bob" })
     );
     expect(orderKeyAfterAll(sib, { salt: "alice" }) > "V").toBe(true);
-  });
-  it("equal keys (legacy data) give a deterministic total order, whatever the insertion order", () => {
-    const ops = (first: string, second: string): Operation[] => [
-      { type: "insertNode", parentId: "root", node: metric(first, "m") },
-      { type: "insertNode", parentId: "root", node: metric(second, "m") },
-    ];
-    const r1 = replay(g, ops("x", "y"));
-    const r2 = replay(g, ops("y", "x"));
-    if (!r1.ok || !r2.ok) throw new Error("replay failed");
-    expect(ids(r1.value)).toEqual(["x", "y"]);
-    expect(ids(r2.value)).toEqual(["x", "y"]);
-    expect(mintVersionHash(r1.value)).toBe(mintVersionHash(r2.value));
   });
   it("both concurrent inserts into one gap survive, in a stable order", () => {
     const base = replay(g, [
@@ -164,5 +153,17 @@ describe("applyAt base-version precondition", () => {
     if (!a.ok || !b.ok) throw new Error("replay");
     expect(a.value).toEqual(b.value);
     expect(mintVersionHash(a.value)).toBe(mintVersionHash(b.value));
+  });
+});
+
+describe("RecordedOperation.baseVersion in the op log", () => {
+  const op: Operation = { type: "removeNode", nodeId: "m1" };
+  const by = { kind: "user", id: "alice" } as unknown as RecordedOperation["by"];
+  it("an undefined baseVersion encodes byte-identically to an absent one; a declared one is carried", () => {
+    const absent: RecordedOperation = { op, by, at: "2026-09-21T00:00:00Z" };
+    const undef = { ...absent, baseVersion: undefined } as unknown as RecordedOperation;
+    expect(canonicalJson(undef)).toBe(canonicalJson(absent));
+    expect(canonicalJson([undef])).toBe(canonicalJson([absent]));
+    expect(canonicalJson({ ...absent, baseVersion: "sha256:a" })).toContain('"baseVersion"');
   });
 });
