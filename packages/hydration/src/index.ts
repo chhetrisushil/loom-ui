@@ -26,8 +26,18 @@ export {
   mcpProvider,
 } from "./dataProvider";
 export type { DataProvider, DataProviderCall, DataProviderRegistry } from "./dataProvider";
-export { LOOM_EFFECT_KIND, TARGET_UNREGISTERED, loomEffectProvider } from "./loomEffectProvider";
-export type { LoomEffectProviderOptions } from "./loomEffectProvider";
+export {
+  LOOM_EFFECT_KIND,
+  TARGET_FAILED,
+  TARGET_UNREGISTERED,
+  effectPin,
+  loomEffectProvider,
+} from "./loomEffectProvider";
+export type {
+  EffectEntry,
+  EffectInputSchema,
+  LoomEffectProviderOptions,
+} from "./loomEffectProvider";
 export { executeProvider } from "./provider";
 export { stepReferences, terminalSteps, topoWaves } from "./plan";
 export type { DriftRecord, ExecuteOptions, InputDriftMode, ProviderOutcome } from "./provider";

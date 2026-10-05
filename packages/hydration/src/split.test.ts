@@ -36,7 +36,14 @@ import {
   serveHandle,
   serveHandles,
 } from "./split/index";
-import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
+import {
+  FakeInvoker,
+  ManualClock,
+  fakeRuntime,
+  flush,
+  mcpStep,
+  providerSpec,
+} from "./testing.test-support";
 
 /** A deterministic stand-in for the server's keyed hash (production: an HMAC over a server secret). */
 const keyed =
@@ -264,7 +271,10 @@ describe("serveHandle with a non-MCP data provider kind (U3)", () => {
   const exp = () => board({ latest: contract("latest", effectStep, "kpi") });
   const providers = defineDataProviders([
     mcpProvider,
-    loomEffectProvider({ effects: { "stations.latest": "pin-1" } }),
+    loomEffectProvider({
+      runtime: fakeRuntime({ "stations.latest": { mode: "ambient", kind: "tool" } }),
+      effects: { "stations.latest": { pin: "pin-1" } },
+    }),
   ]);
 
   it("serves a handle whose step is a loom effect, with no MCP call at all", async () => {

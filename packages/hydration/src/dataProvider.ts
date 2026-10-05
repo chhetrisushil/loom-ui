@@ -103,16 +103,27 @@ export const DEFAULT_DATA_PROVIDERS: DataProviderRegistry = defineDataProviders(
  * Assert the one rule every kind must keep: a wrong pin is `schemaDrift` carrying the observed
  * pin, and the right pin runs the target. Run it in a kind's own test suite against a target the
  * kind serves (`target`, with its current `pin`) and a recording invoker. Returns a list of
- * violations (empty = conformant); never throws for a violation.
+ * violations (empty = conformant); never throws for a violation. A wrong pin must ALSO not reach
+ * the target (a direct call to `target` through the invoker is counted). This is a TEST HELPER: `defineDataProviders`
+ * cannot enforce the rule at registration, so a kind that skips this suite is unchecked.
  */
 export async function checkDataProviderConformance(
   provider: DataProvider,
   fixture: { target: string; pin: string; invoker: TransientInvoker }
 ): Promise<string[]> {
   const problems: string[] = [];
+  let reached = 0;
+  const counting: TransientInvoker = {
+    invokeTransient: (...a) => {
+      // Only a call to the target's OWN id counts: the MCP kind reaches `mcp.invoke`, whose pin
+      // check lives inside that effect (and is MCP's own conformance, not this kit's).
+      if (a[0] === fixture.target) reached++;
+      return fixture.invoker.invokeTransient(...a);
+    },
+  };
   const base = { stepId: "conformance", target: fixture.target, args: {} };
   try {
-    await provider.invoke({ ...base, expectedPin: `${fixture.pin}-stale` }, fixture.invoker, {});
+    await provider.invoke({ ...base, expectedPin: `${fixture.pin}-stale` }, counting, {});
     problems.push("a stale pin did not fail");
   } catch (e) {
     if (!(e instanceof TypedFailure && e.channel === "schemaDrift"))
@@ -120,6 +131,7 @@ export async function checkDataProviderConformance(
     else if ((e.payload as { observedHash?: string } | undefined)?.observedHash !== fixture.pin)
       problems.push("schemaDrift did not carry the target's current pin as observedHash");
   }
+  if (reached > 0) problems.push("a stale pin reached the target before failing");
   try {
     await provider.invoke({ ...base, expectedPin: fixture.pin }, fixture.invoker, {});
   } catch (e) {
