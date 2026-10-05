@@ -10,6 +10,7 @@ import {
   NodeId,
   OrderKey,
   Priority,
+  ProjectionBinding,
   Sensitivity,
   findNode,
   isContainer,
@@ -62,6 +63,13 @@ export type Operation =
       sensitivity?: DataClass;
     }
   /**
+   * Bind a semantic node to a non-hydration projection (`SemanticNode.projection`), replacing any
+   * handle binding. The class never drops: the node keeps the strictest of the class it carried
+   * (on its old projection or handle) and the one given, and the handle it leaves keeps its
+   * sticky class. Validity against the host's projections is `compile`'s check, not this op's.
+   */
+  | { type: "bindProjection"; nodeId: string; projection: ProjectionBinding }
+  /**
    * The ONLY op that lowers a class: sets it to `to`, or clears it, on the handle and on every
    * node that binds it. With `tool: true` it lowers the handle's TOOLS the same way; a handle's
    * class is also held by its tool, so lowering a handle alone is undone by the next provider
@@ -109,6 +117,11 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       handle: z.string().min(1),
       priority: Priority.optional(),
       sensitivity: Sensitivity.optional(),
+    }),
+    z.object({
+      type: z.literal("bindProjection"),
+      nodeId: NodeId,
+      projection: ProjectionBinding,
     }),
     z.object({
       type: z.literal("declassifyHandle"),
@@ -590,9 +603,14 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
         if (op.type === "setLabel") return { ...n, label: op.label };
         // `sensitivity` merges the way `priority` does: an op that does not mention it keeps the
         // class the node already carries, so re-binding a handle cannot silently declassify it.
-        const sens = op.sensitivity ?? n.binding?.sensitivity;
+        // A node leaving a classified PROJECTION for a handle carries that class with it.
+        const sens = strictestClass(
+          op.sensitivity ?? n.binding?.sensitivity,
+          n.projection?.sensitivity
+        );
+        const { projection: _left, ...rest } = n;
         return {
-          ...n,
+          ...rest,
           binding: {
             handle: op.handle,
             priority: op.priority ?? n.binding?.priority ?? "P1",
@@ -606,6 +624,35 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
         ...carried,
         ...(landed ? classesOf(landed) : []),
       ]);
+      return {
+        ok: true,
+        value: next(base, { root, ...(handleClasses !== undefined && { handleClasses }) }),
+      };
+    }
+    case "bindProjection": {
+      const target = findNode(base.root, op.nodeId);
+      if (!target) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      if (target.kind !== "semantic")
+        return refuse(
+          "not-semantic",
+          `"${op.nodeId}" is a container; bindProjection applies to semantic nodes`,
+          op.nodeId
+        );
+      const carried = classesOf(target);
+      const sens = strictestClass(
+        strictestClass(op.projection.sensitivity, target.projection?.sensitivity),
+        target.binding?.sensitivity
+      );
+      const root = rebuild(base.root, (n) => {
+        if (n.id !== op.nodeId || n.kind !== "semantic") return n;
+        const { binding: _left, ...rest } = n;
+        const { sensitivity: _s, ...bare } = op.projection;
+        return {
+          ...rest,
+          projection: { ...bare, ...(sens !== undefined && { sensitivity: sens }) },
+        };
+      });
+      const handleClasses = foldClasses(base.handleClasses, carried);
       return {
         ok: true,
         value: next(base, { root, ...(handleClasses !== undefined && { handleClasses }) }),

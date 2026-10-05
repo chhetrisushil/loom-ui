@@ -45,6 +45,25 @@ export const LayoutRole = z.custom<string>(isLayoutRole, {
     "a layout role is a lowercase letter, then lowercase letters, digits or hyphens, at most 64 characters",
 });
 
+/**
+ * A semantic node's binding to ANY loom projection other than the hydration projection (an agent
+ * status, an approval queue, a transcript...). It is the node-side half of one IR `DataBinding`:
+ * `id` is the `projectionId`, `path` the value path inside that projection's state, `statusPath`
+ * the optional status channel in the SAME state, and `version` the declared version of the
+ * projection the author composed against (loom ADR 0095 — it lands in
+ * `Blueprint.projectionVersions` and is checked against the host's projection catalogue at
+ * compile). `sensitivity` is the author's class for the data; the host's catalogue may only
+ * raise it. A node carries `binding` (a hydrated handle) or `projection`, never both.
+ */
+export const ProjectionBinding = z.object({
+  id: z.string().min(1),
+  path: z.string().min(1),
+  statusPath: z.string().min(1).optional(),
+  version: z.string().min(1),
+  sensitivity: Sensitivity.optional(),
+});
+export type ProjectionBinding = z.infer<typeof ProjectionBinding>;
+
 export const LocalizedText = z.object({ key: z.string().min(1), fallback: z.string() });
 export type LocalizedText = z.infer<typeof LocalizedText>;
 
@@ -87,6 +106,8 @@ export interface SemanticNode {
   label?: LocalizedText;
   props: Record<string, unknown>;
   binding?: { handle: string; priority: Priority; sensitivity?: DataClass };
+  /** A binding to a non-hydration projection. Mutually exclusive with `binding` (`binding-conflict`). */
+  projection?: ProjectionBinding;
 }
 
 export type ExperienceNode = ContainerNode | SemanticNode;
@@ -126,6 +147,7 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
           sensitivity: Sensitivity.optional(),
         })
         .optional(),
+      projection: ProjectionBinding.optional(),
     }),
   ])
 ) as z.ZodType<ExperienceNode>;
