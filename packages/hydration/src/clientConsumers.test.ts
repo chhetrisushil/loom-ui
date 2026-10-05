@@ -19,6 +19,7 @@ const FORBIDDEN_PACKAGES = new Set([
   "@loom/plugin-sandbox",
   "@loom/plugin-mcp",
   "@loom/effect-runtime",
+  "@loom/agent",
 ]);
 const SERVER_FILES = new Set(
   [

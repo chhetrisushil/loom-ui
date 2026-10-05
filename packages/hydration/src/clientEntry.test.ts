@@ -29,6 +29,9 @@ const FORBIDDEN_PACKAGES = new Set([
   "@loom/plugin-sandbox",
   "@loom/plugin-mcp",
   "@loom/effect-runtime",
+  // U3 — `effectPin` needs `toolInputJsonSchema` from `@loom/agent` (llm, reasoning, workflow-runtime…):
+  // server-only, never in the client graph.
+  "@loom/agent",
 ]);
 
 /** Hydration's own server-side modules (relative to `dist/`). */
