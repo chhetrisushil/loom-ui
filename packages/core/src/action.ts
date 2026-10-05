@@ -15,7 +15,12 @@
 export interface ViewedBinding {
   /** The binding's delivery state at the time of the action (`ready`, `stale`, ...). */
   readonly state: string;
-  /** The binding's monotonic sequence — lets a host detect that the data moved since the view. */
+  /**
+   * The binding's sequence the widget was last DELIVERED (what the user saw, not what the store
+   * holds now). Monotonic per STORE (every write to the hydration store advances it), not per
+   * binding — so compare it for EQUALITY with the current one to detect "the data moved"; a
+   * difference may also come from an unrelated binding's write, which errs on the safe side.
+   */
   readonly seq?: number;
 }
 
@@ -29,6 +34,13 @@ export interface ViewedVersion {
   readonly versionHash: string;
   /** For a widget with a binding status: what the user saw of the data. Absent otherwise. */
   readonly binding?: ViewedBinding;
+  /**
+   * Fingerprint of the viewer-dependent compile inputs (clearance, restricted handles, locale)
+   * the host declared when it mounted the renderer (`compileFingerprint`). The artifact id alone
+   * does not name the VIEW: an approver shown "Restricted" must not be treated as having seen the
+   * real content. Absent when the host declared none.
+   */
+  readonly compile?: string;
 }
 
 /** Any action a loom-ui renderer emits: loom's `WidgetAction` plus the stamped provenance. */
@@ -59,7 +71,8 @@ export function parseBlueprintId(blueprintId: string): {
 /** Build the stamp for a Blueprint id (+ the widget's binding status, if it has one). */
 export function viewedVersionOf(
   blueprintId: string,
-  binding?: { state: string; seq?: number }
+  binding?: { state: string; seq?: number },
+  compile?: string
 ): ViewedVersion {
   const { experienceId, versionHash } = parseBlueprintId(blueprintId);
   return {
@@ -69,7 +82,41 @@ export function viewedVersionOf(
     ...(binding && {
       binding: { state: binding.state, ...(binding.seq !== undefined && { seq: binding.seq }) },
     }),
+    ...(compile !== undefined && { compile }),
   };
+}
+
+/** The viewer-dependent inputs a Blueprint's compile depends on besides the Experience itself. */
+export interface CompileFingerprintInput {
+  /** The viewer's clearance (`Viewer.clearance`). */
+  readonly clearance?: string;
+  /** The handles redacted for this viewer (order-insensitive). */
+  readonly restrictedHandles?: readonly string[];
+  /** The locale `resolveLabel` renders in. */
+  readonly locale?: string;
+}
+
+/**
+ * A deterministic fingerprint of the compile inputs that change what the user SEES without
+ * changing the Experience. Change detection only (two 32-bit FNV-1a lanes), not a security hash.
+ * Total: never throws.
+ */
+export function compileFingerprint(input: CompileFingerprintInput): string {
+  let canon: string;
+  try {
+    const handles = [...(input.restrictedHandles ?? [])].map(String).sort();
+    canon = JSON.stringify([input.clearance ?? null, handles, input.locale ?? null]);
+  } catch {
+    canon = "?";
+  }
+  let a = 0x811c9dc5;
+  let b = 0x9747b28c;
+  for (let i = 0; i < canon.length; i++) {
+    const c = canon.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x85ebca6b) >>> 0;
+  }
+  return `cf1:${a.toString(16).padStart(8, "0")}${b.toString(16).padStart(8, "0")}`;
 }
 
 /**
@@ -77,25 +124,52 @@ export function viewedVersionOf(
  *  - `fresh`        — stamped with exactly the current head.
  *  - `stale`        — stamped with a different version (recomposed since).
  *  - `unstamped`    — no provenance (legacy emitter, or a forged action): cannot be verified.
- *  - `unverifiable` — the head or the stamp is unsealed (`versionHash` empty): no version to compare.
+ *  - `data-moved`   — same composition, but the bound data's seq differs from the head's.
+ *  - `unverifiable` — the head or the stamp is unsealed (`versionHash` empty), or the head asks a
+ *                     question (data seq, compile fingerprint) the stamp cannot answer.
  */
-export type ActionFreshness = "fresh" | "stale" | "unstamped" | "unverifiable";
+export type ActionFreshness = "fresh" | "stale" | "data-moved" | "unstamped" | "unverifiable";
 
 /** The current head, as much of it as the check needs: an Experience or a bare version. */
 export interface CurrentHead {
   readonly experienceId: string;
   readonly versionHash: string;
+  /**
+   * The CURRENT sequence of the data bound to `widgetId` (e.g. `handle.head().bindingSeq`, or the
+   * store's status for that widget's binding). When provided, a stamp WITH a binding must carry a
+   * seq equal to it: a different one is `data-moved`, a missing one `unverifiable`. Return
+   * `undefined` when unknown — that too is `unverifiable` for a bound widget (fail-closed).
+   */
+  readonly bindingSeq?: (widgetId: string) => number | undefined;
+  /** The compile fingerprint the host currently serves this viewer; compared when provided. */
+  readonly compile?: string;
 }
 
 export function actionFreshness(
-  action: { readonly viewedVersion?: ViewedVersion },
+  action: { readonly widgetId?: string; readonly viewedVersion?: ViewedVersion },
   current: CurrentHead
 ): ActionFreshness {
   const viewed = action.viewedVersion;
   if (!viewed || typeof viewed.versionHash !== "string") return "unstamped";
   if (viewed.versionHash === "" || current.versionHash === "") return "unverifiable";
   if (viewed.experienceId !== current.experienceId) return "stale";
-  return viewed.versionHash === current.versionHash ? "fresh" : "stale";
+  if (viewed.versionHash !== current.versionHash) return "stale";
+  if (current.compile !== undefined) {
+    if (typeof viewed.compile !== "string") return "unverifiable";
+    if (viewed.compile !== current.compile) return "stale";
+  }
+  if (current.bindingSeq && viewed.binding) {
+    const seen = viewed.binding.seq;
+    let now: number | undefined;
+    try {
+      now = current.bindingSeq(typeof action.widgetId === "string" ? action.widgetId : "");
+    } catch {
+      now = undefined;
+    }
+    if (typeof seen !== "number" || typeof now !== "number") return "unverifiable";
+    if (seen !== now) return "data-moved";
+  }
+  return "fresh";
 }
 
 /**
@@ -103,7 +177,7 @@ export function actionFreshness(
  * never saw refuses when this is `true`; use `actionFreshness` to tell the reasons apart.
  */
 export function isStaleAction(
-  action: { readonly viewedVersion?: ViewedVersion },
+  action: { readonly widgetId?: string; readonly viewedVersion?: ViewedVersion },
   current: CurrentHead
 ): boolean {
   return actionFreshness(action, current) !== "fresh";

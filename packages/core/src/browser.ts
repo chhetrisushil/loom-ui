@@ -8,12 +8,14 @@
 // compiler — is server/authoring-side and stays on the main entry.
 export {
   actionFreshness,
+  compileFingerprint,
   isStaleAction,
   parseBlueprintId,
   viewedVersionOf,
 } from "./action";
 export type {
   ActionFreshness,
+  CompileFingerprintInput,
   CurrentHead,
   StampedAction,
   ViewedBinding,

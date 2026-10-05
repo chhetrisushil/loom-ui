@@ -43,30 +43,41 @@ export interface MountContext {
    * handler accepts unchanged.
    */
   readonly onAction?: (action: StampedAction & WidgetAction) => void;
-  /** The id of the Blueprint currently on screen — read at ACTION time, so it follows `update`. */
+  /**
+   * The id a widget MOUNTED (or remounted) by the pass in flight is stamped with — the pass's
+   * target Blueprint. A KEPT widget is stamped from its own entry, which only advances once the
+   * committed tree has had a frame (`WidgetEntry.viewedBlueprintId`), never from "now".
+   */
   readonly blueprintId?: () => string;
+  /** Host-declared compile fingerprint (`compileFingerprint`), stamped as `viewedVersion.compile`. */
+  readonly compile?: string;
 }
 
 /**
  * The ONE place an action gets its provenance. The renderer, not the widget, owns `widgetId` and
  * `viewedVersion`: whatever a widget (or the A2UI tree / sandbox code behind it) put in those
  * top-level fields is overwritten, and their own data stays nested under `payload`.
+ *
+ * Everything is read from the ENTRY, the per-widget record of what was last DELIVERED to the
+ * widget: its current node (a rebound widget stamps its NEW binding), the status/seq its handle
+ * last received (not a snapshot taken at mount), and the Blueprint id of the last committed,
+ * painted tree it was part of (not the id at action time).
  */
 export function stampAction(
   action: WidgetAction,
-  widget: Widget,
+  entry: WidgetEntry,
   ctx: MountContext
 ): StampedAction & WidgetAction {
-  const status = resolveWidgetStatus(widget, ctx.stateMap);
+  const status = entry.delivered;
   const binding = status && {
     state: status.state,
     ...(status.seq !== undefined && { seq: status.seq }),
   };
   return {
     type: action.type,
-    widgetId: widget.id,
+    widgetId: entry.widget.id,
     ...(action.payload !== undefined && { payload: action.payload }),
-    viewedVersion: viewedVersionOf(ctx.blueprintId?.() ?? "", binding),
+    viewedVersion: viewedVersionOf(entry.viewedBlueprintId, binding, ctx.compile),
   };
 }
 export interface WidgetEntry {
@@ -77,6 +88,12 @@ export interface WidgetEntry {
   /** Undefined while a placeholder is showing (no renderer for the kind, or the renderer threw). */
   handle: DomWidgetHandle | undefined;
   unsubscribe: (() => void) | undefined;
+  /** The binding status the handle last RECEIVED (render, rebound update, or live slice). */
+  delivered: BindingStatus | undefined;
+  /** The Blueprint id of the committed tree this widget was last on screen in. */
+  viewedBlueprintId: string;
+  /** Identity of the live render; cleared on dispose/teardown so a dead widget's actions drop. */
+  token: object | undefined;
 }
 export interface ContainerEntry {
   readonly kind: "container";
@@ -449,6 +466,7 @@ export function showError(entry: WidgetEntry, message: string): void {
   }
   entry.unsubscribe = undefined;
   entry.handle = undefined;
+  entry.token = undefined;
   entry.host.replaceChildren(placeholderFor(entry.widget.kind, "error", message));
 }
 
@@ -465,6 +483,7 @@ export function subscribeEntry(entry: WidgetEntry, ctx: MountContext): void {
     (slice) => {
       try {
         handle.update(slice.value, slice.status);
+        entry.delivered = slice.status;
       } catch (e) {
         showError(entry, e instanceof Error ? e.message : String(e));
       }
@@ -490,6 +509,7 @@ export function renderInto(
   if (!renderer) {
     host.replaceChildren(placeholderFor(widget.kind, "missing"));
     entry.handle = undefined;
+    entry.token = undefined;
     // A missing renderer is a REPORTED failure, not a silent one: a widget the new blueprint
     // added of a kind nobody registered lands in `RecomposeReport.findings` as `mount-failed`.
     // The initial mount passes a no-op `onFail`, so mount behaviour is unchanged.
@@ -498,13 +518,22 @@ export function renderInto(
   }
   const value = resolveWidgetValue(widget, ctx.stateMap);
   const status = resolveWidgetStatus(widget, ctx.stateMap);
+  const token = {};
+  entry.token = token;
+  entry.delivered = status;
+  entry.viewedBlueprintId = ctx.blueprintId?.() ?? entry.viewedBlueprintId;
   try {
     const handle = renderer(host, {
       widget,
       value,
       ...(status && { status }),
       ...(ctx.onAction && {
-        onAction: (a: WidgetAction) => ctx.onAction?.(stampAction(a, widget, ctx)),
+        // A widget that outlives its entry (a 3P renderer calling back after dispose, or after a
+        // remount gave the entry a new render) must not speak for it: its actions are dropped.
+        onAction: (a: WidgetAction) => {
+          if (entry.token !== token) return;
+          ctx.onAction?.(stampAction(a, entry, ctx));
+        },
       }),
     });
     if (!handle || typeof handle.update !== "function")
@@ -539,6 +568,9 @@ export function mountWidget(
     widget,
     handle: undefined,
     unsubscribe: undefined,
+    delivered: undefined,
+    viewedBlueprintId: "",
+    token: undefined,
   };
   track?.(entry);
   renderInto(entry, ctx, onFail);
@@ -773,6 +805,12 @@ export function disposeEntry(entry: Entry, onError: (widgetId: string, e: unknow
     onError(entry.widget.id, e);
   }
   entry.handle = undefined;
+  entry.token = undefined;
+}
+
+/** Every widget entry under `entry`, document order. */
+export function widgetEntriesOf(entry: Entry): WidgetEntry[] {
+  return entry.kind === "widget" ? [entry] : entry.children.flatMap(widgetEntriesOf);
 }
 
 export function widgetIdsOf(entry: Entry): string[] {

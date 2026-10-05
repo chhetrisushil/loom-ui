@@ -193,11 +193,15 @@ test holds it zod-free.
 
 ### Action provenance
 
-`StampedAction`, `ViewedVersion`, `viewedVersionOf(blueprintId, binding?)`, `parseBlueprintId`,
-`actionFreshness(action, head): "fresh" | "stale" | "unstamped" | "unverifiable"` and the
-fail-closed `isStaleAction(action, head)` — renderers stamp every action with the version the user
-saw; a host compares it with the current Experience (`{ experienceId, versionHash }`) before acting.
-Also on `@loom-ui/core/browser` (no zod). See the renderer-lit README for the flow.
+`StampedAction`, `ViewedVersion`, `viewedVersionOf(blueprintId, binding?, compile?)`,
+`parseBlueprintId`, `compileFingerprint({ clearance, restrictedHandles, locale })`,
+`actionFreshness(action, head): "fresh" | "stale" | "data-moved" | "unstamped" | "unverifiable"` and
+the fail-closed `isStaleAction(action, head)` — renderers stamp every action with the version the
+user saw; a host compares it with the head before acting. `CurrentHead` is
+`{ experienceId, versionHash, bindingSeq?(widgetId), compile? }`: with `bindingSeq` a bound
+widget's stamped seq must equal the current one (else `data-moved`; unknown is `unverifiable`), with
+`compile` the view fingerprint must match. The renderer's `handle.head()` fills all of it. Also on
+`@loom-ui/core/browser` (no zod). See the renderer-lit README for the flow.
 
 ## Examples
 
