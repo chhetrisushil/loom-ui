@@ -170,7 +170,9 @@ describe("projection bindings: compile", () => {
       build([pnode("a", { projection: proj({ id: "__proto__", version: "1" }) })]),
       { ...opts, projections: [{ id: "__proto__", version: "1" }] }
     );
-    expect(Object.hasOwn(r.blueprint.projectionVersions ?? {}, "__proto__")).toBe(true);
+    // `__proto__` is a reserved projection id: the node is refused, nothing is declared.
+    expect(Object.hasOwn(r.blueprint.projectionVersions ?? {}, "__proto__")).toBe(false);
+    expect(r.blueprint.projections).toEqual(["hydration"]);
     expect(({} as Record<string, unknown>).version).toBeUndefined();
   });
   it("a handle-and-projection node is omitted with a binding-conflict finding", () => {
