@@ -23,6 +23,7 @@ catalogs:
       version: 3.25.76
 
 overrides:
+  '@loom/agent': link:../loom/packages/agent
   '@loom/blueprint-runtime': link:../loom/packages/blueprint-runtime
   '@loom/classify': link:../loom/packages/classify
   '@loom/core': link:../loom/packages/core
@@ -80,6 +81,9 @@ importers:
       '@loom-ui/core':
         specifier: workspace:*
         version: link:../core
+      '@loom/agent':
+        specifier: link:../../../loom/packages/agent
+        version: link:../../../loom/packages/agent
       '@loom/classify':
         specifier: link:../../../loom/packages/classify
         version: link:../../../loom/packages/classify
@@ -111,6 +115,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@22.20.4)(happy-dom@20.14.5)
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
 
   packages/planner:
     dependencies:

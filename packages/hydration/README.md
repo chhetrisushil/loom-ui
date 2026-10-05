@@ -120,21 +120,34 @@ query, an A2A call) binds it directly, without wrapping it as an MCP server.
   `remapOperation` repairs, and what `inputDrift: "report-and-proceed"` retries on. A kind that cannot
   say what its target's contract is must not be registered: there is no unpinned kind.
   `checkDataProviderConformance(provider, { target, pin, invoker })` returns the violations
-  (empty = conformant); run it in a kind's own tests.
+  (empty = conformant), including a violation if a stale pin reached a direct call to `target`; it is
+  a TEST HELPER — `defineDataProviders` cannot enforce the rule, so run it in a kind's own tests.
 - `defineDataProviders(providers)` → `DataProviderRegistry` (`has`/`get`/`kinds`) — composition-time
   only, no discovery, no later registration; a malformed or duplicate kind id throws. Pass it as
   `providers` to `HydrationController`, `serveHandle(s)` or `executeProvider`. Default
   (`DEFAULT_DATA_PROVIDERS`): MCP only, byte-identical to before kinds.
 - `mcpProvider` — the first registered kind: `mcp.invoke` with `expectedPin` as
   `expectedSchemaHash` (the plugin verifies it per call).
-- `loomEffectProvider({ effects: { "<effect id>": "<pin>" } })` — the second kind, `loom-effect`
-  (`LOOM_EFFECT_KIND`): a step whose `toolName` is a registered loom effect id, invoked via
-  `invokeTransient`. `effects` is an ALLOWLIST with each effect's current pin (your fingerprint of
-  its input contract — whatever changes exactly when callers must re-author): a stored or
-  planner-authored step can name any string, so "any registered effect" is a host decision. An
-  unlisted target fails `tool-targetUnregistered` and nothing runs; `mcp.invoke` and the sandbox
-  effect cannot be listed (they have their own planes). An effect call is not memoised within a
-  pass (`memoInvoker` coalesces `mcp.invoke` only).
+- `loomEffectProvider({ runtime, effects })` — the second kind, `loom-effect` (`LOOM_EFFECT_KIND`): a
+  step whose `toolName` is a registered loom effect id, invoked via `invokeTransient`. Hydration is
+  a read path (per viewer load, unmemoised, retried), so at CONSTRUCTION every listed effect is
+  checked against `runtime` (`has` / `modeOf` / `kindOf`): it must be registered, explicitly
+  `mode: "ambient"` (ADR 0073 — an UNDECLARED mode is refused, since loom itself only refuses an
+  explicit `journaled` one), and not a `human` / `llm` kind. `effects` is an ALLOWLIST: a stored or
+  planner-authored step can name any string. Each entry is `{ inputSchema }` (the pin is computed
+  with `effectPin(schema)` = `jsonSchemaHash` of its JSON-Schema form, so editing the effect's zod
+  schema drifts every stored step with no edit to the map) or `{ pin }` (HOST-ASSERTED: nothing
+  checks it against the effect). Use `effectPin` also when building a planner
+  `CapabilityRef.toolSchemaHash`, so both come from one source. An unlisted target fails
+  `tool-targetUnregistered` and nothing runs; `mcp.invoke` and the sandbox effect cannot be listed.
+  A target that itself throws `schemaDrift` surfaces as `tool-targetFailed` (`TARGET_FAILED`), never
+  as pin drift — only the provider's own pin check emits `schemaDrift`, or a repair would flip the
+  pin forever. An effect call is not memoised within a pass (`memoInvoker` coalesces `mcp.invoke`
+  only); memoising `ambient` effects is a possible follow-up. A persisted experience must cross
+  version boundaries only through the log: an older in-memory `executeProvider` / `seal` that
+  predates kinds would run a kinded step as an MCP call.
+- `ArgumentHookContext.kind` — the step's provider kind (absent for MCP): a hook keyed on
+  `toolName` must also read it, since MCP tool `x` and loom effect `x` are different targets.
 - An unregistered kind fails the WHOLE provider as `provider-kind-unregistered` before any step runs
   (never a throw, no partial calls); served publicly as a fixed text naming neither kind nor target.
 

@@ -111,6 +111,22 @@ describe("drift → revision", () => {
     expect(req.text).not.toContain('"number"');
   });
 
+  it("an input-drift request names the step's provider kind (an effect is not an MCP tool)", () => {
+    const rec = (providerKind?: string): DriftRecord => ({
+      kind: "input",
+      handle,
+      stepId: "s",
+      toolName: "orders.list",
+      ...(providerKind !== undefined && { providerKind }),
+      expected: "a",
+      observed: "b",
+    });
+    expect(driftRequest(exp, [rec()]).text).toContain("(MCP tool orders.list)");
+    expect(driftRequest(exp, [rec("loom-effect")]).text).toContain(
+      "(loom-effect target orders.list)"
+    );
+  });
+
   it("the shapes travel as CONTEXT, which reviseMessages renders inside a DATA fence — and no sample goes with them", async () => {
     const drift = await producedDrift();
     const context = { drift: driftContext(drift) };

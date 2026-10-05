@@ -1,14 +1,15 @@
-import { type MCPToolNode, type ProviderSpec, genesis } from "@loom-ui/core";
+import type { MCPToolNode, ProviderSpec } from "@loom-ui/core";
 import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { checkDataProviderConformance, defineDataProviders, mcpProvider } from "./dataProvider";
-import { LOOM_EFFECT_KIND, loomEffectProvider } from "./loomEffectProvider";
+import { LOOM_EFFECT_KIND, effectPin, loomEffectProvider } from "./loomEffectProvider";
 import { executeProvider } from "./provider";
 import { remapOperation } from "./repair";
 import { publicFinding } from "./split/index";
-import { FakeInvoker, mcpStep, providerSpec } from "./testing.test-support";
+import { FakeInvoker, fakeRuntime, mcpStep, providerSpec } from "./testing.test-support";
 
 // U3: a step names a data-provider KIND; MCP is the default one, `loom-effect` is the second.
 
@@ -28,8 +29,13 @@ const effectStep = (
   dependsOn,
   idempotent: true,
 });
+const ambient = { mode: "ambient", kind: "tool" } as const;
 const effects = loomEffectProvider({
-  effects: { "orders.list": "pin-orders.list", "orders.get": "pin-orders.get" },
+  runtime: fakeRuntime({ "orders.list": ambient, "orders.get": ambient }),
+  effects: {
+    "orders.list": { pin: "pin-orders.list" },
+    "orders.get": { pin: "pin-orders.get" },
+  },
 });
 const registry = defineDataProviders([mcpProvider, effects]);
 const spec = (steps: MCPToolNode[], over: Partial<ProviderSpec> = {}) =>
@@ -176,11 +182,91 @@ describe("the registry and the kinds' contract", () => {
     expect(registry.kinds()).toEqual(["loom-effect", "mcp"]);
   });
   it("loomEffectProvider refuses the effects reached through their own plane, and an empty pin", () => {
-    expect(() => loomEffectProvider({ effects: { [MCP_INVOKE_TOOL_ID]: "p" } })).toThrow(
-      /own plane/
+    const runtime = fakeRuntime({
+      x: ambient,
+      [MCP_INVOKE_TOOL_ID]: ambient,
+      [SANDBOX_TOOL_ID]: ambient,
+    });
+    expect(() =>
+      loomEffectProvider({ runtime, effects: { [MCP_INVOKE_TOOL_ID]: { pin: "p" } } })
+    ).toThrow(/own plane/);
+    expect(() =>
+      loomEffectProvider({ runtime, effects: { [SANDBOX_TOOL_ID]: { pin: "p" } } })
+    ).toThrow(/own plane/);
+    expect(() => loomEffectProvider({ runtime, effects: { x: { pin: "" } } })).toThrow(
+      /non-empty pin/
     );
-    expect(() => loomEffectProvider({ effects: { [SANDBOX_TOOL_ID]: "p" } })).toThrow(/own plane/);
-    expect(() => loomEffectProvider({ effects: { x: "" } })).toThrow(/non-empty pin/);
+  });
+  it("P2-1: refuses, at construction, an unregistered, undeclared-mode, journaled, human or llm effect", () => {
+    const runtime = fakeRuntime({
+      undeclared: { kind: "tool" },
+      journaled: { mode: "journaled", kind: "tool" },
+      person: { mode: "ambient", kind: "human" },
+      model: { mode: "ambient", kind: "llm" },
+      ok: ambient,
+    });
+    const pin = { pin: "p" };
+    const make = (id: string) => () => loomEffectProvider({ runtime, effects: { [id]: pin } });
+    expect(make("ghost")).toThrow(/not registered/);
+    expect(make("undeclared")).toThrow(/not declared mode "ambient"/);
+    expect(make("journaled")).toThrow(/not declared mode "ambient"/);
+    expect(make("person")).toThrow(/human effect/);
+    expect(make("model")).toThrow(/llm effect/);
+    expect(make("ok")).not.toThrow();
+  });
+  it("P2-2: a pin computed from the schema drifts when the schema changes, with no edit to the map", async () => {
+    const v1 = z.object({ limit: z.number() });
+    const v2 = z.object({ limit: z.number(), cursor: z.string() });
+    expect(effectPin(v1)).toBe(effectPin(z.object({ limit: z.number() })));
+    expect(effectPin(v1)).not.toBe(effectPin(v2));
+    const runtime = fakeRuntime({ "orders.list": ambient });
+    const stored = effectStep("s", "orders.list", {}, [], effectPin(v1));
+    const inv = new FakeInvoker().on("orders.list", () => ({}));
+    const same = defineDataProviders([
+      loomEffectProvider({ runtime, effects: { "orders.list": { inputSchema: v1 } } }),
+    ]);
+    expect((await executeProvider(spec([stored]), { invoker: inv, providers: same })).ok).toBe(
+      true
+    );
+    // the effect's schema changed; the host's map is unchanged
+    const changed = defineDataProviders([
+      loomEffectProvider({ runtime, effects: { "orders.list": { inputSchema: v2 } } }),
+    ]);
+    const r = await executeProvider(spec([stored]), { invoker: inv, providers: changed });
+    expect(!r.ok && r.finding.code).toBe("schema-drift");
+    expect(!r.ok && r.drift[0]?.observed).toBe(effectPin(v2));
+  });
+  it("P3-1: a target that itself raises schemaDrift is a target failure, not pin drift (no oscillation)", async () => {
+    const inv = new FakeInvoker().on("orders.list", () => {
+      throw new TypedFailure("schemaDrift", { observedHash: "inner-hash" });
+    });
+    const r = await executeProvider(spec([effectStep("s", "orders.list")]), {
+      invoker: inv,
+      providers: registry,
+      inputDrift: "report-and-proceed",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.findings.map((f) => f.code)).toContain("tool-targetFailed");
+    expect(!r.ok && r.drift).toEqual([]);
+    expect(inv.calls).toHaveLength(1);
+  });
+  it("P2-3: an argument hook can tell an MCP tool `x` from a loom effect `x`", async () => {
+    const seen: Array<string | undefined> = [];
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({})).on("orders.list", () => ({}));
+    const hook = (args: Record<string, unknown>, ctx: { kind?: string }) => {
+      seen.push(ctx.kind);
+      return args;
+    };
+    await executeProvider(spec([mcpStep("a", "orders.list")]), {
+      invoker: inv,
+      argumentHook: hook,
+    });
+    await executeProvider(spec([effectStep("b", "orders.list")]), {
+      invoker: inv,
+      providers: registry,
+      argumentHook: hook,
+    });
+    expect(seen).toEqual([undefined, LOOM_EFFECT_KIND]);
   });
   it("both shipped kinds pass the conformance check; a kind that ignores the pin does not", async () => {
     const inv = new FakeInvoker().on("orders.list", () => 1);
@@ -205,13 +291,24 @@ describe("the registry and the kinds' contract", () => {
       (await checkDataProviderConformance(lax, { target: "t", pin: "p", invoker: inv })).length
     ).toBeGreaterThan(0);
   });
-  it("a genesis experience with a loom-effect step stays a valid Experience", () => {
-    expect(
-      genesis({
-        experienceId: "e",
-        intent: { objective: "o", source: "user" },
-        meta: { author: "a", createdAt: "t", sourceKind: "k" },
-      }).experienceId
-    ).toBe("e");
+  it("P3-2: a provider that invokes the target and THEN throws schemaDrift is a violation", async () => {
+    const inv = new FakeInvoker().on("t", () => 1);
+    const lateDrift = {
+      kind: "late",
+      invoke: async (
+        call: { target: string; args: Record<string, unknown>; expectedPin: string },
+        invoker: FakeInvoker
+      ) => {
+        await invoker.invokeTransient(call.target, call.args);
+        if (call.expectedPin !== "p") throw new TypedFailure("schemaDrift", { observedHash: "p" });
+        return 1;
+      },
+    };
+    const problems = await checkDataProviderConformance(lateDrift as never, {
+      target: "t",
+      pin: "p",
+      invoker: inv,
+    });
+    expect(problems).toEqual(["a stale pin reached the target before failing"]);
   });
 });

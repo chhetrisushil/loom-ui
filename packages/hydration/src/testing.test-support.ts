@@ -1,5 +1,5 @@
 import type { MCPToolNode, ProviderSpec } from "@loom-ui/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
+import type { EffectRuntime, TransientInvokeOptions } from "@loom/effect-runtime";
 import type { TransientInvoker } from "./invoker";
 
 export type Handler = (
@@ -94,3 +94,14 @@ export const providerSpec = (
 export const flush = async (): Promise<void> => {
   await new Promise<void>((resolve) => setImmediate(resolve));
 };
+
+/** A runtime double for `loomEffectProvider`: `id → { mode, kind }`. Unlisted ids are unregistered. */
+export function fakeRuntime(
+  effects: Record<string, { mode?: "journaled" | "ambient"; kind?: string }>
+) {
+  return {
+    has: (id: string) => id in effects,
+    modeOf: (id: string) => effects[id]?.mode,
+    kindOf: (id: string) => effects[id]?.kind,
+  } as unknown as Pick<EffectRuntime, "has" | "modeOf" | "kindOf">;
+}

@@ -201,6 +201,11 @@ export interface ArgumentHookContext {
   readonly stepId: string;
   readonly toolName: string;
   /**
+   * The step's data-provider kind; absent for an MCP step. A hook that branches on `toolName`
+   * must also read this: an MCP tool `x` and a loom effect `x` are different targets.
+   */
+  readonly kind?: string;
+  /**
    * The load's params as declared — under `executeProvider`, only those some step of the provider
    * declares overridable — with time tokens NOT resolved (`now` is the instant they resolve against).
    */
@@ -244,6 +249,7 @@ export function prepareArguments(
       handle: ctx.handle,
       stepId: node.stepId,
       toolName: node.toolName,
+      ...(node.kind !== undefined && { kind: node.kind }),
       params: ctx.params,
       now: ctx.now,
     });
