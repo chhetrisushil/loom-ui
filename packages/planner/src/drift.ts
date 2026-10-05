@@ -1,5 +1,9 @@
 import { type Experience, type Finding, type MCPToolNode, experienceHandles } from "@loom-ui/core";
-import { type DriftRecord, type ReshapeFailureKind, terminalSteps } from "@loom-ui/hydration";
+import {
+  type DriftRecord,
+  type ReshapeFailureKind,
+  terminalSteps,
+} from "@loom-ui/hydration/client";
 import { type TaintedValue, unwrapTainted } from "@loom/classify";
 import { canonicalJson } from "@loom/core";
 import type { CapabilityRef, DecideContext, PlanResult, ReviseInput } from "./spi";

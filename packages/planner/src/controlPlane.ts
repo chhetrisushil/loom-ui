@@ -34,6 +34,12 @@ const CONTROL_PLANE_NAMES: ReadonlySet<string> = new Set([
   "EgressDeniedError",
   "SafetyViolationError",
   "UntrustedContentError",
+  // control-plane limits (loom R9): per-principal rate limit, an engaged kill switch (a
+  // `SafetyViolationError` subclass, but its own `name`), and the spawn budget. A refusal, not a
+  // draft: retrying repeats it, and recording a failed plan would pin it across a later reset.
+  "RateLimitExceededError",
+  "KillSwitchEngagedError",
+  "SpawnLimitExceededError",
 ]);
 
 export function isControlPlaneError(e: unknown): boolean {

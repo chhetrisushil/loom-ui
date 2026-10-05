@@ -269,7 +269,8 @@ const repaired = await reviseForDrift(planner, {
   They are matched by error `name`, so a second copy of loom's classes is still recognised.
   The set also names loom's `ExecutionCancelledError` / `DecideScopeClosedError` (its cancellation
   errors) and the refusals `ExecutionDeniedError`, `CapabilityInvokeDeniedError`,
-  `EffectModeViolationError`, `EgressDeniedError`, `SafetyViolationError` and `UntrustedContentError`.
+  `EffectModeViolationError`, `EgressDeniedError`, `SafetyViolationError`, `UntrustedContentError` and loom's control-plane limits
+  `RateLimitExceededError`, `KillSwitchEngagedError` and `SpawnLimitExceededError`.
   An `AbortError` thrown by the provider itself (say its own request timeout) is therefore ALSO
   propagated and fails the flow: an `AbortError` is the platform's name for a cancelled call and
   cannot be told from the execution's cancellation by name, retrying a cancelled call is the

@@ -58,6 +58,10 @@ describe("control-plane errors propagate out of the decider", () => {
     ["EgressDeniedError", () => named("EgressDeniedError", "egress")],
     ["SafetyViolationError", () => named("SafetyViolationError", "unsafe")],
     ["UntrustedContentError", () => named("UntrustedContentError", "untrusted")],
+    // loom R9: the control plane's rate / kill-switch / spawn-budget refusals
+    ["RateLimitExceededError", () => named("RateLimitExceededError", "rate limit")],
+    ["KillSwitchEngagedError", () => named("KillSwitchEngagedError", "kill switch")],
+    ["SpawnLimitExceededError", () => named("SpawnLimitExceededError", "spawn limit")],
   ] as const) {
     it(`${label}: compose rejects once, with no retry and nothing recorded`, async () => {
       const error = make();

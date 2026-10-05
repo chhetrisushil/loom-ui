@@ -1,5 +1,5 @@
 import { checkKindValue } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, type HydrationStore } from "@loom-ui/hydration";
+import { HYDRATION_PROJECTION_ID, type HydrationStore } from "@loom-ui/hydration/client";
 import type { Blueprint, RendererRegistry } from "@loom/blueprint-runtime";
 import {
   type TerminalWidgetRenderer,

@@ -1,4 +1,4 @@
-import type { TransientInvoker } from "@loom-ui/hydration";
+import type { TransientInvoker } from "@loom-ui/hydration/client";
 import type { DecideScope } from "./spi";
 
 /**

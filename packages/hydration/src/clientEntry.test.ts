@@ -134,6 +134,11 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "handleOfPath",
       "hydrationProjection",
       "isReservedHandle",
+      "jsonPathSelect",
+      "outputShapeHashOf",
+      "stepReferences",
+      "terminalSteps",
+      "topoWaves",
     ]);
   });
 

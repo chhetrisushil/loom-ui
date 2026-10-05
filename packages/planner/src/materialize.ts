@@ -22,7 +22,7 @@ import {
   stepReferences,
   terminalSteps,
   topoWaves,
-} from "@loom-ui/hydration";
+} from "@loom-ui/hydration/client";
 import { strictest, unwrapTainted } from "@loom/classify";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import { type DraftBinding, type DraftNode, type PlanDraft, entryFor } from "./contract";
