@@ -100,11 +100,15 @@ export class LuSandbox extends LitElement {
         this.frameHeight = clampFrameHeight(msg.height);
         break;
       case "action":
-        this.onAction?.({
-          type: "SANDBOX_ACTION",
-          widgetId: "",
-          payload: { action: msg.action, context: msg.context },
-        });
+        // With `onAction` wired the provenance-free DOM event is not fired (see `lu-a2ui-view`).
+        if (this.onAction) {
+          this.onAction({
+            type: "SANDBOX_ACTION",
+            widgetId: "",
+            payload: { action: msg.action, context: msg.context },
+          });
+          break;
+        }
         // DEPRECATED: no provenance on the DOM event; prefer `onAction`.
         this.dispatchEvent(
           new CustomEvent("a2ui-action", {

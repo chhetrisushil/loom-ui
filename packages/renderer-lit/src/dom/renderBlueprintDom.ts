@@ -1,9 +1,10 @@
-import type { StampedAction } from "@loom-ui/core/browser";
+import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loom-ui/core/browser";
 import {
   type Blueprint,
   type IdentityReport,
   type WidgetAction,
   preservesBlueprintNodes,
+  resolveWidgetStatus,
 } from "@loom/blueprint-runtime";
 import type { ProjectionRuntime } from "@loom/projection-runtime";
 import { type Accumulator, reconcileRoot, remountedOf } from "./reconcile";
@@ -20,6 +21,7 @@ import {
   elementOf,
   malformedNodes,
   mountContainer,
+  widgetEntriesOf,
 } from "./tree";
 
 export interface DomRenderOptions {
@@ -41,6 +43,14 @@ export interface DomRenderOptions {
    */
   readonly onAction?: (action: StampedAction & WidgetAction) => void;
   /**
+   * The compile fingerprint of THIS view (`compileFingerprint({ clearance, restrictedHandles,
+   * locale })` from `@loom-ui/core`): what the Blueprint depends on besides the Experience. Stamped
+   * on every action as `viewedVersion.compile`, so a host that serves the viewer a different
+   * redaction/locale can refuse an action taken on the other one. Optional; the renderer cannot
+   * derive it (it never sees the compile options).
+   */
+  readonly compile?: string;
+  /**
    * Whether the Blueprint's own title renders as the root `<h1>`. Default `"heading"` — today's
    * behaviour, unchanged. `"none"` mounts no `<h1>` at all: an app with its own page header, or
    * whose compiled title is not display text, gets a bare root. Under `"none"` a `blueprint.title`
@@ -61,6 +71,15 @@ export interface DomRenderHandle {
    * is refused (a `re-entrant update` finding) and changes nothing.
    */
   update(next: Blueprint): RecomposeReport;
+  /**
+   * The head THIS renderer last COMMITTED — compare actions against it, not merely against the
+   * store's newest Experience: after a half-landed `update` (a failed pass does not advance the
+   * tree), the user is still looking at the previous head. `bindingSeq(widgetId)` reads the
+   * CURRENT sequence of the data bound to a widget straight from the projection runtime (what a
+   * stamp's `binding.seq` must still equal), `undefined` when the widget is unknown, unbound or
+   * unreadable. Spread it into `isStaleAction(action, handle.head())`.
+   */
+  head(): CurrentHead;
   dispose(): void;
 }
 
@@ -88,6 +107,12 @@ export function buildStateMap(
   return { stateMap, unregistered };
 }
 
+/** Run `fn` once the browser has had a frame to paint; a macrotask where there is no frame. */
+function afterFrame(fn: () => void): void {
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => fn());
+  else setTimeout(fn, 0);
+}
+
 export function renderBlueprintDom(
   host: HTMLElement,
   blueprint: Blueprint,
@@ -105,9 +130,12 @@ export function renderBlueprintDom(
     executionId: opts.executionId,
     stateMap,
     ...(opts.onAction && { onAction: opts.onAction }),
-    // Read at action time: `state.current` advances on a successful `update`.
-    blueprintId: () => state.current.id,
+    // The id a widget mounted by the pass in flight is stamped with; kept widgets advance only
+    // after the committed tree has had a frame.
+    blueprintId: () => mountId,
+    ...(opts.compile !== undefined && { compile: opts.compile }),
   };
+  let mountId = blueprint.id;
   const root: ContainerEntry = mountContainer(blueprint.layout, ctx, () => {});
 
   const titleMode = opts.title ?? "heading";
@@ -138,6 +166,7 @@ export function renderBlueprintDom(
       if (state.disposed) return refused("disposed");
       if (state.updating) return refused("re-entrant update");
       state.updating = true;
+      mountId = next.id;
       const acc: Accumulator = { disposed: [], rebound: [], findings: [], mounted: [] };
       let identity = notCompared;
       try {
@@ -182,6 +211,13 @@ export function renderBlueprintDom(
             element.insertBefore(projectionPlaceholder(id), elementOf(state.root));
         }
         state.current = next;
+        // Kept widgets stay stamped with the PREVIOUS id until the new tree has been painted: an
+        // action from the old pixels (a sandbox message already queued, a click before the next
+        // frame) is an action on the old view.
+        const committed = widgetEntriesOf(state.root);
+        afterFrame(() => {
+          for (const w of committed) if (w.token !== undefined) w.viewedBlueprintId = next.id;
+        });
         return {
           identity,
           remounted: remountedOf(next, acc.disposed),
@@ -228,7 +264,27 @@ export function renderBlueprintDom(
         };
       } finally {
         state.updating = false;
+        mountId = state.current.id;
       }
+    },
+    head: () => {
+      const { experienceId, versionHash } = parseBlueprintId(state.current.id);
+      return {
+        experienceId,
+        versionHash,
+        ...(opts.compile !== undefined && { compile: opts.compile }),
+        bindingSeq: (widgetId) => {
+          try {
+            const w = widgetEntriesOf(state.root).find((e) => e.widget.id === widgetId)?.widget;
+            const b = w?.binding;
+            if (!w || !b) return undefined;
+            const st = opts.projectionRuntime.getState(b.projectionId, opts.executionId);
+            return resolveWidgetStatus(w, new Map([[b.projectionId, st]]))?.seq;
+          } catch {
+            return undefined;
+          }
+        },
+      };
     },
     dispose: () => {
       state.disposed = true;

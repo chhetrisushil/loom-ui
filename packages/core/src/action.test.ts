@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { actionFreshness, isStaleAction, parseBlueprintId, viewedVersionOf } from "./action";
+import {
+  actionFreshness,
+  compileFingerprint,
+  isStaleAction,
+  parseBlueprintId,
+  viewedVersionOf,
+} from "./action";
 
 const head = { experienceId: "exp-1", versionHash: "sha256:v2" };
 
@@ -43,5 +49,77 @@ describe("action provenance", () => {
       seq: 3,
     });
     expect(viewedVersionOf("e@h").binding).toBeUndefined();
+  });
+
+  it("data moved: same composition, different binding seq is data-moved (stale)", () => {
+    const a = {
+      widgetId: "ap",
+      viewedVersion: viewedVersionOf("exp-1@sha256:v2", { state: "ready", seq: 1 }),
+    };
+    expect(actionFreshness(a, { ...head, bindingSeq: () => 1 })).toBe("fresh");
+    expect(actionFreshness(a, { ...head, bindingSeq: () => 2 })).toBe("data-moved");
+    expect(isStaleAction(a, { ...head, bindingSeq: () => 2 })).toBe(true);
+    // the resolver is asked about the action's widget
+    const asked: string[] = [];
+    actionFreshness(a, {
+      ...head,
+      bindingSeq: (w) => {
+        asked.push(w);
+        return 1;
+      },
+    });
+    expect(asked).toEqual(["ap"]);
+  });
+
+  it("fails closed on data: a binding with no seq, an unknown current seq, a throwing resolver", () => {
+    const noSeq = {
+      widgetId: "ap",
+      viewedVersion: viewedVersionOf("exp-1@sha256:v2", { state: "ready" }),
+    };
+    expect(actionFreshness(noSeq, { ...head, bindingSeq: () => 1 })).toBe("unverifiable");
+    const a = {
+      widgetId: "ap",
+      viewedVersion: viewedVersionOf("exp-1@sha256:v2", { state: "ready", seq: 1 }),
+    };
+    expect(actionFreshness(a, { ...head, bindingSeq: () => undefined })).toBe("unverifiable");
+    expect(
+      actionFreshness(a, {
+        ...head,
+        bindingSeq: () => {
+          throw new Error("x");
+        },
+      })
+    ).toBe("unverifiable");
+    // no resolver: unchanged behaviour; an unbound widget needs no seq
+    expect(actionFreshness(a, head)).toBe("fresh");
+    expect(
+      actionFreshness(
+        { widgetId: "n", viewedVersion: viewedVersionOf("exp-1@sha256:v2") },
+        { ...head, bindingSeq: () => 9 }
+      )
+    ).toBe("fresh");
+  });
+
+  it("compile fingerprint: a different view of the same artifact is stale; missing is unverifiable", () => {
+    const restricted = compileFingerprint({ clearance: "internal", restrictedHandles: ["h1"] });
+    const full = compileFingerprint({ clearance: "secret" });
+    const seen = { viewedVersion: viewedVersionOf("exp-1@sha256:v2", undefined, restricted) };
+    expect(actionFreshness(seen, { ...head, compile: restricted })).toBe("fresh");
+    expect(actionFreshness(seen, { ...head, compile: full })).toBe("stale");
+    expect(
+      actionFreshness(
+        { viewedVersion: viewedVersionOf("exp-1@sha256:v2") },
+        { ...head, compile: full }
+      )
+    ).toBe("unverifiable");
+    expect(actionFreshness(seen, head)).toBe("fresh");
+  });
+
+  it("compileFingerprint is deterministic, handle-order-insensitive and input-sensitive", () => {
+    const f = (i: Parameters<typeof compileFingerprint>[0]) => compileFingerprint(i);
+    expect(f({ restrictedHandles: ["a", "b"] })).toBe(f({ restrictedHandles: ["b", "a"] }));
+    expect(f({ locale: "en" })).not.toBe(f({ locale: "fr" }));
+    expect(f({ clearance: "secret" })).not.toBe(f({}));
+    expect(f({ restrictedHandles: ["a"] })).not.toBe(f({ restrictedHandles: ["a", "b"] }));
   });
 });

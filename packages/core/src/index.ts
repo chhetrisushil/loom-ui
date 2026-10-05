@@ -1,11 +1,13 @@
 export {
   actionFreshness,
+  compileFingerprint,
   isStaleAction,
   parseBlueprintId,
   viewedVersionOf,
 } from "./action";
 export type {
   ActionFreshness,
+  CompileFingerprintInput,
   CurrentHead,
   StampedAction,
   ViewedBinding,

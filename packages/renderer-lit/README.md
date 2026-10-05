@@ -60,31 +60,57 @@ import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/rendere
 ### The action contract and the stale-view flow
 
 Every action a widget emits reaches `onAction` as loom's `WidgetAction` (`type`, `widgetId`,
-`payload`) plus an additive `viewedVersion` (`StampedAction`, from `@loom-ui/core`): the
-`blueprintId` / `experienceId` / `versionHash` the user was looking at, and for a bound widget the
-`binding: { state, seq }` they saw. The version hash identifies the composition; the binding `seq`
-(monotonic per binding) lets a host also notice that the DATA moved under an unchanged composition.
-A handler typed `(a: WidgetAction) => void` keeps working.
+`payload`) plus an additive `viewedVersion` (`StampedAction`, from `@loom-ui/core`):
+`blueprintId` / `experienceId` / `versionHash` of the view the user was looking at; for a bound
+widget `binding: { state, seq }` — the status the widget was last DELIVERED (not a mount-time
+snapshot); and `compile`, the fingerprint you declared (`DomRenderOptions.compile`). The version
+hash identifies the composition; the binding `seq` is monotonic per STORE (every hydration write
+advances it), so compare it for equality: a difference means "the data moved". A handler typed
+`(a: WidgetAction) => void` keeps working.
 
-Recommended host flow: before acting on an action, compare it with the CURRENT head and refuse a
-stale one, then pass `action.viewedVersion` into the flow's resume payload so the flow can check it
-too (loom-side binding of approvals to the viewed version is tracked as R13):
+What the stamp names is what was COMMITTED AND PAINTED: a widget kept across `update(v3)` is stamped
+`v2` until the new tree has had a frame (a sandbox message queued, or a click made, before then is
+an action on the old view); a widget mounted by the pass is stamped `v3`. A rebound widget stamps
+its new binding. Actions from a widget that has been disposed, torn down or remounted (a 3P
+renderer calling `onAction` late) are dropped.
+
+The host flow, executable as written — compare against the head THIS renderer last committed
+(`handle.head()`), not merely the store's newest Experience (after a half-landed `update` the user
+is still on the previous head):
 
 ```ts
-import { actionFreshness, isStaleAction } from "@loom-ui/core";
-if (isStaleAction(action, currentExperience)) return refuse(actionFreshness(action, currentExperience));
+import { actionFreshness, compileFingerprint, isStaleAction } from "@loom-ui/core";
+const compile = compileFingerprint({ clearance, restrictedHandles, locale }); // what you compiled with
+const handle = renderBlueprintDom(host, blueprint, { /* … */, compile, onAction });
+// in onAction(action):
+if (isStaleAction(action, handle.head())) return refuse(actionFreshness(action, handle.head()));
 ```
 
-`isStaleAction` fails closed: anything but `fresh` (stale, unstamped, or an unsealed experience with
-no `versionHash` to compare) is refused. The stamp is written ONLY by the renderer, after the
-widget: `widgetId` and `viewedVersion` are overwritten, so A2UI trees and sandbox code (model- or
-author-produced, untrusted) cannot spoof provenance — their own `action`/`context` live nested under
-`payload`. The stamp is a staleness aid, not authentication of the actor.
+`handle.head()` is `{ experienceId, versionHash, compile?, bindingSeq(widgetId) }`; `bindingSeq`
+reads the CURRENT seq of the widget's bound data from the projection runtime. Verdicts:
+`fresh`; `stale` (other version, or other `compile` fingerprint — e.g. the approver saw
+"Restricted"); `data-moved` (same composition, different seq); `unverifiable` (unsealed version, or
+a binding/compile the stamp cannot answer); `unstamped`. `isStaleAction` fails closed on everything
+but `fresh`. Pass `action.viewedVersion` into the flow's resume payload so the flow can check it too
+(loom-side binding of approvals to the viewed version is tracked as R13).
+
+The stamp is written ONLY by the renderer, after the widget: `widgetId` and `viewedVersion` are
+overwritten, so no widget, A2UI tree or sandbox code can spoof provenance — their own
+`action`/`context` live nested under `payload`. The stamp is a staleness aid, not authentication of
+the actor.
+
+**`A2UI_ACTION` and `SANDBOX_ACTION` are untrusted intent.** A Button's label AND action name are
+authored by a model/A2UI producer; a sandbox frame can post `{ type: "action" }` with no user
+gesture at all (the iframe's own input is invisible to the parent, so a gesture gate cannot be
+enforced from here). They are stamped and staleness-checked like any other action, but they are NOT
+the human approval: never treat one as consent to a gated step. Only renderer-owned widget actions
+(e.g. `APPROVE` from `ApprovalCard`) are.
 
 A2UI Buttons emit `{ type: "A2UI_ACTION", payload: { action, context } }` and sandbox frames emit
-`{ type: "SANDBOX_ACTION", payload: { action, context } }` through the same `onAction`. The DOM
-`a2ui-action` / `sandbox-error` events still fire but are **deprecated** for actions: they carry no
-provenance. `@loom-ui/renderer-terminal` is read-only (no interactive actions), so it emits none.
+`{ type: "SANDBOX_ACTION", payload: { action, context } }` through the same `onAction`. When
+`onAction` is wired, the DOM `a2ui-action` event is NOT fired (it carries no provenance, and a host
+listening to both would act twice); without `onAction` it still fires, **deprecated**.
+`@loom-ui/renderer-terminal` is read-only (no interactive actions), so it emits none.
 
 ### The DOM adapter (`@loom-ui/renderer-lit/dom`)
 

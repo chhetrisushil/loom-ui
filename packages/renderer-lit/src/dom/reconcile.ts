@@ -173,6 +173,7 @@ function reconcileWidget(
     const status = resolveWidgetStatus(next, ctx.stateMap);
     try {
       entry.handle.update(value, status);
+      entry.delivered = status;
     } catch (e) {
       const message = messageOf(e);
       showError(entry, message);

@@ -95,13 +95,18 @@ export class LuA2UIView extends LitElement {
 
   private emitAction(action: string, context: unknown): void {
     if (!action) return;
-    this.onAction?.({
-      type: "A2UI_ACTION",
-      widgetId: "",
-      payload: { action, context: context ?? undefined },
-    });
-    // DEPRECATED: the DOM event carries NO provenance. Kept for hosts that still listen for it;
-    // wire `onAction` instead (it carries `viewedVersion`).
+    // With `onAction` wired the host has the PROVENANCE-carrying path, and the provenance-free DOM
+    // event is not fired (a host listening to both would act twice, once on an unverifiable copy).
+    // Without it the DOM event still fires, unchanged, for hosts that have not migrated.
+    if (this.onAction) {
+      this.onAction({
+        type: "A2UI_ACTION",
+        widgetId: "",
+        payload: { action, context: context ?? undefined },
+      });
+      return;
+    }
+    // DEPRECATED: carries NO provenance; wire `onAction` instead.
     this.dispatchEvent(
       new CustomEvent("a2ui-action", {
         detail: { action, context: context ?? undefined },
