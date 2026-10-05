@@ -182,8 +182,11 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 - **A classified handle is never fetched for a viewer who may not see it (fail-closed).** Pass
   `viewer: { clearance }` (`@loom-ui/core`'s `Viewer`) to `HydrationController`, `handleInventory`
   and `serveHandle`/`serveHandles`. A handle bound by any node whose `sensitivity` is above the
-  clearance is not planned, not cached and its provider is never invoked: the controller publishes
-  `error` with the fixed `restricted` finding (no handle, class or tool in it); `handleInventory`
+  clearance is not planned, not cached and its provider is never invoked, and the controller writes
+  NOTHING to the store for it: no value and no status, so a store projected to a client does not
+  even name the handle (a stale entry is removed). The viewer is snapshotted at construction;
+  `setViewer` re-plans (drops now-restricted values, aborts their in-flight loads, loads newly
+  allowed ones). `handleInventory`
   omits it (the client learns neither name nor revision); the server answers a client that names it
   anyway exactly as for a handle the experience does not bind (`unknown-handle`, no existence
   oracle) and logs the full `restricted` finding to `onFinding`. No viewer = no clearance, with one

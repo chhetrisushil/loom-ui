@@ -24,7 +24,7 @@ import {
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type DriftRecord, type InputDriftMode, executeProvider, outcomeResult } from "./provider";
 import type { ReshaperRegistry } from "./reshape";
-import { partitionByViewer, restrictedFinding } from "./restricted";
+import { partitionByViewer } from "./restricted";
 import {
   type HandleLoadResult,
   HandleScheduler,
@@ -83,7 +83,10 @@ export interface ControllerOptions {
   /**
    * Who the data is for (`@loom-ui/core`'s `Viewer`). A handle bound by any node classified above
    * the viewer's clearance is never loaded: its provider is not invoked, nothing is cached for it,
-   * and its status is `error` with the fixed `restricted` finding. FAIL-CLOSED: absent = a viewer
+   * and NOTHING is written to the store for it (no value, no status: a store projected to a client
+   * must not even name it). SNAPSHOT at construction: later mutation of this object changes
+   * nothing; a different viewer needs {@link HydrationController.setViewer} (or a new
+   * controller). FAIL-CLOSED: absent = a viewer
    * with no clearance (and `load` reports one `viewer-not-supplied` warn if anything is
    * classified); unclassified handles are unaffected. Pass `{ clearance: "secret" }` for full access.
    */
@@ -158,7 +161,11 @@ export class HydrationController {
    * Throws `RangeError` for a `maxConcurrentCalls` that is not a positive integer, or
    * `defaultParams` that `checkParams` refuses.
    */
+  /** The viewer, copied once at construction so a live mutation of the caller's object is inert. */
+  private viewer: Viewer | undefined;
+
   constructor(private readonly opts: ControllerOptions) {
+    this.viewer = snapshotViewer(opts.viewer);
     this.clock = opts.clock ?? Date.now;
     this.cache = opts.cache ?? new HydrationCache(this.clock);
     if (opts.defaultParams !== undefined) {
@@ -222,6 +229,17 @@ export class HydrationController {
     return this.bind(exp);
   }
 
+  /**
+   * Replace the viewer and re-plan the bound experience: a handle the new viewer may not see is
+   * aborted and dropped (an in-flight result is discarded, a loaded value removed), one it newly
+   * may see is scheduled. Before any `load` it only records the viewer.
+   */
+  setViewer(viewer: Viewer | undefined): { findings: Finding[] } {
+    if (this.sched.isDisposed) return { findings: [disposedFinding("setViewer")] };
+    this.viewer = snapshotViewer(viewer);
+    return this.current === undefined ? { findings: [] } : this.recompose(this.current);
+  }
+
   /** The surface reports a lazy (P2) widget entered the viewport. */
   markVisible(handle: string): void {
     this.sched.markVisible(handle);
@@ -235,9 +253,7 @@ export class HydrationController {
     if (treeDepth(next.root) > MAX_TREE_DEPTH)
       return { findings: [tooDeep(next.experienceId, MAX_TREE_DEPTH)] };
     this.sched.retain(
-      new Set(
-        partitionByViewer(experienceHandles(next), this.opts.viewer).allowed.map((h) => h.handle)
-      )
+      new Set(partitionByViewer(experienceHandles(next), this.viewer).allowed.map((h) => h.handle))
     );
     return this.bind(next);
   }
@@ -322,11 +338,12 @@ export class HydrationController {
     for (const m of missing)
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
     // Refused handles: their status says so (and nothing else), and no job exists for them.
-    const { restricted, advisory } = partitionByViewer(experienceHandles(exp), this.opts.viewer);
+    const { restricted, advisory } = partitionByViewer(experienceHandles(exp), this.viewer);
     for (const r of restricted) {
       if (isReservedHandle(r.handle)) continue;
+      // NOTHING is written for it: no value and no status, because a store projected to a client
+      // would reveal the handle's name (and that it is restricted) through its status key.
       this.opts.store.remove(r.handle);
-      this.opts.store.setStatus(r.handle, { state: "error", finding: restrictedFinding() });
     }
     this.sched.schedule(jobs);
     return { findings: [...findings, ...advisory] };
@@ -342,7 +359,7 @@ export class HydrationController {
     const findings: Finding[] = [];
     const missing: Array<{ handle: string; finding: Finding }> = [];
     // A restricted handle is not a job: it never reaches the scheduler, the cache or a provider.
-    for (const use of partitionByViewer(experienceHandles(exp), this.opts.viewer).allowed) {
+    for (const use of partitionByViewer(experienceHandles(exp), this.viewer).allowed) {
       if (isReservedHandle(use.handle)) {
         findings.push({
           code: "invalid-handle",
@@ -401,5 +418,16 @@ export class HydrationController {
       ...(this.opts.captureSample !== undefined && { captureSample: this.opts.captureSample }),
     });
     return { ...outcomeResult(outcome), drift: outcome.drift ?? [], findings: outcome.findings };
+  }
+}
+
+/** A copy of the viewer holding only a clearance read once; a throwing getter reads as none. */
+function snapshotViewer(viewer: Viewer | undefined): Viewer | undefined {
+  if (viewer === undefined) return undefined;
+  try {
+    const clearance = viewer.clearance;
+    return clearance === undefined ? {} : { clearance };
+  } catch {
+    return {};
   }
 }

@@ -95,6 +95,15 @@ export const Experience = z.object({
   intent: Intent,
   root: ExperienceNode,
   providers: z.record(z.string(), ProviderSpec),
+  /**
+   * The confidentiality class of each HANDLE, sticky: a handle is as classified as the strictest
+   * class any node EVER bound it with, so removing (or rebinding away) every node that carried a
+   * class does not declassify it. Folded in by `insertNode` / `removeNode` / `bindProvider`
+   * (`strictest`, never lower); only the explicit `declassifyHandle` op lowers an entry, and no
+   * planner path emits it. Optional with no default and omitted from the hash when empty: an
+   * Experience that never classified a handle hashes the same as before this field existed.
+   */
+  handleClasses: z.record(z.string(), Sensitivity).optional(),
   vocabularyFloor: VocabularyFloor,
   meta: z.object({ author: z.string(), createdAt: z.string(), sourceKind: z.string() }),
 });
@@ -117,6 +126,8 @@ export function experienceArtifact(exp: Experience): unknown {
     root: normalize(exp.root),
     providers: exp.providers,
     vocabularyFloor: exp.vocabularyFloor,
+    ...(exp.handleClasses !== undefined &&
+      Object.keys(exp.handleClasses).length > 0 && { handleClasses: exp.handleClasses }),
   };
 }
 

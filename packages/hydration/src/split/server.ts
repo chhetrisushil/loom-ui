@@ -294,12 +294,15 @@ export function publicFinding(handle: string | undefined, finding: Finding): Fin
   };
 }
 
-type Report = (finding: Finding) => void;
+type Report = ((finding: Finding) => void) & {
+  /** Mark a finding as already accounted for, so a later `report` of it is a no-op. */
+  readonly silence: (finding: Finding) => void;
+};
 
 /** Hands each finding to `onFinding` once, in full; a throwing hook is swallowed. */
 function reporter(opts: ServeOptions, handle: string): Report {
   const seen = new Set<Finding>();
-  return (finding) => {
+  const report = (finding: Finding): void => {
     if (seen.has(finding)) return;
     seen.add(finding);
     try {
@@ -316,6 +319,11 @@ function reporter(opts: ServeOptions, handle: string): Report {
       // getter throws, what the server does).
     }
   };
+  return Object.assign(report, {
+    silence: (finding: Finding) => {
+      seen.add(finding);
+    },
+  });
 }
 
 /** Report the result's finding in full, and answer the client with its public form. */
@@ -498,8 +506,12 @@ async function serveOne(
     // Checked first, before the provider is even looked up: a restricted handle is never loaded,
     // cached or invoked, for any request, whatever its params.
     if (pass.restricted.has(handle)) {
+      // The server's log gets the true reason ONCE; the client's answer is the public
+      // `unknown-handle`, which is silenced so it is not logged as a second, contradicting finding.
       report(restrictedFinding());
-      return refuse("unknown-handle", `"${handle}" is not a handle this experience binds`);
+      const answer = refuse("unknown-handle", `"${handle}" is not a handle this experience binds`);
+      if (answer.finding !== undefined) report.silence(answer.finding);
+      return answer;
     }
     // Only what a node binds is served: a provider no node binds is not the client's to ask for.
     const spec =

@@ -67,9 +67,9 @@ describe("HydrationController with a viewer (U10)", () => {
     expect(store.value("open")).toEqual({ v: "tool.open" });
     for (const h of ["pay", "audit"]) {
       expect(store.value(h)).toBeUndefined();
-      expect(store.status(h)?.state).toBe("error");
-      expect(store.status(h)?.finding?.code).toBe("restricted");
-      expect(JSON.stringify(store.status(h))).not.toMatch(/tool\.|sensitive|secret/);
+      // nothing at all is written for it: a store projected to a client must not name it
+      expect(store.status(h)).toBeUndefined();
+      expect(store.handles()).not.toContain(h);
     }
   });
   it("a cleared viewer loads it", async () => {
@@ -79,7 +79,7 @@ describe("HydrationController with a viewer (U10)", () => {
     await flush();
     expect(toolsCalled()).toEqual(["tool.open", "tool.pay"]);
     expect(store.value("pay")).toEqual({ v: "tool.pay" });
-    expect(store.status("audit")?.finding?.code).toBe("restricted");
+    expect(store.status("audit")).toBeUndefined();
   });
   it("no viewer is the most restrictive viewer: classified handles are refused, with one advisory", async () => {
     const { store, ctl, clock, toolsCalled } = rig();
@@ -87,7 +87,8 @@ describe("HydrationController with a viewer (U10)", () => {
     clock.advance(100);
     await flush();
     expect(toolsCalled()).toEqual(["tool.open"]);
-    expect(store.status("pay")?.finding?.code).toBe("restricted");
+    expect(store.status("pay")).toBeUndefined();
+    expect(store.handles()).not.toContain("pay");
     expect(findings.map((f) => f.code)).toEqual(["viewer-not-supplied"]);
   });
   it("unclassified experiences are unaffected: no advisory, same loads", async () => {
@@ -117,7 +118,8 @@ describe("HydrationController with a viewer (U10)", () => {
     clock.advance(100);
     await flush();
     expect(toolsCalled()).toEqual([]);
-    expect(store.status("pay")?.finding?.code).toBe("restricted");
+    expect(store.status("pay")).toBeUndefined();
+    expect(store.handles()).not.toContain("pay");
   });
   it("a recompose that classifies a loaded handle drops its value", async () => {
     const { store, ctl, clock } = rig({ clearance: "internal" });
@@ -139,7 +141,117 @@ describe("HydrationController with a viewer (U10)", () => {
     clock.advance(100);
     await flush();
     expect(store.value("pay")).toBeUndefined();
-    expect(store.status("pay")?.finding?.code).toBe("restricted");
+    expect(store.status("pay")).toBeUndefined();
+    expect(store.handles()).not.toContain("pay");
+  });
+});
+
+describe("restricted handles leave no trace; class changes mid-flight (U10 fix round 1)", () => {
+  const gated = () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const clock = new ManualClock();
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const cache = new HydrationCache(clock.now);
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, async (i) => {
+      await gate;
+      return { v: (i as { toolName: string }).toolName };
+    });
+    const mk = (viewer?: { clearance?: "secret" | "sensitive" | "internal" }) =>
+      new HydrationController({
+        invoker: inv,
+        store,
+        clock: clock.now,
+        setTimer: clock.setTimer,
+        cache,
+        ...(viewer !== undefined && { viewer }),
+      });
+    return { store, clock, cache, release: () => release(), mk, inv };
+  };
+  const only = (sens?: "sensitive"): Experience => {
+    const g = exp();
+    return {
+      ...g,
+      root: { ...(g.root as ContainerNode), children: [node("a", "pay", sens)] },
+    };
+  };
+
+  it("raising a handle's class while its load is IN FLIGHT: the late value never lands", async () => {
+    const { store, clock, release, mk } = gated();
+    const ctl = mk({ clearance: "internal" });
+    ctl.load(only());
+    clock.advance(100);
+    await flush();
+    expect(ctl.inFlight()).toEqual(["pay"]);
+    ctl.recompose({ ...only("sensitive"), versionHash: "sha256:v2" });
+    release();
+    clock.advance(100);
+    await flush();
+    expect(store.value("pay")).toBeUndefined();
+    expect(store.status("pay")).toBeUndefined();
+    expect(store.handles()).not.toContain("pay");
+    expect(ctl.inFlight()).toEqual([]);
+  });
+
+  it("setViewer downgrade drops a loaded value; an upgrade loads it", async () => {
+    const { store, clock, release, mk } = gated();
+    release();
+    const ctl = mk({ clearance: "sensitive" });
+    ctl.load(only("sensitive"));
+    clock.advance(100);
+    await flush();
+    expect(store.value("pay")).toEqual({ v: "tool.pay" });
+    ctl.setViewer({ clearance: "internal" });
+    expect(store.value("pay")).toBeUndefined();
+    expect(store.handles()).not.toContain("pay");
+    ctl.setViewer({ clearance: "secret" });
+    clock.advance(100);
+    await flush();
+    expect(store.value("pay")).toEqual({ v: "tool.pay" });
+  });
+
+  it("mutating the caller's viewer object after construction changes nothing", async () => {
+    const { store, clock, release, mk } = gated();
+    release();
+    const viewer: { clearance?: "secret" | "sensitive" | "internal" } = { clearance: "internal" };
+    const ctl = mk(viewer);
+    viewer.clearance = "secret"; // a live read would now see everything
+    ctl.load(only("sensitive"));
+    clock.advance(100);
+    await flush();
+    expect(store.value("pay")).toBeUndefined();
+  });
+
+  it("a lower-cleared controller on a store that already holds the value removes it", async () => {
+    const { store, clock, release, mk } = gated();
+    release();
+    mk({ clearance: "secret" }).load(only("sensitive"));
+    clock.advance(100);
+    await flush();
+    expect(store.value("pay")).toEqual({ v: "tool.pay" });
+    mk({ clearance: "internal" }).load(only("sensitive"));
+    expect(store.value("pay")).toBeUndefined();
+    expect(store.handles()).not.toContain("pay");
+  });
+
+  it("a refused server request is reported to onFinding once, as the true reason", async () => {
+    const e = exp();
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
+    const logged: string[] = [];
+    const res = await serveHandle(
+      e,
+      { experienceId: e.experienceId, versionHash: e.versionHash, handle: "audit", params: {} },
+      {
+        invoker: inv,
+        now: 0,
+        viewer: { clearance: "internal" },
+        onFinding: (_h, f) => logged.push(f.code),
+      }
+    );
+    expect(res.finding?.code).toBe("unknown-handle");
+    expect(logged).toEqual(["restricted"]);
   });
 });
 
