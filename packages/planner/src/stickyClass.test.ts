@@ -75,3 +75,60 @@ describe("a rename through the planner cannot declassify a handle", () => {
     expect(experienceHandles(after)[0]?.sensitivity).toBe("secret");
   });
 });
+
+// U10 fix round 2 — the reviewer's pa.mjs: a rename PLUS an argument tweak mints a NEW handle id
+// (the id hashes the arguments), so a per-handle class cannot follow it. The class is the TOOL's.
+describe("a handle-id change cannot declassify (tool-level, fail-closed)", () => {
+  const draft = (id: string, args: Record<string, unknown>, path = "totals.count"): PlanDraft => ({
+    summary: "s",
+    nodes: [
+      {
+        ...node(id),
+        binding: { ...node(id).binding, arguments: args, path },
+      },
+    ],
+  });
+  const composed = () => {
+    const { exp } = fold(base(), plan("pay"));
+    const h = experienceHandles(exp)[0]!.handle;
+    const r = apply(exp, { type: "bindProvider", nodeId: "pay", handle: h, sensitivity: "secret" });
+    if (!r.ok) throw new Error("bind");
+    return { exp: r.value, h };
+  };
+
+  it("rename + extra argument: the NEW handle is secret and the planner says so", () => {
+    const { exp, h } = composed();
+    const { m, exp: after } = fold(exp, draft("pay_v2", { window: "7d", x: 1 }));
+    const handles = experienceHandles(after);
+    expect(handles).toHaveLength(1);
+    expect(handles[0]!.handle).not.toBe(h); // a genuinely different handle id
+    expect(handles[0]!.sensitivity).toBe("secret");
+    expect(m.findings.map((f) => f.code)).toContain("sensitivity-inherited");
+    expect(m.ops.some((o) => o.type === "declassifyHandle")).toBe(false);
+  });
+
+  it("a path-only change keeps the class too", () => {
+    const { exp, h } = composed();
+    const { exp: after } = fold(exp, draft("pay_v2", { window: "7d" }, "totals.revenueCents"));
+    const handles = experienceHandles(after);
+    expect(handles[0]!.handle).not.toBe(h);
+    expect(handles[0]!.sensitivity).toBe("secret");
+  });
+
+  it("a node on a DIFFERENT tool is unaffected", () => {
+    const { exp } = composed();
+    const other = capabilitiesFixture.find((c) => c.handle !== "orders_summary");
+    if (other === undefined) return; // fixture offers one tool only
+    const d: PlanDraft = {
+      summary: "s",
+      nodes: [
+        node("pay"),
+        { ...node("o"), binding: { ...node("o").binding, capability: other.handle } },
+      ],
+    };
+    const { m, exp: after } = fold(exp, d);
+    const o = experienceHandles(after).find((u) => u.nodeIds.includes("o"));
+    expect(o?.sensitivity).toBeUndefined();
+    expect(m.findings.map((f) => f.code)).not.toContain("sensitivity-inherited");
+  });
+});

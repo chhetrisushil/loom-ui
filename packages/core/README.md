@@ -253,12 +253,30 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   affected, so an experience that classifies nothing compiles byte-identically. A handle carries
   one value for every node that binds it, so its class is the strictest of those nodes' (and a
   node is redacted when ITS handle is). **A handle's class is sticky**: `Experience.handleClasses`
-  (optional, omitted from the hash when empty, so an experience that never classified a handle
-  hashes as before) records the strictest class any node ever bound it with, folded in by
+  (optional) records the strictest class any node ever bound it with, folded in by
   `insertNode` / `removeNode` / `bindProvider` and never lowered by them: removing, renaming or
   rebinding the classified node does not declassify its handle, whatever the op order or the
-  planner drafts. Only the explicit caller op `declassifyHandle { handle, to? }` lowers it (a
-  `prompt` op carrying one is refused, and the planner never emits it). An unrecognised class
+  planner drafts. **A tool's class is sticky too (tool-level, fail-closed).** A handle id hashes
+  its tool, args and path, so a changed argument mints a NEW handle; `Experience.toolClasses`
+  (keyed by `toolName` alone, so a version bump does not shed it, and over-classifying two
+  servers' same-named tools rather than under-classifying) records the strictest class any handle
+  on that tool ever carried, and `remapProvider` gives every new handle on such a tool that class
+  (the planner adds a `sensitivity-inherited` warn). Handles already on the tool are not
+  reclassified retroactively. **Lowering** is `declassifyHandle { handle, to?, tool? }`, the only
+  op that does it: it lowers the handle, and with `tool: true` also its tools; lowering the handle
+  alone is undone the next time a handle is remapped onto a still-classified tool, and a
+  still-classified sibling handle keeps its tool classified, so lower both when both are set.
+  **Authority:** `apply` / `applyAt` / `replay` refuse `declassifyHandle`
+  (`declassify-not-allowed`, experience unchanged) unless the CALLER passes
+  `{ allowDeclassify: true }`. It is an argument of the call, never a field of the op, so a
+  producer that controls only op data (a planner's `PlanResult.ops`, a client request) cannot mint
+  it; the host applies untrusted ops without it and passes it only for ops it authored, or when
+  replaying a log of its own already-authorised ops. A `prompt` op carrying a declassify is
+  refused even with it, and the reference planner never emits one. **When a hash changes:** only
+  the part of the class maps that live nodes do NOT already imply is hashed, so an experience
+  whose classified nodes are all still present hashes exactly as it did before classes were
+  stored; the content address moves only when a class outlives the node that carried it
+  (removed or rebound) or is inherited by tool, which is new information. An unrecognised class
   ranks strictest (`strictestClass` is monotone, fail-closed). In `compile` a restricted node becomes a static `Note`
   placeholder: same id, same grid cell (no reflow), neutral "Restricted" title/text
   (`restrictedLabel`), and no binding, props, label, type or handle of the node it replaced; a

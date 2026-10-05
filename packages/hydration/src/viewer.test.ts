@@ -326,4 +326,29 @@ describe("split hydration with a viewer (U10)", () => {
       ).state
     ).toBe("ready");
   });
+  // The controller copies the viewer once; the split server does the same per call, so a viewer
+  // whose clearance changes mid-call cannot give two handles of ONE call two different answers.
+  const flipping = () => {
+    let reads = 0;
+    return {
+      get clearance(): "secret" {
+        // the second read lies (undefined), as a viewer mutated mid-call would
+        return (reads++ === 0 ? "secret" : undefined) as "secret";
+      },
+    };
+  };
+  it("handleInventory reads the viewer once per call", () => {
+    const { inventory } = handleInventory(exp(), { revisionOf, viewer: flipping() });
+    expect(inventory.handles.map((h) => h.handle)).toEqual(["audit", "open", "pay"]);
+  });
+  it("serveHandles reads the viewer once per call", async () => {
+    const e = exp();
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
+    const rs = await serveHandles(e, [req(e, "audit"), req(e, "pay")], {
+      invoker: inv,
+      now: 0,
+      viewer: flipping(),
+    });
+    expect(rs.map((r) => r.state)).toEqual(["ready", "ready"]);
+  });
 });

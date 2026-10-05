@@ -100,7 +100,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `placement-out-of-range`. `setTitle`: `missing-node`, `not-container`. `setRole`: `missing-node`,
   `not-container`, `invalid-operation` (a role that is not `isLayoutRole`). `setProps` / `setLabel` /
   `bindProvider`: `missing-node`, `not-semantic`. `remapProvider`: `handle-mismatch` (`spec.handle` ≠
-  `handle`). `removeProvider`: `missing-provider`, `provider-still-bound`. `declassifyHandle`: only the every-op codes (caller-only; lowers a handle's sticky class). `prompt`: whatever its
+  `handle`). `removeProvider`: `missing-provider`, `provider-still-bound`. `declassifyHandle`: `declassify-not-allowed` (the call did not pass `{ allowDeclassify: true }`; it lowers a sticky class and is trusted-caller-only). `prompt`: whatever its
   `materialized` ops return, plus `declassify-in-prompt` when any of them (at any nesting) is a `declassifyHandle`. `applyAt` only: `stale-base-version` (the declared base is not the artifact). Note `not-container` (`setTitle` / `setRole` on a semantic node) is a different code
   from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `bindProvider`
   does not check that the handle is declared; `validateExperience` reports a binder with no provider

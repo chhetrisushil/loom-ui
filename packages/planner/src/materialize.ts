@@ -9,6 +9,7 @@ import {
   type SemanticCatalog,
   type SemanticNode,
   experienceHandles,
+  inheritedClass,
   isContainer,
   nodeIds,
   orderKeyAfterAll,
@@ -521,6 +522,18 @@ export function materialize(
       return undefined;
     }
     if (!declaredSpecs.has(handle) || !sameJson(declaredSpecs.get(handle), spec)) {
+      // A new handle on a tool that ever carried a class inherits it in core's `remapProvider`
+      // (classification is tool-level: a changed argument or path is a different handle id).
+      const inherits = inheritedClass(base, spec);
+      const own = classByHandle.get(handle);
+      if (inherits !== undefined && strictest(inherits, own) !== own)
+        findings.push(
+          warn(
+            "sensitivity-inherited",
+            `provider "${handle}" calls a tool that carries class "${inherits}": it inherits that class, which only the caller can lower`,
+            n.id
+          )
+        );
       ops.push({ type: "remapProvider", handle, spec });
       declaredSpecs.set(handle, spec);
     }

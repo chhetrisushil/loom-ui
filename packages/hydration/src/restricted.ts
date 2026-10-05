@@ -40,3 +40,14 @@ export function partitionByViewer(
     advisory: classified && viewer === undefined ? [viewerNotSuppliedFinding()] : [],
   };
 }
+
+/** A copy of the viewer holding only a clearance read once; a throwing getter reads as none. */
+export function snapshotViewer(viewer: Viewer | undefined): Viewer | undefined {
+  if (viewer === undefined) return undefined;
+  try {
+    const clearance = viewer.clearance;
+    return clearance === undefined ? {} : { clearance };
+  } catch {
+    return {};
+  }
+}
