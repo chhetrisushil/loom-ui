@@ -50,6 +50,7 @@ import {
 // blueprint derived.
 
 import { hydrationPath, hydrationStatusPath } from "./paths";
+import { type ProjectionCatalog, type ProjectionPlan, planProjectionBindings } from "./projections";
 import { type Viewer, mayView } from "./viewer";
 export {
   HYDRATION_STATUS_PREFIX,
@@ -63,6 +64,14 @@ export interface CompileOptions {
   readonly catalog: SemanticCatalog;
   readonly hydrationProjectionId: string;
   readonly hydrationProjectionVersion: string;
+  /**
+   * The projections the host offers beyond hydration (see `projections.ts`). A node's
+   * `projection` binding compiles only against an entry here, at the version it pins; absent, no
+   * projection binding compiles (fail-closed) — each is `projection-unknown`. The compiled
+   * Blueprint declares only the projections a node the viewer may see binds, each with its pinned
+   * version in `projectionVersions` (loom ADR 0095).
+   */
+  readonly projections?: ProjectionCatalog;
   /** Default: the label's fallback text. */
   readonly resolveLabel?: (label: LocalizedText) => string;
   /** Base loom catalogue for built-in kinds; default `builtinCatalog`. */
@@ -159,6 +168,17 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     classified = true;
     if (!mayView(opts.viewer, use.sensitivity)) restrictedHandles.add(use.handle);
   }
+  const projectionPlan = planProjectionBindings(
+    exp,
+    opts.projections,
+    opts.hydrationProjectionId,
+    opts.viewer
+  );
+  findings.push(...projectionPlan.findings);
+  if (projectionPlan.classified) classified = true;
+  const restrictedNodes = [...projectionPlan.verdicts.values()].some(
+    (v) => v.kind === "restricted"
+  );
   if (classified && opts.viewer === undefined)
     findings.push({
       code: "viewer-not-supplied",
@@ -167,7 +187,8 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
         "the experience has classified bindings and no viewer was supplied: they are redacted (no viewer is the most restrictive viewer)",
     });
   const loomCatalog =
-    restrictedHandles.size > 0 && !derived.catalog.entries.some((e) => e.kind === PLACEHOLDER_KIND)
+    (restrictedHandles.size > 0 || restrictedNodes) &&
+    !derived.catalog.entries.some((e) => e.kind === PLACEHOLDER_KIND)
       ? {
           ...derived.catalog,
           entries: [
@@ -181,7 +202,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   // (both renderers draw it); a catalogue whose `Note` declares no props still gets the title,
   // and one warn that a host-chrome renderer will show an empty body.
   const placeholderHasText = (catalogByKind.get(PLACEHOLDER_KIND)?.props ?? []).includes("text");
-  if (restrictedHandles.size > 0 && !placeholderHasText)
+  if ((restrictedHandles.size > 0 || restrictedNodes) && !placeholderHasText)
     findings.push({
       code: "restricted-placeholder-no-text",
       severity: "warn",
@@ -191,6 +212,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     handles: restrictedHandles,
     label: opts.restrictedLabel ?? RESTRICTED_LABEL,
     text: placeholderHasText,
+    projections: projectionPlan,
   };
 
   const layout = compileContainer(
@@ -205,8 +227,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
     title: title.text,
     layout,
-    projections: [opts.hydrationProjectionId],
-    projectionVersions: { [opts.hydrationProjectionId]: opts.hydrationProjectionVersion },
+    ...declaredProjections(opts, projectionPlan),
   });
 
   // loom's own check, against the framework's catalogue: a compiler defect that emits an
@@ -250,6 +271,26 @@ function resolveBlueprintTitle(
   return { text: exp.intent.objective, leakAvoided: false };
 }
 
+/**
+ * `projections` + `projectionVersions` for the Blueprint: the hydration projection first (exactly
+ * as before — an experience with no projection binding compiles byte-identically), then every
+ * projection a visible node binds, sorted by id. `Object.fromEntries` so a hostile id such as
+ * "__proto__" lands as an own key, never the prototype setter.
+ */
+function declaredProjections(
+  opts: CompileOptions,
+  plan: ProjectionPlan
+): { projections: string[]; projectionVersions: Record<string, string> } {
+  const extra = [...plan.used.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    projections: [opts.hydrationProjectionId, ...extra.map(([id]) => id)],
+    projectionVersions: Object.fromEntries([
+      [opts.hydrationProjectionId, opts.hydrationProjectionVersion],
+      ...extra,
+    ]),
+  };
+}
+
 /** The static kind a redacted node compiles to: unbound, one `text` prop, drawn by every renderer. */
 const PLACEHOLDER_KIND = "Note";
 
@@ -258,6 +299,7 @@ interface Redaction {
   readonly label: LocalizedText;
   /** Whether the placeholder kind's contract declares the `text` prop. */
   readonly text: boolean;
+  readonly projections: ProjectionPlan;
 }
 
 /** loom's finding codes that restate one this compiler already reported for the same node. */
@@ -347,7 +389,14 @@ function compileNode(
   // Before resolution, props, label or binding are read: a restricted node contributes NOTHING of
   // its own to the output but its id (and, in the parent, its cell), so it can neither leak nor
   // reflow its neighbours.
-  if (node.binding !== undefined && redaction.handles.has(node.binding.handle)) {
+  const verdict = redaction.projections.verdicts.get(node.id);
+  // A projection-bound node the plan refused was reported (by the plan or `validateExperience`)
+  // and is omitted, like an unresolvable node: never faked.
+  if (verdict?.kind === "refused") return undefined;
+  if (
+    verdict?.kind === "restricted" ||
+    (node.binding !== undefined && redaction.handles.has(node.binding.handle))
+  ) {
     findings.push({
       code: "node-restricted",
       severity: "warn",
@@ -433,6 +482,16 @@ function compileNode(
       version: node.typeVersion,
       ...(degradedFrom.length > 0 && { degradedFrom }),
     },
+    ...(verdict?.kind === "ok" && {
+      binding: {
+        projectionId: verdict.binding.id,
+        path: verdict.binding.path,
+        ...(verdict.binding.statusPath !== undefined && {
+          status: { path: verdict.binding.statusPath },
+        }),
+        ...(verdict.sensitivity !== undefined && { sensitivity: verdict.sensitivity }),
+      },
+    }),
     ...(node.binding !== undefined && {
       binding: {
         projectionId: opts.hydrationProjectionId,

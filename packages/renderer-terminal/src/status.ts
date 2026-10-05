@@ -31,6 +31,19 @@ export interface RenderExperienceOptions extends TerminalRegistryOptions {
    * are loom's output and keep theirs. Drive a widget renderer directly for a fully title-free body.
    */
   readonly registry?: RendererRegistry<TerminalWidgetRenderer>;
+  /**
+   * The current state of any projection the blueprint declares OTHER than the store's own
+   * hydration projection (a node bound through `SemanticNode.projection`): `(id) => state`,
+   * `undefined` for one the host has no state for (its widgets render as loading). Typically
+   * `(id) => runtime.getState(id, executionId)`. Never consulted for the hydration id — the store
+   * is that projection's only source here.
+   */
+  readonly projectionState?: (projectionId: string) => unknown;
+  /**
+   * How `watch` hears that a non-hydration projection changed: called once, returns an
+   * unsubscribe. Without it `watch` re-renders on hydration changes only.
+   */
+  readonly projectionSubscribe?: (onChange: () => void) => () => void;
 }
 
 /**
@@ -55,11 +68,23 @@ export function renderExperience(
   const state = store.state();
   const stateMap = new Map<string, unknown>();
   // `HydrationStore` publishes under one well-known projection id; every other projection the
-  // blueprint declares is somebody else's and has no state here.
-  for (const id of blueprint.projections)
-    stateMap.set(id, id === HYDRATION_PROJECTION_ID ? state : undefined);
+  // blueprint declares is somebody else's, and has state here only if the host supplies it. A
+  // throwing supplier is "no state yet" (a loading row), never a throw out of a render.
+  for (const id of blueprint.projections) {
+    if (id === HYDRATION_PROJECTION_ID) stateMap.set(id, state);
+    else stateMap.set(id, readProjection(opts.projectionState, id));
+  }
   return renderBlueprintToString(blueprint, stateMap, {
     registry: opts.registry ?? terminalRegistry(opts),
     check: kindValueCheck,
   });
+}
+
+function readProjection(read: RenderExperienceOptions["projectionState"], id: string): unknown {
+  if (read === undefined) return undefined;
+  try {
+    return read(id);
+  } catch {
+    return undefined;
+  }
 }

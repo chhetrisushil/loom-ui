@@ -353,7 +353,18 @@ function checkSemantic(
         )
       );
   }
-  if (entry.binding === "required" && n.binding === undefined)
+  // A node binds a hydrated handle OR a projection. Both is ambiguous (which value does the
+  // widget read?) — an error, and `compile` omits the node rather than guess.
+  if (n.binding !== undefined && n.projection !== undefined)
+    findings.push(
+      finding(
+        "binding-conflict",
+        `"${n.id}" carries both a handle binding and a projection binding: a node binds one or the other`,
+        n.id
+      )
+    );
+  const bound = n.binding !== undefined || n.projection !== undefined;
+  if (entry.binding === "required" && !bound)
     findings.push(
       finding(
         "missing-binding",
@@ -361,7 +372,7 @@ function checkSemantic(
         n.id
       )
     );
-  if (entry.binding === "none" && n.binding !== undefined)
+  if (entry.binding === "none" && bound)
     findings.push(
       finding(
         "unexpected-binding",

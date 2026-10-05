@@ -128,6 +128,40 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 - `handleKinds(exp, catalog, surface): Map<string, string[]>` — the widget kinds each bound handle
   feeds on one surface; what an `outputCheck: "contract"` provider is checked against.
 
+### Binding to any projection (not only hydration)
+
+A semantic node binds either a hydrated **handle** (`binding`) or **any other loom projection**
+(`projection`) — an agent status, an approval queue, a transcript. Never both
+(`binding-conflict`, an error; `compile` omits the node).
+
+- Declare: `node.projection = { id, path, statusPath?, version, sensitivity? }`. `id` is the loom
+  projection id, `path` the value path in that projection's state, `statusPath` the delivery
+  status channel in the SAME state (loom IR 2.0.0 binding status; omit for none), `version` the
+  projection version you composed against (loom ADR 0095), `sensitivity` your class for the data.
+  Edit with the `bindProjection` operation, which replaces a handle binding and never lowers a
+  class (the handle it leaves keeps its sticky class; re-binding keeps the strictest class).
+- Compile: `CompileOptions.projections` is the host's catalogue (`ProjectionDescriptor[]`: `id`,
+  `version`, optional `sensitivity`). The node compiles to a widget whose IR `DataBinding` is
+  `{ projectionId: id, path, status?: { path: statusPath }, sensitivity }`, and the Blueprint's
+  `projections` / `projectionVersions` gain that id and the offered version (hydration first, then
+  the others sorted). The loom IR already carries all of this — no IR change.
+  Findings, all errors, and the node is omitted (never faked): `projection-unknown` (not in the
+  catalogue, or no catalogue: fail-closed), `projection-version-mismatch` (pin differs from the
+  offered version), `projection-reserved` (the hydration id), `projection-binding-invalid`,
+  `binding-conflict`. An experience with no projection node compiles byte-identically to before,
+  and its content address is unchanged (`projection` is absent from a node that has none).
+- Viewer redaction: the class in force is the strictest of the node's `sensitivity` and the
+  catalogue's; a viewer who may not see it gets the `Note` placeholder (`node-restricted`), the
+  Blueprint does not declare that projection at all, and no viewer is the most restrictive viewer.
+  Hydration never fetches or serves these: `experienceHandles` lists only handle bindings.
+- Reading it: `renderer-lit` already reads and subscribes to every declared projection on the
+  runtime it is given (publish that projection's events under the surface's `executionId`);
+  `renderer-terminal` takes `projectionState` / `projectionSubscribe` options. Note: a projection
+  state is read per `executionId`, which for a per-viewer `HydrationStore` includes the principal —
+  route the other projection's events per viewer the same way.
+- Not (yet) here: planner exposure (`ProjectionDescriptor[]` as an offered-projections list in the
+  planner prompt/contract) and an unbind operation.
+
 ### Framework kinds and number formatting
 
 - `FRAMEWORK_KINDS` — the eight kinds this package adds beside loom's built-ins: `TimeSeries`,

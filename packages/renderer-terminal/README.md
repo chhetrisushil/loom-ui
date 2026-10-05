@@ -66,7 +66,11 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
 - `kindValueCheck: WidgetValueCheck` — the framework's per-kind value contract, plugged into
   loom's `check` seam; exported so a caller assembling its own `renderBlueprintToString` call can
   reuse it.
-- `RenderExperienceOptions` — `{ registry?: RendererRegistry<TerminalWidgetRenderer> }`.
+- `RenderExperienceOptions` — `{ registry?, chrome?, projectionState?, projectionSubscribe? }`.
+  `projectionState(id)` supplies the state of any NON-hydration projection the blueprint declares
+  (a node bound through core's `SemanticNode.projection`), e.g.
+  `(id) => runtime.getState(id, store.executionId)`; absent or throwing, its widgets render as
+  loading. `projectionSubscribe(onChange)` lets `watch` re-render when such a projection changes.
 
 ## Examples
 

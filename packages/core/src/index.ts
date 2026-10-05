@@ -26,6 +26,7 @@ export {
   NodeId,
   OrderKey,
   Priority,
+  ProjectionBinding,
   Sensitivity,
   Span,
   findNode,
@@ -93,6 +94,13 @@ export {
   hydrationStatusPath,
 } from "./compile";
 export type { CompileOptions, CompileResult } from "./compile";
+export { planProjectionBindings } from "./projections";
+export type {
+  ProjectionCatalog,
+  ProjectionDescriptor,
+  ProjectionPlan,
+  ProjectionVerdict,
+} from "./projections";
 export { experienceHandles, handleKinds } from "./handles";
 export type { HandleUse } from "./handles";
 export {
