@@ -76,15 +76,26 @@ describe("a tool's class sticks to the tool (fail-closed)", () => {
     expect(classOf(e, "h3")).toBeUndefined();
   });
 
-  it("an existing unclassified handle on the tool is not retroactively classified", () => {
+  it("an EXISTING handle on the tool is classified at read time once the tool is (fail-closed)", () => {
     const e = run([
       remap("pub"),
       ins(node("p", "pub")),
       remap("h1"),
       ins(node("a", "h1", "secret")),
     ]);
-    expect(classOf(e, "pub")).toBeUndefined();
+    // read-time, not just at remap: the sibling bound BEFORE the tool was classified is gated too
+    expect(classOf(e, "pub")).toBe("secret");
     expect(classOf(e, "h1")).toBe("secret");
+  });
+
+  it("a handle whose provider calls no tool takes no tool class", () => {
+    const e = run([
+      remap("h1"),
+      ins(node("a", "h1", "secret")),
+      { type: "remapProvider", handle: "bare", spec: { ...spec("bare"), executionGraph: [] } },
+      ins(node("b", "bare")),
+    ]);
+    expect(classOf(e, "bare")).toBeUndefined();
   });
 
   it("the class follows a LIVE sibling too (no removal needed)", () => {

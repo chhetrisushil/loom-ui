@@ -111,7 +111,9 @@ export const Experience = z.object({
    * hashes its arguments and path, so a changed argument is a NEW handle, and without this the new
    * handle would be born unclassified. Folded in by the provider and binding ops; a NEW handle on
    * a tool that ever carried a class inherits the strictest one (`remapProvider`), with a
-   * `sensitivity-inherited` warn from the planner. Lowered only by `declassifyHandle { tool: true }`.
+   * `sensitivity-inherited` warn from the planner, and EVERY handle on the tool — including one
+   * bound before the tool was classified — reads at least the tool's class (`effectiveClasses`, read
+   * time). Lowered only by `declassifyHandle { tool: true }`.
    * Optional, and only the part live nodes do not imply is hashed (see `experienceArtifact`).
    */
   toolClasses: z.record(z.string(), Sensitivity).optional(),

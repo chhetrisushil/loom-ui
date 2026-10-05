@@ -1,5 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
+import { effectiveClasses } from "./classes";
 import type { Experience } from "./experience";
 import { type Priority, walk } from "./node";
 import { strictestClass } from "./viewer";
@@ -45,15 +46,13 @@ export function experienceHandles(exp: Experience): HandleUse[] {
     cur.sensitivity = strictestClass(cur.sensitivity, n.binding.sensitivity);
     if (RANK[n.binding.priority] < RANK[cur.priority]) cur.priority = n.binding.priority;
   });
+  // Effective class, read at once: live nodes + the sticky per-handle class + the class of every
+  // tool the handle's provider calls (tool-level, fail-closed — a sibling bound before its tool
+  // was classified is gated as soon as the tool is).
+  const effective = effectiveClasses(exp);
   return [...byHandle.entries()]
     .map(([handle, v]) => {
-      // The sticky per-handle class (`Experience.handleClasses`) joins the live nodes' classes:
-      // a handle stays as classified as it ever was, whichever nodes bind it now.
-      const kept = exp.handleClasses;
-      const sensitivity = strictestClass(
-        v.sensitivity,
-        kept !== undefined && Object.hasOwn(kept, handle) ? kept[handle] : undefined
-      );
+      const sensitivity = strictestClass(v.sensitivity, effective.get(handle));
       return {
         handle,
         priority: v.priority,
