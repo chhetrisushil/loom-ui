@@ -145,15 +145,32 @@ A semantic node binds either a hydrated **handle** (`binding`) or **any other lo
   `{ projectionId: id, path, status?: { path: statusPath }, sensitivity }`, and the Blueprint's
   `projections` / `projectionVersions` gain that id and the offered version (hydration first, then
   the others sorted). The loom IR already carries all of this — no IR change.
-  Findings, all errors, and the node is omitted (never faked): `projection-unknown` (not in the
-  catalogue, or no catalogue: fail-closed), `projection-version-mismatch` (pin differs from the
-  offered version), `projection-reserved` (the hydration id), `projection-binding-invalid`,
-  `binding-conflict`. An experience with no projection node compiles byte-identically to before,
-  and its content address is unchanged (`projection` is absent from a node that has none).
-- Viewer redaction: the class in force is the strictest of the node's `sensitivity` and the
-  catalogue's; a viewer who may not see it gets the `Note` placeholder (`node-restricted`), the
-  Blueprint does not declare that projection at all, and no viewer is the most restrictive viewer.
-  Hydration never fetches or serves these: `experienceHandles` lists only handle bindings.
+  Findings (all errors): `projection-unknown` (not in the catalogue, or no catalogue:
+  fail-closed), `projection-version-mismatch` (pin differs from the offered version),
+  `projection-catalog-conflict` (the catalogue lists one id at two versions; same-version
+  duplicates merge, strictest class wins), `projection-reserved` (the hydration id),
+  `projection-binding-invalid` (also a bound breach: `id`/`version` <= 128 chars, `path` /
+  `statusPath` <= 512), `binding-conflict`. A reserved, invalid or conflicting node is omitted;
+  an UNKNOWN or VERSION-DRIFTED one compiles to the same `Note` placeholder as a restricted one,
+  so the viewer cannot tell "restricted" from "does not exist" from "wrong version" (the host
+  keeps the error; the offered version appears in a message only for a viewer cleared for the
+  class). An experience with no projection node compiles byte-identically to before, and its
+  content address is unchanged (`projection` is absent from a node that has none).
+- Class (per PROJECTION, like a handle): the class in force for a projection id is the strictest
+  of every node's `sensitivity` on it, the Experience's sticky `projectionClasses` and the
+  catalogue's, applied to EVERY node on that id (one projection gives each the same state). A
+  viewer who may not see it gets the `Note` placeholder on all of them (`node-restricted`) and the
+  Blueprint does not declare the projection at all; no viewer is the most restrictive viewer.
+  `projectionClasses` is folded by `insertNode` / `removeNode` / `bindProjection` /
+  `bindProvider` (never lower; a node leaving a projection leaves its class on it) and lowered
+  only by `declassifyProjection { projection, to? }`, which needs `{ allowDeclassify: true }` and
+  is refused inside a `prompt` op, exactly like `declassifyHandle`. It is hashed only for the part
+  live nodes do not imply. Hydration never fetches or serves these: `experienceHandles` lists only
+  handle bindings.
+- Stamps: `CompileResult.restrictedProjectionNodes` lists the placeholder-compiled projection
+  nodes; pass it, and the catalogue's `id -> version`, to `compileFingerprint({ ...,
+  restrictedProjectionNodes, projectionVersions })` (both fold in only when non-empty, so existing
+  fingerprints are unchanged).
 - Reading it: `renderer-lit` already reads and subscribes to every declared projection on the
   runtime it is given (publish that projection's events under the surface's `executionId`);
   `renderer-terminal` takes `projectionState` / `projectionSubscribe` options. Note: a projection

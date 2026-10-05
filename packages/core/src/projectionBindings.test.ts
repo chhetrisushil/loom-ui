@@ -138,23 +138,24 @@ describe("projection bindings: compile", () => {
     );
     expect(r.blueprint.projections).toEqual(["hydration", "agent-status", "approvals"]);
   });
-  it("an unknown projection is a finding and the node is omitted, never faked", () => {
+  it("an unknown projection is a finding and the node compiles to the restricted placeholder, never faked", () => {
     const r = compile(build([pnode("a", { projection: proj({ id: "nope" }) })]), opts);
     expect(codes(r)).toContain("projection-unknown");
     expect(r.ok).toBe(false);
-    expect(widgets(r)).toHaveLength(0);
+    expect(widgets(r).map((w) => w.kind)).toEqual(["Note"]);
+    expect(widgets(r)[0]?.binding).toBeUndefined();
     expect(r.blueprint.projections).toEqual(["hydration"]);
   });
   it("no catalogue offers nothing (fail-closed)", () => {
     const { projections: _p, ...bare } = opts;
     const r = compile(build([pnode("a")]), bare);
     expect(codes(r)).toContain("projection-unknown");
-    expect(widgets(r)).toHaveLength(0);
+    expect(widgets(r).map((w) => w.kind)).toEqual(["Note"]);
   });
   it("a pin that differs from the offered version is projection-version-mismatch", () => {
     const r = compile(build([pnode("a", { projection: proj({ version: "1" }) })]), opts);
     expect(codes(r)).toContain("projection-version-mismatch");
-    expect(widgets(r)).toHaveLength(0);
+    expect(widgets(r).map((w) => w.kind)).toEqual(["Note"]);
   });
   it("binding the hydration projection through `projection` is refused", () => {
     const r = compile(
@@ -224,12 +225,12 @@ describe("projection bindings: viewer redaction", () => {
     });
     expect(widgets(lowered)[0]?.kind).toBe("Note");
   });
-  it("an unknown projection is omitted, not redacted into a placeholder that confirms it exists", () => {
+  it("an unknown projection looks exactly like a restricted one (the placeholder), so it cannot be probed", () => {
     const r = compile(build([pnode("a", { projection: proj({ id: "secret-thing" }) })]), {
       ...opts,
       viewer: { clearance: "internal" },
     });
-    expect(widgets(r)).toHaveLength(0);
+    expect(widgets(r).map((w) => w.kind)).toEqual(["Note"]);
   });
   it("hydration never sees a projection-bound node: it contributes no handle", () => {
     const exp = build([

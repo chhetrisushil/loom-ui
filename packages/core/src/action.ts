@@ -100,6 +100,10 @@ export interface CompileFingerprintInput {
    * Order-insensitive; omitted = the fingerprint is exactly what it was without this field.
    */
   readonly extra?: Readonly<Record<string, string>>;
+  /** `CompileResult.restrictedProjectionNodes` (order-insensitive); empty/absent adds nothing. */
+  readonly restrictedProjectionNodes?: readonly string[];
+  /** The projection id → version the host's catalogue offers; empty/absent adds nothing. */
+  readonly projectionVersions?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -118,6 +122,13 @@ export function compileFingerprint(input: CompileFingerprintInput): string {
           .map(([k, v]): [string, string] => [String(k), String(v)])
           .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
       );
+    // Tagged and appended only when present, so a fingerprint without them is unchanged.
+    const rp = [...(input.restrictedProjectionNodes ?? [])].map(String).sort();
+    if (rp.length > 0) parts.push(["rp", rp]);
+    const pv = Object.entries(input.projectionVersions ?? {})
+      .map(([k, v]): [string, string] => [String(k), String(v)])
+      .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+    if (pv.length > 0) parts.push(["pv", pv]);
     canon = JSON.stringify(parts);
   } catch {
     canon = "?";

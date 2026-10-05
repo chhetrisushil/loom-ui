@@ -117,6 +117,15 @@ export const Experience = z.object({
    * Optional, and only the part live nodes do not imply is hashed (see `experienceArtifact`).
    */
   toolClasses: z.record(z.string(), Sensitivity).optional(),
+  /**
+   * The confidentiality class of each PROJECTION a node binds (by projection id), sticky like
+   * `handleClasses`: a projection gives every node on it the same state, so it is as classified as
+   * the strictest class any node EVER bound it with (or the host's catalogue says), and removing or
+   * rebinding the node that carried it does not declassify it. Folded in by `insertNode` /
+   * `removeNode` / `bindProjection` / `bindProvider`; lowered only by `declassifyProjection`
+   * (trusted caller). Optional, and only the part live nodes do not imply is hashed.
+   */
+  projectionClasses: z.record(z.string(), Sensitivity).optional(),
   vocabularyFloor: VocabularyFloor,
   meta: z.object({ author: z.string(), createdAt: z.string(), sourceKind: z.string() }),
 });

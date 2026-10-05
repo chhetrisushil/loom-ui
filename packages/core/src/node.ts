@@ -55,11 +55,15 @@ export const LayoutRole = z.custom<string>(isLayoutRole, {
  * compile). `sensitivity` is the author's class for the data; the host's catalogue may only
  * raise it. A node carries `binding` (a hydrated handle) or `projection`, never both.
  */
+/** Caps on a projection binding's strings: they reach the Blueprint, findings and the content address. */
+export const MAX_PROJECTION_ID = 128;
+export const MAX_PROJECTION_PATH = 512;
+
 export const ProjectionBinding = z.object({
-  id: z.string().min(1),
-  path: z.string().min(1),
-  statusPath: z.string().min(1).optional(),
-  version: z.string().min(1),
+  id: z.string().min(1).max(MAX_PROJECTION_ID),
+  path: z.string().min(1).max(MAX_PROJECTION_PATH),
+  statusPath: z.string().min(1).max(MAX_PROJECTION_PATH).optional(),
+  version: z.string().min(1).max(MAX_PROJECTION_ID),
   sensitivity: Sensitivity.optional(),
 });
 export type ProjectionBinding = z.infer<typeof ProjectionBinding>;

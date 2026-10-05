@@ -78,6 +78,8 @@ export type Operation =
    * never emits it, and a `prompt` op carrying one is refused (`declassify-in-prompt`).
    */
   | { type: "declassifyHandle"; handle: string; to?: DataClass; tool?: boolean }
+  /** Lowers a PROJECTION's sticky class (and its live nodes' own): trusted callers only, like `declassifyHandle`. */
+  | { type: "declassifyProjection"; projection: string; to?: DataClass }
   | { type: "remapProvider"; handle: string; spec: z.infer<typeof ProviderSpec> }
   | { type: "removeProvider"; handle: string }
   | { type: "prompt"; text: string; scopeNodeIds?: string[]; materialized: Operation[] };
@@ -128,6 +130,11 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       handle: z.string().min(1),
       to: Sensitivity.optional(),
       tool: z.boolean().optional(),
+    }),
+    z.object({
+      type: z.literal("declassifyProjection"),
+      projection: z.string().min(1),
+      to: Sensitivity.optional(),
     }),
     z.object({ type: z.literal("remapProvider"), handle: z.string().min(1), spec: ProviderSpec }),
     z.object({ type: z.literal("removeProvider"), handle: z.string().min(1) }),
@@ -186,11 +193,36 @@ function classesOf(node: ExperienceNode): Array<readonly [string, DataClass]> {
   return found;
 }
 
+/** `classes` folded into the sticky per-projection map, never lower. */
+function foldProjectionClasses(
+  kept: Experience["projectionClasses"],
+  classes: ReadonlyArray<readonly [string, DataClass]>
+): Experience["projectionClasses"] {
+  let out = kept;
+  for (const [id, c] of classes) {
+    const had = out !== undefined && Object.hasOwn(out, id) ? out[id] : undefined;
+    const merged = strictestClass(had, c);
+    if (merged === had || merged === undefined) continue;
+    out = { ...out, [id]: merged };
+  }
+  return out;
+}
+
+/** Every (projection id, class) a subtree's classified projection-bound nodes carry. */
+function projectionClassesOf(node: ExperienceNode): Array<readonly [string, DataClass]> {
+  const found: Array<readonly [string, DataClass]> = [];
+  walk(node, (n) => {
+    if (n.kind === "semantic" && n.projection?.sensitivity !== undefined)
+      found.push([n.projection.id, n.projection.sensitivity]);
+  });
+  return found;
+}
+
 /** True when `ops` (looking through nested `prompt` ops) holds a `declassifyHandle`. */
 function carriesDeclassify(ops: readonly Operation[]): boolean {
   const stack = [...ops];
   for (let op = stack.pop(); op !== undefined; op = stack.pop()) {
-    if (op.type === "declassifyHandle") return true;
+    if (op.type === "declassifyHandle" || op.type === "declassifyProjection") return true;
     if (op.type === "prompt") stack.push(...op.materialized);
   }
   return false;
@@ -203,7 +235,9 @@ function carriesDeclassify(ops: readonly Operation[]): boolean {
  */
 function next(
   base: Experience,
-  patch: Partial<Pick<Experience, "root" | "providers" | "handleClasses" | "toolClasses">>
+  patch: Partial<
+    Pick<Experience, "root" | "providers" | "handleClasses" | "toolClasses" | "projectionClasses">
+  >
 ): Experience {
   return {
     ...base,
@@ -426,11 +460,16 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
           : n
       );
       const handleClasses = foldClasses(base.handleClasses, classesOf(op.node));
+      const projectionClasses = foldProjectionClasses(
+        base.projectionClasses,
+        projectionClassesOf(op.node)
+      );
       return {
         ok: true,
         value: next(base, {
           root: normalize(root),
           ...(handleClasses !== undefined && { handleClasses }),
+          ...(projectionClasses !== undefined && { projectionClasses }),
         }),
       };
     }
@@ -441,11 +480,16 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
       if (!doomed) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
       // What the removed subtree carried stays with its handles: removal is not declassification.
       const handleClasses = foldClasses(base.handleClasses, classesOf(doomed));
+      const projectionClasses = foldProjectionClasses(
+        base.projectionClasses,
+        projectionClassesOf(doomed)
+      );
       return {
         ok: true,
         value: next(base, {
           root: rebuild(base.root, (n) => (n.id === op.nodeId ? null : n)),
           ...(handleClasses !== undefined && { handleClasses }),
+          ...(projectionClasses !== undefined && { projectionClasses }),
         }),
       };
     }
@@ -624,9 +668,18 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
         ...carried,
         ...(landed ? classesOf(landed) : []),
       ]);
+      // The projection the node LEFT keeps what the node carried on it.
+      const projectionClasses = foldProjectionClasses(
+        base.projectionClasses,
+        projectionClassesOf(target)
+      );
       return {
         ok: true,
-        value: next(base, { root, ...(handleClasses !== undefined && { handleClasses }) }),
+        value: next(base, {
+          root,
+          ...(handleClasses !== undefined && { handleClasses }),
+          ...(projectionClasses !== undefined && { projectionClasses }),
+        }),
       };
     }
     case "bindProjection": {
@@ -653,9 +706,19 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
         };
       });
       const handleClasses = foldClasses(base.handleClasses, carried);
+      // The projection the node LEFT keeps its class; the one it lands on gets the merged class.
+      const landed = findNode(root, op.nodeId);
+      const projectionClasses = foldProjectionClasses(base.projectionClasses, [
+        ...projectionClassesOf(target),
+        ...(landed ? projectionClassesOf(landed) : []),
+      ]);
       return {
         ok: true,
-        value: next(base, { root, ...(handleClasses !== undefined && { handleClasses }) }),
+        value: next(base, {
+          root,
+          ...(handleClasses !== undefined && { handleClasses }),
+          ...(projectionClasses !== undefined && { projectionClasses }),
+        }),
       };
     }
     case "declassifyHandle": {
@@ -683,6 +746,27 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
         const { toolClasses: _t, ...rest } = nextBase;
         nextBase = Object.keys(lowered).length > 0 ? { ...rest, toolClasses: lowered } : rest;
       }
+      return { ok: true, value: next(nextBase, { root }) };
+    }
+    case "declassifyProjection": {
+      if (opts.allowDeclassify !== true)
+        return refuse(
+          "declassify-not-allowed",
+          "declassifyProjection lowers a class and only a trusted caller may apply it (pass { allowDeclassify: true } for ops the host authored itself)"
+        );
+      const root = rebuild(base.root, (n) => {
+        if (n.kind !== "semantic" || n.projection?.id !== op.projection) return n;
+        const { sensitivity: _drop, ...rest } = n.projection;
+        return {
+          ...n,
+          projection: { ...rest, ...(op.to !== undefined && { sensitivity: op.to }) },
+        };
+      });
+      const { [op.projection]: _gone, ...others } = base.projectionClasses ?? {};
+      const kept = { ...others, ...(op.to !== undefined && { [op.projection]: op.to }) };
+      const { projectionClasses: _old, ...withoutMap } = base;
+      const nextBase: Experience =
+        Object.keys(kept).length > 0 ? { ...withoutMap, projectionClasses: kept } : withoutMap;
       return { ok: true, value: next(nextBase, { root }) };
     }
     case "remapProvider": {
