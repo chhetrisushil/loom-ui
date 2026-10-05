@@ -15,7 +15,8 @@ export interface HandleUse {
   readonly priority: Priority;
   readonly nodeIds: readonly string[];
   /**
-   * The strictest `sensitivity` of any node binding this handle (`undefined` = unclassified). A
+   * The strictest `sensitivity` of any node binding this handle or that ever bound it
+   * (`Experience.handleClasses`); `undefined` = unclassified. A
    * handle carries ONE value for every node that binds it, so it is as classified as its most
    * classified node: hydration and `compile` both gate on this, never on a single node's class.
    */
@@ -45,12 +46,21 @@ export function experienceHandles(exp: Experience): HandleUse[] {
     if (RANK[n.binding.priority] < RANK[cur.priority]) cur.priority = n.binding.priority;
   });
   return [...byHandle.entries()]
-    .map(([handle, v]) => ({
-      handle,
-      priority: v.priority,
-      nodeIds: v.nodeIds,
-      ...(v.sensitivity !== undefined && { sensitivity: v.sensitivity }),
-    }))
+    .map(([handle, v]) => {
+      // The sticky per-handle class (`Experience.handleClasses`) joins the live nodes' classes:
+      // a handle stays as classified as it ever was, whichever nodes bind it now.
+      const kept = exp.handleClasses;
+      const sensitivity = strictestClass(
+        v.sensitivity,
+        kept !== undefined && Object.hasOwn(kept, handle) ? kept[handle] : undefined
+      );
+      return {
+        handle,
+        priority: v.priority,
+        nodeIds: v.nodeIds,
+        ...(sensitivity !== undefined && { sensitivity }),
+      };
+    })
     .sort(
       (a, b) =>
         RANK[a.priority] - RANK[b.priority] ||

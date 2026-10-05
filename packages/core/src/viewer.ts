@@ -43,12 +43,18 @@ export function mayView(viewer: Viewer | undefined, sensitivity: DataClass | und
   return have >= need;
 }
 
-/** The strictest of two classes (`undefined` is weakest) — the class a handle shared by several nodes carries. */
+/**
+ * The strictest of two classes (`undefined` is weakest) — the class a handle shared by several
+ * nodes carries. FAIL-CLOSED and monotone: a class this package does not recognise outranks every
+ * known one (it cannot be waved through as weaker), so `strictest` never lowers what it was given.
+ */
 export function strictestClass(
   a: DataClass | undefined,
   b: DataClass | undefined
 ): DataClass | undefined {
   if (a === undefined) return b;
   if (b === undefined) return a;
-  return clearanceRank(a) >= clearanceRank(b) ? a : b;
+  const rank = (c: DataClass): number =>
+    Object.hasOwn(RANK, c) ? (RANK[c] as number) : Number.POSITIVE_INFINITY;
+  return rank(a) >= rank(b) ? a : b;
 }

@@ -19,6 +19,7 @@ import {
   treeDepth,
   walk,
 } from "./node";
+import { strictestClass } from "./viewer";
 
 // ── Operations, not diffs ─────────────────────────────────────────────────────
 // Every change to an experience is a semantic Operation. Ops are the replay unit: `apply` is pure
@@ -59,6 +60,12 @@ export type Operation =
       priority?: Priority;
       sensitivity?: DataClass;
     }
+  /**
+   * The ONLY op that lowers a handle's class: sets it to `to`, or clears it, on the handle and on
+   * every node that binds it. Caller-only by construction: the planner never emits it and a
+   * `prompt` op carrying one is refused (`declassify-in-prompt`).
+   */
+  | { type: "declassifyHandle"; handle: string; to?: DataClass }
   | { type: "remapProvider"; handle: string; spec: z.infer<typeof ProviderSpec> }
   | { type: "removeProvider"; handle: string }
   | { type: "prompt"; text: string; scopeNodeIds?: string[]; materialized: Operation[] };
@@ -99,6 +106,11 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       priority: Priority.optional(),
       sensitivity: Sensitivity.optional(),
     }),
+    z.object({
+      type: z.literal("declassifyHandle"),
+      handle: z.string().min(1),
+      to: Sensitivity.optional(),
+    }),
     z.object({ type: z.literal("remapProvider"), handle: z.string().min(1), spec: ProviderSpec }),
     z.object({ type: z.literal("removeProvider"), handle: z.string().min(1) }),
     z.object({
@@ -129,13 +141,51 @@ const refuse = (code: string, message: string, nodeId?: string): OpResult<never>
 });
 
 /**
+ * `classes` folded into `kept` by `strictest` — never lower. Returns `kept` itself when nothing
+ * changed (so an unclassified experience never grows the field).
+ */
+function foldClasses(
+  kept: Experience["handleClasses"],
+  classes: ReadonlyArray<readonly [string, DataClass]>
+): Experience["handleClasses"] {
+  let out = kept;
+  for (const [handle, c] of classes) {
+    const had = out !== undefined && Object.hasOwn(out, handle) ? out[handle] : undefined;
+    const merged = strictestClass(had, c);
+    if (merged === had || merged === undefined) continue;
+    out = { ...out, [handle]: merged };
+  }
+  return out;
+}
+
+/** Every (handle, class) a subtree's classified semantic bindings carry. */
+function classesOf(node: ExperienceNode): Array<readonly [string, DataClass]> {
+  const found: Array<readonly [string, DataClass]> = [];
+  walk(node, (n) => {
+    if (n.kind === "semantic" && n.binding?.sensitivity !== undefined)
+      found.push([n.binding.handle, n.binding.sensitivity]);
+  });
+  return found;
+}
+
+/** True when `ops` (looking through nested `prompt` ops) holds a `declassifyHandle`. */
+function carriesDeclassify(ops: readonly Operation[]): boolean {
+  const stack = [...ops];
+  for (let op = stack.pop(); op !== undefined; op = stack.pop()) {
+    if (op.type === "declassifyHandle") return true;
+    if (op.type === "prompt") stack.push(...op.materialized);
+  }
+  return false;
+}
+
+/**
  * A new unpersisted artifact. Its parent is the base when the base is a sealed artifact; an
  * unsealed intermediate (mid-fold) carries its own parents forward, so a replay's result cites
  * the last SEALED ancestor, never nothing.
  */
 function next(
   base: Experience,
-  patch: Partial<Pick<Experience, "root" | "providers">>
+  patch: Partial<Pick<Experience, "root" | "providers" | "handleClasses">>
 ): Experience {
   return {
     ...base,
@@ -310,16 +360,28 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           ? { ...n, children: [...n.children, normalize(op.node)] }
           : n
       );
-      return { ok: true, value: next(base, { root: normalize(root) }) };
+      const handleClasses = foldClasses(base.handleClasses, classesOf(op.node));
+      return {
+        ok: true,
+        value: next(base, {
+          root: normalize(root),
+          ...(handleClasses !== undefined && { handleClasses }),
+        }),
+      };
     }
     case "removeNode": {
       if (op.nodeId === base.root.id)
         return refuse("root-immutable", "cannot remove the root node", op.nodeId);
-      if (!findNode(base.root, op.nodeId))
-        return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      const doomed = findNode(base.root, op.nodeId);
+      if (!doomed) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      // What the removed subtree carried stays with its handles: removal is not declassification.
+      const handleClasses = foldClasses(base.handleClasses, classesOf(doomed));
       return {
         ok: true,
-        value: next(base, { root: rebuild(base.root, (n) => (n.id === op.nodeId ? null : n)) }),
+        value: next(base, {
+          root: rebuild(base.root, (n) => (n.id === op.nodeId ? null : n)),
+          ...(handleClasses !== undefined && { handleClasses }),
+        }),
       };
     }
     case "moveNode": {
@@ -467,6 +529,9 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           `"${op.nodeId}" is a container; ${op.type} applies to semantic nodes`,
           op.nodeId
         );
+      // A rebind keeps whatever class the node carried on the handle it LEAVES, and the class it
+      // ends up with joins the handle it lands on.
+      const carried = op.type === "bindProvider" ? classesOf(target) : [];
       const root = rebuild(base.root, (n) => {
         if (n.id !== op.nodeId || n.kind !== "semantic") return n;
         if (op.type === "setProps") return { ...n, props: { ...n.props, ...op.patch } };
@@ -483,7 +548,29 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
           },
         };
       });
-      return { ok: true, value: next(base, { root }) };
+      if (op.type !== "bindProvider") return { ok: true, value: next(base, { root }) };
+      const landed = findNode(root, op.nodeId);
+      const handleClasses = foldClasses(base.handleClasses, [
+        ...carried,
+        ...(landed ? classesOf(landed) : []),
+      ]);
+      return {
+        ok: true,
+        value: next(base, { root, ...(handleClasses !== undefined && { handleClasses }) }),
+      };
+    }
+    case "declassifyHandle": {
+      const root = rebuild(base.root, (n) => {
+        if (n.kind !== "semantic" || n.binding?.handle !== op.handle) return n;
+        const { sensitivity: _drop, ...rest } = n.binding;
+        return { ...n, binding: { ...rest, ...(op.to !== undefined && { sensitivity: op.to }) } };
+      });
+      const { [op.handle]: _gone, ...others } = base.handleClasses ?? {};
+      const kept = { ...others, ...(op.to !== undefined && { [op.handle]: op.to }) };
+      const { handleClasses: _old, ...withoutMap } = base;
+      const nextBase: Experience =
+        Object.keys(kept).length > 0 ? { ...withoutMap, handleClasses: kept } : withoutMap;
+      return { ok: true, value: next(nextBase, { root }) };
     }
     case "remapProvider": {
       if (op.spec.handle !== op.handle)
@@ -515,6 +602,13 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
       return { ok: true, value: next(base, { providers }) };
     }
     case "prompt":
+      // A prompt's primitives are the planner's (the least trusted author in the pipeline), and
+      // lowering a class is the one thing it may never do: refuse before folding any of them.
+      if (carriesDeclassify(op.materialized))
+        return refuse(
+          "declassify-in-prompt",
+          "a prompt op may not carry declassifyHandle: only the caller lowers a class"
+        );
       // Replay path: fold the materialised primitives. Re-invoking the planner is never core's job.
       // A prompt that materialised NOTHING is still an event in the lineage — a planner that
       // declined, or produced only no-ops. `replay` over an empty list returns its argument

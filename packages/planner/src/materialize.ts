@@ -8,6 +8,7 @@ import {
   type ProviderSpec,
   type SemanticCatalog,
   type SemanticNode,
+  experienceHandles,
   isContainer,
   nodeIds,
   orderKeyAfterAll,
@@ -386,6 +387,12 @@ export function materialize(
   const root = base.root;
   const caps = new Map(capabilities.map((c) => [c.handle, c] as const));
   const existing = new Map(root.children.map((c) => [c.id, c] as const));
+  // Handle -> class the experience already holds (sticky; includes handles no node binds now).
+  const classByHandle = new Map<string, NonNullable<ReturnType<typeof strictest>>>(
+    Object.entries(base.handleClasses ?? {})
+  );
+  for (const u of experienceHandles(base))
+    if (u.sensitivity !== undefined) classByHandle.set(u.handle, u.sensitivity);
   // WHOLE-TREE id index, root included. `existing` covers only what this function may author
   // (the root's direct children), so an id that is in the tree but not in `existing` names a
   // node nested inside an application-owned container: not editable here, and not insertable
@@ -572,6 +579,18 @@ export function materialize(
     const bound = resolveBinding(n, existingNode?.kind === "semantic" ? existingNode : undefined);
     if (dropped.has(n.id)) continue;
     if (existingNode === undefined) {
+      // A handle's class is sticky (core's `Experience.handleClasses`): a new node onto a handle
+      // the experience already classified inherits it whatever the draft says. Say so, so a
+      // rename that "dropped" the class is not read as having worked.
+      const kept = bound === undefined ? undefined : classByHandle.get(bound.handle);
+      if (kept !== undefined && strictest(kept, bound?.sensitivity) !== bound?.sensitivity)
+        findings.push(
+          warn(
+            "sensitivity-inherited",
+            `node "${n.id}" binds a handle classified "${kept}": it carries that class, which only the caller can lower`,
+            n.id
+          )
+        );
       // A new node's binding travels INSIDE its insertNode: one op, no intermediate artifact
       // that would trip `missing-binding` for a moment that never actually existed. `bindProvider`
       // is reserved for an EXISTING node whose binding changed (the revise diff, below).

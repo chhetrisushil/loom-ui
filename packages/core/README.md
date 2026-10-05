@@ -35,8 +35,8 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   (`"web" | "terminal" | "chat"`) resolves it: to a loom widget kind, or a degrade to another
   entry.
 - **Operations.** An `Operation` is one of `insertNode`, `removeNode`, `moveNode`, `setProps`,
-  `setLabel`, `setTitle`, `setRole`, `setPlacement`, `bindProvider`, `remapProvider`,
-  `removeProvider`, `prompt`. `apply`/`replay` are deterministic and never throw on bad input —
+  `setLabel`, `setTitle`, `setRole`, `setPlacement`, `bindProvider`, `declassifyHandle`,
+  `remapProvider`, `removeProvider`, `prompt`. `apply`/`replay` are deterministic and never throw on bad input —
   every refusal is a typed `Finding` (the full code list is in the root README's "Op refusal
   codes").
 - **Compile.** `compile(exp, opts)` turns a sealed or unsealed Experience into a loom `Blueprint`
@@ -252,7 +252,14 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   bindings, and **no viewer at all is a viewer with no clearance**. Unclassified bindings are never
   affected, so an experience that classifies nothing compiles byte-identically. A handle carries
   one value for every node that binds it, so its class is the strictest of those nodes' (and a
-  node is redacted when ITS handle is). In `compile` a restricted node becomes a static `Note`
+  node is redacted when ITS handle is). **A handle's class is sticky**: `Experience.handleClasses`
+  (optional, omitted from the hash when empty, so an experience that never classified a handle
+  hashes as before) records the strictest class any node ever bound it with, folded in by
+  `insertNode` / `removeNode` / `bindProvider` and never lowered by them: removing, renaming or
+  rebinding the classified node does not declassify its handle, whatever the op order or the
+  planner drafts. Only the explicit caller op `declassifyHandle { handle, to? }` lowers it (a
+  `prompt` op carrying one is refused, and the planner never emits it). An unrecognised class
+  ranks strictest (`strictestClass` is monotone, fail-closed). In `compile` a restricted node becomes a static `Note`
   placeholder: same id, same grid cell (no reflow), neutral "Restricted" title/text
   (`restrictedLabel`), and no binding, props, label, type or handle of the node it replaced; a
   `node-restricted` warn names only the node id. The classified-but-no-viewer case adds one
@@ -261,7 +268,12 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   is the app's own text and always wins. The `Experience` artifact itself is NOT redacted —
   compile for a restricted viewer on the trusted side and send only the Blueprint. Pass
   `viewer: { clearance: "secret" }` for full access. Enforcement is the output boundary's job, not
-  a renderer's: a renderer draws what it is given.
+  a renderer's: a renderer draws what it is given. **Scope limits:** only bindings and
+  `Intent.sensitivity` are classified. Container titles, static-node props/labels and node ids are
+  author text and are never gated, so do not put classified text there. Planner inputs
+  (`ReviseInput.observed`, a capability's `sampleOutput`, drift context) and outputs (summary,
+  labels) are not viewer-filtered: `observed` taken from the same controller excludes restricted
+  handles, but host-supplied material is unchecked.
 
 - **Deterministic replay.** The same base plus the same ops always fold to a byte-identical
   Experience; `apply`/`replay` report every rejection as a `Finding`, never a thrown exception, so
