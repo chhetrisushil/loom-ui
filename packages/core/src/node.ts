@@ -60,7 +60,13 @@ export const MAX_PROJECTION_ID = 128;
 export const MAX_PROJECTION_PATH = 512;
 
 export const ProjectionBinding = z.object({
-  id: z.string().min(1).max(MAX_PROJECTION_ID),
+  // `__proto__` is refused: a sticky class held for it would be dropped from the plain-object
+  // class residue the content address hashes (assignment to `__proto__` is a no-op there).
+  id: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECTION_ID)
+    .refine((id) => id !== "__proto__", { message: "reserved projection id" }),
   path: z.string().min(1).max(MAX_PROJECTION_PATH),
   statusPath: z.string().min(1).max(MAX_PROJECTION_PATH).optional(),
   version: z.string().min(1).max(MAX_PROJECTION_ID),

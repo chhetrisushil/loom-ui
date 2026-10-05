@@ -179,6 +179,8 @@ A semantic node binds either a hydrated **handle** (`binding`) or **any other lo
 - Not (yet) here: planner exposure (`ProjectionDescriptor[]` as an offered-projections list in the
   planner prompt/contract) and an unbind operation.
 
+`CompileResult.findings`, `ok` and `restrictedProjectionNodes` are **host-only**: they still tell the restricted, unknown and version-drifted cases apart (the Blueprint does not), so a host must never forward them to the viewer.
+
 ### Framework kinds and number formatting
 
 - `FRAMEWORK_KINDS` — the eight kinds this package adds beside loom's built-ins: `TimeSeries`,
