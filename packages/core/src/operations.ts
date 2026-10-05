@@ -112,6 +112,11 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
 
 export interface RecordedOperation {
   readonly op: Operation;
+  /**
+   * The `versionHash` of the artifact the author composed this op against, when they declared
+   * one. Informational in the log; enforced by {@link applyAt}. Absent = last-writer-wins.
+   */
+  readonly baseVersion?: string;
   readonly by: Provenance;
   readonly at: string;
 }
@@ -519,6 +524,33 @@ export function apply(base: Experience, rawOp: Operation): OpResult<Experience> 
         ? { ok: true, value: next(base, {}) }
         : replay(base, op.materialized);
   }
+}
+
+/**
+ * {@link apply} with an optimistic-concurrency precondition: the op was authored against the
+ * artifact whose `versionHash` is `baseVersion`, and applies only if `base` is that artifact.
+ * Otherwise a `stale-base-version` finding is returned and nothing is applied — the caller
+ * re-reads and re-authors (rebase/merge is not built; see AGENTS.md). Never throws.
+ *
+ * `baseVersion` undefined = no precondition = exactly `apply` (last-writer-wins). A declared
+ * base against an UNSEALED `base` (versionHash "") cannot be verified and is refused too.
+ * Kept separate from `apply` so pure replay (`apply`/`replay`, which fold intermediate,
+ * unsealed artifacts) is untouched.
+ */
+export function applyAt(
+  base: Experience,
+  rawOp: Operation,
+  opts: { readonly baseVersion?: string } = {}
+): OpResult<Experience> {
+  const declared = opts.baseVersion;
+  if (declared !== undefined && declared !== base.versionHash)
+    return refuse(
+      "stale-base-version",
+      base.versionHash === ""
+        ? `the op declares base version ${declared} but the artifact is unsealed, so it cannot be verified`
+        : `the op was authored against ${declared} but the artifact is now ${base.versionHash}; re-read and re-author it`
+    );
+  return apply(base, rawOp);
 }
 
 /** Fold ops onto a genesis. Deterministic and zero model invocations, by construction. */

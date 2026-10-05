@@ -101,7 +101,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `not-container`, `invalid-operation` (a role that is not `isLayoutRole`). `setProps` / `setLabel` /
   `bindProvider`: `missing-node`, `not-semantic`. `remapProvider`: `handle-mismatch` (`spec.handle` ≠
   `handle`). `removeProvider`: `missing-provider`, `provider-still-bound`. `prompt`: whatever its
-  `materialized` ops return. Note `not-container` (`setTitle` / `setRole` on a semantic node) is a different code
+  `materialized` ops return. `applyAt` only: `stale-base-version` (the declared base is not the artifact). Note `not-container` (`setTitle` / `setRole` on a semantic node) is a different code
   from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `bindProvider`
   does not check that the handle is declared; `validateExperience` reports a binder with no provider
   as `unknown-handle`.
