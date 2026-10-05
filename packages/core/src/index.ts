@@ -1,4 +1,5 @@
 export { orderKeyAfterAll, orderKeyBetween } from "./order";
+export type { OrderKeyOptions } from "./order";
 export {
   ExperienceNode,
   GRID_COLUMNS,
@@ -35,7 +36,7 @@ export {
   genesis,
 } from "./experience";
 export type { Finding, GenesisInput } from "./experience";
-export { Operation, Provenance, apply, replay } from "./operations";
+export { Operation, Provenance, apply, applyAt, replay } from "./operations";
 export type { OpResult, RecordedOperation } from "./operations";
 export { experienceNodeIds, preservesNodes } from "./identity";
 export type { IdentityFinding, IdentityReport } from "./identity";

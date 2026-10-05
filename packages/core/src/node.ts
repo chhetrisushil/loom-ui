@@ -256,14 +256,24 @@ export function nodeIds(root: ExperienceNode): string[] {
 }
 
 /**
+ * TOTAL sibling order: by `order` key, then by node id on a tie. Equal keys (legacy data, or a
+ * salt collision) therefore never leave sibling order to insertion order or the engine's sort.
+ */
+export function compareSiblings(
+  x: { order: string; id: string },
+  y: { order: string; id: string }
+): number {
+  if (x.order !== y.order) return x.order < y.order ? -1 : 1;
+  return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
+}
+
+/**
  * Structural copy (children re-sorted; `props` shallow-copied; `label`/`binding` shared) with
  * children sorted by `order` at every level. Never mutates its input.
  */
 export function normalize(node: ExperienceNode): ExperienceNode {
   if (!isContainer(node)) return { ...node, props: { ...node.props } };
-  const children = [...node.children]
-    .map(normalize)
-    .sort((x, y) => (x.order < y.order ? -1 : x.order > y.order ? 1 : 0));
+  const children = [...node.children].map(normalize).sort(compareSiblings);
   return { ...node, children };
 }
 

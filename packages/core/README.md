@@ -56,6 +56,13 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   construction time.
 - `apply(base: Experience, op: Operation): OpResult<Experience>` — apply one operation;
   `{ ok: true, value }` or `{ ok: false, finding }`.
+- `applyAt(base, op, { baseVersion? })` — `apply` with an optimistic-concurrency precondition: when
+  `baseVersion` (the `versionHash` the author composed against) is not `base.versionHash`, the op is
+  refused with a `stale-base-version` finding and nothing is applied (never a throw); an unsealed
+  base cannot be verified and is refused too. No `baseVersion` = no precondition = exactly `apply`
+  (last-writer-wins). `apply`/`replay` fold unsealed intermediates and are unchanged, so a recorded
+  log replays identically; `RecordedOperation.baseVersion` carries the declared base in the log.
+  This is detection only — rebase/merge of a stale op is not provided: re-read and re-author.
 - `replay(genesis: Experience, ops: readonly Operation[]): OpResult<Experience>` — fold a whole
   operation log; stops at the first refusal.
 - `Operation` — the operation's zod schema (the discriminated union documented above).
@@ -162,10 +169,17 @@ test holds it zod-free.
 
 ### Ordering
 
-- `orderKeyBetween(a, b)` — a fractional order key strictly between `a` and `b` (either `null` for
-  ±∞); `orderKeyAfterAll(siblings: ReadonlyArray<{ order: string }>)` — the key that sorts after
-  every sibling, for an append. Order keys (`ExperienceNode.order`) let concurrent inserts never
-  collide.
+- `orderKeyBetween(a, b, { salt? })` — a fractional order key strictly between `a` and `b` (either
+  `null` for ±∞); `orderKeyAfterAll(siblings, { salt? })` — the key that sorts after every sibling,
+  for an append. Guarantees: always strictly between the bounds; WITHOUT a salt the key is a pure
+  function of the bounds (two authors minting for one gap get the SAME key — the legacy behaviour);
+  WITH a salt (an author/replica id, hashed to a 3-char suffix) authors with different salts get
+  different keys for one gap (a salt-hash collision is possible, 1 in 62³, hence the tie-break
+  below). Keys are minted when an op is authored and recorded in the op (`node.order`, `newOrder`);
+  `apply`/`replay` never mint one. Sibling order is TOTAL: by `order`, then by node id, so equal keys
+  (legacy data, a collision) are never ambiguous. Existing keys stay valid and no content address
+  moves for experiences whose sibling keys are distinct. There is no key below `"0"` or between
+  `k` and `k + "0"`; salted keys never end in `"0"` for that reason.
 
 ## Examples
 
