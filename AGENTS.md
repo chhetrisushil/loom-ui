@@ -67,7 +67,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   viewer SAW is `snapshotSeen` (core, pure) persisted by `@loom-ui/lineage`'s `SeenLog` in a per-(experience, viewer)
   reserved stream of manifests with value blobs in the ContentStore — NOT the lineage stream (shared CAS tip, folded
   by every reader) and NOT the hydration store (a latest-value cache). Reads redact against the recorded version's
-  artifact BEFORE fetching a blob; a missing/unknown class stamp is withheld.
+  artifact BEFORE fetching a blob; a missing/unknown class stamp is withheld. Erasure = crypto-shredding: each entry's ref
+  is AES-GCM-sealed under a per-(experience, viewer) key from a host `SeenKeyStore` (AD-bound to experience/viewer/
+  record/entry; digest is an HMAC), `eraseViewer` destroys the key; blobs stay plain-addressed (dedupe) and are reclaimed
+  by `collectSeenGarbage` (MARK-AND-SWEEP, never refcount; roots = lineage refs + decryptable in-window refs; grace via
+  the ContentStore's SPI 1.3.0 touch time; fails closed). Retention rolls off (watermark record), it never refuses.
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.

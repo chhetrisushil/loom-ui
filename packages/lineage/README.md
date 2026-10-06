@@ -142,8 +142,8 @@ happened (not what the class was): accepted, it is the audit trail.
 takes a core `snapshotSeen` snapshot, does not trust it (the version must be on the line; entries are
 re-validated, restamped against that version's artifact, dropped when the recording viewer may not see
 them, and re-capped), writes the value bytes to the `ContentStore` (content-addressed) and appends a
-manifest (`VIEW_RECORDED`: the version, per source a class stamp, state, status and a content ref) to a
-per-(experience, viewer) stream. `read({ ..., reader })` returns the views newest first (`until` = as
+manifest (`VIEW_RECORDED`: the version, per source a class stamp, state, status and a SEALED content
+ref) to a per-(experience, viewer) stream. `read({ ..., reader })` returns the views newest first (`until` = as
 of a time), redacted for the READER before any blob is fetched. An identical consecutive view is not
 re-recorded.
 
@@ -153,16 +153,76 @@ history of an experience with one compare-and-set tip that every writer contends
 so recording it there would put every open of a surface in a race with every writer, mix one viewer's
 classified values into a log all readers fold, and change what `verify` of the line must explain. The
 hydration store is a latest-value cache for the surface being drawn (evicts, projected to a client,
-no history): it cannot say what a viewer saw on Tuesday. The manifest holds NO value, so erasing a
-blob (a subject's right to erasure) leaves the fact of the view, not the value; a read of an erased
-entry says `absent`.
+no history): it cannot say what a viewer saw on Tuesday.
+
+*Erasure is crypto-shredding.* A plain SHA-256 in an append-only log confirms any low-entropy value
+("did this viewer see `42`?" is one hash away) and the log has no delete, so each entry's content ref is
+stored ENCRYPTED (AES-256-GCM, node:crypto) under a per-(experience, viewer) data key, and the manifest
+digest is an HMAC under that key, not a hash. The value bytes stay in the `ContentStore` under their
+plain content address (identical values dedupe across viewers and with the lineage). The key lives in a
+host-supplied `SeenKeyStore` (`getOrCreate` / `get` / `destroy`; `InMemorySeenKeyStore` is the
+non-durable reference, `checkSeenKeyStoreConformance` the kit; a loom `@loom/plugin-crypto` `KeyStore`
+satisfies it structurally, so a KMS-backed one can be passed as is). `eraseViewer({ experienceId,
+viewerId })` destroys the key and then appends a `VIEWER_ERASED` tombstone (idempotent; a rerun
+completes a half-done erasure): afterwards `read` returns `{ erased: true, views: [] }`, `record`
+refuses (`seen-viewer-erased`), and nothing left in the stream is decryptable. The ciphertext is bound
+as associated data to (experience, viewer, record sequence, entry index), so a ref cannot be moved
+between records, entries or viewers (even under one shared key); a ref that fails to open (tampered,
+transplanted, wrong key) is withheld (`restricted`), never read as plaintext. A missing or failing key
+store refuses a `record` and a `read` (`seen-key-unavailable`): fail closed. Why the key lives here and
+not in `shredSubject`: loom's shredder refuses the reserved `__loom_*` streams (a logged loom
+follow-up), and a seen log has to live in one; `encryptValue` has no associated data, which this needs,
+so the primitive is local (the `KeyStore` SHAPE is reused). What erasure does NOT hide: the stream's
+structure (which handles/projections a view named, node ids, class stamps, value byte lengths, times),
+and a value blob stays readable in the `ContentStore` until the collector below reclaims it.
+
+*Reclaiming blobs: `collectSeenGarbage(log, { graceMs, ownsContentStore: true })`.* MARK-AND-SWEEP, not
+a refcount (there is no transaction across the event log and the `ContentStore`, so a counter drifts and
+a crash between "append" and "increment" would delete a live value). MARK: every content address the
+lineage cites (any `__loomContent` in any event of any line, via `Lineage.forEachContentRef`) plus every
+DECRYPTABLE ref inside every viewer's retention window (`SeenLog.forEachLiveRef`) plus the host's
+`extraRoots`. SWEEP: page the store (`listPage`) and delete every unmarked blob with the store's atomic
+`deleteIfUntouchedSince(ref, cutoff)`, `cutoff = touchClock() at mark start - graceMs`. A blob touched
+at or after the cutoff (written during the pass, or younger than `graceMs`, including a dedup'd re-put)
+is never swept: that is what protects a value whose manifest is not appended yet; `graceMs` must exceed
+the longest a `record()` can take between putting a blob and appending its manifest. A crash in that
+gap leaks the blob until the first pass past grace and never loses a cited value. Erased viewers and
+rolled-off views mark nothing, so their unique blobs are swept while a blob another viewer or the
+lineage still cites survives. A pass is idempotent and safe to rerun after a crash. It FAILS CLOSED
+before deleting anything if the root set cannot be established (a `LineageStore` without
+`listStreams`, a key-store failure, a `ContentStore` without the SPI 1.3.0 set `listPage` +
+`deleteIfUntouchedSince` + `touchClock`, more than `maxMarked` live addresses). Memory: one string per
+distinct live blob (`maxMarked`, default 5M, refuses rather than grow), one stream at a time, pages of
+`pageSize`. `ownsContentStore: true` is an assertion you make: the sweep deletes what it cannot root, so
+the store must hold nothing the lineage, the seen logs and `extraRoots` do not name. No loom or
+`ContentStore` SPI change was needed: SPI 1.3.0 already carries the touch time.
+
+*Retention rolls off, it does not refuse.* `retention: { maxViews = 10_000, maxAgeMs? }`. A new view
+ALWAYS records. The log is append-only, so roll-off is a watermark: each view carries the `floor` in
+force when written and a `VIEWS_RETAINED` record raises it (about once per `maxViews/10` roll-offs);
+`read` and the collector apply the window themselves (floor, age, newest `maxViews`), so correctness
+never depends on a watermark having been written. Records at or below the floor are neither read nor
+marked, so their blobs are reclaimed by the collector. Cost: `record` reads the LAST record only (tip,
+floor and the last digest all ride on it) plus the window when a watermark is due; `read` and the
+collector read `readAfter(floor)`, i.e. the window, never the log's lifetime. That needs the optional
+`LineageStore.readTail` / `readAfter` (both reference stores and `eventStoreLineageStore` implement
+them; a store without them falls back to a full `read`, O(log) per call). The rolled-off records stay in
+the raw log as ciphertext (destroyed with the viewer's key).
 
 Operations: the stream lives in its own reserved namespace (`eventStoreLineageStore(store,
 seenStoreOptions)` writes `__loom_ui_seen__:<experience>/<viewer>`), so the notes on reserved streams
-above apply (no crypto-shred; erase by deleting the stream's events and blobs). A viewer's stream is
-capped at `MAX_SEEN_RECORDS` views (a write past it is refused `seen-log-full`; retention is the
-host's), and an append reads the stream's tip, so it is O(views) per write. `viewerId` and `viewer`
-are the host's claims: this package authorizes nothing.
+above apply (loom's `shredSubject` refuses them, which is why the seen log carries its own key store).
+`LineageStore` gained three OPTIONAL methods: `readTail`, `readAfter` and `listStreams` (the
+collector's enumeration; `eventStoreLineageStore` implements it over the SPI's `listExecutionsPage` /
+`listExecutions`, which DO surface reserved streams, found by prefix). `viewerId` and `viewer` are the
+host's claims: this package authorizes nothing.
+
+Reference example (for `loom-examples`, not generic to one app): record views for two viewers who saw
+the same value, erase one (`eraseViewer`), show the raw stream holds no readable address, show
+`read` says `erased` while the other viewer's identical value still reads, run `collectSeenGarbage`
+and show the erased viewer's unique blob is swept while the shared one and the lineage's artifacts
+survive, then roll a viewer past `maxViews` and show the oldest views fall out of `read` and the
+next sweep reclaims their blobs.
 
 Seen-record details. An entry is judged by what its nodes actually bind: every node it lists must bind
 exactly its `source`, an entry with no nodes is withheld, and `record` refuses a snapshot that names
@@ -175,6 +235,10 @@ package does not prove a blob was written by the stream that names it. `record` 
 record that a read could not parse (`seen-snapshot-invalid`, `seen-record-invalid`) rather than append
 a permanently malformed one. A `read` folds the lineage once for all the versions it touches; `record`
 folds it once (O(line length) per write). An identical consecutive view is not re-recorded, so the
-kept record carries the FIRST view's `at`. The seen stream's prefix must differ from the lineage's
-(`SeenLog` throws on a shared store or prefix), and `eventStoreLineageStore` throws for a
+kept record carries the FIRST view's `at`. The seen stream's prefix must not overlap the lineage's
+(`Lineage.sharesStreamsWith` compares both ways, `a.startsWith(b) || b.startsWith(a)`, and `SeenLog`
+throws on a shared store or an overlapping prefix). The vetted store must expose a readable
+`streamPrefix` (or be an `InMemoryLineageStore`): a decorator that HIDES it cannot be told apart from a
+colliding store, so it is refused; re-expose `streamPrefix` on a legitimate wrapper. If the LINEAGE's own
+store is such a wrapper its prefix is assumed to be the default. And `eventStoreLineageStore` throws for a
 `streamPrefix` not under `__loom_ui_` or a malformed `workflowId`.

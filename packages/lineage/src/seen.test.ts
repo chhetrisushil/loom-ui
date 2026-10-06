@@ -12,13 +12,13 @@ import { InMemoryContentStore, contentAddress, encodeValue } from "@loom/plugin-
 import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import {
-  MAX_SEEN_RECORDS,
   SEEN_STREAM_PREFIX,
   SeenLog,
   type SeenResult,
   VIEW_RECORDED,
   seenStoreOptions,
 } from "./seen";
+import { InMemorySeenKeyStore } from "./seenCrypto";
 import { InMemoryLineageStore, type LineageStore, eventStoreLineageStore } from "./store";
 
 const user: Provenance = { source: "user" };
@@ -84,7 +84,13 @@ for (const [name, makeStore] of backends) {
         })
       );
       const events = makeStore();
-      const log = new SeenLog({ events, content, lineage, now: clock() });
+      const log = new SeenLog({
+        keys: new InMemorySeenKeyStore(),
+        events,
+        content,
+        lineage,
+        now: clock(),
+      });
       const exp = v2.experience;
       const snap = (values: Record<string, unknown>, viewer = cleared) =>
         snapshotSeen(exp, {
@@ -335,24 +341,6 @@ for (const [name, makeStore] of backends) {
       expect(r.malformed).toBe(1);
       expect(r.views[0]?.entries).toEqual([]);
       expect(r.views[0]?.restricted).toBe(true);
-    });
-
-    it("refuses a write past the per-viewer cap", async () => {
-      const { log, events, snap } = await setup();
-      const key = `${encodeURIComponent("e")}/${encodeURIComponent("v1")}`;
-      // fill by direct append: the cap is on the stream's length
-      for (let i = 0; i < MAX_SEEN_RECORDS; i++)
-        await events.append(key, i, { type: VIEW_RECORDED, at: "x", payload: { digest: `d${i}` } });
-      expect(
-        await log.record({
-          experienceId: "e",
-          viewerId: "v1",
-          snapshot: snap({ h: 1 }),
-          viewer: cleared,
-        })
-      ).toMatchObject({
-        refusal: { code: "seen-log-full" },
-      });
     });
   });
 }

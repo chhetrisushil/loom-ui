@@ -44,6 +44,29 @@ export interface LineageStore {
   ): Promise<AppendOutcome>;
   /** Every record of the line in sequence order; `[]` for an unknown line. The caller owns the result. */
   read(experienceId: string): Promise<readonly StoredLineageRecord[]>;
+  /**
+   * OPTIONAL — the newest `limit` records of the line, in sequence order (`[]` for an unknown line).
+   * Lets a long-lived per-viewer log answer "what is the tip?" without reading its whole history.
+   * Implement it together with {@link readAfter}; absent, callers fall back to `read` (O(log length)).
+   */
+  readTail?(experienceId: string, limit: number): Promise<readonly StoredLineageRecord[]>;
+  /**
+   * OPTIONAL — the records with `sequence > afterSequence`, in sequence order, at most `limit` of
+   * them (default: all). The retention window of a per-viewer log is read this way, so a read costs
+   * the size of the window, not the age of the log.
+   */
+  readAfter?(
+    experienceId: string,
+    afterSequence: number,
+    limit?: number
+  ): Promise<readonly StoredLineageRecord[]>;
+  /**
+   * OPTIONAL — enumerate the ids of every line this store holds, in bounded pages. A collector
+   * (`SeenLog.collectGarbage`) needs it to find every root; a store that omits it cannot be
+   * garbage-collected (the collector refuses rather than guess a root set). Ids are exactly what
+   * `read` takes. Concurrent creation during a scan may be missed (a maintenance pass, not a snapshot).
+   */
+  listStreams?(): AsyncIterable<string>;
 }
 
 /**
@@ -55,6 +78,8 @@ function isWriteConflict(err: unknown): boolean {
   const name = (err as { name?: unknown } | null)?.name;
   return name === "DuplicateSequenceError" || name === "DuplicateEnvelopeIdError";
 }
+
+type EventEnvelope = Awaited<ReturnType<EventStore["read"]>>[number];
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -77,6 +102,26 @@ export class InMemoryLineageStore implements LineageStore {
 
   async read(experienceId: string): Promise<readonly StoredLineageRecord[]> {
     return clone(this.lines.get(experienceId) ?? []);
+  }
+
+  async readTail(experienceId: string, limit: number): Promise<readonly StoredLineageRecord[]> {
+    const line = this.lines.get(experienceId) ?? [];
+    return clone(limit >= line.length ? line : line.slice(line.length - Math.max(0, limit)));
+  }
+
+  async readAfter(
+    experienceId: string,
+    afterSequence: number,
+    limit = Number.POSITIVE_INFINITY
+  ): Promise<readonly StoredLineageRecord[]> {
+    // dense 1..n: the records after `a` start at index `a`
+    const line = this.lines.get(experienceId) ?? [];
+    const from = Math.max(0, afterSequence);
+    return clone(line.slice(from, Number.isFinite(limit) ? from + Math.max(0, limit) : undefined));
+  }
+
+  async *listStreams(): AsyncGenerator<string, void, void> {
+    for (const id of [...this.lines.keys()]) yield id;
   }
 }
 
@@ -150,19 +195,72 @@ export function eventStoreLineageStore(
       return { ok: true, sequence };
     },
     async read(experienceId) {
-      const events = await store.read(streamOf(experienceId));
-      return events
-        .slice()
-        .sort((a, b) => a.sequence - b.sequence)
-        .map((e) => ({
-          sequence: e.sequence,
-          type: e.eventType,
-          payload: clone(e.payload),
-          at:
-            typeof e.metadata?.at === "string"
-              ? e.metadata.at
-              : new Date(e.timestamp).toISOString(),
-        }));
+      return toRecords(await store.read(streamOf(experienceId)));
     },
+    async readTail(experienceId, limit) {
+      const id = streamOf(experienceId);
+      const tip = (await headOf(store, id)) ?? 0;
+      if (tip === 0 || limit <= 0) return [];
+      return toRecords(await readWindow(store, id, Math.max(1, tip - limit + 1), tip));
+    },
+    async readAfter(experienceId, afterSequence, limit = Number.POSITIVE_INFINITY) {
+      const id = streamOf(experienceId);
+      const tip = (await headOf(store, id)) ?? 0;
+      const from = Math.max(1, afterSequence + 1);
+      const to = Number.isFinite(limit) ? Math.min(tip, from + Math.max(0, limit) - 1) : tip;
+      if (to < from) return [];
+      return toRecords(await readWindow(store, id, from, to));
+    },
+    ...(store.listExecutionsPage !== undefined || store.listExecutions !== undefined
+      ? {
+          async *listStreams(): AsyncGenerator<string, void, void> {
+            // Reserved streams ARE surfaced by the SPI's enumeration (`__loom_*`), so ours are found
+            // by prefix. Pages are keyset-ordered by code point, so with pages the scan starts just
+            // before our prefix and stops once past it; the unpaged fallback filters the full list.
+            if (store.listExecutionsPage === undefined) {
+              for (const id of (await store.listExecutions?.()) ?? [])
+                if (id.startsWith(prefix)) yield id.slice(prefix.length);
+              return;
+            }
+            let cursor: string | undefined = prefix.slice(0, -1);
+            for (;;) {
+              const page: { executionIds: string[]; nextCursor?: string } =
+                await store.listExecutionsPage({
+                  ...(cursor !== undefined && { cursor }),
+                  limit: 500,
+                });
+              for (const id of page.executionIds) {
+                if (id.startsWith(prefix)) yield id.slice(prefix.length);
+                else if (id > prefix) return;
+              }
+              if (page.nextCursor === undefined || page.nextCursor === cursor) return;
+              cursor = page.nextCursor;
+            }
+          },
+        }
+      : {}),
   };
+}
+
+function toRecords(events: readonly EventEnvelope[]): StoredLineageRecord[] {
+  return events
+    .slice()
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((e) => ({
+      sequence: e.sequence,
+      type: e.eventType,
+      payload: clone(e.payload),
+      at: typeof e.metadata?.at === "string" ? e.metadata.at : new Date(e.timestamp).toISOString(),
+    }));
+}
+
+/** Sequences `from..to` (inclusive) of a stream: the store's `readRange`, else `readFrom`/`read` filtered. */
+async function readWindow(
+  store: EventStore,
+  id: string,
+  from: number,
+  to: number
+): Promise<EventEnvelope[]> {
+  if (store.readRange !== undefined) return store.readRange(id, from, to);
+  return (await store.read(id)).filter((e) => e.sequence >= from && e.sequence <= to);
 }
