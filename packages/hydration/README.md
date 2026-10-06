@@ -248,8 +248,12 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   call, so the inventory and the loader cannot disagree because one call forgot the table. A per-call
   `declaredToolClasses` / `undeclared` only ADDS (`{}` or `undefined` cannot lower it). The free
   `handleInventory` / `serveHandle(s)` take the table per call and are the low-level API.
-  `undeclared: "deny"` (also on `HydrationController`) refuses every handle whose provider calls a tool the
-  table does not list, for every viewer, until the tool is declared.
+  `undeclared: "deny"` refuses every handle whose provider calls a tool the table does not list (no
+  table = an empty one: all tool-bound handles), for every viewer, until the tool is declared; a
+  per-call table cannot list a new tool once deny is bound. `HydrationController` takes the SAME
+  `readPolicy` (`new HydrationController({ readPolicy })`; the separate `declaredToolClasses` /
+  `undeclared` options join it raise-only), so a host passes ONE policy to the controller and to
+  `createServeSurface`.
 - **A classified handle is never fetched for a viewer who may not see it (fail-closed).** Pass
   `viewer: { clearance }` (`@loom-ui/core`'s `Viewer`) to `HydrationController`, `handleInventory`
   and `serveHandle`/`serveHandles`. A handle bound by any node whose `sensitivity` is above the

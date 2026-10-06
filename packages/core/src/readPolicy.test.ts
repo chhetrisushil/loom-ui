@@ -108,10 +108,20 @@ describe('undeclared: "deny" — a tool the table does not list is unreadable', 
     expect(denied.find((u) => u.handle === "h-listed")?.sensitivity).toBe("internal");
   });
 
-  it("deny with NO table present does nothing (the mode is for a host that declared a table)", () => {
+  it("deny with NO table is an EMPTY table: every tool-bound handle is restricted (fails closed)", () => {
+    for (const h of ["h-surprise", "h-listed"])
+      expect(
+        experienceHandles(exp, undefined, "deny").find((u) => u.handle === h)?.sensitivity
+      ).toBe(UNDECLARED_TOOL_CLASS);
+    expect(mergeReadPolicy({ undeclared: "deny" })).toEqual({
+      declaredToolClasses: {},
+      undeclared: "deny",
+    });
+    // and a later table cannot open it
     expect(
-      experienceHandles(exp, undefined, "deny").find((u) => u.handle === "h-surprise")?.sensitivity
-    ).toBeUndefined();
+      mergeReadPolicy({ undeclared: "deny" }, { declaredToolClasses: { "known.read": "internal" } })
+        .declaredToolClasses
+    ).toEqual({});
   });
 
   it("compile: allow shows it, deny hides it from EVERY viewer, even a fully cleared one", () => {
@@ -201,8 +211,40 @@ describe("mergeReadPolicy: the bound policy first, per-call values only add", ()
     }
     expect(
       mergeReadPolicy(bound, { declaredToolClasses: { a: "internal", b: "sensitive" } })
-    ).toEqual({ declaredToolClasses: { a: "secret", b: "sensitive" }, undeclared: "deny" });
+    ).toEqual({ declaredToolClasses: { a: "secret" }, undeclared: "deny" }); // b is NEW after deny: ignored
+    expect(
+      mergeReadPolicy(
+        { declaredToolClasses: { a: "secret" } },
+        { declaredToolClasses: { a: "internal", b: "sensitive" } }
+      )
+    ).toEqual({ declaredToolClasses: { a: "secret", b: "sensitive" } }); // allow: new keys still add
     expect(mergeReadPolicy({}, { undeclared: "deny" }).undeclared).toBe("deny");
+  });
+  it("deny CLOSES the key set: a later tier may raise a listed tool, never list a new one", () => {
+    const bound = { declaredToolClasses: { a: "secret" } as const, undeclared: "deny" as const };
+    expect(mergeReadPolicy(bound, { declaredToolClasses: { b: "internal" } })).toEqual(bound);
+    expect(mergeReadPolicy(bound, { declaredToolClasses: { b: "internal", a: "secret" } })).toEqual(
+      bound
+    );
+    // a tier that sets deny AND lists keys keeps them; tiers before deny are unrestricted
+    expect(
+      mergeReadPolicy(
+        { declaredToolClasses: { x: "internal" } },
+        { declaredToolClasses: { y: "internal" }, undeclared: "deny" },
+        { declaredToolClasses: { z: "secret" } }
+      ).declaredToolClasses
+    ).toEqual({ x: "internal", y: "internal" });
+    // associative: merging a merged policy again changes nothing
+    const once = mergeReadPolicy(bound, { declaredToolClasses: { b: "internal" } });
+    expect(mergeReadPolicy(once, { declaredToolClasses: { b: "internal" } })).toEqual(once);
+  });
+  it("end to end: a per-call table naming a NEW tool does not open it, even for a secret-cleared viewer", () => {
+    const bound = { declaredToolClasses: table, undeclared: "deny" as const };
+    const m = mergeReadPolicy(bound, { declaredToolClasses: { "unlisted.read": "internal" } });
+    const classes = experienceHandles(build(), m.declaredToolClasses, m.undeclared);
+    expect(classes.find((u) => u.handle === "h-surprise")?.sensitivity).toBe(UNDECLARED_TOOL_CLASS);
+    const r = compile(build(), { ...copts, ...m, viewer: high });
+    expect(r.restrictedHandles).toEqual(["h-surprise"]);
   });
   it("a per-call projections / hydrationProjectionId does not replace the bound one", () => {
     const cat = { offered: [] } as never;

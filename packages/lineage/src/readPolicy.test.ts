@@ -132,6 +132,21 @@ describe("Lineage with a bound readPolicy", () => {
       avail(ok(await lax.lineage.explain("e", "fresh", { viewer: high, undeclared: "deny" })))
     ).toBe(false);
   });
+  it("deny bound + a per-call table naming the NEW tool: stays restricted for a secret-cleared viewer", async () => {
+    const strict = await setup({ ...bound, undeclared: "deny" });
+    const perCall = { declaredToolClasses: { "newtool.read": "internal" as const } };
+    expect(
+      avail(ok(await strict.lineage.explain("e", "fresh", { viewer: high, ...perCall })))
+    ).toBe(false);
+    // the listed tool is still readable by a cleared viewer
+    expect(avail(ok(await strict.lineage.explain("e", "pay", { viewer: high, ...perCall })))).toBe(
+      true
+    );
+  });
+  it("deny with NO table restricts every tool-bound node", async () => {
+    const strict = await setup({ undeclared: "deny" });
+    expect(avail(ok(await strict.lineage.explain("e", "pay", { viewer: high })))).toBe(false);
+  });
   it("exposes the bound policy for readers built over it", async () => {
     expect((await setup(bound)).lineage.readPolicy).toEqual(bound);
     expect((await setup()).lineage.readPolicy).toEqual({});
@@ -197,6 +212,13 @@ describe("SeenLog with a bound readPolicy", () => {
     ok(await log.record({ experienceId: "e", viewerId: "hi", snapshot, viewer: high }));
     for (const perCall of [{}, { declaredToolClasses: undefined }, { declaredToolClasses: {} }])
       expect(names(await entries(log, low, perCall))).not.toContain("hpay");
+  });
+  it("deny bound + a per-call table naming a new tool: record and read stay restricted", async () => {
+    const { log, snapshot } = await mk({ log: { ...bound, undeclared: "deny" } });
+    const perCall = { declaredToolClasses: { "newtool.read": "internal" as const } };
+    ok(await log.record({ experienceId: "e", viewerId: "hi", snapshot, viewer: high, ...perCall }));
+    expect(names(await entries(log, high, perCall))).not.toContain("hnew");
+    expect(names(await entries(log, high, perCall))).toContain("hpay");
   });
   it('bound undeclared: "deny" withholds an entry of a tool the table omits', async () => {
     const { log, snapshot } = await mk({ log: { ...bound, undeclared: "deny" } });
