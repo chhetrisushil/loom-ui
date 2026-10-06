@@ -501,6 +501,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
   };
   return {
     exec,
+    // `bound` is handle-id collection only (no class read); `restricted` below takes the table.
     bound: new Set(experienceHandles(exp).map((u) => u.handle)),
     restricted: new Set(
       partitionByViewer(

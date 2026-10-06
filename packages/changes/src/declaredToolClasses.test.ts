@@ -76,4 +76,20 @@ describe("LineageChangeFeed.describe with declaredToolClasses", () => {
     const d = await feed.describe(event, { viewer: low, declaredToolClasses });
     expect(d.ok && d.description.entries).toEqual([{ kind: "restricted-changed" }]);
   });
+  it("a per-call table can only ADD: {} or undefined cannot lower the feed's floor", async () => {
+    const { feed, event } = await setup(declaredToolClasses);
+    for (const perCall of [{}, undefined, { "other.tool": "internal" as const }]) {
+      const d = await feed.describe(event, {
+        viewer: low,
+        declaredToolClasses: perCall,
+      } as never); // an explicit `undefined` is a runtime possibility the types forbid
+      expect(d.ok && d.description.entries).toEqual([{ kind: "restricted-changed" }]);
+      expect(d.ok && d.description.summary).toBeUndefined();
+    }
+  });
+  it("a per-call table raises a tool the feed table lists lower", async () => {
+    const { feed, event } = await setup({ "payroll.read": "internal" } as never);
+    const d = await feed.describe(event, { viewer: low, declaredToolClasses });
+    expect(d.ok && d.description.entries).toEqual([{ kind: "restricted-changed" }]);
+  });
 });

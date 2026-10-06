@@ -24,6 +24,7 @@ import type { CapabilityRef, DecideContext, PlanResult, ReviseInput } from "./sp
 
 /** Which nodes a drifted handle feeds — the revision's scope. */
 function boundNodeIds(exp: Experience, handle: string): string[] {
+  // Node-id lookup by handle only: no class is read, so no declared table is needed.
   return (
     experienceHandles(exp)
       .find((u) => u.handle === handle)

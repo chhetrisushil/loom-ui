@@ -12,6 +12,7 @@ import {
   validateExperience,
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
+import { declaredToolClassesFrom } from "./capabilityClass";
 import { type DraftNode, draftNodeSchema, parseModelJson, planSchema } from "./contract";
 import { isControlPlaneError } from "./controlPlane";
 import { planDecisionId } from "./decision";
@@ -470,9 +471,12 @@ export class ReferencePlanner implements Planner {
         // The summary was written from the whole of `base`, the capabilities offered (their
         // samples reach the prompt whether or not the plan binds them) and the caller's context;
         // the plan it describes is `applied`. Stamp the strictest class of all of them.
+        // The floors include the capabilities' declared tool classes, so a node stored unclassified
+        // on a declared-secret tool still raises the summary's stamp.
+        const declaredFloor = declaredToolClassesFrom(input.capabilities);
         let summaryClass = strictestClass(
-          strictestClass(experienceClassFloor(base), input.contextClass),
-          applied.ok ? experienceClassFloor(applied.value) : undefined
+          strictestClass(experienceClassFloor(base, undefined, declaredFloor), input.contextClass),
+          applied.ok ? experienceClassFloor(applied.value, undefined, declaredFloor) : undefined
         );
         for (const c of input.capabilities)
           summaryClass = strictestClass(summaryClass, c.sensitivity);

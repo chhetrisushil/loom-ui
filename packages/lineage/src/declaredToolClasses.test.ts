@@ -132,4 +132,50 @@ describe("lineage with declaredToolClasses", () => {
       1
     );
   });
+
+  it("explain: the WRITER's artifact is floored by the table too (older unclassified node on a declared-secret tool)", async () => {
+    const content = new InMemoryContentStore();
+    const lineage = new Lineage({ events: new InMemoryLineageStore(), content });
+    const v1 = ok(
+      await lineage.start(
+        genesis({ experienceId: "e", intent: { objective: "o", source: "user" }, meta }),
+        user
+      )
+    );
+    // v2 writes an open node AND an unclassified payroll node, with a summary.
+    const v2 = ok(
+      await lineage.compose({
+        experienceId: "e",
+        expectedHead: v1.experience.versionHash,
+        ops: [
+          rec({ type: "remapProvider", handle: "hpay", spec: spec("hpay", "payroll.read") }),
+          rec({ type: "remapProvider", handle: "hopen", spec: spec("hopen", "status.read") }),
+          rec({ type: "insertNode", parentId: "root", node: node("pay", "hpay") }),
+          rec({ type: "insertNode", parentId: "root", node: node("open", "hopen") }),
+        ],
+        summary: "Added payroll and status tiles",
+        by: user,
+      })
+    );
+    // v3 removes the payroll node: the HEAD no longer holds anything classed; only the writer does.
+    ok(
+      await lineage.compose({
+        experienceId: "e",
+        expectedHead: v2.experience.versionHash,
+        ops: [
+          rec({ type: "removeNode", nodeId: "pay" }),
+          rec({ type: "removeProvider", handle: "hpay" }),
+        ],
+        by: user,
+      })
+    );
+    const text = (r: unknown) => JSON.stringify(r);
+    const noTable = ok(await lineage.explain("e", "open", { viewer: low }));
+    expect(text(noTable)).toContain("Added payroll");
+    const withTable = ok(await lineage.explain("e", "open", { viewer: low, declaredToolClasses }));
+    expect((withTable as { available: boolean }).available).toBe(true);
+    expect(text(withTable)).not.toContain("Added payroll");
+    const cleared = ok(await lineage.explain("e", "open", { viewer: high, declaredToolClasses }));
+    expect(text(cleared)).toContain("Added payroll");
+  });
 });

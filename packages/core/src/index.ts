@@ -56,6 +56,7 @@ export type { Finding, GenesisInput } from "./experience";
 export { type ApplyOptions, Operation, Provenance, apply, applyAt, replay } from "./operations";
 export { carryClasses, inheritedClass } from "./classes";
 export type { DeclaredToolClasses } from "./classes";
+export { mergeDeclaredToolClasses, toolsOf } from "./classes";
 export { DEFAULT_STEP_KIND, STEP_KIND_PATTERN, stepKind, toolKey } from "./steps";
 export type { OpResult, RecordedOperation } from "./operations";
 export { experienceNodeIds, preservesNodes } from "./identity";

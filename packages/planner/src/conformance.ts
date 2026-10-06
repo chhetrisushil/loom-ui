@@ -14,6 +14,7 @@ import {
 } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
 import type { DataClass } from "@loom/classify";
+import { requiredClass } from "./capabilityClass";
 import { readPlannerReach } from "./reach";
 import type {
   CapabilityRef,
@@ -133,14 +134,6 @@ function bindingClassFindings(
   exp: Experience,
   capabilities: readonly CapabilityRef[]
 ): Finding[] {
-  const declared = new Map<string, DataClass>();
-  for (const c of capabilities)
-    if (c.sensitivity !== undefined)
-      declared.set(
-        toolKey(c),
-        strictestClass(declared.get(toolKey(c)), c.sensitivity) as DataClass
-      );
-  if (declared.size === 0) return [];
   const out: Finding[] = [];
   walk(exp.root, (n) => {
     if (n.kind !== "semantic" || n.binding === undefined) return;
@@ -148,9 +141,7 @@ function bindingClassFindings(
       ? exp.providers[n.binding.handle]
       : undefined;
     if (spec === undefined) return;
-    let need: DataClass | undefined;
-    for (const step of spec.executionGraph)
-      need = strictestClass(need, declared.get(toolKey(step)));
+    const need = requiredClass(spec, capabilities);
     if (need !== undefined && strictestClass(n.binding.sensitivity, need) !== n.binding.sensitivity)
       out.push(
         err(
