@@ -20,7 +20,7 @@ export {
   PromotedPayload,
   RevertedPayload,
 } from "./events";
-export type { LineageEventType } from "./events";
+export type { LineageEventType, SummaryClass } from "./events";
 export { foldLineage } from "./state";
 export type { Fold, LineageState, VersionKind, VersionRecord } from "./state";
 export {

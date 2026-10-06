@@ -4,9 +4,11 @@ import {
   type Intent,
   type Operation,
   boundSummary,
+  experienceClassFloor,
   genesis,
   loomCatalogFor,
   replay,
+  strictestClass,
   validateExperience,
 } from "@loom-ui/core";
 import { parseModelJson, planSchema } from "./contract";
@@ -188,6 +190,7 @@ export class ReferencePlanner implements Planner {
       catalog: ComposeInput["catalog"];
       capabilities: ComposeInput["capabilities"];
       surface?: ComposeInput["surface"];
+      contextClass?: ComposeInput["contextClass"];
       /** Revise only: per-handle observed samples — each rebuilt provider pins from its own call's. */
       observed?: ReviseInput["observed"];
     },
@@ -317,7 +320,12 @@ export class ReferencePlanner implements Planner {
       if (errorsOf(findings).length === 0) {
         const report = this.report(decisionId, attempts, attempts.length === 1);
         const summary = boundSummary(parsed.value.summary);
-        const said = summary === undefined ? {} : { summary };
+        // The summary was written from the whole of `base` plus the context the caller declared.
+        const summaryClass = strictestClass(experienceClassFloor(base), input.contextClass);
+        const said =
+          summary === undefined
+            ? {}
+            : { summary, ...(summaryClass !== undefined && { summaryClass }) };
         if (request === undefined) return { ops: m.ops, findings, report, ...said };
         const prompt: Operation = {
           type: "prompt",

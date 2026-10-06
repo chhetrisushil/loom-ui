@@ -605,3 +605,50 @@ describe("ReferencePlanner keeps the model's summary (U7)", () => {
     expect(r.summary).toBeUndefined();
   });
 });
+
+describe("ReferencePlanner stamps the class of what the summary was written from (U7 review)", () => {
+  it("compose: absent without classification, contextClass flows to summaryClass", async () => {
+    const plain = await new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+    }).compose(input, recordingContext());
+    expect(plain.summary).toBeDefined();
+    expect(plain.summaryClass).toBeUndefined();
+    const withCtx = await new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+    }).compose({ ...input, contextClass: "sensitive" }, recordingContext());
+    expect(withCtx.summaryClass).toBe("sensitive");
+  });
+
+  it("compose: a classified intent raises it; the strictest of intent and context wins", async () => {
+    const r = await new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+    }).compose(
+      {
+        ...input,
+        intent: { ...intentFixture, sensitivity: "secret" },
+        contextClass: "internal",
+      },
+      recordingContext()
+    );
+    expect(r.summaryClass).toBe("secret");
+  });
+
+  it("revise: a classified node in the experience raises it", async () => {
+    const planner = new ReferencePlanner({ model: scriptedModel([goodDraft]), modelId: "m" });
+    const r0 = await planner.compose(input, recordingContext());
+    const rep = replay(
+      genesis({ experienceId: "e", intent: intentFixture, meta: metaFixture }),
+      r0.ops
+    );
+    if (!rep.ok) throw new Error("setup");
+    const exp = seal({ ...rep.value, toolClasses: { orders_summary: "secret" } });
+    const revised = await new ReferencePlanner({
+      model: scriptedModel([goodDraft]),
+      modelId: "m",
+    }).revise({ ...input, experience: exp, request: { text: "tweak" } }, recordingContext());
+    expect(revised.summaryClass).toBe("secret");
+  });
+});

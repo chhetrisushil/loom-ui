@@ -18,6 +18,7 @@
   "dependencies": {
     "@loom-ui/core": "workspace:*",
     "@loom-ui/lineage": "workspace:*",
+    "@loom/classify": "*",
     "@loom/event-runtime": "*"
   },
   "devDependencies": {

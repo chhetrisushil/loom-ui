@@ -1,4 +1,4 @@
-import { Operation, Provenance } from "@loom-ui/core";
+import { Operation, Provenance, Sensitivity } from "@loom-ui/core";
 import { z } from "zod";
 
 // ── The lineage event protocol ────────────────────────────────────────────────
@@ -57,6 +57,13 @@ export const ComposedPayload = z.object({
    * the content address (nothing here is).
    */
   summary: z.string().optional(),
+  /**
+   * The strictest class of everything the author READ to write `summary` (the experience, tool
+   * samples, caller context), stamped by the host at compose. A summary is judged against it (and
+   * against the version's own class floor) before a viewer is shown it. Recorded on the event, not
+   * in the content address. Absent = unknown, and the floor alone gates the summary.
+   */
+  summaryClass: Sensitivity.optional(),
 });
 export const RevertedPayload = z.object({ ...Common, revertedTo: Hash });
 export const BranchedPayload = z.object({
@@ -73,6 +80,7 @@ export const PromotedPayload = z.object({
 });
 
 export type ComposedPayload = z.infer<typeof ComposedPayload>;
+export type SummaryClass = NonNullable<ComposedPayload["summaryClass"]>;
 export type RevertedPayload = z.infer<typeof RevertedPayload>;
 export type BranchedPayload = z.infer<typeof BranchedPayload>;
 export type PromotedPayload = z.infer<typeof PromotedPayload>;

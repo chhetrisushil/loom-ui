@@ -5,6 +5,7 @@ import {
   boundSummary,
   defaultAttention,
   describeChange,
+  experienceClassFloor,
 } from "./change";
 import { type Experience, genesis } from "./experience";
 import type { SemanticNode } from "./node";
@@ -253,7 +254,7 @@ describe("describeChange — viewer-safe", () => {
     const b = run(a, { type: "setProps", nodeId: "pn", patch: { z: 1 } });
     const d = describeChange(a, b, {
       viewer: { clearance: "internal" },
-      projectionClass: () => "secret",
+      projections: [{ id: "p1", version: "1", sensitivity: "secret" }],
     });
     expect(d.entries).toEqual([{ kind: "restricted-changed" }]);
   });
@@ -328,5 +329,158 @@ describe("attention, summary", () => {
     });
     expect(d.summary).toBeUndefined();
     expect(JSON.stringify(d)).not.toContain("payroll");
+  });
+});
+
+describe("review round 1 — summary class floor", () => {
+  const v0 = base();
+  const internal = { clearance: "internal" as const };
+  const withSecret = run(v0, ...bindOps("pay", "hpay", "secret"), insert(bound("a1", "h1")));
+  const next = run(withSecret, insert(bound("a2", "h2")));
+  const said = "added a chart next to the payroll table (CEO salary $2.1M)";
+
+  it("an unchanged secret node + a visible insert: an uncleared viewer gets NO summary", () => {
+    const d = describeChange(withSecret, next, { viewer: internal, summary: said });
+    expect(d.restricted).toBe(false);
+    expect(d.entries).toEqual([{ kind: "node-added", nodeId: "a2", type: "Metric" }]);
+    expect(d.summary).toBeUndefined();
+    expect(JSON.stringify(d)).not.toContain("payroll");
+  });
+
+  it("a cleared viewer gets it", () => {
+    expect(describeChange(withSecret, next, { viewer: cleared, summary: said }).summary?.text).toBe(
+      said
+    );
+  });
+
+  it("an unclassified experience still shows the summary to an uncleared viewer", () => {
+    const a = run(v0, insert(sem("m1")));
+    const b = run(a, insert(sem("m2")));
+    expect(describeChange(a, b, { viewer: {}, summary: "ok" }).summary?.text).toBe("ok");
+  });
+
+  it("the floor covers the intent, sticky tool/handle/projection classes", () => {
+    const a = run(v0, insert(sem("m1")));
+    const b = run(a, insert(sem("m2")));
+    const only = (patch: Partial<Experience>) =>
+      describeChange({ ...a, ...patch }, { ...b, ...patch }, { viewer: {}, summary: "x" }).summary;
+    expect(only({})).toBeDefined();
+    expect(
+      only({ intent: { objective: "o", source: "user", sensitivity: "internal" } })
+    ).toBeUndefined();
+    expect(only({ toolClasses: { t: "internal" } })).toBeUndefined();
+    expect(only({ handleClasses: { h: "internal" } })).toBeUndefined();
+    expect(only({ projectionClasses: { p: "internal" } })).toBeUndefined();
+  });
+
+  it("summaryClass gates the summary: stricter than the floor = hidden from the uncleared", () => {
+    const a = run(v0, insert(sem("m1")));
+    const b = run(a, insert(sem("m2")));
+    const opts = { summary: "x", summaryClass: "secret" as const };
+    expect(describeChange(a, b, { ...opts, viewer: internal }).summary).toBeUndefined();
+    expect(describeChange(a, b, { ...opts, viewer: cleared }).summary?.text).toBe("x");
+  });
+
+  it("experienceClassFloor is the strictest class anything carries", () => {
+    expect(experienceClassFloor(v0)).toBeUndefined();
+    expect(experienceClassFloor(withSecret)).toBe("secret");
+    expect(experienceClassFloor(null as unknown as Experience)).toBe("secret");
+  });
+});
+
+describe("review round 1 — projections follow the catalogue", () => {
+  const v0 = base();
+  const proj = { id: "payroll", path: "rows", version: "1" };
+  const a = run(v0, insert(sem("pn", { type: "SalaryTable", projection: proj })));
+  const b = run(a, { type: "setProps", nodeId: "pn", patch: { z: 1 } });
+  const unc = { viewer: {} };
+
+  it("no catalogue: a projection node is hidden (restricted-changed), even unclassified", () => {
+    const d = describeChange(a, b, unc);
+    expect(d.entries).toEqual([{ kind: "restricted-changed" }]);
+    expect(JSON.stringify(d)).not.toContain("SalaryTable");
+    const added = describeChange(v0, a, unc);
+    expect(added.entries).toEqual([{ kind: "restricted-changed" }]);
+  });
+
+  it("an unknown id and a drifted version are hidden", () => {
+    expect(
+      describeChange(a, b, { ...unc, projections: [{ id: "other", version: "1" }] }).restricted
+    ).toBe(true);
+    expect(
+      describeChange(a, b, { ...unc, projections: [{ id: "payroll", version: "2" }] }).restricted
+    ).toBe(true);
+  });
+
+  it("an offered, unclassified projection is visible", () => {
+    const d = describeChange(a, b, { ...unc, projections: [{ id: "payroll", version: "1" }] });
+    expect(d.entries).toEqual([{ kind: "node-edited", nodeId: "pn" }]);
+  });
+
+  it("a hidden projection node withholds the summary for everyone, even when unchanged", () => {
+    const c = run(a, insert(sem("m2")));
+    const d = describeChange(a, c, { viewer: cleared, summary: "x" });
+    expect(d.summary).toBeUndefined();
+  });
+});
+
+describe("review round 1 — never throws, pinned defaults", () => {
+  const v0 = base();
+  const a = run(v0, insert(sem("m1")));
+  const b = run(a, insert(sem("m2")));
+
+  it("restricted-changed defaults to info", () => {
+    const s = run(v0, ...bindOps("s", "hs", "secret"));
+    const d = describeChange(s, run(s, { type: "removeNode", nodeId: "s" }), { viewer: {} });
+    expect(d.entries).toEqual([{ kind: "restricted-changed" }]);
+    expect(d.attention).toBe("info");
+  });
+
+  it("malformed ops do not throw", () => {
+    const d = describeChange(a, b, { viewer: {}, ops: [null] as never });
+    expect(d.entries.map((e) => e.kind)).toEqual(["node-added"]);
+    expect(d.origin).toBe("edit");
+    expect(() => describeChange(a, b, { viewer: {}, ops: 7 as never })).not.toThrow();
+    expect(describeChange(a, b, { viewer: {}, ops: 7 as never }).origin).toBeUndefined();
+  });
+
+  it("null / malformed next is a restricted change, not a throw", () => {
+    for (const bad of [null, undefined, 3, { versionHash: "x" }]) {
+      const d = describeChange(a, bad as never, { viewer: cleared });
+      expect(d.restricted).toBe(true);
+      expect(d.entries).toEqual([{ kind: "restricted-changed" }]);
+    }
+    expect(() =>
+      describeChange(a, {
+        get versionHash(): string {
+          throw new Error("x");
+        },
+      } as never)
+    ).not.toThrow();
+  });
+
+  it("origin is omitted when nothing visible changed", () => {
+    const s = run(v0, ...bindOps("s", "hs", "secret"));
+    const ops = [
+      { op: { type: "removeNode", nodeId: "s" }, by: { source: "user" }, at: "t" },
+    ] as never;
+    const d = describeChange(s, run(s, { type: "removeNode", nodeId: "s" }), { viewer: {}, ops });
+    expect(d.origin).toBeUndefined();
+    expect(describeChange(a, a, { viewer: {}, ops }).origin).toBeUndefined();
+  });
+
+  it("the classifier gets a frozen copy: mutation cannot change the output", () => {
+    const d = describeChange(a, b, {
+      viewer: cleared,
+      classify: (x) => {
+        expect(Object.isFrozen(x)).toBe(true);
+        expect(() => {
+          (x.entries as unknown as unknown[]).push(1);
+        }).toThrow();
+        return "urgent";
+      },
+    });
+    expect(d.entries).toHaveLength(1);
+    expect(d.attention).toBe("urgent");
   });
 });

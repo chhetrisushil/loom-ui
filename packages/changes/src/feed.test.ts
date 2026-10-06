@@ -1,10 +1,13 @@
+import { boundSummary, untrustedSummary } from "@loom-ui/core";
 import { eventStoreLineageStore } from "@loom-ui/lineage";
+import { isTainted } from "@loom/classify";
 import { InMemoryAsyncEventStore } from "@loom/event-runtime";
 import { describe, expect, it } from "vitest";
 import { checkChangeFeedConformance } from "./conformance";
 import { type ChangeFeed, LineageChangeFeed } from "./feed";
 import { by, g, ins, makeLineage, manualHarness, node } from "./harness.test-support";
 import { eventStoreHeadSignal, pollingHeadSignal } from "./signal";
+import { summaryAsTainted } from "./untrusted";
 
 describe("checkChangeFeedConformance", () => {
   it("passes the lineage feed with a manual-tick polling signal", async () => {
@@ -105,6 +108,22 @@ describe("checkChangeFeedConformance", () => {
               o
             ),
         }))
+      )
+    ).map((f) => f.code);
+    expect(codes).toContain("handler-retry");
+  });
+
+  it("fails a feed that retries only when the head moves (a quiet line stays stuck)", async () => {
+    const codes = (
+      await checkChangeFeedConformance(
+        wrap((inner) => ({
+          ...inner,
+          read: (id, o) => inner.read(id, o),
+          describe: (e, o) => inner.describe(e, o),
+          subscribe: (id, handler, o) =>
+            inner.subscribe(id, handler, { ...o, retry: { baseMs: 1e9, maxMs: 1e9 } }),
+        })),
+        { waitMs: 300 }
       )
     ).map((f) => f.code);
     expect(codes).toContain("handler-retry");
@@ -304,5 +323,294 @@ describe("LineageChangeFeed.describe — viewer-safe, end to end", () => {
       base: null,
     });
     expect(d.ok).toBe(false);
+  });
+});
+
+describe("review round 1 — summary class, forged events, projections, retry", () => {
+  const settle = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+  const sec = { clearance: "secret" as const };
+  const internal = { clearance: "internal" as const };
+
+  it("P1: an unchanged secret node + a visible insert withholds the summary from an uncleared viewer", async () => {
+    const h = manualHarness();
+    const v = await h.lineage.start(g("e"), by);
+    if (!v.ok) throw new Error("setup");
+    const a = await h.lineage.compose({
+      experienceId: "e",
+      expectedHead: v.value.experience.versionHash,
+      ops: [ins(node("pay", "hpay", "secret")), ins(node("a1", "h1"))],
+      by,
+    });
+    if (!a.ok) throw new Error("setup");
+    const b = await h.lineage.compose({
+      experienceId: "e",
+      expectedHead: a.value.experience.versionHash,
+      ops: [ins(node("a2", "h2"))],
+      by,
+      summary: "added a chart beside the payroll table (CEO salary $2.1M)",
+    });
+    if (!b.ok) throw new Error("setup");
+    const r = await h.feed.read("e");
+    if (!r.ok) throw new Error("read");
+    const ev = r.events[2] as never;
+    const low = await h.feed.describe(ev, { viewer: internal });
+    expect(low.ok && low.description.restricted).toBe(false);
+    expect(low.ok && low.description.summary).toBeUndefined();
+    expect(JSON.stringify(low)).not.toMatch(/payroll|salary/);
+    const high = await h.feed.describe(ev, { viewer: sec });
+    expect(high.ok && high.description.summary?.text).toContain("payroll");
+  });
+
+  it("P1: a host-stamped summaryClass withholds the summary though every node is public", async () => {
+    const h = manualHarness();
+    const v = await h.lineage.start(g("e"), by);
+    if (!v.ok) throw new Error("setup");
+    const b = await h.lineage.compose({
+      experienceId: "e",
+      expectedHead: v.value.experience.versionHash,
+      ops: [ins(node("a2", "h2"))],
+      by,
+      summary: "mentions the confidential context",
+      summaryClass: "secret",
+    });
+    if (!b.ok) throw new Error("setup");
+    const r = await h.feed.read("e");
+    if (!r.ok) throw new Error("read");
+    const low = await h.feed.describe(r.events[1] as never, { viewer: {} });
+    expect(low.ok && low.description.summary).toBeUndefined();
+    const high = await h.feed.describe(r.events[1] as never, { viewer: sec });
+    expect(high.ok && high.description.summary).toBeDefined();
+  });
+
+  it("P2-a: a forged base or kind is refused, never described from another line", async () => {
+    const h = manualHarness();
+    await h.compose("e");
+    await h.compose("e");
+    await h.compose("other");
+    await h.compose("other");
+    const e = await h.feed.read("e");
+    const o = await h.feed.read("other");
+    if (!e.ok || !o.ok) throw new Error("read");
+    const real = e.events[1];
+    if (real === undefined || o.events[1] === undefined) throw new Error("setup");
+    const forged = [
+      { ...real, base: { experienceId: "other", versionHash: o.events[0]?.versionHash as string } },
+      { ...real, kind: "promoted" as const },
+      { ...real, versionHash: o.events[1].versionHash },
+      { ...real, sequence: 99 },
+      { ...real, sequence: -1 },
+      { ...real, experienceId: 5 as never },
+    ];
+    for (const f of forged) {
+      const d = await h.feed.describe(f, { viewer: sec });
+      expect(d.ok).toBe(false);
+    }
+    expect((await h.feed.describe(real, { viewer: sec })).ok).toBe(true);
+    expect((await h.feed.describe(null as never)).ok).toBe(false);
+  });
+
+  const projectionLine = async (
+    projections?: readonly { id: string; version: string; sensitivity?: "secret" }[]
+  ) => {
+    const l = makeLineage();
+    const { LineageChangeFeed: Feed } = await import("./feed");
+    const feed = new Feed({
+      lineage: l.lineage,
+      events: l.events,
+      signal: pollingHeadSignal(l.events, { schedule: () => () => {} }),
+      ...(projections !== undefined && { projections }),
+    });
+    const v = await l.lineage.start(g("e"), by);
+    if (!v.ok) throw new Error("setup");
+    const proj = {
+      ...node("pn", "x"),
+      binding: undefined,
+      type: "SalaryTable",
+      projection: { id: "payroll", path: "rows", version: "1" },
+    };
+    const c = await l.lineage.compose({
+      experienceId: "e",
+      expectedHead: v.value.experience.versionHash,
+      ops: [ins(proj as never)],
+      by,
+    });
+    if (!c.ok) throw new Error(JSON.stringify(c.refusal));
+    const r = await feed.read("e");
+    if (!r.ok) throw new Error("read");
+    return feed.describe(r.events[1] as never, { viewer: {} });
+  };
+
+  it("P2-b: with no catalogue a projection node is hidden from an uncleared viewer", async () => {
+    const d = await projectionLine();
+    expect(d.ok && d.description.entries).toEqual([{ kind: "restricted-changed" }]);
+    expect(JSON.stringify(d)).not.toContain("SalaryTable");
+  });
+
+  it("P2-b: unknown id and drifted version are hidden; an offered public one is shown", async () => {
+    for (const cat of [[{ id: "other", version: "1" }], [{ id: "payroll", version: "2" }]]) {
+      const d = await projectionLine(cat);
+      expect(d.ok && d.description.restricted).toBe(true);
+    }
+    const shown = await projectionLine([{ id: "payroll", version: "1" }]);
+    expect(shown.ok && shown.description.entries[0]?.nodeId).toBe("pn");
+    const secret = await projectionLine([{ id: "payroll", version: "1", sensitivity: "secret" }]);
+    expect(secret.ok && secret.description.entries).toEqual([{ kind: "restricted-changed" }]);
+  });
+
+  it("P2-c: a failed delivery on a QUIET line is retried with no new append", async () => {
+    const h = manualHarness();
+    await h.compose("q");
+    await h.compose("q");
+    const got: string[] = [];
+    const errors: unknown[] = [];
+    let attempts = 0;
+    const off = h.feed.subscribe(
+      "q",
+      (e) => {
+        if (e.sequence === 2 && attempts++ === 0) throw new Error("down once");
+        got.push(e.id);
+      },
+      { retry: { baseMs: 5, maxMs: 20 }, onError: (e) => void errors.push(e) }
+    );
+    for (let i = 0; i < 5; i++) await h.tick?.();
+    await settle(150); // no further tick, no further append
+    off();
+    expect(errors).toHaveLength(1);
+    expect(got).toEqual(["q#1", "q#2"]);
+  });
+
+  it("P2-c: a failed read is retried too", async () => {
+    const h = manualHarness();
+    await h.compose("r");
+    let n = 0;
+    const flaky = {
+      ...h.feed,
+      read: (id: string, o?: { after?: number; limit?: number }) =>
+        n++ === 0
+          ? Promise.resolve({
+              ok: false as const,
+              finding: { code: "x", severity: "error" as const, message: "" },
+            })
+          : h.feed.read(id, o),
+    };
+    const { LineageChangeFeed: Feed } = await import("./feed");
+    const feed = Object.assign(Object.create(Object.getPrototypeOf(h.feed)), h.feed, {
+      read: flaky.read,
+    }) as InstanceType<typeof Feed>;
+    const got: string[] = [];
+    const off = feed.subscribe("r", (e) => void got.push(e.id), {
+      retry: { baseMs: 5, maxMs: 10 },
+    });
+    await settle(150);
+    off();
+    expect(got).toEqual(["r#1"]);
+  });
+
+  it("P2-c: unsubscribe clears the retry timer (nothing is delivered afterwards)", async () => {
+    const h = manualHarness();
+    await h.compose("u");
+    let calls = 0;
+    const off = h.feed.subscribe(
+      "u",
+      () => {
+        calls += 1;
+        throw new Error("always");
+      },
+      { retry: { baseMs: 5, maxMs: 5 } }
+    );
+    await settle(30);
+    off();
+    const seen = calls;
+    await settle(60);
+    expect(calls).toBe(seen);
+  });
+
+  it("poison: onPoison can skip a permanently failing event, with its attempt count", async () => {
+    const h = manualHarness();
+    await h.compose("p");
+    await h.compose("p");
+    await h.compose("p");
+    const got: string[] = [];
+    const attempts: number[] = [];
+    const off = h.feed.subscribe(
+      "p",
+      (e) => {
+        if (e.sequence === 2) throw new Error("poison");
+        got.push(e.id);
+      },
+      {
+        retry: { baseMs: 5, maxMs: 10 },
+        onPoison: (e, n) => {
+          attempts.push(n);
+          return n >= 3;
+        },
+      }
+    );
+    await settle(200);
+    off();
+    expect(attempts.slice(0, 3)).toEqual([1, 2, 3]);
+    expect(got).toEqual(["p#1", "p#3"]);
+  });
+
+  it("poison: without onPoison it stalls only itself and a resubscribe after its sequence escapes", async () => {
+    const h = manualHarness();
+    await h.compose("s");
+    await h.compose("s");
+    await h.compose("s");
+    const got: string[] = [];
+    const stalled = h.feed.subscribe(
+      "s",
+      (e) => {
+        if (e.sequence === 2) throw new Error("poison");
+        got.push(e.id);
+      },
+      { retry: { baseMs: 5, maxMs: 5 } }
+    );
+    await settle(60);
+    stalled();
+    expect(got).toEqual(["s#1"]);
+    const out: string[] = [];
+    const off = h.feed.subscribe("s", (e) => void out.push(e.id), { after: 2 });
+    await settle(30);
+    off();
+    expect(out).toEqual(["s#3"]);
+  });
+
+  it("a throwing poison hook or onError hook never breaks delivery", async () => {
+    const h = manualHarness();
+    await h.compose("t");
+    const got: string[] = [];
+    let n = 0;
+    const off = h.feed.subscribe(
+      "t",
+      (e) => {
+        if (n++ === 0) throw new Error("x");
+        got.push(e.id);
+      },
+      {
+        retry: { baseMs: 5, maxMs: 5 },
+        onPoison: () => {
+          throw new Error("hook");
+        },
+        onError: () => {
+          throw new Error("hook");
+        },
+      }
+    );
+    await settle(80);
+    off();
+    expect(got).toEqual(["t#1"]);
+  });
+});
+
+describe("review round 1 — untrusted summary as loom's taint (ADR 0085)", () => {
+  it("summaryAsTainted wraps the bounded text as a TaintedValue", () => {
+    const u = untrustedSummary("hello\nworld");
+    if (u === undefined) throw new Error("setup");
+    const t = summaryAsTainted(u);
+    expect(isTainted(t)).toBe(true);
+    expect(t.value).toBe("hello world");
+    expect(t.__loomTainted.origin).toBe("loom-ui:change-summary");
+    expect(boundSummary("x")).toBe("x");
   });
 });

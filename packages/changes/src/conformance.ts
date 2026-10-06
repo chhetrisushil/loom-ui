@@ -152,15 +152,16 @@ export async function checkChangeFeedConformance(
             if (attempts === 1) throw new Error("handler down");
             ids.push(e.id);
           },
-          { onError: (e) => void errors.push(e) }
+          { onError: (e) => void errors.push(e), retry: { baseMs: 5, maxMs: 20 } }
         );
         await until(() => errors.length >= 1, h.tick, waitMs);
         if (errors.length < 1) fail("handler-error", "a throwing handler was not reported");
-        await h.compose("f-throw"); // wakes the signal; the failed event must come again
-        await until(() => ids.length >= 2, h.tick, waitMs);
+        // NO append and NO signal from here: a quiet line must still redeliver the failed event
+        // (a feed that retries only when the head moves leaves it stuck).
+        await until(() => ids.length >= 1, undefined, waitMs);
         off();
-        if (ids.join() !== "f-throw#1,f-throw#2")
-          fail("handler-retry", `after a throw the handler saw ${ids.join()}`);
+        if (ids.join() !== "f-throw#1")
+          fail("handler-retry", `after a throw on a quiet line the handler saw ${ids.join()}`);
       },
     ],
   ];

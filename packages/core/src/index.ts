@@ -139,6 +139,7 @@ export {
   boundSummary,
   defaultAttention,
   describeChange,
+  experienceClassFloor,
   untrustedSummary,
 } from "./change";
 export type {
