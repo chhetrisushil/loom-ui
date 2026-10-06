@@ -234,7 +234,7 @@ describe("mergeReadPolicy: the bound policy first, per-call values only add", ()
         { declaredToolClasses: { z: "secret" } }
       ).declaredToolClasses
     ).toEqual({ x: "internal", y: "internal" });
-    // associative: merging a merged policy again changes nothing
+    // idempotent on re-merge: merging a merged (left-folded) policy again changes nothing
     const once = mergeReadPolicy(bound, { declaredToolClasses: { b: "internal" } });
     expect(mergeReadPolicy(once, { declaredToolClasses: { b: "internal" } })).toEqual(once);
   });
