@@ -139,6 +139,30 @@ describe("checkPlannerConformance", () => {
     });
     expect(f2.map((f) => f.code)).toContain("prompt-replay-failed");
   });
+  it("a planner that keeps a summary over an unclassified sample, or stamps below a capability's class, fails summary-class-unsound", async () => {
+    const lax = {
+      compose: async (inp, ctx) => {
+        const r = await new ReferencePlanner({
+          model: scriptedModel([compose]),
+          modelId: "m",
+        }).compose({ ...inp, contextClass: "internal" }, ctx);
+        const { summaryClass: _drop, ...rest } = r;
+        return rest;
+      },
+      revise: (inp, ctx) =>
+        new ReferencePlanner({ model: scriptedModel([revise]), modelId: "m" }).revise(inp, ctx),
+    } as Planner;
+    const found = await checkPlannerConformance(lax, {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: capabilitiesFixture,
+      meta: metaFixture,
+      revision: { text: "add an insight" },
+      ctx: recordingContext(),
+    });
+    expect(found.some((f) => f.code === "summary-class-unsound")).toBe(true);
+  });
+
   it("a planner whose second compose calls the model again fails replay-recalled-model", async () => {
     const model = scriptedModel([compose, revise, compose]);
     const noDecide: Planner = {

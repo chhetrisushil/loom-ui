@@ -319,9 +319,30 @@ export class ReferencePlanner implements Planner {
       lastFindings = findings;
       if (errorsOf(findings).length === 0) {
         const report = this.report(decisionId, attempts, attempts.length === 1);
-        const summary = boundSummary(parsed.value.summary);
-        // The summary was written from the whole of `base` plus the context the caller declared.
-        const summaryClass = strictestClass(experienceClassFloor(base), input.contextClass);
+        // The summary was written from the whole of `base`, the capabilities offered (their
+        // samples reach the prompt whether or not the plan binds them) and the caller's context;
+        // the plan it describes is `applied`. Stamp the strictest class of all of them.
+        let summaryClass = strictestClass(
+          strictestClass(experienceClassFloor(base), input.contextClass),
+          applied.ok ? experienceClassFloor(applied.value) : undefined
+        );
+        for (const c of input.capabilities)
+          summaryClass = strictestClass(summaryClass, c.sensitivity);
+        // FAIL CLOSED: a sample with no declared class and no host `contextClass` is content of
+        // unknown class in the prompt; a guess would be a stamp, so the summary is withheld.
+        const unclassified =
+          input.contextClass === undefined &&
+          input.capabilities.some(
+            (c) => c.sampleOutput !== undefined && c.sensitivity === undefined
+          );
+        const summary = unclassified ? undefined : boundSummary(parsed.value.summary);
+        if (unclassified && parsed.value.summary !== undefined)
+          findings.push(
+            warn(
+              "summary-withheld",
+              "the summary was withheld: an offered capability carries a sampleOutput with no `sensitivity` and no `contextClass` was declared"
+            )
+          );
         const said =
           summary === undefined
             ? {}

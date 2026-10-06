@@ -7,9 +7,11 @@ import {
   isContainer,
   preservesNodes,
   replay,
+  strictestClass,
   validateExperience,
 } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
+import type { DataClass } from "@loom/classify";
 import { readPlannerReach } from "./reach";
 import type {
   CapabilityRef,
@@ -262,6 +264,31 @@ export async function checkPlannerConformance(
     );
   if (!isContainer(composed.value.root) || composed.value.root.children.length === 0)
     findings.push(err("compose-empty", "compose produced no nodes"));
+
+  // U7: a summary is shown to a viewer only when cleared for its stamped class, so the planner
+  // must stamp what the model read. The kit declares no `contextClass`, so a sampled capability of
+  // unknown class means NO summary; a classified one means a stamp at least that strict.
+  if (first.summary !== undefined) {
+    const unknown = fx.capabilities.some(
+      (c) => c.sampleOutput !== undefined && c.sensitivity === undefined
+    );
+    let need: DataClass | undefined;
+    for (const c of fx.capabilities) need = strictestClass(need, c.sensitivity);
+    if (unknown)
+      findings.push(
+        err(
+          "summary-class-unsound",
+          "compose kept a summary although an offered capability carries a sampleOutput of undeclared class and no contextClass was given"
+        )
+      );
+    else if (need !== undefined && strictestClass(first.summaryClass, need) !== first.summaryClass)
+      findings.push(
+        err(
+          "summary-class-unsound",
+          `compose stamped summaryClass below the offered capabilities' class "${need}"`
+        )
+      );
+  }
 
   const probe = fx.scopeProbe;
   // A COUNT, not the array: `calls()` may return a live array, and comparing a live array with
