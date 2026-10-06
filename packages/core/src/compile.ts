@@ -130,6 +130,13 @@ export interface CompileResult {
    * in what the viewer is denied moves the stamp.
    */
   readonly restrictedProjectionNodes: readonly string[];
+  /**
+   * The handles redacted for this viewer (their stored class, or the host's `declaredToolClasses`
+   * floor, is above the viewer's clearance), sorted. Feed it to `compileFingerprint` as
+   * `restrictedHandles`: a RAISED declaration changes what a viewer sees without changing the
+   * experience, so a stamp that omits it stays "fresh" over a now-stale view.
+   */
+  readonly restrictedHandles: readonly string[];
 }
 
 export function compile(exp: Experience, opts: CompileOptions): CompileResult {
@@ -167,6 +174,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
       ],
       ok: false,
       restrictedProjectionNodes: [],
+      restrictedHandles: [],
     };
   }
   const semantic = validateExperience(exp, opts.catalog, opts.surface);
@@ -274,6 +282,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     findings,
     ok: findings.every((f) => f.severity !== "error"),
     restrictedProjectionNodes,
+    restrictedHandles: [...restrictedHandles].sort(),
   };
 }
 

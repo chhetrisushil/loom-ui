@@ -397,6 +397,8 @@ export class HydrationController {
         : handleKinds(exp, this.opts.outputKinds.catalog, this.opts.outputKinds.surface);
     // Scoped params outlive a bind only for handles it binds (set before a load, or kept across
     // a recompose); the rest are forgotten, so they never resurface on a later experience.
+    // Handle-id collection only (which handles are bound at all): no class is read, so the declared
+    // table is deliberately not passed. The viewer-gated partition below does take it.
     const bound = new Set(experienceHandles(exp).map((h) => h.handle));
     for (const handle of [...this.scopedParams.keys()])
       if (!bound.has(handle)) this.scopedParams.delete(handle);

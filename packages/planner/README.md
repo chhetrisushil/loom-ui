@@ -48,7 +48,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   caller-only type still takes the capability's class although the model could not set one. On a
   revise it raises an existing node (a `bindProvider` carrying the class). The conformance kit
   reports `binding-class-below-capability` for a planner whose bound nodes carry less than their
-  capability declares. The same declaration is the READ-time floor a host passes to core as
+  capability declares. The class is the strictest declared over EVERY step of the node's call graph and every capability of the same tool (`requiredClass`; `declaredToolClassesFrom(capabilities)` is the matching read-time table). The same declaration is the READ-time floor a host passes to core as
   `declaredToolClasses` (see `@loom-ui/core`), which covers nodes this planner did not write.
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
   (samples, the current experience's node list, a capability's description/schema) is wrapped as

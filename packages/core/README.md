@@ -401,7 +401,15 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   `redactSeen` (and `SeenLog.record` / `read`), and hydration (`HydrationController`,
   `handleInventory`, `serveHandle(s)`). It is a table the host passes, not stored state: it only
   ever RAISES a read, it is not part of the content address, and omitting it from a call
-  means that call reads only the experience's own classes — so pass the same table everywhere. The
+  means that call reads only the experience's own classes — so pass the same table everywhere.
+  Where two tables meet (a constructor-level one and a per-call one, e.g. `LineageChangeFeed`),
+  `mergeDeclaredToolClasses` joins them key by key, strictest wins: a per-call table can only ADD,
+  never lower — `{}` or `undefined` leaves the bound floor intact. **The declared table wins over
+  `declassifyHandle`**: declassifying a handle lowers its stored class, but a tool the host declares
+  keeps flooring every handle that calls it, so `declassifyHandle` has no read-time effect on a
+  declared tool (lower the declaration to lower the read). `CompileResult.restrictedHandles` lists
+  the handles redacted for the viewer; feed it to `compileFingerprint` (`restrictedHandles`) so a
+  RAISED declaration changes freshness. The
   reference planner also applies a capability's class to the nodes it writes (see
   `@loom-ui/planner`), so this floor is the backstop for nodes it did not write (an older planner, a
   raw op). Limits: a class follows MCP tool NAMES only — a provider whose execution

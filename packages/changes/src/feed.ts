@@ -6,6 +6,7 @@ import {
   type HeadSignal,
   type ProjectionCatalog,
   describeChange,
+  mergeDeclaredToolClasses,
 } from "@loom-ui/core";
 import {
   EXPERIENCE_BRANCHED,
@@ -375,6 +376,8 @@ export class LineageChangeFeed implements ChangeFeed {
     // The ops and the summary belong to ONE version. They describe this event when it IS that
     // version's creation, or when a promotion spans exactly that one step.
     const own = truth.kind !== "promoted" || record.parents.includes(truth.base?.versionHash ?? "");
+    const merged = mergeDeclaredToolClasses(this.declaredToolClasses, opts.declaredToolClasses);
+    const floor = merged === undefined ? {} : { declaredToolClasses: merged };
     return {
       ok: true,
       description: describeChange(prev, next.value, {
@@ -382,10 +385,10 @@ export class LineageChangeFeed implements ChangeFeed {
         ...(this.hydrationProjectionId !== undefined && {
           hydrationProjectionId: this.hydrationProjectionId,
         }),
-        ...(this.declaredToolClasses !== undefined && {
-          declaredToolClasses: this.declaredToolClasses,
-        }),
         ...opts,
+        // AFTER `...opts`, and joined: a per-call table can only ADD to the feed's, so `{}` or an
+        // explicit `undefined` cannot lower the floor the host bound at construction.
+        ...floor,
         ...(own && record.ops.length > 0 && { ops: record.ops }),
         ...(own && record.summary !== undefined && { summary: record.summary }),
         ...(own && record.summaryClass !== undefined && { summaryClass: record.summaryClass }),

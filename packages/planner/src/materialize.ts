@@ -26,6 +26,7 @@ import {
 } from "@loom-ui/hydration/client";
 import { strictest, unwrapTainted } from "@loom/classify";
 import { canonicalJson, fnv1a64 } from "@loom/core";
+import { requiredClass } from "./capabilityClass";
 import { type DraftBinding, type DraftNode, type PlanDraft, entryFor } from "./contract";
 import type { CapabilityRef, ReviseInput } from "./spi";
 
@@ -394,6 +395,8 @@ export function materialize(
   const classByHandle = new Map<string, NonNullable<ReturnType<typeof strictest>>>(
     Object.entries(base.handleClasses ?? {})
   );
+  // Id/class collection from the STORED classes only (the planner's clamp is against what the
+  // experience holds; the declared floor is applied separately via `requiredClass`).
   for (const u of experienceHandles(base))
     if (u.sensitivity !== undefined) classByHandle.set(u.handle, u.sensitivity);
   // WHOLE-TREE id index, root included. `existing` covers only what this function may author
@@ -419,7 +422,7 @@ export function materialize(
 
   // Exactly a node's binding — the shape this resolver exists to produce — so `sensitivity`
   // cannot drift from what `insertNode` will carry.
-  const resolveBinding = (
+  const resolveBindingRaw = (
     n: DraftNode,
     current: SemanticNode | undefined
   ): NonNullable<SemanticNode["binding"]> | undefined => {
@@ -435,11 +438,9 @@ export function materialize(
       );
       return undefined;
     }
-    // The class this node's data carries: the model's proposal (only ever present where the type is
-    // `model-may-set`) joined with what the CAPABILITY declares it returns. Classification is
-    // tool-level and fail-closed (U10b): a proposal may raise the class, never lower it, and a
-    // capability declared `secret` classes every node bound to it whether or not the model said so.
-    const klass = strictest(n.binding.sensitivity, cap.sensitivity);
+    // The class the MODEL proposed (only ever present where the type is `model-may-set`). What the
+    // capabilities DECLARE is joined in by `resolveBinding` below, over the final spec.
+    const klass = n.binding.sensitivity;
     let pinFrom = cap;
     // The node's CURRENT call graph, kept when the draft keeps the tool: a call made behind
     // upstream steps is rebuilt behind the same steps (`CallGraph`) — with the draft's arguments,
@@ -495,7 +496,8 @@ export function materialize(
         if (current?.binding !== undefined) {
           findings.push(warn("sample-not-observed", `${message} — its binding is kept`, n.id));
           // Kept, but never below what the capability declares (the revise diff raises it).
-          return klass === undefined ? current.binding : { ...current.binding, sensitivity: klass };
+          const kept = strictest(current.binding.sensitivity, klass);
+          return kept === undefined ? current.binding : { ...current.binding, sensitivity: kept };
         }
         // Dropped, not refused: an error would fail the whole plan and take every OTHER handle's
         // valid repair down with it. The drift request already tells the model this is not
@@ -549,7 +551,7 @@ export function materialize(
     // `sensitivity` rides on the NODE's binding, not on the provider spec: the same fetch can
     // feed two nodes, and the class describes what a node shows, not how it was fetched — so it
     // is deliberately outside `providerHandle`'s identity. What comes out here is the model's
-    // proposal joined with the capability's declared class: an inserted node has no current class
+    // proposal (the declared class is joined in by `resolveBinding`): an inserted node has no current class
     // for it to lower (`strictest(undefined, p) === p`), so the clamp lives in the revise diff below, which is the only place a
     // previously-set class exists to be lowered.
     return {
@@ -557,6 +559,21 @@ export function materialize(
       priority: n.binding.priority,
       ...(klass !== undefined && { sensitivity: klass }),
     };
+  };
+
+  // U10b: whatever the branches above built or kept, the node's class is at least what the tools of
+  // the FINAL spec it binds declare, over every step of that spec (an upstream step's tool counts,
+  // and so does the same tool offered at another version). One derivation, shared with conformance.
+  const resolveBinding = (
+    n: DraftNode,
+    current: SemanticNode | undefined
+  ): NonNullable<SemanticNode["binding"]> | undefined => {
+    const b = resolveBindingRaw(n, current);
+    const spec = b === undefined ? undefined : declaredSpecs.get(b.handle);
+    if (b === undefined || spec === undefined) return b;
+    const need = requiredClass(spec, capabilities);
+    const klass = strictest(b.sensitivity, need);
+    return klass === b.sensitivity ? b : { ...b, sensitivity: klass as NonNullable<typeof klass> };
   };
 
   for (const n of draft.nodes) {

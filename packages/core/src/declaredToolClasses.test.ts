@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { actionFreshness, compileFingerprint } from "./action";
 import { defineSemanticCatalog } from "./catalog";
 import { describeChange, experienceClassFloor, inspectExperience } from "./change";
+import { mergeDeclaredToolClasses } from "./classes";
 import { compile } from "./compile";
 import { type Experience, type ProviderSpec, genesis } from "./experience";
 import { experienceHandles } from "./handles";
@@ -198,5 +200,43 @@ describe("declaredToolClasses: a read-time floor on every read path", () => {
     expect(ok.entries.find((e) => JSON.stringify(e.source).includes("h-pay"))?.class).toBe(
       "secret"
     );
+  });
+});
+
+describe("mergeDeclaredToolClasses: tables only ever raise", () => {
+  it("joins key by key, strictest wins, undefined adds nothing", () => {
+    expect(mergeDeclaredToolClasses(undefined, undefined)).toBeUndefined();
+    expect(mergeDeclaredToolClasses({ a: "secret" }, {})).toEqual({ a: "secret" });
+    expect(mergeDeclaredToolClasses({ a: "secret" }, undefined)).toEqual({ a: "secret" });
+    expect(mergeDeclaredToolClasses({ a: "secret" }, { a: "internal", b: "sensitive" })).toEqual({
+      a: "secret",
+      b: "sensitive",
+    });
+  });
+});
+
+describe("CompileResult.restrictedHandles feeds the fingerprint", () => {
+  it("a raised declaration changes restrictedHandles, so a stale stamp is not fresh", () => {
+    const exp = build();
+    const run = (d?: typeof declared) =>
+      compile(exp, { ...copts, viewer: low, ...(d !== undefined && { declaredToolClasses: d }) });
+    const before = run();
+    const after = run(declared);
+    expect(before.restrictedHandles).toEqual([]);
+    expect(after.restrictedHandles).toEqual(["h-pay"]);
+    const stamp = (r: ReturnType<typeof compile>) =>
+      compileFingerprint({ clearance: "internal", restrictedHandles: r.restrictedHandles });
+    expect(stamp(after)).not.toBe(stamp(before));
+    const head = { experienceId: "e", versionHash: "sha256:v", compile: stamp(after) };
+    const viewed = (r: ReturnType<typeof compile>) => ({
+      viewedVersion: {
+        blueprintId: "e@sha256:v",
+        experienceId: "e",
+        versionHash: "sha256:v",
+        compile: stamp(r),
+      },
+    });
+    expect(actionFreshness(viewed(before), head)).toBe("stale");
+    expect(actionFreshness(viewed(after), head)).toBe("fresh");
   });
 });

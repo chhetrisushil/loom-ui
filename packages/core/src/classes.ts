@@ -34,6 +34,24 @@ export function toolsOf(spec: ProviderSpec): string[] {
  */
 export type DeclaredToolClasses = Readonly<Record<string, DataClass>>;
 
+/**
+ * Join declared tables key by key, STRICTEST wins; an absent (`undefined`) table adds nothing. The
+ * only way two tables may meet (a constructor-level one and a per-call one): a table can raise the
+ * floor, never lower it, so `{}` or `undefined` passed per call cannot undo what the host bound.
+ * Returns `undefined` when no table is present at all.
+ */
+export function mergeDeclaredToolClasses(
+  ...tables: ReadonlyArray<DeclaredToolClasses | undefined>
+): DeclaredToolClasses | undefined {
+  let out: Record<string, DataClass> | undefined;
+  for (const t of tables) {
+    if (t === undefined || t === null) continue;
+    out ??= Object.create(null) as Record<string, DataClass>;
+    for (const [k, v] of Object.entries(t)) out[k] = strictestClass(out[k], v) as DataClass;
+  }
+  return out;
+}
+
 /** The strictest declared class among the tools `spec` calls. */
 function declaredClassOf(
   declared: DeclaredToolClasses | undefined,
