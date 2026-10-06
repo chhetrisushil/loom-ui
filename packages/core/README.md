@@ -284,7 +284,7 @@ never called for a source the viewer may not see; the snapshot says only that so
 class from the artifact the record names, takes the stricter of that and the stamp, restamps, and
 withholds a missing or unknown stamp (no artifact = everything withheld). `seenToState` rebuilds the
 `values.<handle>` / `status.<handle>` store shape so a surface can be replayed as it was shown.
-Persistence is `@loom-ui/lineage`'s `SeenLog`.
+Persistence is `@loom-ui/lineage`'s `SeenLog`: refs are sealed under a per-viewer key (erase a viewer by destroying it), blobs are reclaimed by a mark-and-sweep collector, and old views roll off by retention.
 
 ### Ordering
 

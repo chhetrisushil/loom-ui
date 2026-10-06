@@ -106,6 +106,36 @@ export async function checkLineageStoreConformance(
           fail("fields", "type or at did not round-trip");
       },
     ],
+    [
+      "optional readTail / readAfter / listStreams agree with read (when implemented)",
+      async () => {
+        for (let i = 0; i < 5; i++) await store.append("c-opt", i, rec(i));
+        const all = await store.read("c-opt");
+        const seqs = (r: readonly { sequence: number }[]) => r.map((x) => x.sequence).join();
+        if (store.readTail !== undefined) {
+          if (seqs(await store.readTail("c-opt", 2)) !== "4,5")
+            fail("read-tail", "readTail(2) did not return the newest two records in order");
+          if (seqs(await store.readTail("c-opt", 99)) !== seqs(all))
+            fail("read-tail", "readTail past the length did not return the whole line");
+          if ((await store.readTail("c-opt-none", 3)).length !== 0)
+            fail("read-tail", "readTail of an unknown line was not empty");
+        }
+        if (store.readAfter !== undefined) {
+          if (seqs(await store.readAfter("c-opt", 3)) !== "4,5")
+            fail("read-after", "readAfter(3) did not return the records past sequence 3");
+          if (seqs(await store.readAfter("c-opt", 0, 2)) !== "1,2")
+            fail("read-after", "readAfter(0, 2) did not honour the limit");
+          if ((await store.readAfter("c-opt", 5)).length !== 0)
+            fail("read-after", "readAfter at the tip was not empty");
+        }
+        if (store.listStreams !== undefined) {
+          const ids: string[] = [];
+          for await (const id of store.listStreams()) ids.push(id);
+          if (!ids.includes("c-opt") || new Set(ids).size !== ids.length)
+            fail("list-streams", "listStreams missed a line or listed one twice");
+        }
+      },
+    ],
   ];
   for (const [name, run] of cases) {
     try {

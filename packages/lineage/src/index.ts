@@ -38,13 +38,24 @@ export type {
 } from "./store";
 export { checkLineageStoreConformance } from "./conformance";
 export {
+  DEFAULT_MAX_SEEN_VIEWS,
   MAX_SEEN_READ,
-  MAX_SEEN_RECORDS,
   SEEN_STREAM_PREFIX,
   SEEN_WORKFLOW_ID,
   SeenLog,
+  VIEWER_ERASED,
+  VIEWS_RETAINED,
   VIEW_RECORDED,
   ViewRecordPayload,
   seenStoreOptions,
+  seenStreamKey,
 } from "./seen";
-export type { SeenLogOptions, SeenRefusal, SeenResult, SeenView } from "./seen";
+export type { SeenLogOptions, SeenRefusal, SeenResult, SeenRetention, SeenView } from "./seen";
+export {
+  InMemorySeenKeyStore,
+  checkSeenKeyStoreConformance,
+  seenKeySubject,
+} from "./seenCrypto";
+export type { SeenKeyStore } from "./seenCrypto";
+export { collectSeenGarbage } from "./seenGc";
+export type { SeenGcOptions, SeenGcReport, SeenGcResult } from "./seenGc";

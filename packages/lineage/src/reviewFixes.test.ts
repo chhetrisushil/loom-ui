@@ -19,6 +19,13 @@ import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import { SeenLog, type SeenResult, VIEW_RECORDED, seenStoreOptions } from "./seen";
 import {
+  InMemorySeenKeyStore,
+  deriveSeenKeys,
+  refAad,
+  sealText,
+  seenKeySubject,
+} from "./seenCrypto";
+import {
   InMemoryLineageStore,
   LINEAGE_STREAM_PREFIX,
   type LineageStore,
@@ -101,7 +108,12 @@ describe("P1-1: a seen entry is judged by what its nodes bind", () => {
         ops: [ins(node("pub", "pubh")), ins(node("s", "sec", "secret"))],
       })
     );
-    const log = new SeenLog({ events: new InMemoryLineageStore(), content, lineage });
+    const log = new SeenLog({
+      keys: new InMemorySeenKeyStore(),
+      events: new InMemoryLineageStore(),
+      content,
+      lineage,
+    });
     return { lineage, content, log, exp: v2.experience };
   }
 
@@ -179,19 +191,22 @@ describe("P1-1: a seen entry is judged by what its nodes bind", () => {
   it("a stored record with duplicate sources does not cross-wire values: refs go by position", async () => {
     const { log, content, exp } = await forge();
     const events = new InMemoryLineageStore();
+    const keys = new InMemorySeenKeyStore();
     const log2 = new SeenLog({
+      keys,
       events,
       content,
       lineage: (log as never as { lineage: Lineage }).lineage,
     });
     const ra = await content.put(encodeValue("A"));
     const rb = await content.put(encodeValue("B"));
-    const entry = (nodeId: string, ref: ContentRef) => ({
+    const dk = deriveSeenKeys(await keys.getOrCreate(seenKeySubject("e/v")));
+    const entry = (nodeId: string, ref: ContentRef, idx: number) => ({
       source: { kind: "handle", handle: "pubh" },
       nodeIds: [nodeId],
       class: "unclassified",
       state: "seen",
-      ref: { __loomContent: ref.__loomContent },
+      sealed: sealText(dk.enc, refAad("e", "v", 1, idx), JSON.stringify(ref)),
     });
     // hand-written (hostile) manifest: the same source twice; the second names a secret node
     await events.append("e/v", 0, {
@@ -201,7 +216,7 @@ describe("P1-1: a seen entry is judged by what its nodes bind", () => {
         experienceId: "e",
         versionHash: exp.versionHash,
         viewerId: "v",
-        entries: [entry("pub", ra), entry("s", rb)],
+        entries: [entry("pub", ra, 0), entry("s", rb, 1)],
         omitted: 0,
         restricted: false,
         digest: "d",
@@ -422,7 +437,12 @@ describe("P3-2: a read verifies the bytes against the manifest's address", () =>
         ops: [ins(node("a", "h"))],
       })
     );
-    const log = new SeenLog({ events: new InMemoryLineageStore(), content, lineage });
+    const log = new SeenLog({
+      keys: new InMemorySeenKeyStore(),
+      events: new InMemoryLineageStore(),
+      content,
+      lineage,
+    });
     ok(
       await log.record({
         experienceId: "e",
@@ -462,10 +482,13 @@ describe("P3-3: stream namespaces", () => {
     const events = eventStoreLineageStore(store);
     const content = new InMemoryContentStore();
     const lineage = new Lineage({ events, content });
-    expect(() => new SeenLog({ events, content, lineage })).toThrow(/store of its own/);
+    expect(
+      () => new SeenLog({ keys: new InMemorySeenKeyStore(), events, content, lineage })
+    ).toThrow(/store of its own/);
     expect(
       () =>
         new SeenLog({
+          keys: new InMemorySeenKeyStore(),
           events: eventStoreLineageStore(new InMemoryAsyncEventStore(), {
             streamPrefix: LINEAGE_STREAM_PREFIX,
           }),
@@ -476,6 +499,7 @@ describe("P3-3: stream namespaces", () => {
     expect(
       () =>
         new SeenLog({
+          keys: new InMemorySeenKeyStore(),
           events: eventStoreLineageStore(new InMemoryAsyncEventStore(), seenStoreOptions),
           content,
           lineage,
@@ -488,7 +512,12 @@ describe("P3-4: record is total", () => {
   async function setup() {
     const { lineage, content } = mk();
     const v1 = ok(await lineage.start(g("e"), user));
-    const log = new SeenLog({ events: new InMemoryLineageStore(), content, lineage });
+    const log = new SeenLog({
+      keys: new InMemorySeenKeyStore(),
+      events: new InMemoryLineageStore(),
+      content,
+      lineage,
+    });
     return { log, hash: v1.experience.versionHash };
   }
   it("refuses a non-finite `omitted`, an oversized clearance and a null snapshot", async () => {
@@ -517,6 +546,7 @@ describe("P3-4: record is total", () => {
     expect(code(n as never)).toBe("seen-snapshot-invalid");
     // nothing malformed was written
     expect(ok(await log.read({ experienceId: "e", viewerId: "v" }))).toEqual({
+      erased: false,
       views: [],
       malformed: 0,
     });
@@ -527,7 +557,12 @@ describe("P3-5: a read folds the lineage once", () => {
   it("lineage log reads do not grow with the number of distinct versions", async () => {
     const { lineage, events, content } = mk();
     let head = ok(await lineage.start(g("e"), user)).experience.versionHash;
-    const log = new SeenLog({ events: new InMemoryLineageStore(), content, lineage });
+    const log = new SeenLog({
+      keys: new InMemorySeenKeyStore(),
+      events: new InMemoryLineageStore(),
+      content,
+      lineage,
+    });
     for (let i = 0; i < 6; i++) {
       const v = ok(
         await lineage.compose({

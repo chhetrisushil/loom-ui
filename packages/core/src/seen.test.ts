@@ -255,6 +255,24 @@ describe("redactSeen", () => {
     );
   });
 
+  it("a projection entry whose source matches its node's binding is KEPT when the catalogue is supplied (and withheld without it)", () => {
+    const px = build(sem("p", { projection: { id: "pr", path: "x", version: "1" } }));
+    const matching = entry({
+      source: { kind: "projection", id: "pr", path: "x", version: "1" },
+      nodeIds: ["p"],
+    });
+    const kept = redactSeen([matching], px, { projections: [{ id: "pr", version: "1" }] as never });
+    expect(kept.entries).toHaveLength(1);
+    expect(kept.entries[0]?.source).toEqual({
+      kind: "projection",
+      id: "pr",
+      path: "x",
+      version: "1",
+    });
+    expect(kept.restricted).toBe(false);
+    expect(redactSeen([matching], px, {}).entries).toEqual([]);
+  });
+
   it("reports the input position of every kept entry", () => {
     const r = redactSeen(
       [

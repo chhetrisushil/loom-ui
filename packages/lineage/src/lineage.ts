@@ -32,7 +32,7 @@ import {
   type SummaryClass,
 } from "./events";
 import { type LineageState, type VersionRecord, foldLineage, payloadRefusal } from "./state";
-import type { LineageStore } from "./store";
+import { InMemoryLineageStore, LINEAGE_STREAM_PREFIX, type LineageStore } from "./store";
 
 // ── The lineage runtime ───────────────────────────────────────────────────────
 // loom-ui core is a library: it can fold ops onto an artifact and hash it, but nothing remembered
@@ -123,6 +123,20 @@ function provenanceRefusal(
   return undefined;
 }
 
+/** Iterative (no recursion limit) walk for `{ __loomContent: string }` leaves. */
+function walkContentRefs(root: unknown, visit: (address: string) => void): void {
+  const stack: unknown[] = [root];
+  const seen = new Set<object>();
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (typeof cur !== "object" || cur === null || seen.has(cur)) continue;
+    seen.add(cur);
+    const a = (cur as { __loomContent?: unknown }).__loomContent;
+    if (typeof a === "string") visit(a);
+    for (const v of Array.isArray(cur) ? cur : Object.values(cur)) stack.push(v);
+  }
+}
+
 const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
 
@@ -138,14 +152,45 @@ export class Lineage {
   }
 
   /**
-   * Whether `other` is this lineage's own store, or writes under the same stream prefix. A `SeenLog`
-   * refuses such a store: a viewer's record must never share streams with the line it describes.
+   * Whether `other` is this lineage's own store, or may write under a stream prefix that overlaps its
+   * own (`a.startsWith(b) || b.startsWith(a)`: `x:` and `x:y:` collide). A `SeenLog` refuses such a
+   * store: a viewer's record must never share streams with the line it describes.
+   *
+   * FAIL-CLOSED: the vetted store's `streamPrefix` must be readable (the package's prefixed stores
+   * and `InMemoryLineageStore` are). A decorator that HIDES `streamPrefix` cannot be told apart from a
+   * colliding store, so it is refused: re-expose `streamPrefix` on the wrapper (copied from the inner
+   * store) if it is legitimate. The reverse is a documented limit: if THIS lineage's store is such a
+   * wrapper its prefix is assumed to be the default (`LINEAGE_STREAM_PREFIX`).
    */
   sharesStreamsWith(other: LineageStore): boolean {
     if (other === this.events) return true;
-    const a = (this.events as { streamPrefix?: unknown }).streamPrefix;
-    const b = (other as { streamPrefix?: unknown }).streamPrefix;
-    return typeof a === "string" && a === b;
+    const prefixOf = (s: LineageStore): string | undefined | null => {
+      const p = (s as { streamPrefix?: unknown }).streamPrefix;
+      if (typeof p === "string" && p.length > 0) return p;
+      return s instanceof InMemoryLineageStore ? null : undefined; // null: isolated by identity
+    };
+    // `other` is the store being vetted: with no readable prefix it cannot be proven disjoint, so it
+    // is refused. This lineage's OWN store may be a wrapper that hides its prefix (a counting or
+    // tracing decorator): it is assumed to use the package default.
+    const b = prefixOf(other);
+    if (b === undefined) return true;
+    const a = prefixOf(this.events) ?? LINEAGE_STREAM_PREFIX;
+    if (a === null || b === null) return false; // a distinct in-memory object shares nothing
+    return a.startsWith(b) || b.startsWith(a);
+  }
+
+  /**
+   * Call `visit` with every content address any version of any line cites (artifacts, op payloads,
+   * anything stored as a content ref in an event), CONSERVATIVELY: any `__loomContent` string found
+   * anywhere in a payload counts, claim-check envelopes included. This is the lineage's half of the
+   * root set a content collector marks. One line is held in memory at a time. Throws if the store
+   * cannot enumerate its lines (`listStreams`): a collector must refuse then, never guess.
+   */
+  async forEachContentRef(visit: (address: string) => void): Promise<void> {
+    if (this.events.listStreams === undefined)
+      throw new Error("Lineage.forEachContentRef: the LineageStore cannot enumerate its lines");
+    for await (const id of this.events.listStreams())
+      for (const rec of await this.events.read(id)) walkContentRefs(rec.payload, visit);
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────
