@@ -22,7 +22,7 @@ import {
   InMemorySeenKeyStore,
   deriveSeenKeys,
   refAad,
-  sealText,
+  sealRef,
   seenKeySubject,
 } from "./seenCrypto";
 import {
@@ -206,7 +206,7 @@ describe("P1-1: a seen entry is judged by what its nodes bind", () => {
       nodeIds: [nodeId],
       class: "unclassified",
       state: "seen",
-      sealed: sealText(dk.enc, refAad("e", "v", 1, idx), JSON.stringify(ref)),
+      sealed: sealRef(dk.enc, refAad("e", "v", 1, idx), ref, 1),
     });
     // hand-written (hostile) manifest: the same source twice; the second names a secret node
     await events.append("e/v", 0, {

@@ -39,6 +39,7 @@ export type {
 export { checkLineageStoreConformance } from "./conformance";
 export {
   DEFAULT_MAX_SEEN_VIEWS,
+  DEFAULT_MAX_SKEW_MS,
   MAX_SEEN_READ,
   SEEN_STREAM_PREFIX,
   SEEN_WORKFLOW_ID,
@@ -50,9 +51,17 @@ export {
   seenStoreOptions,
   seenStreamKey,
 } from "./seen";
-export type { SeenLogOptions, SeenRefusal, SeenResult, SeenRetention, SeenView } from "./seen";
+export type {
+  SeenLogOptions,
+  SeenRefusal,
+  SeenResult,
+  SeenRetention,
+  SeenUnreadable,
+  SeenView,
+} from "./seen";
 export {
   InMemorySeenKeyStore,
+  SEALED_REF_BLOCK,
   checkSeenKeyStoreConformance,
   seenKeySubject,
 } from "./seenCrypto";

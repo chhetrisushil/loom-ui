@@ -71,7 +71,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   is AES-GCM-sealed under a per-(experience, viewer) key from a host `SeenKeyStore` (AD-bound to experience/viewer/
   record/entry; digest is an HMAC), `eraseViewer` destroys the key; blobs stay plain-addressed (dedupe) and are reclaimed
   by `collectSeenGarbage` (MARK-AND-SWEEP, never refcount; roots = lineage refs + decryptable in-window refs; grace via
-  the ContentStore's SPI 1.3.0 touch time; fails closed). Retention rolls off (watermark record), it never refuses.
+  the ContentStore's SPI 1.3.0 touch time; fails closed, incl. on any unreadable live record: `gc-unreadable-record`).
+  A `seen` entry's size is sealed with its ref (constant-padded); `eraseViewerEverywhere` erases one subject across experiences. Retention rolls off (watermark record), it never refuses.
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.

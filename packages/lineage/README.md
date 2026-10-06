@@ -172,9 +172,22 @@ transplanted, wrong key) is withheld (`restricted`), never read as plaintext. A 
 store refuses a `record` and a `read` (`seen-key-unavailable`): fail closed. Why the key lives here and
 not in `shredSubject`: loom's shredder refuses the reserved `__loom_*` streams (a logged loom
 follow-up), and a seen log has to live in one; `encryptValue` has no associated data, which this needs,
-so the primitive is local (the `KeyStore` SHAPE is reused). What erasure does NOT hide: the stream's
-structure (which handles/projections a view named, node ids, class stamps, value byte lengths, times),
-and a value blob stays readable in the `ContentStore` until the collector below reclaims it.
+so the primitive is local (the `KeyStore` SHAPE is reused). The sealed payload is `{ref, bytes}`
+padded to a constant length, so a `seen` entry's value size is hidden too (neither a field nor the
+ciphertext length separates `true` from `false` from a short enum). What an erased stream STILL
+reveals: that the viewer opened the experience; the sources each view named (handles / projection ids
+and paths), node ids, class stamps, delivery statuses, the version hash and record times; and, for an
+`oversize` / `over-budget` entry only, its measured size (a size class: there the size IS the recorded
+fact). It reveals no value, no address and no size of a recorded value. A value blob stays readable in
+the `ContentStore` until the collector below reclaims it. `SeenKeyStore` contract: after `destroy`
+NO layer (including a warm cache) may serve the key; create-if-absent is atomic (concurrent
+`getOrCreate` of one subject return one key); `record` re-reads the key just before it appends and
+refuses (`seen-viewer-erased`) if it is gone. `eraseViewer` performs no authorization (erasing a pair
+that never existed writes a tombstone), so the host decides who may erase what.
+`eraseViewerEverywhere({ viewerId })` is the per-data-subject form: it enumerates the seen streams
+(`listStreams`; refused with `seen-enumeration-unavailable` without it) and erases that viewer in
+every experience, returning per-experience results (`complete` only when all succeeded; idempotent
+and resumable).
 
 *Reclaiming blobs: `collectSeenGarbage(log, { graceMs, ownsContentStore: true })`.* MARK-AND-SWEEP, not
 a refcount (there is no transaction across the event log and the `ContentStore`, so a counter drifts and
@@ -190,14 +203,18 @@ gap leaks the blob until the first pass past grace and never loses a cited value
 rolled-off views mark nothing, so their unique blobs are swept while a blob another viewer or the
 lineage still cites survives. A pass is idempotent and safe to rerun after a crash. It FAILS CLOSED
 before deleting anything if the root set cannot be established (a `LineageStore` without
-`listStreams`, a key-store failure, a `ContentStore` without the SPI 1.3.0 set `listPage` +
+`listStreams`, a key-store failure, ANYTHING UNREADABLE in a live window: a stream key that does not
+round-trip, a record that fails to parse (a newer writer's shape during a rolling upgrade), a sealed
+ref that fails to open under a PRESENT key: refusal `gc-unreadable-record` with counts, overridden only
+by `allowUnreadable: true`, which means "sweep what those cite"; an ABSENT key is an erased viewer,
+not unreadable, a `ContentStore` without the SPI 1.3.0 set `listPage` +
 `deleteIfUntouchedSince` + `touchClock`, more than `maxMarked` live addresses). Memory: one string per
 distinct live blob (`maxMarked`, default 5M, refuses rather than grow), one stream at a time, pages of
 `pageSize`. `ownsContentStore: true` is an assertion you make: the sweep deletes what it cannot root, so
 the store must hold nothing the lineage, the seen logs and `extraRoots` do not name. No loom or
 `ContentStore` SPI change was needed: SPI 1.3.0 already carries the touch time.
 
-*Retention rolls off, it does not refuse.* `retention: { maxViews = 10_000, maxAgeMs? }`. A new view
+*Retention rolls off, it does not refuse.* `retention: { maxViews = 10_000, maxAgeMs?, maxSkewMs = 300_000 }`. Reads apply `maxAgeMs` exactly; the two irreversible age actions (a persisted watermark, the collector) are conservative by `maxSkewMs`, so a writer whose clock runs ahead by up to that much cannot roll off or sweep a view still inside the window by true time. A new view
 ALWAYS records. The log is append-only, so roll-off is a watermark: each view carries the `floor` in
 force when written and a `VIEWS_RETAINED` record raises it (about once per `maxViews/10` roll-offs);
 `read` and the collector apply the window themselves (floor, age, newest `maxViews`), so correctness

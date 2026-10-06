@@ -1,4 +1,4 @@
-import type { SeenLog, SeenRefusal } from "./seen";
+import type { SeenLog, SeenRefusal, SeenUnreadable } from "./seen";
 
 // ── Reclaiming the value blobs of the record of what a viewer saw (U12) ──────────────────────
 // MARK-AND-SWEEP, not a refcount. There is no transaction across the event log and the ContentStore,
@@ -7,7 +7,7 @@ import type { SeenLog, SeenRefusal } from "./seen";
 //
 //   MARK   every content address cited by (a) every line of the lineage (artifacts, op payloads,
 //          anything stored as a ref in an event) and (b) every DECRYPTABLE ref of every viewer's
-//          retention window; plus whatever the host's `extraRoots` names. Erased viewers and
+//          retention window (the age window is kept `maxSkewMs` wider than a read's); plus whatever the host's `extraRoots` names. Erased viewers and
 //          rolled-off views are unreadable or out of window, so they mark nothing.
 //   SWEEP  every blob the store lists that is not marked, deleted with the store's own conditional
 //          `deleteIfUntouchedSince` so a blob that is touched (a put, including a dedup'd re-put)
@@ -21,7 +21,9 @@ import type { SeenLog, SeenRefusal } from "./seen";
 // The pass is idempotent and safe to rerun (or to crash in the middle of).
 //
 // FAIL CLOSED. Anything the collector cannot establish aborts BEFORE any delete: a store that cannot
-// enumerate its streams, a key-store failure, a ContentStore without the SPI 1.3.0 set
+// enumerate its streams, a key-store failure, ANYTHING UNREADABLE in the live window (a stream key
+// that does not round-trip, a record that fails to parse, e.g. a newer writer's shape during a rolling
+// upgrade, a sealed ref that fails to open under a present key: `gc-unreadable-record`, with counts), a ContentStore without the SPI 1.3.0 set
 // (`listPage` + `deleteIfUntouchedSince` + `touchClock`), a root set over `maxMarked`.
 //
 // MEMORY. The marked set holds one address string per distinct live blob (O(live blobs); `maxMarked`
@@ -42,6 +44,13 @@ export interface SeenGcOptions {
   readonly maxMarked?: number;
   /** Blobs per `listPage`. Default 500. */
   readonly pageSize?: number;
+  /**
+   * Proceed although some live-window stream / record / sealed ref could not be read. OPT-IN MEANS
+   * "I ACCEPT SWEEPING WHAT THOSE CITE": their blobs are unrooted and WILL be deleted once past the
+   * grace period (for a rolling upgrade, finish the upgrade and rerun instead). Default: refuse.
+   * A viewer whose key is ABSENT (erased) is not unreadable: that is the intended shred path.
+   */
+  readonly allowUnreadable?: boolean;
 }
 
 export interface SeenGcReport {
@@ -54,6 +63,8 @@ export interface SeenGcReport {
   /** Unrooted blobs spared because they were touched at or after the cutoff (in grace). */
   readonly spared: number;
   readonly cutoffMs: number;
+  /** What could not be read (non-zero only with `allowUnreadable: true`). */
+  readonly unreadable: SeenUnreadable;
 }
 
 export type SeenGcResult =
@@ -100,12 +111,13 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
     if (marked.size > maxMarked) throw new Error("maxMarked exceeded");
   };
   let cutoffMs: number;
+  let unreadable: SeenUnreadable = { streams: 0, records: 0, refs: 0 };
   try {
     // The clock is read BEFORE marking: anything touched after this instant is spared, so a blob
     // written while we mark (whose manifest we may have read too early to see) survives.
     cutoffMs = (await content.touchClock()) - opts.graceMs;
     await log.lineageOf.forEachContentRef(visit);
-    await log.forEachLiveRef(visit);
+    unreadable = await log.forEachLiveRef(visit);
     if (opts.extraRoots !== undefined) for await (const a of opts.extraRoots()) visit(a);
   } catch (err) {
     return no(
@@ -113,6 +125,15 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
       `the root set could not be established (nothing was deleted): ${err instanceof Error ? err.message : String(err)}`
     );
   }
+
+  if (
+    unreadable.streams + unreadable.records + unreadable.refs > 0 &&
+    opts.allowUnreadable !== true
+  )
+    return no(
+      "gc-unreadable-record",
+      `${unreadable.streams} stream(s), ${unreadable.records} record(s) and ${unreadable.refs} sealed ref(s) in the live window could not be read, so what they cite is unrooted (nothing was deleted). Fix or finish the upgrade and rerun, or pass allowUnreadable: true to sweep it`
+    );
 
   let scanned = 0;
   let deleted = 0;
@@ -145,5 +166,8 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
       `the sweep stopped after deleting ${deleted} blobs (safe to rerun): ${err instanceof Error ? err.message : String(err)}`
     );
   }
-  return { ok: true, report: { marked: marked.size, scanned, deleted, spared, cutoffMs } };
+  return {
+    ok: true,
+    report: { marked: marked.size, scanned, deleted, spared, cutoffMs, unreadable },
+  };
 }
