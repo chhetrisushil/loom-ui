@@ -26,8 +26,10 @@ import {
 } from "./seen";
 import {
   InMemorySeenKeyStore,
+  MAX_SEALED_ADDRESS_CHARS,
   type SeenKeyStore,
   checkSeenKeyStoreConformance,
+  sealRef,
   seenKeySubject,
 } from "./seenCrypto";
 import { collectSeenGarbage } from "./seenGc";
@@ -612,6 +614,7 @@ describe("P2-1: the collector fails closed on anything it cannot read", () => {
     flag.newer = true;
     const forced = await gcNow(r, true);
     expect(forced.ok && forced.report.unreadable.records).toBe(1);
+    expect(forced.ok && forced.report.unreadable.examples.records).toEqual(["e/v@1"]);
     expect(await has(r.content, r.addr("only-copy"))).toBe(false);
   });
 
@@ -656,6 +659,7 @@ describe("P2-1: the collector fails closed on anything it cannot read", () => {
     const res = await gcNow(r);
     expect(res).toMatchObject({ ok: false, refusal: { code: "gc-unreadable-record" } });
     expect(res.ok === false && res.refusal.message).toMatch(/1 stream/);
+    expect(res.ok === false && res.refusal.message).toContain("streams [no-slash-here]");
     expect(await has(r.content, r.addr("kept"))).toBe(true);
   });
 });
@@ -688,6 +692,19 @@ describe("P2-2: a seen entry's size is sealed; the stream reveals no value", () 
     expect(e.state).toBe("oversize");
     expect(typeof e.bytes).toBe("number");
     expect(e.sealed).toBeUndefined();
+  });
+
+  it("an oversize entry stores a power-of-two size class: two different sizes in one bucket are identical", async () => {
+    const r = await rig();
+    await r.see("a", "z".repeat(MAX_SEEN_VALUE_BYTES + 10));
+    await r.see("b", "z".repeat(MAX_SEEN_VALUE_BYTES + 5000));
+    const sz = async (v: string) =>
+      (
+        ((await r.raw(v))[0]?.payload as { entries: Array<Record<string, unknown>> })
+          .entries[0] as Record<string, unknown>
+      ).bytes;
+    expect(await sz("a")).toBe(await sz("b"));
+    expect(await sz("a")).toBe(2 ** Math.ceil(Math.log2(MAX_SEEN_VALUE_BYTES + 10)));
   });
 });
 
@@ -914,5 +931,23 @@ describe("eraseViewerEverywhere", () => {
       ok: false,
       refusal: { code: "seen-enumeration-unavailable" },
     });
+  });
+});
+
+describe("sealRef fails closed on an over-long address", () => {
+  it("refuses an address that would round the padding up to the next block", () => {
+    const enc = Buffer.alloc(32, 1);
+    const aad = Buffer.from("a");
+    expect(() =>
+      sealRef(enc, aad, { __loomContent: "x".repeat(MAX_SEALED_ADDRESS_CHARS + 1) }, 1)
+    ).toThrow(/refused/);
+    const a = sealRef(enc, aad, { __loomContent: "a".repeat(64) }, 1);
+    const b = sealRef(
+      enc,
+      aad,
+      { __loomContent: "b".repeat(MAX_SEALED_ADDRESS_CHARS) },
+      999_999_999_999
+    );
+    expect(a.length).toBe(b.length);
   });
 });

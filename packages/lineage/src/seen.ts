@@ -20,6 +20,7 @@ import {
 import { z } from "zod";
 import type { Lineage, LineageResult } from "./lineage";
 import {
+  MAX_SEALED_ADDRESS_CHARS,
   type SeenKeyStore,
   deriveSeenKeys,
   keyedDigest,
@@ -62,8 +63,8 @@ import { LINEAGE_STREAM_PREFIX, type LineageStore, type StoredLineageRecord } fr
 //
 // WHAT AN ERASED STREAM STILL REVEALS (precisely): that the viewer opened the experience; the
 // sources each view named (handles / projection ids and paths); node ids; class stamps; delivery
-// statuses; the version hash; record times; and, for an `oversize` / `over-budget` entry only, the
-// measured size, because there the size IS the recorded fact (a size class, not a value). It
+// statuses; the version hash; record times; and, for an `oversize` / `over-budget` entry only, a
+// power-of-two SIZE CLASS (never the exact byte count), because there the size class IS the recorded fact. It
 // reveals NO value, no content address, and no size of a value that was recorded as `seen`.
 //
 // VALUE BLOBS are reclaimed by a MARK-AND-SWEEP collector (`collectSeenGarbage`, seenGc.ts), never a
@@ -153,6 +154,12 @@ export interface SeenRetention {
   readonly maxSkewMs?: number;
 }
 
+/** The smallest power of two >= `n` (0 stays 0): the only size an `oversize` / `over-budget` entry stores. */
+export function sizeClass(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return 2 ** Math.ceil(Math.log2(n));
+}
+
 /** Default tolerated clock skew between writers (5 minutes). */
 export const DEFAULT_MAX_SKEW_MS = 300_000;
 /** Records read from the tail to find the floor in force (a malformed tip carries the last good one). */
@@ -166,7 +173,15 @@ export interface SeenUnreadable {
   readonly records: number;
   /** Sealed refs that failed to open while the key IS present (unknown version, rotated key, tamper). */
   readonly refs: number;
+  /** Where to look: at most {@link UNREADABLE_EXAMPLES} identifiers per kind (stream keys; `experience/viewer@sequence` records; `experience/viewer@sequence#entry` refs). */
+  readonly examples: {
+    readonly streams: readonly string[];
+    readonly records: readonly string[];
+    readonly refs: readonly string[];
+  };
 }
+/** Cap on the offenders named per kind in {@link SeenUnreadable.examples}. */
+export const UNREADABLE_EXAMPLES = 16;
 export interface SeenLogOptions {
   /** A `LineageStore` over a namespace of its own (`eventStoreLineageStore(store, { streamPrefix: SEEN_STREAM_PREFIX, workflowId: SEEN_WORKFLOW_ID })`). */
   readonly events: LineageStore;
@@ -409,7 +424,8 @@ export class SeenLog {
         state: e.state,
         ...(e.status !== undefined && { status: e.status }),
         // a `seen` entry's size is sealed with its ref, never stored in the clear
-        ...(e.bytes !== undefined && e.state !== "seen" && { bytes: e.bytes }),
+        // `oversize` / `over-budget`: only a power-of-two size class survives, never the exact count
+        ...(e.bytes !== undefined && e.state !== "seen" && { bytes: sizeClass(e.bytes) }),
       });
       if (!shape.success) return refused("seen-entry-invalid", "a snapshot entry is malformed");
       let ref: { ref: ContentRef; bytes: number } | undefined;
@@ -428,7 +444,13 @@ export class SeenLog {
         // Blob BEFORE manifest: a crash between the two leaks a blob (reclaimed by the next sweep
         // past its grace period) and never loses a live value. A re-put of a held blob bumps its
         // touch time, which is what protects a value another record is about to cite.
-        ref = { ref: await this.content.put(bytes), bytes: bytes.length };
+        const put = await this.content.put(bytes);
+        if (put.__loomContent.length > MAX_SEALED_ADDRESS_CHARS)
+          return refused(
+            "seen-address-invalid",
+            "the content store returned an unexpectedly long address"
+          );
+        ref = { ref: put, bytes: bytes.length };
       }
       shapes.push(shape.data);
       refs.push(ref);
@@ -617,6 +639,12 @@ export class SeenLog {
    * each experience (see {@link eraseViewer}, including its authorization note). Idempotent and
    * resumable: a rerun skips what is erased and completes what is not. A per-experience failure does
    * not stop the others; `complete` is true only when every experience was erased.
+   *
+   * COVERAGE: only streams that EXIST when enumeration runs are erased. A stream created after
+   * that point (a new view by this viewer during the erase) is not covered: the host must serialize
+   * erasure against new views for the subject, or rerun. An orphan key with no stream (a crash
+   * between `getOrCreate` and the first append) is not destroyed by this enumeration; it holds no
+   * data (a key and nothing sealed under it).
    */
   async eraseViewerEverywhere(input: { readonly viewerId: string }): Promise<
     SeenResult<{
@@ -809,7 +837,7 @@ export class SeenLog {
 
   /**
    * Call `visit` with the content address of every DECRYPTABLE ref inside every viewer's retention
-   * window (kept conservatively: views inside `maxAgeMs + maxSkewMs`): the seen log's half of the
+   * window (kept conservatively: views inside `maxAgeMs + maxSkewMs`; with out-of-order timestamps within `maxSkewMs` at the `maxViews` cap this window can differ from the exact read window's newest-N, in the direction of keeping MORE): the seen log's half of the
    * collector's root set. Erased viewers (key ABSENT: the shred path) and rolled-off views
    * contribute nothing, which is exactly what lets their unique blobs be swept. THROWS if the store
    * cannot enumerate its streams or the key store fails (an unreadable root is not an absent one).
@@ -825,10 +853,15 @@ export class SeenLog {
     let streams = 0;
     let records = 0;
     let refs = 0;
+    const ex = { streams: [] as string[], records: [] as string[], refs: [] as string[] };
+    const note = (list: string[], what: string) => {
+      if (list.length < UNREADABLE_EXAMPLES) list.push(what);
+    };
     for await (const key of this.events.listStreams()) {
       const id = parseStreamKey(key);
       if (id === undefined) {
         streams += 1;
+        note(ex.streams, key);
         continue;
       }
       const { experienceId, viewerId } = id;
@@ -846,17 +879,20 @@ export class SeenLog {
           parsed.data.viewerId !== viewerId
         ) {
           records += 1;
+          note(ex.records, `${key}@${rec.sequence}`);
           continue;
         }
         for (const [i, e] of parsed.data.entries.entries()) {
           if (e.sealed === undefined) continue;
           const opened = this.openRef(enc, experienceId, viewerId, rec.sequence, i, e.sealed);
-          if (opened === undefined) refs += 1;
-          else visit(opened.ref.__loomContent);
+          if (opened === undefined) {
+            refs += 1;
+            note(ex.refs, `${key}@${rec.sequence}#${i}`);
+          } else visit(opened.ref.__loomContent);
         }
       }
     }
-    return { streams, records, refs };
+    return { streams, records, refs, examples: ex };
   }
 }
 

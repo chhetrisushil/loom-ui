@@ -177,7 +177,7 @@ padded to a constant length, so a `seen` entry's value size is hidden too (neith
 ciphertext length separates `true` from `false` from a short enum). What an erased stream STILL
 reveals: that the viewer opened the experience; the sources each view named (handles / projection ids
 and paths), node ids, class stamps, delivery statuses, the version hash and record times; and, for an
-`oversize` / `over-budget` entry only, its measured size (a size class: there the size IS the recorded
+`oversize` / `over-budget` entry only, a power-of-two size class of its measured size (never the exact byte count: there the size class IS the recorded
 fact). It reveals no value, no address and no size of a recorded value. A value blob stays readable in
 the `ContentStore` until the collector below reclaims it. `SeenKeyStore` contract: after `destroy`
 NO layer (including a warm cache) may serve the key; create-if-absent is atomic (concurrent
@@ -187,7 +187,7 @@ that never existed writes a tombstone), so the host decides who may erase what.
 `eraseViewerEverywhere({ viewerId })` is the per-data-subject form: it enumerates the seen streams
 (`listStreams`; refused with `seen-enumeration-unavailable` without it) and erases that viewer in
 every experience, returning per-experience results (`complete` only when all succeeded; idempotent
-and resumable).
+and resumable). Coverage is the streams that exist when enumeration runs: a stream created afterwards (a new view during the erase) is not covered, so the host serializes erasure against new views for that subject or reruns; an orphan key with no stream (crash between `getOrCreate` and the first append) is not destroyed, and holds no data.
 
 *Reclaiming blobs: `collectSeenGarbage(log, { graceMs, ownsContentStore: true })`.* MARK-AND-SWEEP, not
 a refcount (there is no transaction across the event log and the `ContentStore`, so a counter drifts and
@@ -214,7 +214,7 @@ distinct live blob (`maxMarked`, default 5M, refuses rather than grow), one stre
 the store must hold nothing the lineage, the seen logs and `extraRoots` do not name. No loom or
 `ContentStore` SPI change was needed: SPI 1.3.0 already carries the touch time.
 
-*Retention rolls off, it does not refuse.* `retention: { maxViews = 10_000, maxAgeMs?, maxSkewMs = 300_000 }`. Reads apply `maxAgeMs` exactly; the two irreversible age actions (a persisted watermark, the collector) are conservative by `maxSkewMs`, so a writer whose clock runs ahead by up to that much cannot roll off or sweep a view still inside the window by true time. A new view
+*Retention rolls off, it does not refuse.* `retention: { maxViews = 10_000, maxAgeMs?, maxSkewMs = 300_000 }`. Reads apply `maxAgeMs` exactly; the two irreversible age actions (a persisted watermark, the collector) are conservative by `maxSkewMs`, so a writer whose clock runs ahead by up to that much cannot roll off or sweep a view still inside the window by true time. With out-of-order timestamps within `maxSkewMs` at the `maxViews` cap, the conservative window can differ from the exact window's newest-N, in the direction of keeping MORE. A new view
 ALWAYS records. The log is append-only, so roll-off is a watermark: each view carries the `floor` in
 force when written and a `VIEWS_RETAINED` record raises it (about once per `maxViews/10` roll-offs);
 `read` and the collector apply the window themselves (floor, age, newest `maxViews`), so correctness

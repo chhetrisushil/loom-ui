@@ -1,4 +1,4 @@
-import type { SeenLog, SeenRefusal, SeenUnreadable } from "./seen";
+import { type SeenLog, type SeenRefusal, type SeenUnreadable, UNREADABLE_EXAMPLES } from "./seen";
 
 // ── Reclaiming the value blobs of the record of what a viewer saw (U12) ──────────────────────
 // MARK-AND-SWEEP, not a refcount. There is no transaction across the event log and the ContentStore,
@@ -111,7 +111,12 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
     if (marked.size > maxMarked) throw new Error("maxMarked exceeded");
   };
   let cutoffMs: number;
-  let unreadable: SeenUnreadable = { streams: 0, records: 0, refs: 0 };
+  let unreadable: SeenUnreadable = {
+    streams: 0,
+    records: 0,
+    refs: 0,
+    examples: { streams: [], records: [], refs: [] },
+  };
   try {
     // The clock is read BEFORE marking: anything touched after this instant is spared, so a blob
     // written while we mark (whose manifest we may have read too early to see) survives.
@@ -132,7 +137,7 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
   )
     return no(
       "gc-unreadable-record",
-      `${unreadable.streams} stream(s), ${unreadable.records} record(s) and ${unreadable.refs} sealed ref(s) in the live window could not be read, so what they cite is unrooted (nothing was deleted). Fix or finish the upgrade and rerun, or pass allowUnreadable: true to sweep it`
+      `${unreadable.streams} stream(s), ${unreadable.records} record(s) and ${unreadable.refs} sealed ref(s) in the live window could not be read, so what they cite is unrooted (nothing was deleted). Fix or finish the upgrade and rerun, or pass allowUnreadable: true to sweep it. Offenders (first ${UNREADABLE_EXAMPLES} per kind): streams [${unreadable.examples.streams.join(", ")}], records [${unreadable.examples.records.join(", ")}], refs [${unreadable.examples.refs.join(", ")}]`
     );
 
   let scanned = 0;
