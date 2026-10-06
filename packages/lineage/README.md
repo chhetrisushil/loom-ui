@@ -5,8 +5,8 @@ won a race to change it, and how to go back. `@loom-ui/core` can fold ops onto a
 it; it cannot say which artifact is the head, refuse a stale author, undo, or notice that a stored
 `ops` list disagrees with the artifact it claims to produce (ops are not in the content address).
 This package is that memory. It is **optional** (an app using only core keeps working) and
-**server-side** (an event log plus a content store: never import it from a client bundle; the
-hydration client-graph guards forbid it).
+**server-side** (an event log plus a content store: never import it from a client bundle;
+`hydration/clientEntry.test.ts` names it among the packages a client graph must not reach).
 
 ```ts
 import { Lineage, InMemoryLineageStore, eventStoreLineageStore } from "@loom-ui/lineage";
@@ -48,12 +48,14 @@ version per address, every version's `parents` naming the head it was appended o
 **Verification closes the ops-vs-artifact gap.** `advance`/`compose` refuse (writing nothing) any
 version whose recorded ops, replayed from the parent, do not reproduce the artifact's content address
 (`ops-artifact-mismatch`), whose ops are refused by `apply` (a recorded `declassify*` needs the host's
-`allowDeclassify`), whose `baseVersion` is not the parent, or that records no ops after the first
+per-call `allowDeclassify`), whose `baseVersion` is not the parent, or that records no ops after the first
 version. `verify(experienceId)` is the consumer: it REBUILDS the whole line from the log (never from
 the blobs: a composed version by replay on the rebuilt parent, a revert or branch recomputed from the
 rebuilt artifacts it names) and compares addresses and stored blobs. The genesis is attested by its
-address alone; a branch trusts its source versions by (verified) address, so verify the source line
-with its own call.
+address alone. A branch is only as sound as its source, so `verify` also verifies the source line up
+to the version the fork carried classes from (recursively, bounded) and reports its findings on the
+branch; `carriedFrom` must be the forked version or a descendant of it. `verify` replays with
+`declassify*` allowed: it checks that addresses reproduce, and the write path is the gate.
 
 **Revert, undo, branch are new versions.** Nothing is rewritten. `revert` restores an older artifact's
 content as a version whose parent is the head (and can itself be reverted: that is redo). `undo` is a
@@ -72,5 +74,36 @@ ordinary composed version; reverting past it re-raises the class (the safe direc
 **Concurrent authors.** Two authors composing against the same head: one wins, the other gets
 `head-moved` with the winner's hash. A promotion slipping between a writer's read and append retries at
 the new tip (bounded) because the head did not move.
+
+## Trust and operations
+
+**The log is untrusted input.** Anyone with append access to a stream wrote what `foldLineage` reads,
+so the fold is total: a record that is null, throws when read, records more than `MAX_OPS_PER_VERSION`
+ops, or nests an op's node (or `prompt` ops) past the caps is a `lineage-event-invalid` finding, never
+a stack overflow or an exception out of every read of that line.
+
+**Lineage performs NO authorization.** `by` (on a version and on each recorded operation) is an
+unverified caller claim; nothing here checks that the caller may act as that principal or touch that
+line. `start` accepts ANY genesis, so a host that lets callers supply artifacts can have classes
+laundered by copying an artifact with its sticky class maps stripped into a new line. The host must
+gate who may `start`/`advance`/`branch`/`promote` and what artifacts it passes. `allowDeclassify` is a
+per-call argument of `advance`/`compose` (there is no instance-level default): pass it only from code
+that authored the ops itself. Stored `meta` is derived from `by` and the clock (as a revert's is), not
+taken from the artifact argument.
+
+**Branching.** `branch` reads the source line and then writes the new one (no lock across the two): a
+source that advances in between is fine, because the fork records the head it carried classes from
+(`carriedFrom`). Classes the source learns AFTER the fork do not reach the branch, which is a
+different line from then on.
+
+**Reserved stream namespace.** `eventStoreLineageStore` writes `__loom_ui_lineage__:<experienceId>`,
+inside loom's `RESERVED_STREAM_PREFIX` (`__loom_`), so enumerators of real executions skip lineage
+streams (a prefix outside it would be mistaken for an execution). Consequences: loom's `shredSubject`
+throws for `__loom_*` ids, so a lineage stream CANNOT be crypto-shred tombstoned, yet events carry `by`
+provenance and op payloads (props, labels). Hosts must not put personal data in props, labels or `by`;
+if one did, the only erasure is to delete the line's events and blobs in the store itself (a content
+address does not protect a blob from deletion). Streams are never compacted, so a long-lived line
+grows without bound. loom will register the prefix as a sanctioned extension stream (a follow-up in
+loom, not part of this package).
 
 Genericity: nothing here names a consumer.

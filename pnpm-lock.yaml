@@ -124,12 +124,6 @@ importers:
       '@loom-ui/core':
         specifier: workspace:*
         version: link:../core
-      '@loom/classify':
-        specifier: link:../../../loom/packages/classify
-        version: link:../../../loom/packages/classify
-      '@loom/core':
-        specifier: link:../../../loom/packages/core
-        version: link:../../../loom/packages/core
       '@loom/event-runtime':
         specifier: link:../../../loom/packages/event-runtime
         version: link:../../../loom/packages/event-runtime

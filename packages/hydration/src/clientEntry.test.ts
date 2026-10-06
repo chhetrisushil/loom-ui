@@ -32,6 +32,8 @@ const FORBIDDEN_PACKAGES = new Set([
   // U3 — `effectPin` needs `toolInputJsonSchema` from `@loom/agent` (llm, reasoning, workflow-runtime…):
   // server-only, never in the client graph.
   "@loom/agent",
+  // U6 — the lineage runtime is an event log + content store: server-side, never in a client graph.
+  "@loom-ui/lineage",
 ]);
 
 /** Hydration's own server-side modules (relative to `dist/`). */
@@ -98,9 +100,15 @@ function forbiddenReach(entry: string): { violations: Reach[]; files: number } {
 }
 
 /** The real directories of the forbidden packages, as a bundler sees them (links resolved). */
-const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].map((name) =>
-  realpathSync(resolve(__dirname, "../node_modules", name))
-);
+const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].flatMap((name) => {
+  try {
+    return [realpathSync(resolve(__dirname, "../node_modules", name))];
+  } catch {
+    // Not a dependency of hydration (e.g. `@loom-ui/lineage`): it is still refused BY NAME in
+    // `forbidden`, there is just no directory of it for the bundler-input check to match.
+    return [];
+  }
+});
 
 describe("@loom-ui/hydration/client is browser-safe", () => {
   it("dist carries no stale split.js to shadow split/index.js", () => {

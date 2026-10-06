@@ -54,4 +54,4 @@ export function branchArtifact(
   return carryClasses(carriedFrom, adopted);
 }
 
-const authorOf = (by: Provenance): string => by.agentId ?? by.ref ?? by.source;
+export const authorOf = (by: Provenance): string => by.agentId ?? by.ref ?? by.source;
