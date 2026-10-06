@@ -2,6 +2,7 @@ import {
   type Experience,
   type Finding,
   Operation,
+  type ReadPolicy,
   experienceNodeIds,
   genesis,
   isContainer,
@@ -9,6 +10,7 @@ import {
   replay,
   strictestClass,
   toolKey,
+  toolsOf,
   validateExperience,
   walk,
 } from "@loom-ui/core";
@@ -115,6 +117,13 @@ export interface ConformanceFixture {
    * it without a `scopeProbe` is `reach-unprobed` (a check with no input must not pass).
    */
   readonly checkReach?: boolean;
+  /**
+   * The host's read policy (core `ReadPolicy`). Under `undeclared: "deny"` a handle whose provider
+   * calls a tool that is neither offered as a capability nor listed in its table is UNREADABLE for
+   * every viewer; the kit warns (`handle-tool-undeclared`) when a composed or revised handle does.
+   * Omitting it means this is not checked.
+   */
+  readonly readPolicy?: ReadPolicy;
   /** See {@link StreamProbe}. */
   readonly streamProbe?: StreamProbe;
 }
@@ -151,6 +160,44 @@ function bindingClassFindings(
           }: a bound node takes at least its capability's declared class`
         )
       );
+  });
+  return out;
+}
+
+/**
+ * Under a bound `undeclared: "deny"` (`readPolicy`), a handle calling a tool neither offered as a
+ * capability nor in the policy's table would be unreadable: the planner composed something no
+ * viewer can see. A warning (the host may mean it), never an error.
+ */
+function undeclaredToolFindings(
+  label: string,
+  exp: Experience,
+  capabilities: readonly CapabilityRef[],
+  policy: ReadPolicy | undefined
+): Finding[] {
+  if (policy?.undeclared !== "deny") return [];
+  const known = new Set<string>(capabilities.map((c) => toolKey(c)));
+  for (const k of Object.keys(policy.declaredToolClasses ?? {})) known.add(k);
+  const out: Finding[] = [];
+  const seen = new Set<string>();
+  walk(exp.root, (n) => {
+    if (n.kind !== "semantic" || n.binding === undefined || seen.has(n.binding.handle)) return;
+    const spec = Object.hasOwn(exp.providers, n.binding.handle)
+      ? exp.providers[n.binding.handle]
+      : undefined;
+    if (spec === undefined) return;
+    seen.add(n.binding.handle);
+    const bad = toolsOf(spec).filter((k) => !known.has(k));
+    if (bad.length > 0)
+      out.push({
+        code: "handle-tool-undeclared",
+        severity: "warn",
+        message: `${label}: handle "${n.binding.handle}" calls ${bad
+          .map((k) => `"${k}"`)
+          .join(
+            ", "
+          )}, offered as no capability and absent from the read policy's table under undeclared: "deny" — no viewer could read it`,
+      });
   });
   return out;
 }
@@ -329,6 +376,9 @@ export async function checkPlannerConformance(
     findings.push(err("compose-empty", "compose produced no nodes"));
 
   findings.push(...bindingClassFindings("compose", composed.value, fx.capabilities));
+  findings.push(
+    ...undeclaredToolFindings("compose", composed.value, fx.capabilities, fx.readPolicy)
+  );
 
   // U7: a summary is shown to a viewer only when cleared for its stamped class, so the planner
   // must stamp what the model read. The kit declares no `contextClass`, so a sampled capability of
@@ -583,6 +633,9 @@ export async function checkPlannerConformance(
   if (!viaPrimitives.ok)
     return [...findings, err("prompt-replay-failed", viaPrimitives.finding.message)];
   findings.push(...bindingClassFindings("revise", viaPrompt.value, fx.capabilities));
+  findings.push(
+    ...undeclaredToolFindings("revise", viaPrompt.value, fx.capabilities, fx.readPolicy)
+  );
   if (seal(viaPrompt.value).versionHash !== seal(viaPrimitives.value).versionHash)
     findings.push(
       err(

@@ -54,7 +54,9 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   `CapabilityRef`s it gives the planner, so host and planner derive it identically:
   `new Lineage({ events, content, readPolicy: { declaredToolClasses: declaredToolClassesFrom(capabilities) } })`
   (or `createServeSurface({ declaredToolClasses: ... })` in hydration). Add `undeclared: "deny"` to make
-  a tool the capabilities do not list unreadable.
+  a tool the capabilities do not list unreadable; pass the same `readPolicy` to
+  `checkPlannerConformance` and it warns (`handle-tool-undeclared`) when a composed handle's tool is
+  neither offered nor in the table, i.e. would be unreadable.
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
   (samples, the current experience's node list, a capability's description/schema) is wrapped as
   DATA in the user message, never `system`; `ReferencePlanner` fences its own prompts rather than

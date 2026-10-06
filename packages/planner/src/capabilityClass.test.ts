@@ -1,4 +1,4 @@
-import { type Experience, genesis, replay, toolKey } from "@loom-ui/core";
+import { type Experience, type ReadPolicy, genesis, replay, toolKey } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
 import { declaredToolClassesFrom, requiredClass } from "./capabilityClass";
 import { checkPlannerConformance } from "./conformance";
@@ -127,6 +127,58 @@ describe("checkPlannerConformance: bound nodes are classed at least their capabi
     };
     const findings = await fixture(lax);
     expect(findings.map((f) => f.code)).toContain("binding-class-below-capability");
+  });
+});
+
+describe('checkPlannerConformance: a handle unreadable under undeclared: "deny" is warned about', () => {
+  // The planner is offered the full fixture; the KIT is told orders_summary was not offered.
+  const ordersCap = capabilitiesFixture.find((c) => c.handle === "orders_summary") as CapabilityRef;
+  const offered = capabilitiesFixture.filter((c) => c.handle !== "orders_summary");
+  const run = (readPolicy?: ReadPolicy) => {
+    const inner = new ReferencePlanner({ model: scriptedModel([compose, compose]), modelId: "m" });
+    const planner: Planner = {
+      compose: (i, ctx) => inner.compose({ ...i, capabilities: capabilitiesFixture }, ctx),
+      revise: (i, ctx) => inner.revise({ ...i, capabilities: capabilitiesFixture }, ctx),
+    };
+    return checkPlannerConformance(planner, {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: offered,
+      meta: metaFixture,
+      revision: { text: "x" },
+      ctx: recordingContext(),
+      ...(readPolicy !== undefined && { readPolicy }),
+    });
+  };
+  const codes = (f: { code: string }[]) => f.map((x) => x.code);
+  it("warns when the handle's tool is neither offered nor in the table", async () => {
+    const f = await run({ undeclared: "deny" });
+    const w = f.filter((x) => x.code === "handle-tool-undeclared");
+    expect(w.length).toBeGreaterThan(0);
+    expect(w.every((x) => x.severity === "warn")).toBe(true);
+    expect(w[0]?.message).toContain(toolKey(ordersCap));
+  });
+  it("a table naming the tool, a policy without deny, or no policy: no warning", async () => {
+    expect(
+      codes(
+        await run({ undeclared: "deny", declaredToolClasses: { [toolKey(ordersCap)]: "internal" } })
+      )
+    ).not.toContain("handle-tool-undeclared");
+    expect(codes(await run({}))).not.toContain("handle-tool-undeclared");
+    expect(codes(await run())).not.toContain("handle-tool-undeclared");
+  });
+  it("a tool that IS offered is declared: no warning", async () => {
+    const inner = new ReferencePlanner({ model: scriptedModel([compose, compose]), modelId: "m" });
+    const f = await checkPlannerConformance(inner, {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: capabilitiesFixture,
+      meta: metaFixture,
+      revision: { text: "x" },
+      ctx: recordingContext(),
+      readPolicy: { undeclared: "deny" },
+    });
+    expect(codes(f)).not.toContain("handle-tool-undeclared");
   });
 });
 

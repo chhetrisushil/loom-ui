@@ -114,6 +114,22 @@ describe("LineageChangeFeed with a bound readPolicy", () => {
     const added = await lax.feed.describe(lax.event, { viewer: high, undeclared: "deny" });
     expect(added.ok && added.description.entries).toEqual(restricted);
   });
+  it("deny bound + a per-call table naming the NEW tool: still restricted for a secret-cleared viewer", async () => {
+    const strict = await setup({
+      feed: { readPolicy: { ...bound, undeclared: "deny" } },
+      tool: "newtool.read",
+    });
+    const d = await strict.feed.describe(strict.event, {
+      viewer: high,
+      declaredToolClasses: { "newtool.read": "internal" },
+    });
+    expect(d.ok && d.description.entries).toEqual(restricted);
+  });
+  it("deny with NO table restricts every tool-bound change", async () => {
+    const strict = await setup({ feed: { readPolicy: { undeclared: "deny" } } });
+    const d = await strict.feed.describe(strict.event, { viewer: high });
+    expect(d.ok && d.description.entries).toEqual(restricted);
+  });
   it("the legacy top-level options still bind (declaredToolClasses on the feed)", async () => {
     const { feed, event } = await setup({
       feed: { declaredToolClasses: bound.declaredToolClasses! },

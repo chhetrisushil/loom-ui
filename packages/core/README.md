@@ -412,12 +412,16 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   `SeenLog` or `LineageChangeFeed` built over it inherits it), `new SeenLog({ readPolicy })`,
   `new LineageChangeFeed({ readPolicy })`, and `createServeSurface(policy)` in hydration. A per-call
   value may only ADD (`mergeReadPolicy(bound, perCall)`: tables join strictest-wins, `"deny"` sticks,
-  a bound `projections` catalogue is not replaced). Build the table from the SAME `CapabilityRef`s the
+  a bound `projections` catalogue is not replaced; when NO `projections` / `hydrationProjectionId` is
+  bound, a per-call one may still supply it (the original behaviour) — bind it to prevent that). Build the table from the SAME `CapabilityRef`s the
   planner uses, so host and planner cannot disagree: `declaredToolClassesFrom(capabilities)`
   (`@loom-ui/planner`). **`undeclared: "allow" | "deny"`** (default `"allow"`): with `"deny"`, a
   handle whose provider calls any tool the table (when one is present) does NOT list reads as a class
   no clearance ranks (`UNDECLARED_TOOL_CLASS`), on every read path — a new tool fails closed until it
-  is declared. No table = no effect. **The declared table wins over
+  is declared. `"deny"` also CLOSES the table's key set (a later or per-call table may raise a
+  listed tool but never list a new one, so a per-call table cannot open a tool the host left
+  undeclared), and `"deny"` with NO table means an empty one: every tool-bound handle is unreadable.
+  **The declared table wins over
   `declassifyHandle`**: declassifying a handle lowers its stored class, but a tool the host declares
   keeps flooring every handle that calls it, so `declassifyHandle` has no read-time effect on a
   declared tool (lower the declaration to lower the read; covered by a test). `CompileResult.restrictedHandles` lists

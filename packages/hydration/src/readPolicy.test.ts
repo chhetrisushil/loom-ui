@@ -137,6 +137,30 @@ describe("createServeSurface: the policy is bound once", () => {
     ).not.toContain("fresh");
   });
 
+  it("a per-call table naming the unlisted tool does not open it, even for a secret-cleared viewer", async () => {
+    const strict = createServeSurface({ ...policy, undeclared: "deny" });
+    const e = exp();
+    const perCall = { declaredToolClasses: { "tool.fresh": "internal" as const } };
+    expect(names(strict.handleInventory(e, { revisionOf, viewer: high, ...perCall }))).toEqual([
+      "open",
+      "pay",
+    ]);
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
+    const r = await strict.serveHandle(e, req(e, "fresh"), {
+      invoker: inv,
+      now: 0,
+      viewer: high,
+      ...perCall,
+    });
+    expect(r.state).toBe("error");
+    expect(inv.calls).toHaveLength(0);
+  });
+
+  it("deny with NO table restricts every tool-bound handle", () => {
+    const strict = createServeSurface({ undeclared: "deny" });
+    expect(names(strict.handleInventory(exp(), { revisionOf, viewer: high }))).toEqual([]);
+  });
+
   it("exposes the bound policy", () => {
     expect(createServeSurface(policy).policy).toEqual(policy);
     expect(createServeSurface().policy).toEqual({});
@@ -144,7 +168,12 @@ describe("createServeSurface: the policy is bound once", () => {
 });
 
 describe("HydrationController: undeclared", () => {
-  const run = async (undeclared?: "deny") => {
+  const run = async (
+    undeclared?: "deny",
+    extra: Partial<ConstructorParameters<typeof HydrationController>[0]> = {
+      declaredToolClasses: policy.declaredToolClasses,
+    }
+  ) => {
     const clock = new ManualClock();
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (i) => ({
@@ -157,7 +186,7 @@ describe("HydrationController: undeclared", () => {
       setTimer: clock.setTimer,
       cache: new HydrationCache(clock.now),
       viewer: high,
-      declaredToolClasses: policy.declaredToolClasses,
+      ...extra,
       ...(undeclared !== undefined && { undeclared }),
     });
     ctl.load(exp());
@@ -168,5 +197,33 @@ describe("HydrationController: undeclared", () => {
   it("allow loads the unlisted tool; deny never calls it, even for a cleared viewer", async () => {
     expect(await run()).toEqual(["tool.fresh", "tool.open", "tool.pay"]);
     expect(await run("deny")).toEqual(["tool.open", "tool.pay"]);
+  });
+  it("readPolicy: the controller and the serve surface agree given the SAME policy", async () => {
+    const same = { ...policy, undeclared: "deny" as const };
+    const loaded = await run(undefined, { readPolicy: same });
+    const served = names(
+      createServeSurface(same).handleInventory(exp(), { revisionOf, viewer: high })
+    );
+    expect(loaded).toEqual(served.map((h) => `tool.${h}`));
+    expect(loaded).toEqual(["tool.open", "tool.pay"]);
+    const lax = await run(undefined, { readPolicy: policy });
+    expect(lax).toEqual(
+      names(createServeSurface(policy).handleInventory(exp(), { revisionOf, viewer: high })).map(
+        (h) => `tool.${h}`
+      )
+    );
+  });
+  it("readPolicy joins the legacy options raise-only; deny with no table loads nothing", async () => {
+    expect(
+      await run("deny", { readPolicy: { declaredToolClasses: policy.declaredToolClasses } })
+    ).toEqual(["tool.open", "tool.pay"]);
+    // legacy table lists a new tool AFTER the bound deny: it cannot open it
+    expect(
+      await run(undefined, {
+        readPolicy: { ...policy, undeclared: "deny" },
+        declaredToolClasses: { "tool.fresh": "internal" },
+      })
+    ).toEqual(["tool.open", "tool.pay"]);
+    expect(await run("deny", {})).toEqual([]);
   });
 });

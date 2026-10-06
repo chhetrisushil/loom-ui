@@ -4,12 +4,14 @@ import {
   type Finding,
   MAX_TREE_DEPTH,
   type ProviderSpec,
+  type ReadPolicy,
   type SemanticCatalog,
   type Surface,
   type UndeclaredToolPolicy,
   type Viewer,
   experienceHandles,
   handleKinds,
+  mergeReadPolicy,
   treeDepth,
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
@@ -101,6 +103,12 @@ export interface ControllerOptions {
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
   /**
+   * The host's whole {@link ReadPolicy}, the SAME value `createServeSurface` takes, so one policy
+   * serves both. Bound first; the separate `declaredToolClasses` / `undeclared` options join it
+   * raise-only (`mergeReadPolicy`), so neither can lower the other.
+   */
+  readonly readPolicy?: ReadPolicy;
+  /**
    * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
    * experience itself says; `"deny"` = no viewer may read it (only with a table present).
    */
@@ -186,7 +194,15 @@ export class HydrationController {
   private streamable: ReadonlySet<string> = new Set();
   private bound: ReadonlySet<string> = new Set();
 
+  private readonly policy: ReadPolicy;
+
   constructor(private readonly opts: ControllerOptions) {
+    this.policy = mergeReadPolicy(opts.readPolicy, {
+      ...(opts.declaredToolClasses !== undefined && {
+        declaredToolClasses: opts.declaredToolClasses,
+      }),
+      ...(opts.undeclared !== undefined && { undeclared: opts.undeclared }),
+    });
     this.viewer = snapshotViewer(opts.viewer);
     opts.store.guardAppend((handle) => this.appendRefusal(handle));
     this.clock = opts.clock ?? Date.now;
@@ -319,7 +335,7 @@ export class HydrationController {
     this.sched.retain(
       new Set(
         partitionByViewer(
-          experienceHandles(next, this.opts.declaredToolClasses, this.opts.undeclared),
+          experienceHandles(next, this.policy.declaredToolClasses, this.policy.undeclared),
           this.viewer
         ).allowed.map((h) => h.handle)
       )
@@ -413,7 +429,7 @@ export class HydrationController {
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
     // Refused handles: their status says so (and nothing else), and no job exists for them.
     const { allowed, restricted, advisory } = partitionByViewer(
-      experienceHandles(exp, this.opts.declaredToolClasses, this.opts.undeclared),
+      experienceHandles(exp, this.policy.declaredToolClasses, this.policy.undeclared),
       this.viewer
     );
     this.bound = new Set(bound);
@@ -448,7 +464,7 @@ export class HydrationController {
     const missing: Array<{ handle: string; finding: Finding }> = [];
     // A restricted handle is not a job: it never reaches the scheduler, the cache or a provider.
     for (const use of partitionByViewer(
-      experienceHandles(exp, this.opts.declaredToolClasses, this.opts.undeclared),
+      experienceHandles(exp, this.policy.declaredToolClasses, this.policy.undeclared),
       this.viewer
     ).allowed) {
       if (isReservedHandle(use.handle)) {

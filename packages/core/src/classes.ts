@@ -64,7 +64,9 @@ export const UNDECLARED_TOOL_CLASS = "restricted" as DataClass;
  * What a read does with a tool the declared table does not list: `"allow"` (the default) reads it
  * as the experience's own classes say; `"deny"` (opt-in, only when a table is present) reads any
  * handle whose provider calls such a tool as `UNDECLARED_TOOL_CLASS`. Raise-only: `"deny"` bound
- * once cannot be undone by a per-call `"allow"` (`mergeReadPolicy`).
+ * once cannot be undone by a per-call `"allow"` (`mergeReadPolicy`), and it CLOSES the table's key
+ * set: a later tier may raise a listed tool but not list a new one. With no table, `"deny"` means an
+ * empty one — every tool-bound handle is unreadable.
  */
 export type UndeclaredToolPolicy = "allow" | "deny";
 
@@ -94,17 +96,27 @@ export function mergeReadPolicy(...policies: ReadonlyArray<ReadPolicy | undefine
   let projections: ProjectionCatalog | undefined;
   let hydrationProjectionId: string | undefined;
   let deny = false;
+  let table: Record<string, DataClass> | undefined;
   for (const p of policies) {
     if (p === undefined || p === null) continue;
     projections ??= p.projections;
     hydrationProjectionId ??= p.hydrationProjectionId;
+    if (p.declaredToolClasses !== undefined && p.declaredToolClasses !== null) {
+      table ??= Object.create(null) as Record<string, DataClass>;
+      // Once a tier has set "deny", the table's key set is CLOSED: a later tier may only RAISE a key
+      // already listed, never list a new one (that would move a tool from "undeclared, unreadable"
+      // to a readable class — a per-call value lowering what the host bound).
+      for (const [k, v] of Object.entries(p.declaredToolClasses)) {
+        if (deny && !Object.hasOwn(table, k)) continue;
+        table[k] = strictestClass(table[k], v) as DataClass;
+      }
+    }
     if (p.undeclared === "deny") deny = true;
   }
-  const declaredToolClasses = mergeDeclaredToolClasses(
-    ...policies.map((p) => p?.declaredToolClasses)
-  );
+  // Strict mode with no table at all is an EMPTY table: every tool-bound handle is undeclared.
+  if (deny) table ??= Object.create(null) as Record<string, DataClass>;
   return {
-    ...(declaredToolClasses !== undefined && { declaredToolClasses }),
+    ...(table !== undefined && { declaredToolClasses: table }),
     ...(projections !== undefined && { projections }),
     ...(hydrationProjectionId !== undefined && { hydrationProjectionId }),
     ...(deny && { undeclared: "deny" as const }),
@@ -117,7 +129,8 @@ function declaredClassOf(
   spec: ProviderSpec,
   undeclared: UndeclaredToolPolicy | undefined
 ): DataClass | undefined {
-  if (declared === undefined) return undefined;
+  // `deny` with no table is strict mode with an empty table: nothing is declared, so all is denied.
+  if (declared === undefined && undeclared !== "deny") return undefined;
   let c: DataClass | undefined;
   for (const k of toolsOf(spec)) {
     const d = own(declared, k);
