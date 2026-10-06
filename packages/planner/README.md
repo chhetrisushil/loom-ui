@@ -230,6 +230,31 @@ the probe's calls carry no `toolId`, so it cannot pass without observing a tool.
 - `isPlannerUsage(u)` — validate that a value has the `PlannerUsage` shape; exported for a
   caller's own checks, not called by `ReferencePlanner` itself.
 
+## Streaming a turn (U1)
+
+Optional and generic. A model MAY implement `stream(req, { signal }) → AsyncIterable<string>`; pass
+`{ onPartial, signal }` as the third argument of `compose`/`revise` and the reference planner
+streams (only when a listener AND a streaming model are both present; otherwise it is the
+whole-reply call, byte-for-byte as before).
+
+- **Partials are a live side channel, the decision is the final.** `ctx.decide` still records ONE
+  value: the plan built from the assembled reply, identical to the non-streaming result for the
+  same model output. A replay serves it with no model call and emits no partial. No loom change
+  is needed: the decider is an ordinary async function and `decide` records what it returns.
+- **Each partial is a whole pending op list** (the nodes the reply has completed so far, through
+  the same contract, materialisation, replay and `validateExperience` as the final; a partial that
+  would not stand as a final plan is not emitted). Fold them with core's `OpStream` (unsealed
+  working copy, never a lineage commit); a later partial supersedes the earlier; a retry starts
+  with an empty-ops reset. Partials carry no summary (U7): the summary and its `summaryClass` come
+  only with the final result.
+- **Bounded.** `NodeScanner` is a single forward pass over the stream (not a re-parse per chunk),
+  capped by reply size, node size and node count; past a cap you simply get no more partials and
+  the final still arrives. The assembled reply is capped (`MAX_STREAM_REPLY_CHARS`).
+- **Cancellation.** `signal` aborts the turn: it rejects with `AbortError` and records nothing,
+  and the signal is forwarded to `model.complete`/`model.stream`. A stream reports no token usage.
+- **Conformance.** `checkPlannerConformance` gains `streamProbe` (opt-in): partials arrive and
+  apply, final equals whole-reply, replay recalls nothing, a cancelled turn rejects unrecorded.
+
 ## Examples
 
 Composing and revising with the reference planner (illustrative — not a compiling snippet):

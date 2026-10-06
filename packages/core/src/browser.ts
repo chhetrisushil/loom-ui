@@ -57,3 +57,5 @@ export type {
   TimeSeriesValue,
 } from "./values";
 export type { Finding } from "./experience";
+export { MAX_CHUNK_TEXT, MAX_STREAM_TEXT, appendChunk } from "./streamText";
+export type { AppendResult, StreamedText, TextChunk } from "./streamText";

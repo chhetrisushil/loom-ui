@@ -17,6 +17,7 @@ import type {
   CapabilityRef,
   ComposeInput,
   DecideContext,
+  PlanPartial,
   PlanReport,
   PlanResult,
   Planner,
@@ -61,6 +62,26 @@ export interface DenialProbe {
   readonly decisions: () => number;
 }
 
+/**
+ * Opts the planner into the STREAMING contract (U1). The fixture's model must be able to stream
+ * and must produce, streamed, the SAME reply it produced whole for `compose` (a model that
+ * replies differently when streamed cannot be told from a planner that plans differently). Both
+ * contexts must be FRESH recording contexts. Omitting it means streaming is NOT checked.
+ *
+ * Checked: partials arrive (at least one), each replays on the genesis and passes validation, a
+ * partial carries no summary; the FINAL result equals the whole-reply result; a replay on the same
+ * context calls no model and emits no partial; a cancelled turn (already aborted, or aborted from
+ * inside the first partial) rejects and records nothing.
+ */
+export interface StreamProbe {
+  /** A fresh recording context for the streamed compose and its replay. */
+  readonly ctx: DecideContext;
+  /** A fresh recording context for the cancelled turns. */
+  readonly abortCtx: DecideContext;
+  /** How many decisions `abortCtx` has recorded; must stay 0. */
+  readonly abortDecisions: () => number;
+}
+
 export interface ConformanceFixture {
   readonly intent: ComposeInput["intent"];
   readonly catalog: ComposeInput["catalog"];
@@ -88,6 +109,8 @@ export interface ConformanceFixture {
    * it without a `scopeProbe` is `reach-unprobed` (a check with no input must not pass).
    */
   readonly checkReach?: boolean;
+  /** See {@link StreamProbe}. */
+  readonly streamProbe?: StreamProbe;
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
@@ -395,6 +418,11 @@ export async function checkPlannerConformance(
       )
     );
 
+  if (fx.streamProbe !== undefined)
+    findings.push(
+      ...(await streamingFindings(planner, composeInput, g, fx, fx.streamProbe, first))
+    );
+
   const base = seal(composed.value);
   const scopeBeforeRevise = probe?.calls().length ?? 0;
   const reviseAttempt = await safely("revise", () =>
@@ -496,4 +524,115 @@ export async function checkPlannerConformance(
   if (!identity.ok && fx.revision.expectRemoval !== true)
     findings.push(...identity.findings.map((f) => ({ ...f, code: "dropped-node" as const })));
   return findings;
+}
+
+/** The streaming contract (see {@link StreamProbe}). Never throws: a planner that throws is a finding. */
+async function streamingFindings(
+  planner: Planner,
+  composeInput: ComposeInput,
+  g: Experience,
+  fx: ConformanceFixture,
+  probe: StreamProbe,
+  whole: PlanResult
+): Promise<Finding[]> {
+  const out: Finding[] = [];
+  const surface = fx.surface ?? "web";
+  const partials: PlanPartial[] = [];
+  const streamed = await safely("compose (streamed)", () =>
+    planner.compose(composeInput, probe.ctx, { onPartial: (p) => partials.push(p) })
+  );
+  if (!streamed.ok) return [streamed.finding];
+  if (partials.length === 0)
+    out.push(
+      err(
+        "stream-no-partials",
+        "compose was given onPartial and a model that streams but emitted no partial"
+      )
+    );
+  partials.forEach((p, i) => {
+    if (Object.hasOwn(p, "summary"))
+      out.push(
+        err(
+          "stream-partial-summary",
+          `partial #${i} carries a summary; only the final result may (U7)`
+        )
+      );
+    const ops = p.ops;
+    if (!Array.isArray(ops) || ops.some((o) => !Operation.safeParse(o).success)) {
+      out.push(err("stream-partial-invalid", `partial #${i} is not a list of Operations`));
+      return;
+    }
+    const applied = replay(g, ops);
+    if (!applied.ok) {
+      out.push(
+        err("stream-partial-invalid", `partial #${i} does not apply: ${applied.finding.message}`)
+      );
+      return;
+    }
+    const bad = validateExperience(applied.value, fx.catalog, surface).findings.filter(
+      (f) => f.severity === "error"
+    );
+    if (bad.length > 0)
+      out.push(err("stream-partial-invalid", `partial #${i} fails validation: ${bad[0]?.code}`));
+  });
+  if (JSON.stringify(streamed.value.ops) !== JSON.stringify(whole.ops))
+    out.push(
+      err(
+        "stream-final-differs",
+        "the streamed compose returned different ops than the whole-reply compose for the same model output"
+      )
+    );
+  // Replay: the recorded final is served; no model call, no partial.
+  const calls = fx.modelCalls?.();
+  const again: PlanPartial[] = [];
+  const replayed = await safely("compose (streamed replay)", () =>
+    planner.compose(composeInput, probe.ctx, { onPartial: (p) => again.push(p) })
+  );
+  if (!replayed.ok) return [...out, replayed.finding];
+  if (again.length > 0 || (calls !== undefined && fx.modelCalls?.() !== calls))
+    out.push(
+      err(
+        "stream-replay-recalled",
+        "a replayed streamed compose called the model or emitted partials; a recorded decision is served whole"
+      )
+    );
+  // Cancellation: rejects, records nothing — whether aborted before the call or from a partial.
+  const pre = new AbortController();
+  pre.abort();
+  const cancelled: { label: string; run: () => Promise<PlanResult> }[] = [
+    {
+      label: "an already-aborted signal",
+      run: () => planner.compose(composeInput, probe.abortCtx, { signal: pre.signal }),
+    },
+  ];
+  if (partials.length > 0) {
+    const mid = new AbortController();
+    cancelled.push({
+      label: "an abort from inside the first partial",
+      run: () =>
+        planner.compose(composeInput, probe.abortCtx, {
+          signal: mid.signal,
+          onPartial: () => mid.abort(),
+        }),
+    });
+  }
+  for (const c of cancelled) {
+    const r = await safely(c.label, c.run);
+    // `safely` turns a rejection into a finding: a rejection IS the right outcome here.
+    if (r.ok)
+      out.push(
+        err(
+          "stream-abort-ignored",
+          `compose resolved with ${c.label}; a cancelled turn must reject`
+        )
+      );
+  }
+  if (probe.abortDecisions() !== 0)
+    out.push(
+      err(
+        "stream-abort-recorded",
+        "a cancelled turn recorded a decision, which would pin the cancellation as the plan"
+      )
+    );
+  return out;
 }

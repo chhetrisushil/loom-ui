@@ -1,6 +1,13 @@
 export { checkPlannerConformance } from "./conformance";
-export type { ConformanceFixture, DenialProbe } from "./conformance";
-export { DRAFT_ID, MAX_DRAFT_NODES, entryFor, parseModelJson, planSchema } from "./contract";
+export type { ConformanceFixture, DenialProbe, StreamProbe } from "./conformance";
+export {
+  DRAFT_ID,
+  MAX_DRAFT_NODES,
+  draftNodeSchema,
+  entryFor,
+  parseModelJson,
+  planSchema,
+} from "./contract";
 export type { DraftBinding, DraftNode, Parsed, PlanDraft } from "./contract";
 export { planDecisionId } from "./decision";
 export {
@@ -12,7 +19,15 @@ export {
   unsampledDrift,
 } from "./drift";
 export type { DriftContextEntry, DriftReviser } from "./drift";
-export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } from "./reference";
+export {
+  MAX_STREAM_REPLY_CHARS,
+  REFERENCE_POLICY,
+  REFERENCE_SOURCE,
+  ReferencePlanner,
+  scratchGenesis,
+} from "./reference";
+export { NodeScanner } from "./streamScan";
+export type { ScanLimits } from "./streamScan";
 export type { ReferencePlannerOptions } from "./reference";
 export { isControlPlaneError } from "./controlPlane";
 export { REACH_DECLARATION, declarePlannerReach, readPlannerReach } from "./reach";
@@ -54,8 +69,11 @@ export type {
   Planner,
   PlannerMessage,
   PlannerModel,
+  PlannerModelRequest,
   PlannerUsage,
+  PlanPartial,
   PlanReport,
   PlanResult,
+  PlanStreamOptions,
   ReviseInput,
 } from "./spi";
