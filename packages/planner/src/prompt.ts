@@ -70,9 +70,24 @@ export function describeCatalog(catalog: SemanticCatalog): string {
   return catalog.entries
     .map(
       (e) =>
-        `- ${e.name}@${e.version} — props: ${e.props.length ? e.props.join(", ") : "none"}; binding: ${e.binding}; surfaces: ${Object.keys(e.surfaces).join(", ")}${e.sensitivity === "model-may-set" ? "; sensitivity: model-may-set" : ""}`
+        `- ${e.name}@${e.version} — props: ${e.props.length ? e.props.join(", ") : "none"}; binding: ${e.binding}; surfaces: ${Object.keys(e.surfaces).join(", ")}${e.sensitivity === "model-may-set" ? "; sensitivity: model-may-set" : ""}${valueNotes(catalog, e)}`
     )
     .join("\n");
+}
+
+/** `; value (<kind>): <description>` for each of an entry's own kinds whose host contract describes itself. */
+function valueNotes(catalog: SemanticCatalog, e: SemanticCatalog["entries"][number]): string {
+  const contracts = catalog.valueContracts;
+  if (contracts === undefined) return "";
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  for (const res of Object.values(e.surfaces)) {
+    if (res === undefined || "degradeTo" in res || seen.has(res.kind)) continue;
+    seen.add(res.kind);
+    const d = Object.hasOwn(contracts, res.kind) ? contracts[res.kind]?.description : undefined;
+    if (d !== undefined) notes.push(`; value (${res.kind}): ${d}`);
+  }
+  return notes.join("");
 }
 
 /**

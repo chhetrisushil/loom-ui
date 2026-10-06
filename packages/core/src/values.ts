@@ -1,10 +1,25 @@
 import { z } from "zod";
 import type { Finding } from "./experience";
-import { FRAMEWORK_KINDS, tableColumnFormat, tableColumnLabel } from "./kindValues";
+import {
+  type ContractRegistry,
+  FRAMEWORK_KINDS,
+  type ValueContract,
+  hasKindContract,
+  isFrameworkContractKind,
+  tableColumnFormat,
+  tableColumnLabel,
+} from "./kindValues";
 
 // The zod-free vocabulary lives in kindValues.ts (a browser bundle imports it without zod);
 // re-exported here so this module keeps its public surface.
-export { FRAMEWORK_KINDS, tableColumnFormat, tableColumnLabel };
+export {
+  FRAMEWORK_KINDS,
+  hasKindContract,
+  isFrameworkContractKind,
+  tableColumnFormat,
+  tableColumnLabel,
+};
+export type { ContractRegistry, ValueContract };
 
 // ── Per-kind value contracts ──────────────────────────────────────────────────
 // A compiled widget binds to `values.<handle>`; the kind says what shape that value must have.
@@ -148,21 +163,30 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   SandboxView: z.unknown(),
 };
 
-export function kindValueContract(kind: string): z.ZodType | undefined {
-  return Object.hasOwn(kindValueContracts, kind) ? kindValueContracts[kind] : undefined;
+export function kindValueContract(
+  kind: string,
+  contracts?: ContractRegistry
+): ValueContract | undefined {
+  if (Object.hasOwn(kindValueContracts, kind)) return kindValueContracts[kind];
+  return contracts !== undefined && Object.hasOwn(contracts, kind) ? contracts[kind] : undefined;
 }
 
-/** `undefined` is "not hydrated yet" and passes; an unknown kind has no contract and passes. */
+/**
+ * `undefined` is "not hydrated yet" and passes; an UNCONTRACTED kind (neither the framework's nor
+ * in the host's `contracts`) passes too — callers that must not be vacuous ask `hasKindContract`.
+ * The framework's contract wins for a framework kind: `contracts` only ever adds kinds.
+ */
 export function checkKindValue(
   kind: string,
-  value: unknown
+  value: unknown,
+  contracts?: ContractRegistry
 ): { ok: true } | { ok: false; finding: Finding } {
-  const schema = kindValueContract(kind);
+  const schema = kindValueContract(kind, contracts);
   if (schema === undefined || value === undefined) return { ok: true };
   const r = schema.safeParse(value);
   if (r.success) return { ok: true };
   const issue = r.error.issues[0];
-  const path = issue?.path.join(".") ?? "";
+  const path = issue?.path.map(String).join(".") ?? "";
   return {
     ok: false,
     finding: {

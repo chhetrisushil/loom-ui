@@ -34,10 +34,12 @@ export type { DeltaDirection } from "./format";
 export {
   FRAMEWORK_KINDS,
   checkKindValue,
+  hasKindContract,
   isLocalizedText,
   tableColumnFormat,
   tableColumnLabel,
 } from "./kindValues";
+export type { ContractRegistry, ValueContract } from "./kindValues";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,

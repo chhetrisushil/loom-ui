@@ -1,4 +1,4 @@
-import { checkKindValue } from "@loom-ui/core";
+import { type ContractRegistry, checkKindValue } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, type HydrationStore } from "@loom-ui/hydration/client";
 import type { Blueprint, RendererRegistry } from "@loom/blueprint-runtime";
 import {
@@ -17,12 +17,22 @@ import { type TerminalRegistryOptions, terminalRegistry } from "./registry";
 // `check` seam loom leaves open between `error` and `stale`.
 
 /** The framework's per-kind value contract, in loom's `check` seam (between `error` and `stale`). */
-export const kindValueCheck: WidgetValueCheck = (widget, value) => {
-  const c = checkKindValue(widget.kind, value);
-  return c.ok ? undefined : { code: c.finding.code, message: c.finding.message };
-};
+export const kindValueCheck: WidgetValueCheck = kindValueCheckFor();
+
+/**
+ * {@link kindValueCheck} that also checks the host's own kinds against `contracts` (a catalogue's
+ * `valueContracts`). The framework's contract wins for a framework kind. Absent = framework only.
+ */
+export function kindValueCheckFor(contracts?: ContractRegistry): WidgetValueCheck {
+  return (widget, value) => {
+    const c = checkKindValue(widget.kind, value, contracts);
+    return c.ok ? undefined : { code: c.finding.code, message: c.finding.message };
+  };
+}
 
 export interface RenderExperienceOptions extends TerminalRegistryOptions {
+  /** The catalogue's `valueContracts`: bound values of the host's own kinds are checked against them. */
+  readonly contracts?: ContractRegistry;
   /**
    * Overrides the registry. Passing it together with `chrome` throws — `chrome` only configures the
    * default registry; build yours with `terminalRegistry({ chrome })` instead.
@@ -76,7 +86,7 @@ export function renderExperience(
   }
   return renderBlueprintToString(blueprint, stateMap, {
     registry: opts.registry ?? terminalRegistry(opts),
-    check: kindValueCheck,
+    check: opts.contracts === undefined ? kindValueCheck : kindValueCheckFor(opts.contracts),
   });
 }
 

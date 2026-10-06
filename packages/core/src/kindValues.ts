@@ -409,17 +409,68 @@ export function checkKindValueIssues(kind: string, value: unknown): Out {
 }
 
 /**
+ * What a HOST supplies for a kind of its own: anything with a zod-shaped `safeParse` (a zod schema
+ * satisfies it as-is; so does a hand-written checker, which is how a browser bundle avoids zod).
+ * Structural on purpose — this module is imported without zod.
+ */
+export interface ValueContract {
+  /**
+   * One line, in the host's own words, of what a bound value looks like. Optional; a planner's
+   * catalogue description shows it so a model can target the kind (`describeCatalog`). Trusted
+   * host text, like a prop name — never put tool- or user-authored content here.
+   */
+  readonly description?: string | undefined;
+  safeParse(value: unknown):
+    | { readonly success: true }
+    | {
+        readonly success: false;
+        readonly error: {
+          readonly issues: readonly {
+            readonly path: readonly (string | number | symbol)[];
+            readonly message: string;
+          }[];
+        };
+      };
+}
+
+/** A host's value contracts, by widget kind. Composed UNDER the framework's: see {@link hasKindContract}. */
+export type ContractRegistry = Readonly<Record<string, ValueContract>>;
+
+/** True iff `kind` is one the framework itself contracts (the framework's contracts cannot be overridden). */
+export const isFrameworkContractKind = (kind: string): boolean => Object.hasOwn(CONTRACTS, kind);
+
+/**
+ * Whether `kind` has a value contract: a framework one, or the host's in `contracts`. A kind with
+ * neither is UNCONTRACTED — `checkKindValue` passes it, so a check that must not be vacuous
+ * (`outputCheck: "contract"`) asks this first and refuses.
+ */
+export function hasKindContract(kind: string, contracts?: ContractRegistry): boolean {
+  return (
+    Object.hasOwn(CONTRACTS, kind) ||
+    (contracts !== undefined && Object.hasOwn(contracts, kind) && contracts[kind] !== undefined)
+  );
+}
+
+/**
  * `@loom-ui/core`'s `checkKindValue`, without zod: `undefined` is "not hydrated yet" and passes,
- * an unknown kind has no contract and passes, and a failure carries the same finding (code and
- * message) the zod-backed check produces — pinned by `kindValues.test.ts`.
+ * an uncontracted kind (neither the framework's nor in the host's `contracts`) passes here — see
+ * {@link hasKindContract} for the callers that must not — and a failure carries the same finding
+ * (code and message) the zod-backed check produces — pinned by `kindValues.test.ts`. The
+ * framework's contract wins for a framework kind; `contracts` only ever ADDS kinds.
  */
 export function checkKindValue(
   kind: string,
-  value: unknown
+  value: unknown,
+  contracts?: ContractRegistry
 ): { ok: true } | { ok: false; finding: Finding } {
-  const issue = checkKindValueIssues(kind, value)[0];
+  let issue: { path: readonly (string | number | symbol)[]; message: string } | undefined;
+  if (Object.hasOwn(CONTRACTS, kind)) issue = checkKindValueIssues(kind, value)[0];
+  else if (contracts !== undefined && Object.hasOwn(contracts, kind) && value !== undefined) {
+    const r = (contracts[kind] as ValueContract).safeParse(value);
+    if (!r.success) issue = r.error.issues[0] ?? { path: [], message: "invalid" };
+  }
   if (issue === undefined) return { ok: true };
-  const path = issue.path.join(".");
+  const path = issue.path.map(String).join(".");
   return {
     ok: false,
     finding: {

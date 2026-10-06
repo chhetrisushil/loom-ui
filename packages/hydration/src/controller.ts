@@ -413,6 +413,9 @@ export class HydrationController {
       now: pass.now,
       params: job.params,
       ...(job.kinds !== undefined && { kinds: job.kinds }),
+      ...(this.opts.outputKinds?.catalog.valueContracts !== undefined && {
+        contracts: this.opts.outputKinds.catalog.valueContracts,
+      }),
       ...(this.opts.principal?.chain && { principal: this.opts.principal.chain }),
       ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
       ...(this.opts.inputDrift !== undefined && { inputDrift: this.opts.inputDrift }),

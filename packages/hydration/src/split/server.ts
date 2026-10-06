@@ -193,7 +193,7 @@ const FIXED_CODES: ReadonlySet<string> = new Set([
   "output-shape-unhashable",
   "output-shape-unpinned",
   "output-contract-drift",
-  "output-contract-unchecked",
+  "output-contract-missing",
   "output-contract-unbound",
   "param-not-overridable",
   "param-templated",
@@ -243,8 +243,8 @@ function publicText(code: string, severity: Finding["severity"]): string {
     case "output-contract-drift":
       return "the output no longer matches what it declares; waiting for a repair";
     case "output-shape-unpinned":
-    case "output-contract-unchecked":
       return "the output is served unchecked";
+    case "output-contract-missing":
     case "output-contract-unbound":
       return "the output cannot be checked";
     case "provider-kind-unregistered":
@@ -479,6 +479,9 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     ...(opts.inputDrift !== undefined && { inputDrift: opts.inputDrift }),
     ...(opts.reshapers !== undefined && { reshapers: opts.reshapers }),
     ...(opts.providers !== undefined && { providers: opts.providers }),
+    ...(outputKinds?.catalog.valueContracts !== undefined && {
+      contracts: outputKinds.catalog.valueContracts,
+    }),
   };
   return {
     exec,

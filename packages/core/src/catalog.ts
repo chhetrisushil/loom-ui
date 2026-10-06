@@ -1,4 +1,5 @@
 import type { Experience, Finding, VocabularyFloor } from "./experience";
+import { type ContractRegistry, hasKindContract, isFrameworkContractKind } from "./kindValues";
 import {
   type ContainerNode,
   type ExperienceNode,
@@ -19,7 +20,21 @@ import {
 // per modality, not per renderer — React and Lit both register `MetricCard`, so one `web`
 // compile serves both. The catalogue is extensible at build time and CLOSED at runtime.
 
-export type Surface = "web" | "terminal" | "chat";
+/**
+ * A modality a catalogue resolves for: an OPEN vocabulary — any non-empty name an app's catalogue
+ * keys `SemanticEntry.surfaces` by (`"voice"`, `"native"`, `"a2ui"`…). The framework neither
+ * enumerates nor interprets it; it is only the key `resolveSurface` looks a resolution up by, and
+ * the resolved widget kinds are what a renderer for that modality must draw. See
+ * {@link WELL_KNOWN_SURFACES} for the two this repository ships renderers for.
+ *
+ * `"chat"` used to be in a closed union here although no kind or renderer ever drew it; it is not a
+ * well-known name until the chat vocabulary (U8) ships one, so today it is simply an app-defined
+ * surface like any other.
+ */
+export type Surface = string;
+
+/** The surfaces with a first-party renderer: `web` (renderer-lit) and `terminal`. Documentation, not a gate. */
+export const WELL_KNOWN_SURFACES = ["web", "terminal"] as const;
 
 /** A loom widget kind plus, for kinds outside loom's builtinCatalog, the contract loom will check against (ADR 0088 D2: both fields, no defaults). */
 export interface KindContract {
@@ -53,6 +68,15 @@ export interface SemanticEntry {
 export interface SemanticCatalog {
   readonly id: string;
   readonly entries: readonly SemanticEntry[];
+  /**
+   * Value contracts for the widget kinds THIS catalogue introduces (kinds outside the framework's
+   * own), by kind: what a bound value must look like, checked wherever a value is checked
+   * (`outputCheck: "contract"` hydration, renderers given the registry). Composed UNDER the
+   * framework's contracts — a framework kind (`MetricCard`, `Table`…) keeps its own, and an entry
+   * here for one is a `contract-overrides-framework` error (the framework's still wins). A kind
+   * with no contract anywhere is uncontracted, which `"contract"` mode REFUSES rather than passes.
+   */
+  readonly valueContracts?: ContractRegistry;
 }
 
 export function defineSemanticCatalog(catalog: SemanticCatalog): SemanticCatalog {
@@ -230,7 +254,25 @@ export function validateExperience(
     checkSemantic(n, exp, catalog, surface, findings);
   });
   findings.push(...checkFloor(exp, exp.vocabularyFloor));
+  findings.push(...catalogContractFindings(catalog));
   return { ok: findings.every((f) => f.severity !== "error"), findings, nodes };
+}
+
+/**
+ * An app's `valueContracts` may add kinds but never redefine a framework one: each entry naming a
+ * framework kind is an error (the framework's contract is the one enforced regardless).
+ */
+export function catalogContractFindings(catalog: SemanticCatalog): Finding[] {
+  if (catalog.valueContracts === undefined) return [];
+  return Object.keys(catalog.valueContracts)
+    .filter(isFrameworkContractKind)
+    .sort()
+    .map((kind) =>
+      finding(
+        "contract-overrides-framework",
+        `catalogue "${catalog.id}" declares a value contract for "${kind}", a framework kind — the framework's contract is enforced and this one is ignored`
+      )
+    );
 }
 
 /**
@@ -382,4 +424,20 @@ function checkSemantic(
     );
   const r = resolveSurface(catalog, n.type, n.typeVersion, surface, n.id);
   if (!r.ok && r.finding.code !== "unknown-type") findings.push(r.finding);
+  // `outputCheck: "contract"` checks the handle's value against its bound kinds' contracts; a kind
+  // with none would pass every value, so the load refuses at run time — reported here, ahead of it.
+  if (
+    r.ok &&
+    n.binding !== undefined &&
+    Object.hasOwn(exp.providers, n.binding.handle) &&
+    exp.providers[n.binding.handle]?.outputCheck === "contract" &&
+    !hasKindContract(r.kind, catalog.valueContracts)
+  )
+    findings.push(
+      finding(
+        "output-contract-uncontracted",
+        `"${n.id}" feeds kind "${r.kind}" on "${surface}", which has no value contract, from provider "${n.binding.handle}" checked by contract — declare one in the catalogue's valueContracts`,
+        n.id
+      )
+    );
 }
