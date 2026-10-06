@@ -14,7 +14,7 @@ import { outputShapeHashOf } from "@loom-ui/hydration";
 import { tainted } from "@loom/classify";
 import { canonicalJson } from "@loom/core";
 import { describe, expect, it } from "vitest";
-import type { PlanDraft } from "./contract";
+import type { DraftNode, PlanDraft } from "./contract";
 import {
   buildProviderSpec,
   danglingStepReference,
@@ -323,8 +323,11 @@ describe("materialize — compose", () => {
     const classified: PlanDraft = {
       summary: "s",
       nodes: [
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "sensitive" } },
-        draft.nodes[0]!,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "sensitive" },
+        },
+        draft.nodes[0] as DraftNode,
       ],
     };
     const { ops, findings } = materialize(classified, base(), planningCatalog, capabilitiesFixture);
@@ -363,8 +366,8 @@ describe("materialize — revise (diff against the base)", () => {
     const revised: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!, // untouched
-        { ...draft.nodes[1]!, label: "Top 10 SKUs", props: { columns: ["sku"] } }, // label + props
+        draft.nodes[0] as DraftNode, // untouched
+        { ...(draft.nodes[1] as DraftNode), label: "Top 10 SKUs", props: { columns: ["sku"] } }, // label + props
         // "note" omitted → removed
         { id: "status", type: "Status", label: "Pipeline", span: 4, props: {} }, // new, optional binding omitted
       ],
@@ -390,7 +393,7 @@ describe("materialize — revise (diff against the base)", () => {
       summary: "s",
       nodes: [
         {
-          ...draft.nodes[0]!,
+          ...(draft.nodes[0] as DraftNode),
           binding: {
             capability: "orders_summary",
             arguments: { window: "30d" },
@@ -398,8 +401,8 @@ describe("materialize — revise (diff against the base)", () => {
             priority: "P0",
           },
         },
-        draft.nodes[1]!,
-        draft.nodes[2]!,
+        draft.nodes[1] as DraftNode,
+        draft.nodes[2] as DraftNode,
       ],
     };
     const { ops } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
@@ -412,9 +415,12 @@ describe("materialize — revise (diff against the base)", () => {
     const revised: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!,
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "sensitive" } },
-        draft.nodes[2]!,
+        draft.nodes[0] as DraftNode,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "sensitive" },
+        },
+        draft.nodes[2] as DraftNode,
       ],
     };
     const { ops, findings } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
@@ -440,9 +446,12 @@ describe("materialize — revise (diff against the base)", () => {
     const classified: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!,
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "sensitive" } },
-        draft.nodes[2]!,
+        draft.nodes[0] as DraftNode,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "sensitive" },
+        },
+        draft.nodes[2] as DraftNode,
       ],
     };
     const r = replay(
@@ -469,9 +478,12 @@ describe("materialize — revise (diff against the base)", () => {
     const callerClassified: PlanDraft = {
       summary: "s",
       nodes: [
-        { ...draft.nodes[0]!, binding: { ...draft.nodes[0]!.binding!, sensitivity: "sensitive" } },
-        draft.nodes[1]!,
-        draft.nodes[2]!,
+        {
+          ...(draft.nodes[0] as DraftNode),
+          binding: { ...(draft.nodes[0] as DraftNode).binding!, sensitivity: "sensitive" },
+        },
+        draft.nodes[1] as DraftNode,
+        draft.nodes[2] as DraftNode,
       ],
     };
     const r = replay(
@@ -487,9 +499,12 @@ describe("materialize — revise (diff against the base)", () => {
     const secretDraft: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!,
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "secret" } },
-        draft.nodes[2]!,
+        draft.nodes[0] as DraftNode,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "secret" },
+        },
+        draft.nodes[2] as DraftNode,
       ],
     };
     const r = replay(
@@ -501,9 +516,12 @@ describe("materialize — revise (diff against the base)", () => {
     const lowered: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!,
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "internal" } },
-        draft.nodes[2]!,
+        draft.nodes[0] as DraftNode,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "internal" },
+        },
+        draft.nodes[2] as DraftNode,
       ],
     };
     const { ops, findings } = materialize(lowered, exp, planningCatalog, capabilitiesFixture);
@@ -528,9 +546,12 @@ describe("materialize — revise (diff against the base)", () => {
     const internalDraft: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!,
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "internal" } },
-        draft.nodes[2]!,
+        draft.nodes[0] as DraftNode,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "internal" },
+        },
+        draft.nodes[2] as DraftNode,
       ],
     };
     const r = replay(
@@ -542,9 +563,12 @@ describe("materialize — revise (diff against the base)", () => {
     const raised: PlanDraft = {
       summary: "s",
       nodes: [
-        draft.nodes[0]!,
-        { ...draft.nodes[1]!, binding: { ...draft.nodes[1]!.binding!, sensitivity: "secret" } },
-        draft.nodes[2]!,
+        draft.nodes[0] as DraftNode,
+        {
+          ...(draft.nodes[1] as DraftNode),
+          binding: { ...(draft.nodes[1] as DraftNode).binding!, sensitivity: "secret" },
+        },
+        draft.nodes[2] as DraftNode,
       ],
     };
     const { ops, findings } = materialize(raised, exp, planningCatalog, capabilitiesFixture);
@@ -832,7 +856,10 @@ describe("materialize — revise (diff against the base)", () => {
   });
   it("removing the only binder of a handle retires its provider, after the removeNode", () => {
     const exp = composed();
-    const revised: PlanDraft = { summary: "s", nodes: [draft.nodes[1]!, draft.nodes[2]!] };
+    const revised: PlanDraft = {
+      summary: "s",
+      nodes: [draft.nodes[1] as DraftNode, draft.nodes[2] as DraftNode],
+    };
     const { ops } = materialize(revised, exp, planningCatalog, capabilitiesFixture);
     expect(ops).toEqual([
       { type: "removeNode", nodeId: "orders" },
@@ -847,7 +874,7 @@ describe("materialize — revise (diff against the base)", () => {
   it("a handle another node still binds is kept", () => {
     const shared: PlanDraft = {
       summary: "s",
-      nodes: [draft.nodes[0]!, { ...draft.nodes[0]!, id: "orders_copy" }],
+      nodes: [draft.nodes[0] as DraftNode, { ...(draft.nodes[0] as DraftNode), id: "orders_copy" }],
     };
     const r0 = replay(
       base(),
@@ -855,7 +882,7 @@ describe("materialize — revise (diff against the base)", () => {
     );
     if (!r0.ok) throw new Error(r0.finding.message);
     const { ops } = materialize(
-      { summary: "s", nodes: [draft.nodes[0]!] },
+      { summary: "s", nodes: [draft.nodes[0] as DraftNode] },
       r0.value,
       planningCatalog,
       capabilitiesFixture

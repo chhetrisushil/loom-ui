@@ -4,6 +4,7 @@ import {
   type Intent,
   type Operation,
   boundSummary,
+  containerRoleFindings,
   experienceClassFloor,
   genesis,
   loomCatalogFor,
@@ -13,7 +14,13 @@ import {
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
 import { declaredToolClassesFrom } from "./capabilityClass";
-import { type DraftNode, draftNodeSchema, parseModelJson, planSchema } from "./contract";
+import {
+  type DraftEntry,
+  draftEntrySchema,
+  draftStructureIssues,
+  parseModelJson,
+  planSchema,
+} from "./contract";
 import { isControlPlaneError } from "./controlPlane";
 import { planDecisionId } from "./decision";
 import { materialize } from "./materialize";
@@ -182,6 +189,7 @@ export class ReferencePlanner implements Planner {
       capabilities: input.capabilities,
       ...(input.context !== undefined && { context: input.context }),
       ...(input.surface !== undefined && { surface: input.surface }),
+      ...(input.containers !== undefined && { containers: input.containers }),
       ...(input.observed !== undefined && { observedHandles: Object.keys(input.observed) }),
     });
     if (input.experience.versionHash === "") {
@@ -236,6 +244,7 @@ export class ReferencePlanner implements Planner {
       catalog: ComposeInput["catalog"];
       capabilities: ComposeInput["capabilities"];
       surface?: ComposeInput["surface"];
+      containers?: ComposeInput["containers"];
       contextClass?: ComposeInput["contextClass"];
       /** Revise only: per-handle observed samples — each rebuilt provider pins from its own call's. */
       observed?: ReviseInput["observed"];
@@ -291,7 +300,8 @@ export class ReferencePlanner implements Planner {
         report: this.report(decisionId, [{ parsed: false, findings: [f] }], false),
       };
     }
-    const schema = planSchema(input.catalog, input.capabilities);
+    const roles = input.containers ?? [];
+    const schema = planSchema(input.catalog, input.capabilities, roles);
     const attempts: AttemptTrace[] = [];
     let previous: PreviousError | undefined;
     let lastFindings: Finding[] = [];
@@ -312,7 +322,9 @@ export class ReferencePlanner implements Planner {
           ];
     // Partials only when someone listens; the model call is ONE governed call either way.
     const nodeSchema =
-      onPartial === undefined ? undefined : draftNodeSchema(input.catalog, input.capabilities);
+      onPartial === undefined
+        ? undefined
+        : draftEntrySchema(input.catalog, input.capabilities, roles);
     const emit = (p: PlanPartial) => {
       try {
         onPartial?.(p);
@@ -331,7 +343,7 @@ export class ReferencePlanner implements Planner {
         if (nodeSchema !== undefined) {
           if (attempt > 0) emit({ attempt, ops: [], findings: [], nodes: 0 });
           const scanner = new NodeScanner();
-          let accepted: DraftNode[] = [];
+          let accepted: DraftEntry[] = [];
           let seen = new Set<string>();
           onDelta = (d) => {
             if (signal?.aborted || malformed !== undefined) return;
@@ -365,8 +377,12 @@ export class ReferencePlanner implements Planner {
               // An invalid or repeated node is not shown; the FINAL parse of the whole reply
               // reports it (and drives the retry), exactly as without partials.
               if (!n.success || seen.has(n.data.id)) continue;
+              // A node whose parent has not streamed yet (or that breaks a nesting bound) is not
+              // shown; the FINAL parse of the whole reply names it.
+              const grown = [...accepted, n.data];
+              if (draftStructureIssues(grown, roles, { partial: true }).length > 0) continue;
               seen.add(n.data.id);
-              accepted.push(n.data);
+              accepted = grown;
               grew = true;
             }
             if (!grew) return;
@@ -463,7 +479,15 @@ export class ReferencePlanner implements Planner {
       const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
       if (!applied.ok) findings.push(applied.finding);
-      else findings.push(...validateExperience(applied.value, input.catalog, surface).findings);
+      else {
+        findings.push(...validateExperience(applied.value, input.catalog, surface).findings);
+        // Containers whose role needs a shape (a tab set's panels): judged on the BUILT tree, so a
+        // revise that leaves a planner container in a shape its role cannot draw is refused too.
+        if (roles.length > 0)
+          findings.push(
+            ...containerRoleFindings(applied.value.root, roles, { ownedBy: "planner" })
+          );
+      }
       attempts.push(trace({ parsed: true, findings }));
       lastFindings = findings;
       if (errorsOf(findings).length === 0) {

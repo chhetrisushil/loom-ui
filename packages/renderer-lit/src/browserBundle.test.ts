@@ -26,6 +26,7 @@ const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist"));
 const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "action.js",
   "browser.js",
+  "containerRoles.js",
   "format.js",
   "kindValues.js",
   "paths.js",
