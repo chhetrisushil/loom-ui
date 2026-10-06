@@ -951,3 +951,24 @@ describe("sealRef fails closed on an over-long address", () => {
     expect(a.length).toBe(b.length);
   });
 });
+
+describe("record refuses an address the seal could not hide", () => {
+  it("a content store returning an over-long address → seen-address-invalid, nothing appended", async () => {
+    const r = await rig();
+    const before = (await r.raw("v1")).length;
+    const realPut = r.content.put.bind(r.content);
+    r.content.put = async (bytes) => {
+      await realPut(bytes);
+      return { __loomContent: `sha256:${"a".repeat(MAX_SEALED_ADDRESS_CHARS)}` };
+    };
+    r.clock.t += 1000;
+    const res = await r.log.record({
+      experienceId: "e",
+      viewerId: "v1",
+      snapshot: r.snap("x"),
+      viewer: {},
+    });
+    expect(res).toMatchObject({ ok: false, refusal: { code: "seen-address-invalid" } });
+    expect((await r.raw("v1")).length).toBe(before);
+  });
+});
