@@ -1,4 +1,10 @@
-import { DELTA_FORMAT, checkKindValue, deltaDirection, unitSuffix } from "@loom-ui/core/browser";
+import {
+  type ContractRegistry,
+  DELTA_FORMAT,
+  checkKindValue,
+  deltaDirection,
+  unitSuffix,
+} from "@loom-ui/core/browser";
 import type {
   BarChartValue,
   KpiValue,
@@ -20,10 +26,11 @@ export function describeValue(
   kind: string,
   value: unknown,
   title: string,
-  props?: Record<string, unknown>
+  props?: Record<string, unknown>,
+  contracts?: ContractRegistry
 ): string {
   if (value === undefined) return loadingStateText(title);
-  if (!checkKindValue(kind, value).ok) return errorStateText(title);
+  if (!checkKindValue(kind, value, contracts).ok) return errorStateText(title);
   const p = props as { format?: SemanticFormat; unit?: string } | undefined;
   switch (kind) {
     case "MetricCard": {

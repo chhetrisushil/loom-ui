@@ -223,3 +223,19 @@ describe("renderExperience — layout roles (Blueprint IR 2.2.0, loom ADR 0099 D
       expect(renderExperience(board(role), store()), role).toBe(plain);
   });
 });
+
+describe("review round 1: a throwing host contract cannot break a render", () => {
+  it("kindValueCheckFor reports a fixed finding instead of throwing", () => {
+    const contracts = {
+      SpokenGauge: {
+        safeParse: (): never => {
+          throw new Error("boom secret");
+        },
+      },
+    };
+    const host = customWidget$({ id: "g", kind: "SpokenGauge", title: "g", binding: bound("h") });
+    const c = kindValueCheckFor(contracts)(host, 3);
+    expect(c?.code).toBe("value-contract");
+    expect(c?.message).not.toContain("secret");
+  });
+});

@@ -1,4 +1,4 @@
-import { checkKindValue } from "@loom-ui/core/browser";
+import { type ContractRegistry, checkKindValue, hasKindContract } from "@loom-ui/core/browser";
 import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
@@ -61,6 +61,12 @@ export abstract class LuWidget extends LitElement {
   @property({ attribute: false }) value: unknown = undefined;
   @property({ attribute: false }) status?: BindingStatus;
   @property({ attribute: false }) onAction?: (a: WidgetAction) => void;
+  /**
+   * The host's value contracts (a catalogue's `valueContracts`) for kinds of its own. A widget of
+   * a host kind with no contract here still renders, but marked `data-unchecked` — never as if it
+   * had been checked.
+   */
+  @property({ attribute: false }) contracts?: ContractRegistry;
   /** Who draws the title — see {@link TitleChrome}. Default `"widget"`. */
   @property({ reflect: true }) chrome: TitleChrome = "widget";
 
@@ -119,6 +125,7 @@ export abstract class LuWidget extends LitElement {
   private verdictCache?: {
     value: unknown;
     status: BindingStatus | undefined;
+    contracts: ContractRegistry | undefined;
     verdict: WidgetVerdict;
   };
 
@@ -136,10 +143,20 @@ export abstract class LuWidget extends LitElement {
 
   protected state(): WidgetVerdict {
     const cached = this.verdictCache;
-    if (cached !== undefined && cached.value === this.value && cached.status === this.status)
+    if (
+      cached !== undefined &&
+      cached.value === this.value &&
+      cached.status === this.status &&
+      cached.contracts === this.contracts
+    )
       return cached.verdict;
     const verdict = this.computeVerdict();
-    this.verdictCache = { value: this.value, status: this.status, verdict };
+    this.verdictCache = {
+      value: this.value,
+      status: this.status,
+      contracts: this.contracts,
+      verdict,
+    };
     return verdict;
   }
 
@@ -147,7 +164,7 @@ export abstract class LuWidget extends LitElement {
     const status = this.status;
     if (status?.state === "error") return withFinding("error", status.finding?.message);
     if (status?.state === "empty") return withFinding("empty", status.finding?.message);
-    const check = checkKindValue(this.kind, this.value);
+    const check = checkKindValue(this.kind, this.value, this.contracts);
     if (!check.ok) return { state: "error", finding: check.finding.message };
     if (status?.state === "stale") return withFinding("stale", status.finding?.message);
     if (status?.state === "pending" && this.value !== undefined)
@@ -170,7 +187,7 @@ export abstract class LuWidget extends LitElement {
     if (s.state === "error") return errorStateText(this.title_);
     if (s.state === "stale") return staleStateText(this.title_);
     if (s.state === "empty") return `${this.title_}: ${emptyStateText()}`;
-    return describeValue(this.kind, this.value, this.title_, this.widget?.props);
+    return describeValue(this.kind, this.value, this.title_, this.widget?.props, this.contracts);
   }
 
   render(): TemplateResult | typeof nothing {
@@ -212,7 +229,8 @@ export abstract class LuWidget extends LitElement {
         <span class="stale-marker">~</span> ${this.titled(s.finding ?? "stale")} — no value
       </div>`;
     const marker = s.state === "stale" ? "~" : s.state === "pending" ? "⋯" : undefined;
-    return html`<div role="group" aria-label=${this.label()} data-state=${s.state}>
+    const unchecked = !hasKindContract(this.kind, this.contracts);
+    return html`<div role="group" aria-label=${this.label()} data-state=${s.state} ?data-unchecked=${unchecked}>
       ${
         marker !== undefined
           ? html`<span class="${s.state}-marker" title=${s.finding ?? ""}>${marker}</span>`

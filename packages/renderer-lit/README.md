@@ -251,7 +251,12 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 - **Value contracts are enforced, not assumed.** The shared `LuWidget` base every bound widget
   extends checks its value with `@loom-ui/core`'s `checkKindValue` before drawing it and shows a
   visible error state on a mismatch — the built-in kinds (`LuMetricCard`, `LuStatusBadge`,
-  `LuDataTable`, …) get this as much as the framework kinds, not only the latter.
+  `LuDataTable`, …) get this as much as the framework kinds, not only the latter. A host kind (your own Lit element extending `LuWidget`) is checked against
+  `el.contracts` — `createLitRegistry({ contracts })` / `elementRenderer(tag, { contracts })` set
+  it from the catalogue's `valueContracts`; with no contract for its kind it still renders but the
+  state wrapper carries `data-unchecked`, never silently as if checked. (The terminal renderer's
+  own widgets are all framework kinds, whose contracts a host cannot change; its `renderExperience`
+  `contracts` option feeds loom's check for host kinds.)
 
 ## See also
 

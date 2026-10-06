@@ -35,7 +35,11 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   (an OPEN string — `"web"` and `"terminal"` have first-party renderers, any other name is the
   host's own modality) resolves it: to a loom widget kind, or a degrade to another entry. The
   catalogue's optional `valueContracts` give the host's own kinds a value contract (composed under
-  the framework's, which a host cannot override).
+  the framework's, which a host cannot override). A host `ValueContract` is untrusted code: a throw
+  or malformed return is a fixed-text `value-contract` finding (never the exception), an echoed
+  issue message is capped at 200 characters with control characters stripped and MUST be
+  value-free, and the host owns its contract's cost. An optional `version` is folded into the
+  hydration cache key; a contract without one needs `HydrationCache.invalidate()` after a change.
 - **Operations.** An `Operation` is one of `insertNode`, `removeNode`, `moveNode`, `setProps`,
   `setLabel`, `setTitle`, `setRole`, `setPlacement`, `bindProvider`, `declassifyHandle`,
   `remapProvider`, `removeProvider`, `prompt`. `apply`/`replay` are deterministic and never throw on bad input —

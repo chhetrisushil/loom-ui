@@ -1,4 +1,4 @@
-import type { ProviderSpec } from "@loom-ui/core";
+import type { ContractRegistry, ProviderSpec } from "@loom-ui/core";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import type { LoadParams } from "./params";
 
@@ -63,6 +63,30 @@ export function specFingerprint(spec: ProviderSpec): string {
 export interface CacheVariant {
   readonly params?: LoadParams;
   readonly kinds?: readonly string[];
+  /**
+   * The host's value contracts. The `version` of each BOUND kind's contract (only those that
+   * declare one) is folded into the key, so a changed contract is a different question. A contract
+   * with no `version` adds nothing — such a host calls `invalidate()` after changing it.
+   */
+  readonly contracts?: ContractRegistry;
+}
+
+/** `{kind: version}` for the bound kinds whose contract declares a version; `undefined` if none. */
+function contractVersions(
+  kinds: readonly string[],
+  contracts: ContractRegistry | undefined
+): Record<string, string> | undefined {
+  if (contracts === undefined) return undefined;
+  let out: Record<string, string> | undefined;
+  for (const k of kinds) {
+    if (!Object.hasOwn(contracts, k)) continue;
+    const v = contracts[k]?.version;
+    if (typeof v !== "string") continue;
+    // Null-prototype-safe: a kind named `__proto__` must not set a prototype.
+    out ??= Object.create(null) as Record<string, string>;
+    out[k] = v;
+  }
+  return out;
 }
 
 /**
@@ -75,10 +99,17 @@ export function normaliseKinds(kinds: readonly string[]): string[] {
 }
 
 /** `""` for the plain variant; `undefined` for one that cannot be keyed (never cached). */
-function variantKey(params: LoadParams, kinds: readonly string[]): string | undefined {
+function variantKey(
+  params: LoadParams,
+  kinds: readonly string[],
+  versions: Record<string, string> | undefined
+): string | undefined {
   if (Object.keys(params).length === 0 && kinds.length === 0) return "";
   try {
-    return fnv1a64(canonicalJson({ params, kinds }));
+    // `versions` is added ONLY when present, so every key without one is what it always was.
+    return fnv1a64(
+      canonicalJson(versions === undefined ? { params, kinds } : { params, kinds, versions })
+    );
   } catch {
     return undefined;
   }
@@ -94,7 +125,7 @@ export class HydrationCache {
     variant: CacheVariant
   ): string | undefined {
     const kinds = spec.outputCheck === "contract" ? normaliseKinds(variant.kinds ?? []) : [];
-    const v = variantKey(variant.params ?? {}, kinds);
+    const v = variantKey(variant.params ?? {}, kinds, contractVersions(kinds, variant.contracts));
     if (v === undefined) return undefined;
     const fp = specFingerprint(spec);
     // The handle stays LAST: `invalidate(handle)` suffix-matches it across every variant.

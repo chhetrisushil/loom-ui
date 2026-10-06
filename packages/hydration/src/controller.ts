@@ -183,8 +183,15 @@ export class HydrationController {
       this.lifetime.signal
     );
     const principalId = opts.principal?.id;
+    const contracts = opts.outputKinds?.catalog.valueContracts;
     const variant = (job: ProviderJob) =>
-      job.kinds === undefined ? { params: job.params } : { params: job.params, kinds: job.kinds };
+      job.kinds === undefined
+        ? { params: job.params }
+        : {
+            params: job.params,
+            kinds: job.kinds,
+            ...(contracts !== undefined && { contracts }),
+          };
     this.sched = new HandleScheduler<ProviderJob, Pass, ProviderResult>(
       opts.store,
       {
