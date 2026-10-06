@@ -1,0 +1,32 @@
+{
+  "name": "@loom-ui/lineage",
+  "version": "0.0.1",
+  "description": "Experience lineage runtime for loom-ui: a head pointer per experience with compare-and-set advance, version walk, branch and revert as new versions, and the EXPERIENCE_COMPOSED/PROMOTED protocol with replay verification, over loom's ContentStore and an EventStore-shaped seam",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@loom-ui/core": "workspace:*",
+    "@loom/classify": "*",
+    "@loom/core": "*",
+    "@loom/event-runtime": "*",
+    "@loom/plugin-content": "*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@loom-ui/planner": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "^5.6.3",
+    "vitest": "catalog:"
+  }
+}

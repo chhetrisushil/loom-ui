@@ -43,6 +43,12 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   or a server module (`split/server.ts`, `provider.ts`, `controller.ts`, `invokers.ts`, `reshape.ts`,
   `cache.ts`, `repair.ts`). Code both halves share goes in `split/shared.ts`. `clientEntry.test.ts`
   walks the BUILT graph and fails on a violation.
+- `@loom-ui/lineage` (U6) is server-side and optional: head per experienceId advanced by compare-and-set
+  (`head-moved` is a typed result, never an overwrite), revert/undo/branch as NEW versions, and every
+  version refused unless replaying its recorded ops from the parent reproduces its content address.
+  Revert and branch fold the line's newest sticky classes in with core's `carryClasses` (never lower).
+  It must not enter a client graph (`clientEntry`/`clientConsumers` guards list it); hash goldens are
+  untouched (a lineage event is not part of the artifact).
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.

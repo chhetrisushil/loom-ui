@@ -141,3 +141,58 @@ export function classResidue(exp: Experience): {
     ...(Object.keys(tools).length > 0 && { toolClasses: tools }),
   };
 }
+
+/** `entries` folded into `kept` by `strictest` — never lower; `kept` itself when nothing changed. */
+function foldInto(
+  kept: Record<string, DataClass> | undefined,
+  entries: Iterable<readonly [string, DataClass]>
+): Record<string, DataClass> | undefined {
+  let out = kept;
+  for (const [k, c] of entries) {
+    const had = own(out, k);
+    const merged = strictestClass(had, c);
+    if (merged === had || merged === undefined) continue;
+    out = { ...out, [k]: merged };
+  }
+  return out;
+}
+
+/**
+ * `onto` with every class `from` ever carried — its live nodes' and its sticky residues', per
+ * handle, per tool (including the class a live handle gives its tool) and per projection — folded
+ * into `onto`'s sticky maps by `strictest`. NEVER lowers anything on `onto`.
+ *
+ * It exists for a version that is built from an artifact other than the one it follows (a revert,
+ * a branch): the artifact it adopts carries only the classes ITS history learned, and the
+ * line's history is longer. `from` is the artifact that history ended at. The sticky maps are the
+ * only place a class survives its last node, so a class held ONLY by `from`'s live nodes must be
+ * written into the sticky map here — it will not be implied by `onto`'s tree. Unsealed result
+ * (the caller seals); returns `onto` itself when `from` adds nothing.
+ */
+export function carryClasses(from: Experience, onto: Experience): Experience {
+  const live = liveClasses(from.root);
+  const handles = foldInto(onto.handleClasses, [
+    ...live,
+    ...Object.entries(from.handleClasses ?? {}),
+  ]);
+  const tools = foldInto(onto.toolClasses, [
+    ...liveToolClasses(from, live),
+    ...Object.entries(from.toolClasses ?? {}),
+  ]);
+  const projections = foldInto(onto.projectionClasses, [
+    ...liveProjectionClasses(from.root),
+    ...Object.entries(from.projectionClasses ?? {}),
+  ]);
+  if (
+    handles === onto.handleClasses &&
+    tools === onto.toolClasses &&
+    projections === onto.projectionClasses
+  )
+    return onto;
+  return {
+    ...onto,
+    ...(handles !== undefined && { handleClasses: handles }),
+    ...(tools !== undefined && { toolClasses: tools }),
+    ...(projections !== undefined && { projectionClasses: projections }),
+  };
+}
