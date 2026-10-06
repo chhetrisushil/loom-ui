@@ -16,9 +16,19 @@ import type { Finding } from "@loom-ui/core";
  * record on restart (indistinguishable from erasure).
  */
 export interface SeenKeyStore {
-  /** The subject's 32-byte key, created on first use. MUST reject for a destroyed subject (never resurrect). */
+  /**
+   * The subject's 32-byte key, created on first use. MUST reject for a destroyed subject (never
+   * resurrect). Create-if-absent MUST be ATOMIC: two concurrent calls for one new subject return the
+   * SAME key (a durable implementation needs a conditional insert / compare-and-set, not
+   * read-then-write), or one writer's records are sealed under a key that is then lost.
+   */
   getOrCreate(subjectId: string): Promise<Uint8Array>;
-  /** The key, or `null` if it never existed OR was destroyed. */
+  /**
+   * The key, or `null` if it never existed OR was destroyed. AFTER `destroy` an implementation MUST
+   * NOT serve the key from ANY layer, including an in-process cache warmed by an earlier `get`: a
+   * cache that outlives `destroy` makes erasure a lie on that process. (`SeenLog.record` re-reads
+   * the key just before it appends, so a destroyed key is observed there.)
+   */
   get(subjectId: string): Promise<Uint8Array | null>;
   /** Irreversibly destroy the key. Idempotent; a no-op for an absent subject (which stays destroyed). */
   destroy(subjectId: string): Promise<void>;
@@ -39,12 +49,14 @@ export class InMemorySeenKeyStore implements SeenKeyStore {
       key = new Uint8Array(randomBytes(32));
       this.keys.set(subjectId, key);
     }
-    return key;
+    return new Uint8Array(key); // a copy: a caller cannot mutate (or retain a handle on) the stored key
   }
   async get(subjectId: string): Promise<Uint8Array | null> {
-    return this.keys.get(subjectId) ?? null;
+    const key = this.keys.get(subjectId);
+    return key === undefined ? null : new Uint8Array(key);
   }
   async destroy(subjectId: string): Promise<void> {
+    this.keys.get(subjectId)?.fill(0); // zeroize, then forget
     this.keys.delete(subjectId);
     this.destroyed.add(subjectId);
   }
@@ -78,6 +90,26 @@ export const refAad = (
     JSON.stringify(["loom-ui/seen/ref/v1", experienceId, viewerId, sequence, entryIndex])
   );
 
+/**
+ * Plaintext length (bytes) every sealed ref is padded to, so the ciphertext length does not reveal
+ * the value's size (the `bytes` of an entry lives only INSIDE the seal). Addresses longer than this
+ * round up to the next multiple, which a real content address never needs.
+ */
+export const SEALED_REF_BLOCK = 256;
+
+/** The plaintext inside a sealed ref: the content ref and the value's measured size, padded to a constant length. */
+export function sealRef(
+  enc: Buffer,
+  aad: Buffer,
+  ref: { readonly __loomContent: string },
+  bytes: number
+): string {
+  const body = JSON.stringify({ r: ref, b: bytes });
+  const len = Buffer.byteLength(body, "utf-8");
+  const padded = Math.ceil(len / SEALED_REF_BLOCK) * SEALED_REF_BLOCK;
+  return sealText(enc, aad, body + " ".repeat(padded - len));
+}
+
 /** AES-256-GCM: `base64url(0x01 | iv | ciphertext | tag)`. A fresh random IV per call. */
 export function sealText(enc: Buffer, aad: Buffer, plaintext: string): string {
   const iv = randomBytes(12);
@@ -99,6 +131,31 @@ export function openText(enc: Buffer, aad: Buffer, sealed: unknown): string | un
     return Buffer.concat([d.update(raw.subarray(13, raw.length - 16)), d.final()]).toString(
       "utf-8"
     );
+  } catch {
+    return undefined;
+  }
+}
+
+/** `undefined` for any failure; otherwise the ref and size sealed by {@link sealRef}. */
+export function openRef(
+  enc: Buffer,
+  aad: Buffer,
+  sealed: unknown
+): { readonly ref: { readonly __loomContent: string }; readonly bytes: number } | undefined {
+  const text = openText(enc, aad, sealed);
+  if (text === undefined) return undefined;
+  try {
+    const v = JSON.parse(text) as { r?: { __loomContent?: unknown }; b?: unknown };
+    const addr = v?.r?.__loomContent;
+    if (
+      typeof addr !== "string" ||
+      addr.length === 0 ||
+      addr.length > 256 ||
+      !Number.isSafeInteger(v.b) ||
+      (v.b as number) < 0
+    )
+      return undefined;
+    return { ref: { __loomContent: addr }, bytes: v.b as number };
   } catch {
     return undefined;
   }
@@ -157,6 +214,34 @@ export async function checkSeenKeyStoreConformance(
           /* required */
         }
         if (recreated) fail("destroy-resurrect", "getOrCreate after destroy created a new key");
+      },
+    ],
+    [
+      "get after destroy is null even after a prior get (no cache outlives destroy)",
+      async () => {
+        await store.getOrCreate("k-w");
+        await store.get("k-w"); // warm any cache
+        await store.get("k-w");
+        await store.destroy("k-w");
+        if ((await store.get("k-w")) !== null)
+          fail("destroy-cache", "get after destroy served a key from a warm cache");
+      },
+    ],
+    [
+      "concurrent getOrCreate of one new subject returns one key",
+      async () => {
+        const [a, b, c] = await Promise.all([
+          store.getOrCreate("k-race"),
+          store.getOrCreate("k-race"),
+          store.getOrCreate("k-race"),
+        ]);
+        if (!same(a, b) || !same(b, c))
+          fail(
+            "create-race",
+            "concurrent getOrCreate returned different keys (create is not atomic)"
+          );
+        if (!same(a, await store.get("k-race")))
+          fail("create-race", "the stored key is not the one concurrent callers received");
       },
     ],
     [

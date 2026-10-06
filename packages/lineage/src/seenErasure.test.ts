@@ -1,4 +1,5 @@
 import {
+  MAX_SEEN_VALUE_BYTES,
   type Provenance,
   type RecordedOperation,
   type SemanticNode,
@@ -30,7 +31,12 @@ import {
   seenKeySubject,
 } from "./seenCrypto";
 import { collectSeenGarbage } from "./seenGc";
-import { InMemoryLineageStore, type LineageStore, eventStoreLineageStore } from "./store";
+import {
+  InMemoryLineageStore,
+  type LineageStore,
+  type StoredLineageRecord,
+  eventStoreLineageStore,
+} from "./store";
 
 const user: Provenance = { source: "user" };
 const meta = { author: "a", createdAt: "2026-10-06T00:00:00Z", sourceKind: "prompt" };
@@ -55,7 +61,13 @@ const ok = <T>(r: LineageResult<T> | SeenResult<T>): T => {
 };
 
 async function rig(
-  opts: { maxViews?: number; maxAgeMs?: number; keys?: SeenKeyStore; seen?: LineageStore } = {}
+  opts: {
+    maxViews?: number;
+    maxAgeMs?: number;
+    maxSkewMs?: number;
+    keys?: SeenKeyStore;
+    seen?: LineageStore;
+  } = {}
 ) {
   const clock = { t: 1_000_000 };
   const content = new InMemoryContentStore({ now: () => clock.t });
@@ -87,6 +99,7 @@ async function rig(
       retention: {
         ...(opts.maxViews !== undefined && { maxViews: opts.maxViews }),
         ...(opts.maxAgeMs !== undefined && { maxAgeMs: opts.maxAgeMs }),
+        maxSkewMs: opts.maxSkewMs ?? 0,
       },
     }),
   });
@@ -543,5 +556,363 @@ describe("sharesStreamsWith compares prefixes both ways and refuses an unreadabl
           lineage: lineageOver("__loom_ui_lineage__:"),
         })
     ).toThrow(/streamPrefix/);
+  });
+});
+
+// ── Fix round 3 ───────────────────────────────────────────────────────────────────────────
+describe("P2-1: the collector fails closed on anything it cannot read", () => {
+  const gcNow = (r: Awaited<ReturnType<typeof rig>>, allowUnreadable?: boolean) => {
+    r.clock.t += 100_000;
+    return collectSeenGarbage(r.log, {
+      graceMs: 0,
+      ownsContentStore: true,
+      ...(allowUnreadable !== undefined && { allowUnreadable }),
+    });
+  };
+
+  it("a newer writer's record shape (rolling upgrade) refuses the sweep; nothing is deleted", async () => {
+    const inner = eventStoreLineageStore(new InMemoryAsyncEventStore(), seenStoreOptions);
+    const flag = { newer: false };
+    const mut = (rs: readonly StoredLineageRecord[]) =>
+      flag.newer
+        ? rs.map((x) =>
+            x.type === VIEW_RECORDED
+              ? {
+                  ...x,
+                  payload: {
+                    ...(x.payload as { entries: object[] }),
+                    entries: (x.payload as { entries: object[] }).entries.map((e) => ({
+                      ...e,
+                      state: "seen-v2",
+                    })),
+                  },
+                }
+              : x
+          )
+        : rs;
+    const wrap: LineageStore & { streamPrefix: string } = {
+      streamPrefix: inner.streamPrefix as string,
+      append: (...a) => inner.append(...a),
+      read: async (k) => mut(await inner.read(k)),
+      readTail: async (k, n) =>
+        mut(await (inner.readTail as NonNullable<typeof inner.readTail>)(k, n)),
+      readAfter: async (k, a, l) =>
+        mut(await (inner.readAfter as NonNullable<typeof inner.readAfter>)(k, a, l)),
+      listStreams: () => (inner.listStreams as NonNullable<typeof inner.listStreams>)(),
+    };
+    const r = await rig({ seen: wrap });
+    await r.see("v", "only-copy");
+    flag.newer = true;
+    const res = await gcNow(r);
+    expect(res).toMatchObject({ ok: false, refusal: { code: "gc-unreadable-record" } });
+    expect(await has(r.content, r.addr("only-copy"))).toBe(true);
+    flag.newer = false;
+    expect(await r.values("v")).toEqual(["only-copy"]);
+    // the explicit opt-in is "sweep what they cite"
+    flag.newer = true;
+    const forced = await gcNow(r, true);
+    expect(forced.ok && forced.report.unreadable.records).toBe(1);
+    expect(await has(r.content, r.addr("only-copy"))).toBe(false);
+  });
+
+  it("a sealed ref that does not open under a PRESENT key refuses; an ABSENT key (erased) does not", async () => {
+    const r = await rig();
+    await r.see("v", "kept");
+    await r.see("gone", "shred-me");
+    const rec = (await r.raw("v"))[0];
+    const p = structuredClone(rec?.payload) as {
+      entries: Array<{ sealed: string }>;
+      digest: string;
+    };
+    const s0 = p.entries[0]?.sealed as string;
+    p.entries[0]!.sealed = `${s0.slice(0, -4)}${s0.endsWith("AAAA") ? "BBBB" : "AAAA"}`;
+    p.digest = "t";
+    await r.events.append(seenStreamKey("e", "v"), 1, {
+      type: VIEW_RECORDED,
+      at: new Date(r.clock.t + 1).toISOString(),
+      payload: p,
+    });
+    ok(await r.log.eraseViewer({ experienceId: "e", viewerId: "gone" }));
+    const res = await gcNow(r);
+    expect(res).toMatchObject({ ok: false, refusal: { code: "gc-unreadable-record" } });
+    expect(await has(r.content, r.addr("shred-me"))).toBe(true); // refused before ANY delete
+    expect(await has(r.content, r.addr("kept"))).toBe(true);
+    // without the tampered record the erased viewer's blob IS swept (the shred path is not "unreadable")
+    const clean = await rig();
+    await clean.see("gone", "shred-me");
+    ok(await clean.log.eraseViewer({ experienceId: "e", viewerId: "gone" }));
+    const ok2 = await gcNow(clean);
+    expect(ok2.ok && ok2.report.deleted).toBe(1);
+  });
+
+  it("a stream key that does not round-trip refuses", async () => {
+    const r = await rig();
+    await r.see("v", "kept");
+    await r.events.append("no-slash-here", 0, {
+      type: VIEW_RECORDED,
+      at: new Date(r.clock.t).toISOString(),
+      payload: {},
+    });
+    const res = await gcNow(r);
+    expect(res).toMatchObject({ ok: false, refusal: { code: "gc-unreadable-record" } });
+    expect(res.ok === false && res.refusal.message).toMatch(/1 stream/);
+    expect(await has(r.content, r.addr("kept"))).toBe(true);
+  });
+});
+
+describe("P2-2: a seen entry's size is sealed; the stream reveals no value", () => {
+  it("no plaintext `bytes` on a seen entry, constant sealed length, size still read back", async () => {
+    const r = await rig();
+    const vals: unknown[] = [true, false, null, "x", "y".repeat(300), { a: [1, 2, 3] }];
+    for (const [i, v] of vals.entries()) await r.see(`v${i}`, v);
+    const lens = new Set<number>();
+    for (const [i] of vals.entries()) {
+      const e = ((await r.raw(`v${i}`))[0]?.payload as { entries: Array<Record<string, unknown>> })
+        .entries[0] as Record<string, unknown>;
+      expect(e.bytes).toBeUndefined();
+      lens.add((e.sealed as string).length);
+    }
+    expect(lens.size).toBe(1);
+    const read = ok(await r.log.read({ experienceId: "e", viewerId: "v4" }));
+    expect(read.views[0]?.entries[0]).toMatchObject({
+      state: "seen",
+      bytes: encodeValue("y".repeat(300)).length,
+    });
+  });
+
+  it("an oversize entry keeps its recorded size (a size class, documented)", async () => {
+    const r = await rig();
+    await r.see("v", "z".repeat(MAX_SEEN_VALUE_BYTES + 10));
+    const e = ((await r.raw("v"))[0]?.payload as { entries: Array<Record<string, unknown>> })
+      .entries[0] as Record<string, unknown>;
+    expect(e.state).toBe("oversize");
+    expect(typeof e.bytes).toBe("number");
+    expect(e.sealed).toBeUndefined();
+  });
+});
+
+describe("P3: destroy, caches and atomic create", () => {
+  it("the kit fails a store whose cache outlives destroy", async () => {
+    const live = new Map<string, Uint8Array>();
+    const cache = new Map<string, Uint8Array>();
+    const bad: SeenKeyStore = {
+      getOrCreate: async (s) => {
+        const k = live.get(s) ?? new Uint8Array(32).fill(live.size + 1);
+        live.set(s, k);
+        return k;
+      },
+      get: async (s) => {
+        const hit = cache.get(s) ?? live.get(s);
+        if (hit !== undefined) cache.set(s, hit);
+        return hit ?? null;
+      },
+      destroy: async (s) => void live.delete(s),
+    };
+    const f = await checkSeenKeyStoreConformance(() => bad);
+    expect(f.map((x) => x.code)).toContain("destroy-cache");
+  });
+
+  it("the kit fails a non-atomic create-if-absent", async () => {
+    const m = new Map<string, Uint8Array>();
+    let n = 0;
+    const bad: SeenKeyStore = {
+      getOrCreate: async (s) => {
+        if (m.has(s)) return m.get(s) as Uint8Array;
+        await Promise.resolve(); // read-then-write across an await
+        const k = new Uint8Array(32).fill(++n);
+        m.set(s, k);
+        return k;
+      },
+      get: async (s) => m.get(s) ?? null,
+      destroy: async (s) => void m.delete(s),
+    };
+    const f = await checkSeenKeyStoreConformance(() => bad);
+    expect(f.map((x) => x.code)).toContain("create-race");
+  });
+
+  it("the reference store returns copies and zeroizes on destroy", async () => {
+    const store = new InMemorySeenKeyStore();
+    const k = await store.getOrCreate("s");
+    const before = Buffer.from(k);
+    k.fill(0); // a caller scribbling on its copy
+    expect(Buffer.from((await store.get("s")) as Uint8Array)).toEqual(before);
+    const internal = (store as unknown as { keys: Map<string, Uint8Array> }).keys.get("s");
+    await store.destroy("s");
+    expect(internal?.every((b) => b === 0)).toBe(true);
+  });
+
+  it("record re-reads the key before appending: an erasure that lands mid-record is not followed by a sealed record", async () => {
+    const base = new InMemorySeenKeyStore();
+    let hook: (() => Promise<void>) | null = null;
+    const keys: SeenKeyStore = {
+      getOrCreate: async (s) => {
+        const k = await base.getOrCreate(s);
+        const h = hook;
+        hook = null;
+        if (h) await h();
+        return k;
+      },
+      get: (s) => base.get(s),
+      destroy: (s) => base.destroy(s),
+    };
+    const r = await rig({ keys });
+    await r.see("v", "first");
+    hook = () => base.destroy(seenKeySubject(seenStreamKey("e", "v")));
+    r.clock.t += 1000;
+    const res = await r.log.record({
+      experienceId: "e",
+      viewerId: "v",
+      snapshot: r.snap("second"),
+      viewer: {},
+    });
+    expect(res).toMatchObject({ ok: false, refusal: { code: "seen-viewer-erased" } });
+    expect((await r.raw("v")).map((x) => x.type)).toEqual([VIEW_RECORDED]);
+  });
+});
+
+describe("P3: clock skew cannot roll off or sweep what is inside the window by true time", () => {
+  const mk = async () => {
+    const r = await rig({ maxAgeMs: 10_000, maxViews: 10, maxSkewMs: 60_000 });
+    const fastClock = { skew: 30_000 };
+    const fast = new SeenLog({
+      keys: r.keys,
+      events: r.events,
+      content: r.content,
+      lineage: r.lineage,
+      now: () => new Date(r.clock.t + fastClock.skew).toISOString(),
+      retention: { maxAgeMs: 10_000, maxViews: 10, maxSkewMs: 60_000 },
+    });
+    return { r, fast };
+  };
+
+  it("a future-dated writer does not raise the persisted watermark past young views", async () => {
+    const { r, fast } = await mk();
+    await r.see("v", "a1");
+    await r.see("v", "a2");
+    r.clock.t += 1000;
+    ok(await fast.record({ experienceId: "e", viewerId: "v", snapshot: r.snap("f"), viewer: {} }));
+    expect((await r.raw("v")).map((x) => x.type)).not.toContain(VIEWS_RETAINED);
+    expect(await r.values("v")).toEqual(["f", "a2", "a1"]);
+  });
+
+  it("the collector keeps views inside maxAgeMs + maxSkewMs even by a fast clock", async () => {
+    const { r, fast } = await mk();
+    await r.see("v", "a1");
+    r.clock.t += 5000; // a1 is 5s old by true time: inside maxAgeMs
+    const res = await collectSeenGarbage(fast, { graceMs: 0, ownsContentStore: true });
+    expect(res.ok && res.report.deleted).toBe(0);
+    expect(await has(r.content, r.addr("a1"))).toBe(true);
+    expect(await r.values("v")).toEqual(["a1"]);
+  });
+
+  it("a genuinely old view (older than maxAgeMs + maxSkewMs) is still rolled off", async () => {
+    const { r } = await mk();
+    await r.see("v", "old");
+    r.clock.t += 80_000;
+    await r.see("v", "new");
+    expect((await r.raw("v")).map((x) => x.type)).toContain(VIEWS_RETAINED);
+    expect(await r.values("v")).toEqual(["new"]);
+  });
+});
+
+describe("P3: a malformed tip does not reset the floor", () => {
+  it("the floor is carried from the last well-formed record", async () => {
+    const inner = new InMemoryLineageStore();
+    const afters: number[] = [];
+    const spy: LineageStore & { streamPrefix: string } = {
+      streamPrefix: "__loom_ui_seen__:",
+      read: (k) => inner.read(k),
+      readTail: (k, n) => inner.readTail(k, n),
+      readAfter: (k, a, l) => {
+        afters.push(a);
+        return inner.readAfter(k, a, l);
+      },
+      listStreams: () => inner.listStreams(),
+      append: (k, e, rec) => inner.append(k, e, rec),
+    };
+    const r = await rig({ seen: spy, maxViews: 3 });
+    for (let i = 0; i < 20; i++) await r.see("v", i);
+    const recs = await r.raw("v");
+    const floor = Math.max(...recs.map((x) => (x.payload as { floor?: number }).floor ?? 0));
+    expect(floor).toBeGreaterThan(0);
+    await inner.append(seenStreamKey("e", "v"), recs[recs.length - 1]?.sequence as number, {
+      type: VIEW_RECORDED,
+      at: new Date(r.clock.t).toISOString(),
+      payload: { garbage: true },
+    });
+    afters.length = 0;
+    await r.values("v");
+    expect(afters).toEqual([floor]);
+  });
+});
+
+describe("eraseViewerEverywhere", () => {
+  const seed = async (r: Awaited<ReturnType<typeof rig>>, exp: string, viewer: string) =>
+    r.events.append(seenStreamKey(exp, viewer), 0, {
+      type: VIEW_RECORDED,
+      at: new Date(r.clock.t).toISOString(),
+      payload: {},
+    });
+
+  it("erases the viewer in every experience, leaves others, and is idempotent", async () => {
+    const r = await rig();
+    await r.see("v", "mine");
+    await r.see("w", "theirs");
+    await seed(r, "e2", "v");
+    await seed(r, "e/3", "v");
+    await seed(r, "e2", "w");
+    const res = ok(await r.log.eraseViewerEverywhere({ viewerId: "v" }));
+    expect(res.complete).toBe(true);
+    expect(res.results.map((x) => x.experienceId).sort()).toEqual(["e", "e/3", "e2"]);
+    expect(ok(await r.log.read({ experienceId: "e", viewerId: "v" })).erased).toBe(true);
+    expect(await r.keys.get(seenKeySubject(seenStreamKey("e", "v")))).toBeNull();
+    expect(await r.values("w")).toEqual(["theirs"]);
+    expect((await r.raw("w")).map((x) => x.type)).toEqual([VIEW_RECORDED]);
+    expect(ok(await r.log.eraseViewerEverywhere({ viewerId: "v" })).complete).toBe(true);
+    expect(ok(await r.log.eraseViewerEverywhere({ viewerId: "nobody" })).results).toEqual([]);
+  });
+
+  it("is resumable: a failed key destroy is reported per experience and a rerun completes it", async () => {
+    const base = new InMemorySeenKeyStore();
+    let failFor: string | undefined = seenKeySubject(seenStreamKey("e2", "v"));
+    const keys: SeenKeyStore = {
+      getOrCreate: (s) => base.getOrCreate(s),
+      get: (s) => base.get(s),
+      destroy: async (s) => {
+        if (s === failFor) throw new Error("kms down");
+        return base.destroy(s);
+      },
+    };
+    const r = await rig({ keys });
+    await r.see("v", "mine");
+    await seed(r, "e2", "v");
+    const first = ok(await r.log.eraseViewerEverywhere({ viewerId: "v" }));
+    expect(first.complete).toBe(false);
+    expect(first.results.find((x) => x.experienceId === "e2")).toMatchObject({
+      erased: false,
+      refusal: { code: "seen-key-unavailable" },
+    });
+    expect(first.results.find((x) => x.experienceId === "e")?.erased).toBe(true);
+    failFor = undefined;
+    expect(ok(await r.log.eraseViewerEverywhere({ viewerId: "v" })).complete).toBe(true);
+  });
+
+  it("refuses when the store cannot enumerate its streams", async () => {
+    const r = await rig();
+    const noList = new SeenLog({
+      keys: r.keys,
+      events: {
+        streamPrefix: "__loom_ui_seen__:",
+        read: (k: string) => r.events.read(k),
+        append: (k: string, e: number, rec: Parameters<LineageStore["append"]>[2]) =>
+          r.events.append(k, e, rec),
+      } as LineageStore,
+      content: r.content,
+      lineage: r.lineage,
+    });
+    expect(await noList.eraseViewerEverywhere({ viewerId: "v" })).toMatchObject({
+      ok: false,
+      refusal: { code: "seen-enumeration-unavailable" },
+    });
   });
 });
