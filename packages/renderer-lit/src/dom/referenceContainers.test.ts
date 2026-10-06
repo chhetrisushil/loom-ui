@@ -13,7 +13,8 @@ import {
 } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
-import { type DomWidgetRenderer, referenceContainers, renderBlueprintDom } from "./index";
+import { referenceContainers } from "./containers";
+import { type DomWidgetRenderer, renderBlueprintDom } from "./index";
 
 const bind = (handle: string): DataBinding => ({
   projectionId: HYDRATION_PROJECTION_ID,
@@ -124,6 +125,35 @@ describe("reference containers — tabs", () => {
     expect(host.querySelectorAll('[role="tab"]')).toHaveLength(2);
   });
 
+  it("Enter/Space on a focused tab keeps focus on it; an update while focused keeps it too", () => {
+    const { host, handle } = mount(bp());
+    const tab = (i: number) => host.querySelectorAll<HTMLElement>('[role="tab"]')[i] as HTMLElement;
+    tab(1).focus();
+    expect(document.activeElement).toBe(tab(1));
+    // A real browser turns Enter/Space on a button into a click.
+    tab(1).click();
+    expect(document.activeElement).toBe(tab(1));
+    expect(visible(host)).toEqual(["Two"]);
+    const before = tab(1);
+    handle.update(withRole("tabs", { One: ["a"], Two: ["b"], Three: ["c"], Four: ["d"] }));
+    expect(tab(1)).toBe(before);
+    expect(document.activeElement).toBe(before);
+    tab(1).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(document.activeElement).toBe(tab(2));
+  });
+
+  it("wires aria-controls to the panel id, and only the visible panel is tabbable", () => {
+    const { host } = mount(bp());
+    const tabs = [...host.querySelectorAll<HTMLElement>('[role="tab"]')];
+    panels(host).forEach((p, i) => {
+      expect(p.id).not.toBe("");
+      expect(tabs[i]?.getAttribute("aria-controls")).toBe(p.id);
+    });
+    expect(panels(host).map((p) => p.getAttribute("tabindex"))).toEqual(["0", null, null]);
+    tabs[2]?.click();
+    expect(panels(host).map((p) => p.getAttribute("tabindex"))).toEqual([null, null, "0"]);
+  });
+
   it("a role change or dispose undoes every attribute the chrome set", () => {
     const { host, handle } = mount(bp());
     handle.update(withRole(undefined, { One: ["a"], Two: ["b"], Three: ["c"] }));
@@ -134,6 +164,7 @@ describe("reference containers — tabs", () => {
       expect(p.hasAttribute("aria-hidden")).toBe(false);
       expect(p.getAttribute("role")).toBeNull();
       expect(p.getAttribute("aria-labelledby")).toBeNull();
+      expect(p.getAttribute("tabindex")).toBeNull();
     }
   });
 

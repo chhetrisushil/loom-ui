@@ -46,9 +46,11 @@ import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/rendere
   owns only its chrome and its children's *visibility*; the adapter still owns mounting, keyed
   reconciliation, reordering, grid placement, subscriptions and the focus pin. Register one per
   role in a `DomContainerRegistry` and pass it as `DomRenderOptions.containers` — there is no
-  default registry. `referenceContainers()` is an opt-in one for the two roles the reference
-  planner composes (`tabs`: a roving-tabindex tablist; `stepper`: Back/Next and a position line),
-  also exported singly as `tabsContainer()` / `stepperContainer()`. Each child is a titled
+  default registry. `referenceContainers()` — from the `@loom-ui/renderer-lit/containers` subpath,
+  so the core bundle does not carry it — is an opt-in one for the two roles the reference planner
+  composes (`tabs`: a roving-tabindex tablist whose buttons are reused across updates so focus
+  survives, with `aria-controls` and a tabbable visible panel; `stepper`: Back/Next and a position
+  line), also exported singly as `tabsContainer()` / `stepperContainer()`. Each child is a titled
   container whose title is the label; a host that registers nothing draws both as the plain
   titled stack, children intact (so does the terminal renderer).
 - **Keyed recompose.** `handle.update(nextBlueprint)` patches the live tree in place by widget id

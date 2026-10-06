@@ -1,5 +1,6 @@
 import {
   type ContainerNode,
+  type ContainerRoleSpec,
   type Experience,
   type ExperienceNode,
   type Finding,
@@ -7,6 +8,7 @@ import {
   type MCPToolNode,
   type Operation,
   type ProviderSpec,
+  type RoleChild,
   type SemanticCatalog,
   type SemanticNode,
   experienceHandles,
@@ -539,7 +541,19 @@ export function materialize(
    * planners (authors) appending into the same gap mint different keys. Absent = the unsalted
    * legacy key, so ops (and every hash over them) are byte-identical to before.
    */
-  mint: { readonly orderSalt?: string } = {}
+  mint: { readonly orderSalt?: string } = {},
+  /**
+   * How strictly the draft's structure is judged. The default is the FULL bar (every container
+   * non-empty, at most `MAX_DRAFT_NODES` entries): a direct caller fails closed. `roles` adds the
+   * role child rules (min/max children, `panels`) — `ReferencePlanner` passes the roles it offered
+   * plus those already on planner containers in the base; without them a role container is only
+   * judged as a plain one. `partial` is for a streamed PREFIX, where a container's children may
+   * still be coming (`ReferencePlanner`'s partials pass it).
+   */
+  structure: {
+    readonly roles?: readonly ContainerRoleSpec[];
+    readonly partial?: boolean;
+  } = {}
 ): { ops: Operation[]; findings: Finding[] } {
   const ops: Operation[] = [];
   const findings: Finding[] = [];
@@ -757,11 +771,31 @@ export function materialize(
   };
 
   // ── U15: parents, ordering and the structure the draft describes ────────────────────────────
-  const structure = draftStructureIssues(draft.nodes, [], { partial: true });
-  if (structure.length > 0)
+  // A role container's child count includes what it holds OUTSIDE the draft: an application panel
+  // locked inside it stays, and counts (the draft cannot list it).
+  const extraChildren = new Map<string, RoleChild[]>();
+  if ((structure.roles?.length ?? 0) > 0)
+    for (const [lockedId, holder] of region.locked) {
+      const k = region.containers.get(holder)?.children.find((c) => c.id === lockedId);
+      if (k === undefined || !isContainer(k)) continue;
+      const list = extraChildren.get(holder) ?? [];
+      list.push({
+        id: k.id,
+        isContainer: true,
+        titled: k.title !== undefined && k.title.fallback !== "",
+      });
+      extraChildren.set(holder, list);
+    }
+  const structureIssues = draftStructureIssues(draft.nodes, structure.roles ?? [], {
+    ...(structure.partial === true && { partial: true }),
+    extraChildren,
+  });
+  if (structureIssues.length > 0)
     return {
       ops,
-      findings: structure.map((i) => err("draft-structure", i.message, draft.nodes[i.index]?.id)),
+      findings: structureIssues.map((i) =>
+        err("draft-structure", i.message, draft.nodes[i.index]?.id)
+      ),
     };
   // A container this run INSERTS: a valid parent for later entries, and an empty sibling list.
   const newContainers = new Set<string>();

@@ -373,14 +373,27 @@ entry-by-entry; the bounds are counts the contract checks: at most `MAX_DRAFT_DE
 `MAX_DRAFT_CHILDREN` (24) entries per container, `MAX_DRAFT_NODES` (64) in all, no empty
 container, and a role container's children must satisfy its role (`tabs` / `stepper`: 2+ titled
 containers, the title being the label). Anything else is a schema issue naming the entry, so the
-retry carries the exact complaint, and past the bounds the plan fails closed.
+retry carries the exact complaint, and past the bounds the plan fails closed. A direct
+`materialize` caller gets the same bar (no empty container, at most 64 entries; it fails closed
+with no ops); pass `{ roles }` as its last argument for the role child rules, counting the
+application panels locked inside a role container, and `{ partial: true }` for a streamed prefix.
+`ReferencePlanner` passes the roles it was offered plus those already on planner containers in the
+base, so a revise can echo `tabs`/`stepper` without `containers`.
+
+Behaviour notes for this release: the prompt gained a CONTAINERS block and a grouping rule;
+`MAX_DRAFT_NODES` went 24 → 64 (the top level, and each container, stays 24), and decision ids are
+unchanged when `containers` is absent. Under a revise, the first-listed NEW entry is keyed before
+its existing siblings, and the reply's order is honoured (a reorder costs the fewest `moveNode`s).
+`owner: "planner"` is an EDIT BOUNDARY, not access control: any op author can stamp it on an insert
+(it is immutable afterwards), and it never reaches the Blueprint.
 
 A revise diffs entry by entry against the owned region: a retitle is one `setTitle`, a role change
 one `setRole`, a widget added to a panel one `insertNode` under it, a widget moved between panels
 one `moveNode` (never a remove plus an insert), a removed container one `removeNode` (its contents
 go with it), and a reorder costs the fewest `moveNode`s (the longest run already in order stays
 put). A container's kind (`section` ↔ `row`) cannot change — no op does that — so it is a warning.
-`checkPlannerConformance` checks the bounds, that every container the planner inserts is
+`checkPlannerConformance` judges only what the plan INSERTED (an application's own containers are not
+the planner's to bound or stamp) and checks the bounds, that every container the planner inserts is
 `owner: "planner"`, that a revise does not recompose, and (given `fx.containers`) the role rules.
 - **`setRole` is never interactive.** `interpretAction` refuses `setRole` from a widget action
   (`role-op-not-interactive`) — a role picks which container renderer draws a section, and
