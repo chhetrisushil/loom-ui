@@ -33,6 +33,14 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 - **Capabilities are an input, not a lookup.** A `CapabilityRef` is a tool the planner MAY bind a
   node to: `handle`, `toolName`, `toolVersion`, a pinned `toolSchemaHash`, and an optional
   `sampleOutput` the planner reshapes to pin `outputShapeHash` — no sample means not bindable.
+- **The summary is stamped with the class of everything the model read, and fails closed.**
+  `PlanResult.summaryClass` is the strictest of: the base experience, the APPLIED result, the
+  caller's `contextClass`, and `CapabilityRef.sensitivity` of EVERY offered capability (its sample
+  reaches the prompt whether or not the plan binds it). A capability that carries a `sampleOutput`
+  but no `sensitivity`, with no `contextClass` declared, is content of unknown class: the summary is
+  OMITTED (warn finding `summary-withheld`; the ops are unaffected) rather than stamped with a guess.
+  Declare `sensitivity` on the capability, or `contextClass` to vouch for the lot. The conformance
+  kit reports `summary-class-unsound` for a planner that does otherwise.
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
   (samples, the current experience's node list, a capability's description/schema) is wrapped as
   DATA in the user message, never `system`; `ReferencePlanner` fences its own prompts rather than

@@ -33,6 +33,13 @@ export interface CapabilityRef {
   readonly inputSchema?: Record<string, unknown>;
   /** A raw tool output the planner reshapes to pin `outputShapeHash`. Absent ⇒ unbindable. */
   readonly sampleOutput?: unknown;
+  /**
+   * The data class of what this capability returns (and so of its `sampleOutput`, which reaches
+   * the model). Folded into `PlanResult.summaryClass` for EVERY offered capability, bound or not.
+   * A capability with a `sampleOutput` and no `sensitivity` is of unknown class: unless the caller
+   * declares `contextClass`, the planner withholds the summary (finding `summary-withheld`).
+   */
+  readonly sensitivity?: DataClass;
 }
 
 /** Structural subset of loom's `ExecutionContext.decide` (workflow-runtime). Any loom `ctx` satisfies it. */

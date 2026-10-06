@@ -57,6 +57,8 @@ const input = {
   catalog: planningCatalog,
   capabilities: capabilitiesFixture,
 };
+// The host vouching for the sampled capability's class (else the summary is withheld).
+const vouched = { ...input, contextClass: "internal" as const };
 
 describe("ReferencePlanner through the decide scope", () => {
   it("a model factory receives the scope, so model calls run as the deciding execution", async () => {
@@ -582,14 +584,14 @@ describe("ReferencePlanner usage from a hostile adapter", () => {
 describe("ReferencePlanner keeps the model's summary (U7)", () => {
   it("returns it as bounded, control-stripped text on the PlanResult", async () => {
     const planner = new ReferencePlanner({ model: scriptedModel([goodDraft]), modelId: "m" });
-    const composed = await planner.compose(input, recordingContext());
+    const composed = await planner.compose(vouched, recordingContext());
     expect(composed.summary).toBe("Weekly orders and top SKUs");
     const noisy = JSON.stringify({
       ...JSON.parse(goodDraft),
       summary: `line one\nline two \u202e${"y".repeat(560)}`,
     });
     const r = await new ReferencePlanner({ model: scriptedModel([noisy]), modelId: "m" }).compose(
-      input,
+      vouched,
       recordingContext()
     );
     expect(r.summary).not.toMatch(/[\n\u202e]/);
@@ -612,8 +614,8 @@ describe("ReferencePlanner stamps the class of what the summary was written from
       model: scriptedModel([goodDraft]),
       modelId: "m",
     }).compose(input, recordingContext());
-    expect(plain.summary).toBeDefined();
-    expect(plain.summaryClass).toBeUndefined();
+    expect(plain.summary).toBeUndefined(); // sampled + unclassified + no contextClass: withheld
+    expect(plain.findings.some((f) => f.code === "summary-withheld")).toBe(true);
     const withCtx = await new ReferencePlanner({
       model: scriptedModel([goodDraft]),
       modelId: "m",
@@ -648,7 +650,81 @@ describe("ReferencePlanner stamps the class of what the summary was written from
     const revised = await new ReferencePlanner({
       model: scriptedModel([goodDraft]),
       modelId: "m",
-    }).revise({ ...input, experience: exp, request: { text: "tweak" } }, recordingContext());
+    }).revise({ ...vouched, experience: exp, request: { text: "tweak" } }, recordingContext());
     expect(revised.summaryClass).toBe("secret");
+  });
+});
+
+describe("ReferencePlanner summary class covers capability samples and the applied result (U7 review 2)", () => {
+  const withClass = (handle: string, sensitivity: "secret" | "sensitive" | "internal") =>
+    capabilitiesFixture.map((c) => (c.handle === handle ? { ...c, sensitivity } : c));
+  const mk = (draft = goodDraft) =>
+    new ReferencePlanner({ model: scriptedModel([draft]), modelId: "m" });
+
+  it("a sampled capability with no class and no contextClass withholds the summary, with a finding", async () => {
+    const r = await mk().compose(input, recordingContext());
+    expect(r.summary).toBeUndefined();
+    expect(r.summaryClass).toBeUndefined();
+    expect(r.findings.some((f) => f.code === "summary-withheld" && f.severity === "warn")).toBe(
+      true
+    );
+    expect(r.ops.length).toBeGreaterThan(0);
+  });
+
+  it("contextClass is the host vouching for unclassified samples: summary kept and stamped", async () => {
+    const r = await mk().compose({ ...input, contextClass: "internal" }, recordingContext());
+    expect(r.summary).toBeDefined();
+    expect(r.summaryClass).toBe("internal");
+    expect(r.findings.some((f) => f.code === "summary-withheld")).toBe(false);
+  });
+
+  it("a capability with sensitivity secret stamps the summary secret", async () => {
+    const r = await mk().compose(
+      { ...input, capabilities: withClass("orders_summary", "secret") },
+      recordingContext()
+    );
+    expect(r.summary).toBeDefined();
+    expect(r.summaryClass).toBe("secret");
+  });
+
+  it("a sampled capability the plan never binds still counts", async () => {
+    const caps = [
+      ...withClass("orders_summary", "internal"),
+      {
+        handle: "vault",
+        toolName: "vault.read",
+        toolVersion: "1.0.0",
+        toolSchemaHash: "sha256:vault",
+        sampleOutput: { k: "v" },
+        sensitivity: "secret" as const,
+      },
+    ];
+    const r = await mk().compose({ ...input, capabilities: caps }, recordingContext());
+    expect(r.summaryClass).toBe("secret");
+  });
+
+  it("the applied result's class raises the stamp (a plan that adds a classified node)", async () => {
+    const secretDraft = JSON.stringify({
+      summary: "s",
+      nodes: [
+        {
+          id: "top_skus",
+          type: "Collection",
+          label: "Top SKUs",
+          props: { columns: ["sku"] },
+          binding: {
+            capability: "orders_summary",
+            arguments: { window: "7d" },
+            path: "rows",
+            sensitivity: "secret",
+          },
+        },
+      ],
+    });
+    const r = await mk(secretDraft).compose(
+      { ...input, contextClass: "internal" },
+      recordingContext()
+    );
+    expect(r.summaryClass).toBe("secret");
   });
 });
