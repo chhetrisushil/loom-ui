@@ -47,7 +47,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   (`head-moved` is a typed result, never an overwrite), revert/undo/branch as NEW versions, and every
   version refused unless replaying its recorded ops from the parent reproduces its content address.
   Revert and branch fold the line's newest sticky classes in with core's `carryClasses` (never lower).
-  It must not enter a client graph (`hydration/clientEntry.test.ts` lists it in `FORBIDDEN_PACKAGES`);
+  It must not enter a client graph (`hydration/clientEntry.test.ts` and `hydration/clientConsumers.test.ts` both list it in `FORBIDDEN_PACKAGES`);
   it performs NO authorization (`by` is an unverified claim; `allowDeclassify` is a per-call host argument)
   and its streams sit in loom's reserved `__loom_` namespace (see its README). Hash goldens are
   untouched (a lineage event is not part of the artifact).

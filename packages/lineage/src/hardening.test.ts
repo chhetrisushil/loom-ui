@@ -337,7 +337,11 @@ describe("authorization: declassify is a per-call host argument, meta is derived
       })
     );
     expect(classOf(v3.experience, "h")).toBeUndefined();
-    expect(await lin.verify("exp")).toEqual([]); // was a false `ops-refused`
+    // No errors (was a false `ops-refused`); the declassify is SURFACED as a warning, since verify
+    // replays with declassify allowed and a raw append would bypass the write-path gate.
+    const found = await lin.verify("exp");
+    expect(found.filter((f) => f.severity === "error")).toEqual([]);
+    expect(found.map((f) => f.code)).toEqual(["declassify-op-present"]);
   });
 
   it("the per-call flag on advance is also honoured and is not sticky across calls", async () => {

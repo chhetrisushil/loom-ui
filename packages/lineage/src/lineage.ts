@@ -546,6 +546,14 @@ export class Lineage {
           err("lineage-parent-unverified", `version ${hash}: its parent could not be rebuilt`);
           continue;
         } else {
+          // verify replays with declassify allowed (it checks addresses; the write path is the gate),
+          // so a declassify that reached the log is SURFACED (warn) — a raw append bypasses that gate.
+          if (recordsDeclassify(v.ops))
+            findings.push({
+              code: "declassify-op-present",
+              severity: "warn",
+              message: `version ${hash}: records a declassify op — confirm it was authorized when written`,
+            });
           const f = checkOps(parent, v.ops, hash, VERIFY_APPLY);
           if (f !== undefined) err(f.code, `version ${hash}: ${f.message}`);
           derived = replayed(parent, v.ops, VERIFY_APPLY);
@@ -750,6 +758,18 @@ function replayed(
  * allowed. Refusing it here would report a legitimately host-authorized version as `ops-refused`.
  */
 const VERIFY_APPLY: ApplyOptions = { allowDeclassify: true };
+
+/** Does any recorded op (or a prompt's materialized ops, nested) declassify? Iterative, bounded. */
+function recordsDeclassify(ops: readonly { op: unknown }[]): boolean {
+  const stack: unknown[] = ops.map((r) => r.op);
+  for (let seen = 0; stack.length > 0 && seen < 100_000; seen++) {
+    const op = stack.pop() as { type?: unknown; materialized?: unknown } | null;
+    if (op === null || typeof op !== "object") continue;
+    if (typeof op.type === "string" && op.type.startsWith("declassify")) return true;
+    if (Array.isArray(op.materialized)) stack.push(...op.materialized);
+  }
+  return false;
+}
 
 interface Prepared {
   readonly artifact: Experience;
