@@ -91,6 +91,10 @@ export interface ReadPolicy {
  * beats `"allow"`, and `projections` / `hydrationProjectionId` keep the first one given (a
  * per-call catalogue must not replace the bound one — a different catalogue could lower a class).
  * `undefined` entries add nothing, so an omitted or `{}` per-call policy cannot lower the bound one.
+ *
+ * It is a LEFT fold, not associative: once a tier sets `"deny"` the key set closes for every
+ * later tier, so `merge(a, merge(b, c))` can differ from `merge(a, b, c)`. Always pass the bound
+ * policy first and later tiers after it, flat or left-nested (`merge(merge(a, b), c)` is equal).
  */
 export function mergeReadPolicy(...policies: ReadonlyArray<ReadPolicy | undefined>): ReadPolicy {
   let projections: ProjectionCatalog | undefined;
