@@ -8,7 +8,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" }
+    "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" },
+    "./containers": { "types": "./dist/dom/containers.d.ts", "default": "./dist/dom/containers.js" }
   },
   "scripts": {
     "build": "tsc --build",

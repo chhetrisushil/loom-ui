@@ -1,5 +1,6 @@
 import {
   type ContainerRoleSpec,
+  type RoleChild,
   type SemanticCatalog,
   type SemanticEntry,
   Sensitivity,
@@ -87,9 +88,22 @@ export interface StructureIssue {
 export function draftStructureIssues(
   entries: readonly DraftEntry[],
   roles: readonly ContainerRoleSpec[] = [],
-  opts: { readonly partial?: boolean } = {}
+  opts: {
+    readonly partial?: boolean;
+    /**
+     * Children a container has OUTSIDE the draft (an application panel locked inside a planner
+     * container, by container id), counted with the draft's own when a role's child rules apply.
+     */
+    readonly extraChildren?: ReadonlyMap<string, readonly RoleChild[]>;
+  } = {}
 ): StructureIssue[] {
   const issues: StructureIssue[] = [];
+  if (entries.length > MAX_DRAFT_NODES)
+    issues.push({
+      index: entries.length - 1,
+      field: "nodes",
+      message: `${entries.length} entries; at most ${MAX_DRAFT_NODES} are allowed`,
+    });
   const specs = new Map(roles.map((r) => [r.role, r] as const));
   const at = new Map<string, number>();
   const depth = new Map<string, number>();
@@ -141,7 +155,8 @@ export function draftStructureIssues(
     });
   entries.forEach((e, i) => {
     if (!isDraftContainer(e)) return;
-    const list = kids.get(e.id) ?? [];
+    const own = kids.get(e.id) ?? [];
+    const list = [...own, ...(opts.extraChildren?.get(e.id) ?? [])];
     if (list.length > MAX_DRAFT_CHILDREN)
       issues.push({
         index: i,

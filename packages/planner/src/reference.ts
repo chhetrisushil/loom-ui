@@ -1,4 +1,5 @@
 import {
+  type ContainerRoleSpec,
   type Experience,
   type Finding,
   type Intent,
@@ -7,10 +8,12 @@ import {
   containerRoleFindings,
   experienceClassFloor,
   genesis,
+  isContainer,
   loomCatalogFor,
   replay,
   strictestClass,
   validateExperience,
+  walk,
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
 import { declaredToolClassesFrom } from "./capabilityClass";
@@ -300,7 +303,9 @@ export class ReferencePlanner implements Planner {
         report: this.report(decisionId, [{ parsed: false, findings: [f] }], false),
       };
     }
-    const roles = input.containers ?? [];
+    // The roles the host offered, plus any already on a planner container in the base: a revise
+    // echoes what exists, and that must never be refused for want of `containers` on this call.
+    const roles = withExistingRoles(input.containers ?? [], base);
     const schema = planSchema(input.catalog, input.capabilities, roles);
     const attempts: AttemptTrace[] = [];
     let previous: PreviousError | undefined;
@@ -392,7 +397,8 @@ export class ReferencePlanner implements Planner {
               input.catalog,
               input.capabilities,
               input.observed,
-              salt
+              salt,
+              { roles, partial: true }
             );
             const ops = wrap(m.ops);
             const applied = replay(base, ops);
@@ -474,7 +480,8 @@ export class ReferencePlanner implements Planner {
         input.catalog,
         input.capabilities,
         input.observed,
-        salt
+        salt,
+        { roles }
       );
       const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
@@ -558,4 +565,20 @@ export class ReferencePlanner implements Planner {
       report: this.report(decisionId, attempts, false),
     };
   }
+}
+
+/** `offered`, plus a bare spec for each role a planner-owned container in `base` already carries. */
+function withExistingRoles(
+  offered: readonly ContainerRoleSpec[],
+  base: Experience
+): readonly ContainerRoleSpec[] {
+  const known = new Set(offered.map((r) => r.role));
+  const extra: ContainerRoleSpec[] = [];
+  walk(base.root, (n) => {
+    if (isContainer(n) && n.owner === "planner" && n.role !== undefined && !known.has(n.role)) {
+      known.add(n.role);
+      extra.push({ role: n.role, description: "a role already present in the experience" });
+    }
+  });
+  return extra.length === 0 ? offered : [...offered, ...extra];
 }

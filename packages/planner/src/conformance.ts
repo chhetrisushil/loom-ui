@@ -13,7 +13,6 @@ import {
   strictestClass,
   toolKey,
   toolsOf,
-  treeDepth,
   validateExperience,
   walk,
 } from "@loom-ui/core";
@@ -150,24 +149,24 @@ const err = (code: string, message: string): Finding => ({ code, severity: "erro
 function structureFindings(
   label: string,
   exp: Experience,
-  roles: readonly ContainerRoleSpec[] | undefined
+  roles: readonly ContainerRoleSpec[] | undefined,
+  /** The ids the plan INSERTED; absent = every node (a compose builds the whole tree). */
+  inserted?: ReadonlySet<string>
 ): Finding[] {
   const out: Finding[] = [];
-  const depth = treeDepth(exp.root) - 1; // the root is level 0
-  if (depth > MAX_DRAFT_DEPTH)
-    out.push(
-      err(
-        "nesting-too-deep",
-        `${label} produced nesting ${depth} levels deep; the bound is ${MAX_DRAFT_DEPTH}`
-      )
-    );
-  const count = experienceNodeIds(exp).length - 1;
-  if (count > MAX_DRAFT_NODES)
-    out.push(
-      err("too-many-nodes", `${label} produced ${count} entries; the bound is ${MAX_DRAFT_NODES}`)
-    );
+  const mine = (id: string): boolean => inserted === undefined || inserted.has(id);
+  // Judge only what the plan authored: an application's own containers (and how deep or how many
+  // they are) are not the planner's to have bounded or stamped.
+  const depthOf = new Map<string, number>();
+  let deepest = 0;
+  let count = 0;
   walk(exp.root, (n, parent) => {
-    if (parent !== null && isContainer(n) && n.owner !== "planner")
+    const d = parent === null ? 0 : (depthOf.get(parent.id) ?? 0) + 1;
+    depthOf.set(n.id, d);
+    if (parent === null || !mine(n.id)) return;
+    count += 1;
+    if (d > deepest) deepest = d;
+    if (isContainer(n) && n.owner !== "planner")
       out.push(
         err(
           "container-not-owned",
@@ -175,9 +174,34 @@ function structureFindings(
         )
       );
   });
+  if (deepest > MAX_DRAFT_DEPTH)
+    out.push(
+      err(
+        "nesting-too-deep",
+        `${label} produced nesting ${deepest} levels deep; the bound is ${MAX_DRAFT_DEPTH}`
+      )
+    );
+  if (count > MAX_DRAFT_NODES)
+    out.push(
+      err("too-many-nodes", `${label} produced ${count} entries; the bound is ${MAX_DRAFT_NODES}`)
+    );
   if (roles !== undefined)
     out.push(...containerRoleFindings(exp.root, roles, { ownedBy: "planner" }));
   return out;
+}
+
+/** The ids of every node the ops insert (an `insertNode` carries its whole subtree). */
+function insertedIds(ops: readonly Operation[]): Set<string> {
+  const ids = new Set<string>();
+  const visit = (op: Operation): void => {
+    if (op.type === "prompt") for (const o of op.materialized) visit(o);
+    else if (op.type === "insertNode")
+      walk(op.node, (n) => {
+        ids.add(n.id);
+      });
+  };
+  for (const op of ops) visit(op);
+  return ids;
 }
 
 /** A revise that removes and re-inserts the same id is a recompose wearing a diff's clothes. */
@@ -708,7 +732,9 @@ export async function checkPlannerConformance(
   if (!viaPrompt.ok) return [...findings, err("prompt-replay-failed", viaPrompt.finding.message)];
   if (!viaPrimitives.ok)
     return [...findings, err("prompt-replay-failed", viaPrimitives.finding.message)];
-  findings.push(...structureFindings("revise", viaPrompt.value, fx.containers));
+  findings.push(
+    ...structureFindings("revise", viaPrompt.value, fx.containers, insertedIds([prompt]))
+  );
   findings.push(...recomposeFindings(prompt.materialized));
   findings.push(...bindingClassFindings("revise", viaPrompt.value, fx.capabilities));
   findings.push(

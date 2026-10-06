@@ -54,6 +54,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
   for (const [entry, budget] of [
     ["index.js", 160 * 1000],
     ["dom/index.js", 160 * 1000],
+    // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
+    // plain containers does not pay for chrome it never registers.
+    ["dom/containers.js", 80 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

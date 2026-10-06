@@ -650,6 +650,112 @@ describe("U15 — what is not the planner's", () => {
     expect(res.findings[0]).toMatchObject({ code: "draft-structure", severity: "error" });
   });
 
+  it("direct callers fail closed: an empty container and a too-long draft are refused with no ops", () => {
+    const empty = run(g() as Experience, [box("hollow", "section"), insight("n")]);
+    expect(empty.ops).toEqual([]);
+    expect(empty.findings[0]).toMatchObject({ code: "draft-structure", nodeId: "hollow" });
+    const many = run(
+      g() as Experience,
+      Array.from({ length: MAX_DRAFT_NODES + 1 }, (_, i) => insight(`n${i}`))
+    );
+    expect(many.ops).toEqual([]);
+    expect(many.findings.map((f) => f.code)).toEqual(["draft-structure", "draft-structure"]);
+  });
+
+  it("`partial` tolerates a container whose children are still streaming; `roles` adds the role rules", () => {
+    const draft = JSON.parse(reply([box("later", "section")])) as PlanDraft;
+    const open = materialize(
+      draft,
+      g() as Experience,
+      planningCatalog,
+      capabilitiesFixture,
+      undefined,
+      {},
+      {
+        partial: true,
+      }
+    );
+    expect(open.findings.filter((f) => f.severity === "error")).toEqual([]);
+    const one = JSON.parse(
+      reply([box("views", "tabs"), box("only", "section", "views"), insight("n", "only")])
+    ) as PlanDraft;
+    const strict = (r?: typeof roles) =>
+      materialize(
+        one,
+        g() as Experience,
+        planningCatalog,
+        capabilitiesFixture,
+        undefined,
+        {},
+        {
+          ...(r !== undefined && { roles: r }),
+        }
+      );
+    expect(strict().findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(strict(roles).findings[0]).toMatchObject({ code: "draft-structure", nodeId: "views" });
+  });
+
+  it("a role container's child count includes an application panel locked inside it", () => {
+    const withLocked = replay(g(), [
+      {
+        type: "insertNode",
+        parentId: "root",
+        node: {
+          id: "views",
+          order: "a",
+          kind: "container",
+          direction: "column",
+          span: 12,
+          owner: "planner",
+          role: "tabs",
+          children: [],
+        },
+      },
+      {
+        type: "insertNode",
+        parentId: "views",
+        node: {
+          id: "app_panel",
+          order: "a",
+          kind: "container",
+          direction: "column",
+          span: 12,
+          title: { key: "app", fallback: "App" },
+          children: [],
+        },
+      },
+    ]);
+    if (!withLocked.ok) throw new Error(withLocked.finding.message);
+    const draft = JSON.parse(
+      reply([box("views", "tabs"), box("mine", "section", "views"), insight("n", "mine")])
+    ) as PlanDraft;
+    const res = materialize(
+      draft,
+      seal(withLocked.value),
+      planningCatalog,
+      capabilitiesFixture,
+      undefined,
+      {},
+      { roles }
+    );
+    // 1 draft panel + 1 locked app panel = the 2 a tab set needs.
+    expect(res.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(res.ops.length).toBeGreaterThan(0);
+  });
+
+  it("revise with no `containers` still accepts the roles already on planner containers in the base", async () => {
+    const { exp } = await composed(tabsEntries());
+    const { containers: _drop, ...bare } = input;
+    const e = tabsEntries();
+    e.push(insight("extra", "overview"));
+    const r = await planner(scriptedModel([reply(e)])).revise(
+      { experience: exp, request: { text: "add" }, ...bare },
+      recordingContext()
+    );
+    expect(r.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(kinds(inner(r.ops))).toEqual(["insertNode"]);
+  });
+
   it("moving a placed widget into a non-grid container clears its placement first", async () => {
     const base = g();
     const placed = replay(base, [
@@ -976,6 +1082,72 @@ describe("U15 — interactions with U10b, U7, U12 and keyed recompose", () => {
     expect(ledger.nodes.get("views")?.changes).toBe(0);
   });
 
+  it("U12: the ledger records moveNode, setRole and setTitle on nested nodes against the right decision", async () => {
+    const first = await planner(scriptedModel([reply(tabsEntries())])).compose(
+      input,
+      recordingContext()
+    );
+    const exp1 = replay(g(), first.ops);
+    if (!exp1.ok) throw new Error(exp1.finding.message);
+    const e = tabsEntries();
+    e[0] = { ...box("views", "stepper") };
+    e[1] = box("overview", "section", "views", "Summary");
+    // `note` moves from `detail` to `overview`
+    e.splice(
+      e.findIndex((x) => (x as { id: string }).id === "note"),
+      1
+    );
+    e.splice(3, 0, insight("note", "overview"));
+    const second = await planner(scriptedModel([reply(e)])).revise(
+      { experience: seal(exp1.value), request: { text: "restructure" }, ...input },
+      recordingContext()
+    );
+    expect(kinds(inner(second.ops)).sort()).toEqual(["moveNode", "setRole", "setTitle"]);
+    const by1 = plannerProvenance(first, { agentId: "p" });
+    const by2 = plannerProvenance(second, { agentId: "p" });
+    const rec = (ops: readonly Operation[], by: typeof by1) =>
+      ops.map((op) => ({ op, by, at: "2026-10-07T00:00:00Z" }));
+    const ledger = foldProvenance(emptyLedger(null), [
+      { versionHash: "v1", at: "t1", by: by1, ops: rec(first.ops, by1) },
+      { versionHash: "v2", at: "t2", by: by2, ops: rec(second.ops, by2) },
+    ]);
+    for (const [id, op] of [
+      ["views", "setRole"],
+      ["overview", "setTitle"],
+      ["note", "moveNode"],
+    ] as const)
+      expect(ledger.nodes.get(id)?.changed).toMatchObject({
+        op,
+        versionHash: "v2",
+        viaPrompt: true,
+        by: { decisionId: second.report.decisionId },
+      });
+    expect(ledger.nodes.get("note")?.created).toMatchObject({
+      by: { decisionId: first.report.decisionId },
+    });
+  });
+
+  it("`owner` survives a keyed recompose: a second revise still finds the container editable", async () => {
+    const { exp } = await composed(tabsEntries());
+    const e = tabsEntries();
+    e[1] = box("overview", "section", "views", "Summary");
+    const r1 = await planner(scriptedModel([reply(e)])).revise(
+      { experience: exp, request: { text: "rename" }, ...input },
+      recordingContext()
+    );
+    const a = replay(exp, r1.ops);
+    if (!a.ok) throw new Error(a.finding.message);
+    expect(findNode(a.value.root, "overview")).toMatchObject({ owner: "planner" });
+    expect(findNode(a.value.root, "views")).toMatchObject({ owner: "planner" });
+    const e2 = [...e];
+    e2[3] = box("detail", "section", "views", "Details");
+    const r2 = await planner(scriptedModel([reply(e2)])).revise(
+      { experience: seal(a.value), request: { text: "rename again" }, ...input },
+      recordingContext()
+    );
+    expect(kinds(inner(r2.ops))).toEqual(["setTitle"]);
+  });
+
   it("keyed recompose: a revise that keeps a container keeps its compiled layout id; moved widgets keep theirs", async () => {
     const before = await composed(tabsEntries());
     const e = tabsEntries();
@@ -1075,6 +1247,51 @@ describe("U15 — conformance", () => {
       return checkPlannerConformance(naughty, fx);
     })();
     expect(fs.some((f) => f.code === "revise-recomposed")).toBe(true);
+  });
+
+  it("judges only what the plan INSERTED: an application container already in the base is not a revise finding", async () => {
+    const mk = (id: string, owner?: "planner"): ContainerNode => ({
+      id,
+      order: "a",
+      kind: "container",
+      direction: "column",
+      span: 12,
+      ...(owner !== undefined && { owner }),
+      children: [],
+    });
+    const rep = { decisionId: "d", attempts: [], firstAttemptValid: true, modelId: "m" };
+    const planner = {
+      // compose leaves an application-owned container (that IS flagged, under "compose")...
+      compose: async () => ({
+        ops: [{ type: "insertNode", parentId: "root", node: mk("app_box") }] as Operation[],
+        findings: [],
+        report: rep,
+      }),
+      // ...and the revise adds only an owned one beside it, which is fine.
+      revise: async () => ({
+        ops: [
+          {
+            type: "prompt",
+            text: "x",
+            materialized: [
+              {
+                type: "insertNode",
+                parentId: "root",
+                node: { ...mk("mine", "planner"), order: "b" },
+              },
+            ],
+          },
+        ] as Operation[],
+        findings: [],
+        report: rep,
+      }),
+    };
+    const fs = await checkPlannerConformance(planner as never, fixture([]));
+    expect(
+      fs.some((f) => f.code === "container-not-owned" && f.message.startsWith("compose"))
+    ).toBe(true);
+    expect(fs.filter((f) => f.message.startsWith("revise inserted"))).toEqual([]);
+    expect(fs.some((f) => f.code === "too-many-nodes")).toBe(false);
   });
 
   it("catches nesting past the bound, an unowned container, and a role container its role cannot draw", async () => {

@@ -59,16 +59,44 @@ export function tabsContainer(): DomContainerRenderer {
     // The panels this chrome decorated, so a panel that left (or a dispose) is undone.
     let decorated: HTMLElement[] = [];
 
+    // Panel ids this chrome minted (a panel with its own id keeps it), so undo removes only ours.
+    const minted = new WeakSet<HTMLElement>();
     const undo = (el: HTMLElement): void => {
       show(el);
       el.removeAttribute("role");
       el.removeAttribute("aria-labelledby");
+      el.removeAttribute("tabindex");
+      if (minted.has(el)) {
+        el.removeAttribute("id");
+        minted.delete(el);
+      }
     };
     const select = (i: number, focus = false): void => {
       current = i;
       render();
       if (focus) (list.children[i] as HTMLElement | undefined)?.focus();
     };
+    const onKey = (e: KeyboardEvent): void => {
+      const i = tabs.indexOf(e.currentTarget as HTMLButtonElement);
+      const n = props.children.length;
+      if (i < 0 || n === 0) return;
+      const to =
+        e.key === "ArrowRight"
+          ? (i + 1) % n
+          : e.key === "ArrowLeft"
+            ? (i - 1 + n) % n
+            : e.key === "Home"
+              ? 0
+              : e.key === "End"
+                ? n - 1
+                : undefined;
+      if (to === undefined) return;
+      e.preventDefault();
+      select(to, true);
+    };
+    // The tab buttons are REUSED across renders (attributes patched, surplus removed): rebuilding
+    // them would drop focus to <body> on every keypress, update, recompose and hydration tick.
+    const tabs: HTMLButtonElement[] = [];
     const render = (): void => {
       const n = props.children.length;
       if (current > n - 1) current = Math.max(0, n - 1);
@@ -76,40 +104,37 @@ export function tabsContainer(): DomContainerRenderer {
       decorated = props.children.map((c) => c.element);
       props.children.forEach((child, i) => {
         const on = i === current;
-        if (on) show(child.element);
-        else hide(child.element);
-        child.element.setAttribute("role", "tabpanel");
-        child.element.setAttribute("aria-labelledby", `${uid}-tab-${i}`);
+        const el = child.element;
+        if (on) show(el);
+        else hide(el);
+        if (el.id === "" || minted.has(el)) {
+          el.id = `${uid}-panel-${i}`;
+          minted.add(el);
+        }
+        el.setAttribute("role", "tabpanel");
+        el.setAttribute("aria-labelledby", `${uid}-tab-${i}`);
+        if (on) el.tabIndex = 0;
+        else el.removeAttribute("tabindex");
       });
-      list.replaceChildren(
-        ...props.children.map((_, i) => {
-          const tab = document.createElement("button");
-          tab.type = "button";
-          tab.id = `${uid}-tab-${i}`;
-          tab.setAttribute("role", "tab");
-          tab.setAttribute("aria-selected", String(i === current));
-          tab.tabIndex = i === current ? 0 : -1;
-          tab.textContent = labelOf(props, i, t("container.tab", "Tab"));
-          tab.addEventListener("click", () => select(i));
-          tab.addEventListener("keydown", (e) => {
-            const last = props.children.length - 1;
-            const to =
-              e.key === "ArrowRight"
-                ? (i + 1) % (last + 1)
-                : e.key === "ArrowLeft"
-                  ? (i - 1 + last + 1) % (last + 1)
-                  : e.key === "Home"
-                    ? 0
-                    : e.key === "End"
-                      ? last
-                      : undefined;
-            if (to === undefined) return;
-            e.preventDefault();
-            select(to, true);
-          });
-          return tab;
-        })
-      );
+      while (tabs.length > n) tabs.pop()?.remove();
+      while (tabs.length < n) {
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.setAttribute("role", "tab");
+        const idx = tabs.length;
+        tab.addEventListener("click", () => select(idx));
+        tab.addEventListener("keydown", onKey);
+        tabs.push(tab);
+        list.appendChild(tab);
+      }
+      tabs.forEach((tab, i) => {
+        tab.id = `${uid}-tab-${i}`;
+        tab.setAttribute("aria-selected", String(i === current));
+        tab.setAttribute("aria-controls", props.children[i]?.element.id ?? "");
+        tab.tabIndex = i === current ? 0 : -1;
+        const label = labelOf(props, i, t("container.tab", "Tab"));
+        if (tab.textContent !== label) tab.textContent = label;
+      });
     };
     render();
     return {
@@ -156,14 +181,14 @@ export function stepperContainer(): DomContainerRenderer {
       const n = props.children.length;
       if (current > n - 1) current = Math.max(0, n - 1);
       props.children.forEach((c, i) => (i === current ? show(c.element) : hide(c.element)));
-      dots.replaceChildren(
-        ...props.children.map((_, i) => {
-          const li = document.createElement("li");
-          li.textContent = labelOf(props, i, t("container.step", "Step"));
-          if (i === current) li.setAttribute("aria-current", "step");
-          return li;
-        })
-      );
+      while (dots.children.length > n) dots.lastElementChild?.remove();
+      while (dots.children.length < n) dots.appendChild(document.createElement("li"));
+      [...dots.children].forEach((li, i) => {
+        const label = labelOf(props, i, t("container.step", "Step"));
+        if (li.textContent !== label) li.textContent = label;
+        if (i === current) li.setAttribute("aria-current", "step");
+        else li.removeAttribute("aria-current");
+      });
       position.textContent =
         n === 0
           ? ""
