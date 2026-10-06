@@ -1,6 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type ExperienceInspection, boundSummary, inspectExperience } from "./change";
-import type { DeclaredToolClasses } from "./classes";
+import type { DeclaredToolClasses, UndeclaredToolPolicy } from "./classes";
 import type { Experience } from "./experience";
 import { walk } from "./node";
 import type { ProjectionCatalog } from "./projections";
@@ -106,6 +106,11 @@ export interface SnapshotOptions {
    * Absent = only what the experience itself carries.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
+   * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
+   * experience itself says; `"deny"` = unreadable by every viewer. Only with a table present.
+   */
+  readonly undeclared?: UndeclaredToolPolicy;
 }
 
 const sourceKey = (s: SeenSource): string =>
@@ -272,7 +277,7 @@ export function redactSeen(
   experience: Experience | undefined,
   opts: Pick<
     SnapshotOptions,
-    "viewer" | "projections" | "hydrationProjectionId" | "declaredToolClasses"
+    "viewer" | "projections" | "hydrationProjectionId" | "declaredToolClasses" | "undeclared"
   > = {}
 ): RedactedSeen {
   if (experience === undefined || !Array.isArray(entries))

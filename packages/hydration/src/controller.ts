@@ -6,6 +6,7 @@ import {
   type ProviderSpec,
   type SemanticCatalog,
   type Surface,
+  type UndeclaredToolPolicy,
   type Viewer,
   experienceHandles,
   handleKinds,
@@ -99,6 +100,11 @@ export interface ControllerOptions {
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
+   * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
+   * experience itself says; `"deny"` = no viewer may read it (only with a table present).
+   */
+  readonly undeclared?: UndeclaredToolPolicy;
   readonly onDrift?: (report: DriftReport) => void;
   /**
    * Where `outputCheck: "contract"` providers get their kinds: every bound node resolved on this
@@ -313,7 +319,7 @@ export class HydrationController {
     this.sched.retain(
       new Set(
         partitionByViewer(
-          experienceHandles(next, this.opts.declaredToolClasses),
+          experienceHandles(next, this.opts.declaredToolClasses, this.opts.undeclared),
           this.viewer
         ).allowed.map((h) => h.handle)
       )
@@ -407,7 +413,7 @@ export class HydrationController {
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
     // Refused handles: their status says so (and nothing else), and no job exists for them.
     const { allowed, restricted, advisory } = partitionByViewer(
-      experienceHandles(exp, this.opts.declaredToolClasses),
+      experienceHandles(exp, this.opts.declaredToolClasses, this.opts.undeclared),
       this.viewer
     );
     this.bound = new Set(bound);
@@ -442,7 +448,7 @@ export class HydrationController {
     const missing: Array<{ handle: string; finding: Finding }> = [];
     // A restricted handle is not a job: it never reaches the scheduler, the cache or a provider.
     for (const use of partitionByViewer(
-      experienceHandles(exp, this.opts.declaredToolClasses),
+      experienceHandles(exp, this.opts.declaredToolClasses, this.opts.undeclared),
       this.viewer
     ).allowed) {
       if (isReservedHandle(use.handle)) {

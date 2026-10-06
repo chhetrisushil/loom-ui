@@ -9,8 +9,10 @@ import {
   type Provenance,
   type ProvenanceLedger,
   Provenance as ProvenanceSchema,
+  type ReadPolicy,
   type RecordedOperation,
   Sensitivity,
+  type UndeclaredToolPolicy,
   type VersionNote,
   type Viewer,
   apply,
@@ -20,6 +22,7 @@ import {
   experienceClassFloor,
   explainNode,
   foldProvenance,
+  mergeReadPolicy,
   replay,
 } from "@loom-ui/core";
 import { getExperience, putExperience, seal } from "@loom-ui/core/log";
@@ -73,6 +76,13 @@ export interface LineageOptions {
   readonly content: ContentStore;
   /** Clock for event times; injectable so a test (or a replaying host) is deterministic. */
   readonly now?: () => string;
+  /**
+   * The host's read policy, bound ONCE: every read this lineage serves under a viewer (`explain`)
+   * applies it, and a `SeenLog` or `LineageChangeFeed` built over this lineage inherits it. A
+   * per-call value may only ADD to it (`mergeReadPolicy`). Absent = no policy (the experience's own
+   * classes only).
+   */
+  readonly readPolicy?: ReadPolicy;
 }
 
 const refused = (code: string, message: string): { ok: false; refusal: Refusal } => ({
@@ -145,11 +155,18 @@ export class Lineage {
   private readonly events: LineageStore;
   private readonly content: ContentStore;
   private readonly now: () => string;
+  private readonly policy: ReadPolicy;
 
   constructor(opts: LineageOptions) {
+    this.policy = mergeReadPolicy(opts.readPolicy);
     this.events = opts.events;
     this.content = opts.content;
     this.now = opts.now ?? (() => new Date().toISOString());
+  }
+
+  /** The read policy bound at construction (empty when none); readers built over this lineage inherit it. */
+  get readPolicy(): ReadPolicy {
+    return this.policy;
   }
 
   /**
@@ -366,8 +383,11 @@ export class Lineage {
       readonly projections?: ProjectionCatalog;
       readonly hydrationProjectionId?: string;
       readonly declaredToolClasses?: DeclaredToolClasses;
+      readonly undeclared?: UndeclaredToolPolicy;
     } = {}
   ): Promise<LineageResult<NodeExplanation>> {
+    // The bound policy applies; a per-call value can only add to it.
+    const policy = mergeReadPolicy(this.policy, opts);
     const s = await this.state(experienceId);
     if (!s.ok) return s;
     const target = opts.versionHash ?? s.value.head;
@@ -378,13 +398,14 @@ export class Lineage {
     const viewOpts = {
       ledger,
       ...(opts.viewer !== undefined && { viewer: opts.viewer }),
-      ...(opts.projections !== undefined && { projections: opts.projections }),
-      ...(opts.hydrationProjectionId !== undefined && {
-        hydrationProjectionId: opts.hydrationProjectionId,
+      ...(policy.projections !== undefined && { projections: policy.projections }),
+      ...(policy.hydrationProjectionId !== undefined && {
+        hydrationProjectionId: policy.hydrationProjectionId,
       }),
-      ...(opts.declaredToolClasses !== undefined && {
-        declaredToolClasses: opts.declaredToolClasses,
+      ...(policy.declaredToolClasses !== undefined && {
+        declaredToolClasses: policy.declaredToolClasses,
       }),
+      ...(policy.undeclared !== undefined && { undeclared: policy.undeclared }),
     };
     // Ask first with no notes: an unknown, hidden or unreadable node answers `{ available: false }`
     // HERE, before the writer is loaded, so the I/O a probe costs is the same for all three (a
@@ -410,7 +431,12 @@ export class Lineage {
       if (found.record.summary !== undefined || entry?.prompt !== undefined) {
         const art = await this.load(found.state, wrote);
         extraFloor = art.ok
-          ? experienceClassFloor(art.value, opts.projections, opts.declaredToolClasses)
+          ? experienceClassFloor(
+              art.value,
+              policy.projections,
+              policy.declaredToolClasses,
+              policy.undeclared
+            )
           : "secret";
       }
     }

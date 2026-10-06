@@ -404,10 +404,23 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   means that call reads only the experience's own classes — so pass the same table everywhere.
   Where two tables meet (a constructor-level one and a per-call one, e.g. `LineageChangeFeed`),
   `mergeDeclaredToolClasses` joins them key by key, strictest wins: a per-call table can only ADD,
-  never lower — `{}` or `undefined` leaves the bound floor intact. **The declared table wins over
+  never lower — `{}` or `undefined` leaves the bound floor intact. **Bind the policy ONCE.** The
+  free read functions above take the table per call, so a host that forgets it on one call leaks on
+  that path; they are the LOW-LEVEL API. Prefer the BOUND surfaces, which take a `ReadPolicy`
+  (`{ declaredToolClasses?, projections?, hydrationProjectionId?, undeclared? }`) at construction and
+  apply it to every read without per-call options: `new Lineage({ readPolicy })` (`explain`; a
+  `SeenLog` or `LineageChangeFeed` built over it inherits it), `new SeenLog({ readPolicy })`,
+  `new LineageChangeFeed({ readPolicy })`, and `createServeSurface(policy)` in hydration. A per-call
+  value may only ADD (`mergeReadPolicy(bound, perCall)`: tables join strictest-wins, `"deny"` sticks,
+  a bound `projections` catalogue is not replaced). Build the table from the SAME `CapabilityRef`s the
+  planner uses, so host and planner cannot disagree: `declaredToolClassesFrom(capabilities)`
+  (`@loom-ui/planner`). **`undeclared: "allow" | "deny"`** (default `"allow"`): with `"deny"`, a
+  handle whose provider calls any tool the table (when one is present) does NOT list reads as a class
+  no clearance ranks (`UNDECLARED_TOOL_CLASS`), on every read path — a new tool fails closed until it
+  is declared. No table = no effect. **The declared table wins over
   `declassifyHandle`**: declassifying a handle lowers its stored class, but a tool the host declares
   keeps flooring every handle that calls it, so `declassifyHandle` has no read-time effect on a
-  declared tool (lower the declaration to lower the read). `CompileResult.restrictedHandles` lists
+  declared tool (lower the declaration to lower the read; covered by a test). `CompileResult.restrictedHandles` lists
   the handles redacted for the viewer; feed it to `compileFingerprint` (`restrictedHandles`) so a
   RAISED declaration changes freshness. The
   reference planner also applies a capability's class to the nodes it writes (see

@@ -21,7 +21,7 @@ import {
   resolveSurface,
   validateExperience,
 } from "./catalog";
-import type { DeclaredToolClasses } from "./classes";
+import type { DeclaredToolClasses, UndeclaredToolPolicy } from "./classes";
 import type { Experience, Finding } from "./experience";
 import { experienceHandles } from "./handles";
 import { loomCatalogFor } from "./loomCatalog";
@@ -79,6 +79,11 @@ export interface CompileOptions {
    * Absent = only what the experience itself carries.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
+   * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
+   * experience itself says; `"deny"` = unreadable by every viewer. Only with a table present.
+   */
+  readonly undeclared?: UndeclaredToolPolicy;
   /** Default: the label's fallback text. */
   readonly resolveLabel?: (label: LocalizedText) => string;
   /** Base loom catalogue for built-in kinds; default `builtinCatalog`. */
@@ -185,7 +190,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   // read once; a handle the viewer may not see is restricted for EVERY node that binds it.
   const restrictedHandles = new Set<string>();
   let classified = false;
-  for (const use of experienceHandles(exp, opts.declaredToolClasses)) {
+  for (const use of experienceHandles(exp, opts.declaredToolClasses, opts.undeclared)) {
     if (use.sensitivity === undefined) continue;
     classified = true;
     if (!mayView(opts.viewer, use.sensitivity)) restrictedHandles.add(use.handle);

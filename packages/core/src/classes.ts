@@ -1,6 +1,7 @@
 import type { DataClass } from "@loom/classify";
 import type { Experience, ProviderSpec } from "./experience";
 import { type ExperienceNode, walk } from "./node";
+import type { ProjectionCatalog } from "./projections";
 import { toolKey } from "./steps";
 import { strictestClass } from "./viewer";
 
@@ -52,14 +53,76 @@ export function mergeDeclaredToolClasses(
   return out;
 }
 
-/** The strictest declared class among the tools `spec` calls. */
+/**
+ * What a handle calling a tool the declared table does NOT list reads as, under
+ * `undeclared: "deny"`: a class no clearance ranks, so NO viewer may see it (fail-closed, as an
+ * unrecognised class always is in `strictestClass`/`mayView`).
+ */
+export const UNDECLARED_TOOL_CLASS = "restricted" as DataClass;
+
+/**
+ * What a read does with a tool the declared table does not list: `"allow"` (the default) reads it
+ * as the experience's own classes say; `"deny"` (opt-in, only when a table is present) reads any
+ * handle whose provider calls such a tool as `UNDECLARED_TOOL_CLASS`. Raise-only: `"deny"` bound
+ * once cannot be undone by a per-call `"allow"` (`mergeReadPolicy`).
+ */
+export type UndeclaredToolPolicy = "allow" | "deny";
+
+/**
+ * The host's read policy, bound ONCE where the host builds a reader (`Lineage`, `SeenLog`, the
+ * change feed, the hydration serve surface) so no single read can forget it. The same names the
+ * per-call options carry. Per-call values may only ADD to a bound policy (`mergeReadPolicy`).
+ */
+export interface ReadPolicy {
+  /** A declared class per tool, a read-time floor (`DeclaredToolClasses`). Build it with the planner's `declaredToolClassesFrom(capabilities)`. */
+  readonly declaredToolClasses?: DeclaredToolClasses;
+  /** The projections the host offers (the catalogue `compile` takes). A bound catalogue wins over a per-call one. */
+  readonly projections?: ProjectionCatalog;
+  /** The host's hydration projection id (reserved). A bound id wins over a per-call one. */
+  readonly hydrationProjectionId?: string;
+  /** What to do with a tool the table does not list. Default `"allow"`. */
+  readonly undeclared?: UndeclaredToolPolicy;
+}
+
+/**
+ * Join read policies, the FIRST one being the bound one: tables merge strictest-wins, `"deny"`
+ * beats `"allow"`, and `projections` / `hydrationProjectionId` keep the first one given (a
+ * per-call catalogue must not replace the bound one — a different catalogue could lower a class).
+ * `undefined` entries add nothing, so an omitted or `{}` per-call policy cannot lower the bound one.
+ */
+export function mergeReadPolicy(...policies: ReadonlyArray<ReadPolicy | undefined>): ReadPolicy {
+  let projections: ProjectionCatalog | undefined;
+  let hydrationProjectionId: string | undefined;
+  let deny = false;
+  for (const p of policies) {
+    if (p === undefined || p === null) continue;
+    projections ??= p.projections;
+    hydrationProjectionId ??= p.hydrationProjectionId;
+    if (p.undeclared === "deny") deny = true;
+  }
+  const declaredToolClasses = mergeDeclaredToolClasses(
+    ...policies.map((p) => p?.declaredToolClasses)
+  );
+  return {
+    ...(declaredToolClasses !== undefined && { declaredToolClasses }),
+    ...(projections !== undefined && { projections }),
+    ...(hydrationProjectionId !== undefined && { hydrationProjectionId }),
+    ...(deny && { undeclared: "deny" as const }),
+  };
+}
+
+/** The strictest declared class among the tools `spec` calls (an unlisted tool: see `UndeclaredToolPolicy`). */
 function declaredClassOf(
   declared: DeclaredToolClasses | undefined,
-  spec: ProviderSpec
+  spec: ProviderSpec,
+  undeclared: UndeclaredToolPolicy | undefined
 ): DataClass | undefined {
   if (declared === undefined) return undefined;
   let c: DataClass | undefined;
-  for (const k of toolsOf(spec)) c = strictestClass(c, own(declared, k));
+  for (const k of toolsOf(spec)) {
+    const d = own(declared, k);
+    c = strictestClass(c, d === undefined && undeclared === "deny" ? UNDECLARED_TOOL_CLASS : d);
+  }
   return c;
 }
 
@@ -136,7 +199,8 @@ function toolClassOf(
  */
 export function effectiveClasses(
   exp: Experience,
-  declared?: DeclaredToolClasses
+  declared?: DeclaredToolClasses,
+  undeclared?: UndeclaredToolPolicy
 ): Map<string, DataClass> {
   const live = liveClasses(exp.root);
   const liveTools = liveToolClasses(exp, live);
@@ -150,7 +214,10 @@ export function effectiveClasses(
       ownClass(exp, live, h),
       spec === undefined
         ? undefined
-        : strictestClass(toolClassOf(exp, spec, liveTools), declaredClassOf(declared, spec))
+        : strictestClass(
+            toolClassOf(exp, spec, liveTools),
+            declaredClassOf(declared, spec, undeclared)
+          )
     );
     if (c !== undefined) out.set(h, c);
   }

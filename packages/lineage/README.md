@@ -22,6 +22,20 @@ const f  = await lineage.branch({ from: { experienceId, versionHash }, experienc
 await lineage.verify(experienceId);                                      // Finding[]; [] = consistent
 ```
 
+**Bind the host's read policy once.** `new Lineage({ ..., readPolicy })` takes a core `ReadPolicy`
+(`{ declaredToolClasses, projections, hydrationProjectionId, undeclared }`); `explain` applies it with
+no per-call options (a per-call value may only ADD, never lower), and a `SeenLog` or
+`LineageChangeFeed` built over the lineage inherits it (`lineage.readPolicy`). Build the table with
+`declaredToolClassesFrom(capabilities)` from `@loom-ui/planner`, the same `CapabilityRef`s the
+planner reads:
+
+```ts
+const lineage = new Lineage({ events, content, readPolicy: {
+  declaredToolClasses: declaredToolClassesFrom(capabilities),
+  undeclared: "deny", // optional: a tool the table omits is unreadable until declared
+} });
+```
+
 ## Design
 
 **Storage is two loom seams.** Artifact bytes go in a `ContentStore` (`putExperience`, unchanged).
@@ -138,7 +152,7 @@ hidden node and an unknown id cost the same reads. `source.lastChanged` names th
 remapped or declassified a provider, so a viewer cleared for the node can learn that a declassify
 happened (not what the class was): accepted, it is the audit trail.
 
-**`SeenLog` records what a viewer was shown.** `record({ experienceId, viewerId, snapshot, viewer })`
+**`SeenLog` records what a viewer was shown.** (`new SeenLog({ ..., readPolicy })` binds a read policy for `record` and `read`, joined with the lineage's.) `record({ experienceId, viewerId, snapshot, viewer })`
 takes a core `snapshotSeen` snapshot, does not trust it (the version must be on the line; entries are
 re-validated, restamped against that version's artifact, dropped when the recording viewer may not see
 them, and re-capped), writes the value bytes to the `ContentStore` (content-addressed) and appends a

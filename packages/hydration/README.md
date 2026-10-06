@@ -160,7 +160,9 @@ before kinds still applies — and `<kind>:<toolName>` otherwise, so `toolClasse
 - `handleInventory(exp, opts: InventoryOptions): { inventory, findings }` — the client-safe
   inventory: per bound handle, its priority, the overridable param names, and an opaque, keyed
   revision.
-- `InventoryOptions` — `{ revisionOf: RevisionFn }`.
+- `InventoryOptions` — `{ revisionOf: RevisionFn, viewer?, declaredToolClasses?, undeclared? }`.
+- `createServeSurface(policy?: ReadPolicy): ServeSurface` — `handleInventory` / `serveHandle` /
+  `serveHandles` with the read policy bound once (prefer it to the free functions).
 - `RevisionFn` — `(handle: string, fingerprint: string) => string`. MUST be a keyed hash (e.g. an
   HMAC over a server secret) — never the provider's own content fingerprint, which a client could
   confirm a guessed provider against offline; `handleInventory` throws if it returns a non-string,
@@ -241,6 +243,13 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 - **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,
   `handleInventory` and `serveHandle(s)`; `@loom-ui/core`'s `DeclaredToolClasses`) makes a handle
   whose provider calls a declared tool at least that class, even when no stored node carries one.
+  **Bind it once with `createServeSurface(policy)`**: it returns `handleInventory`, `serveHandle` and
+  `serveHandles` with a core `ReadPolicy` (`{ declaredToolClasses, undeclared }`) applied to every
+  call, so the inventory and the loader cannot disagree because one call forgot the table. A per-call
+  `declaredToolClasses` / `undeclared` only ADDS (`{}` or `undefined` cannot lower it). The free
+  `handleInventory` / `serveHandle(s)` take the table per call and are the low-level API.
+  `undeclared: "deny"` (also on `HydrationController`) refuses every handle whose provider calls a tool the
+  table does not list, for every viewer, until the tool is declared.
 - **A classified handle is never fetched for a viewer who may not see it (fail-closed).** Pass
   `viewer: { clearance }` (`@loom-ui/core`'s `Viewer`) to `HydrationController`, `handleInventory`
   and `serveHandle`/`serveHandles`. A handle bound by any node whose `sensitivity` is above the

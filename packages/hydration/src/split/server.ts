@@ -4,11 +4,14 @@ import {
   type Finding,
   MAX_TREE_DEPTH,
   type ProviderSpec,
+  type ReadPolicy,
   type SemanticCatalog,
   type Surface,
+  type UndeclaredToolPolicy,
   type Viewer,
   experienceHandles,
   handleKinds,
+  mergeReadPolicy,
   treeDepth,
 } from "@loom-ui/core";
 import { MCP_INVOKE_ERRORS } from "@loom/plugin-mcp";
@@ -55,6 +58,11 @@ export interface InventoryOptions {
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
+   * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
+   * experience itself says; `"deny"` = no viewer may read it (only with a table present).
+   */
+  readonly undeclared?: UndeclaredToolPolicy;
 }
 
 /**
@@ -77,7 +85,7 @@ export function handleInventory(
     findings.push(tooDeep(exp.experienceId, MAX_TREE_DEPTH));
   } else {
     const split = partitionByViewer(
-      experienceHandles(exp, opts.declaredToolClasses),
+      experienceHandles(exp, opts.declaredToolClasses, opts.undeclared),
       snapshotViewer(opts.viewer)
     );
     findings.push(...split.advisory);
@@ -158,6 +166,11 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
+   * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
+   * experience itself says; `"deny"` = no viewer may read it (only with a table present).
+   */
+  readonly undeclared?: UndeclaredToolPolicy;
   /** Keys a `principal`-scoped cache entry; without it such a provider is never cached. */
   readonly principalId?: string;
   readonly onDrift?: (report: DriftReport) => void;
@@ -505,7 +518,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     bound: new Set(experienceHandles(exp).map((u) => u.handle)),
     restricted: new Set(
       partitionByViewer(
-        experienceHandles(exp, opts.declaredToolClasses),
+        experienceHandles(exp, opts.declaredToolClasses, opts.undeclared),
         snapshotViewer(opts.viewer)
       ).restricted.map((u) => u.handle)
     ),
@@ -597,4 +610,55 @@ async function serveOne(
   } catch (e) {
     return refuse("hydration-internal", errorMessage(e));
   }
+}
+
+// ── The bound serve surface ───────────────────────────────────────────────────
+
+/**
+ * `handleInventory`, `serveHandle` and `serveHandles` with the host's {@link ReadPolicy} bound
+ * ONCE. Every call applies it, so a host that wires the policy here cannot leak by forgetting it on
+ * one call (the inventory naming a handle the loader then refuses, or the reverse). A per-call
+ * `declaredToolClasses` / `undeclared` may only ADD to it (`mergeReadPolicy`): `{}` or `undefined`
+ * cannot lower what was bound. Prefer this to the free functions, which take the policy per call
+ * and are the low-level API.
+ */
+export interface ServeSurface {
+  /** The bound policy (a copy; read-only). */
+  readonly policy: ReadPolicy;
+  readonly handleInventory: (
+    exp: Experience,
+    opts: InventoryOptions
+  ) => ReturnType<typeof handleInventory>;
+  readonly serveHandles: (
+    exp: Experience,
+    requests: readonly HandleLoadRequest[],
+    opts: ServeOptions
+  ) => Promise<HandleLoadResult[]>;
+  readonly serveHandle: (
+    exp: Experience,
+    request: HandleLoadRequest,
+    opts: ServeOptions
+  ) => Promise<HandleLoadResult>;
+}
+
+export function createServeSurface(policy: ReadPolicy = {}): ServeSurface {
+  const bound = mergeReadPolicy(policy);
+  const joined = <
+    O extends { declaredToolClasses?: DeclaredToolClasses; undeclared?: UndeclaredToolPolicy },
+  >(
+    opts: O
+  ): O => {
+    const m = mergeReadPolicy(bound, opts);
+    return {
+      ...opts,
+      ...(m.declaredToolClasses !== undefined && { declaredToolClasses: m.declaredToolClasses }),
+      ...(m.undeclared !== undefined && { undeclared: m.undeclared }),
+    };
+  };
+  return {
+    policy: bound,
+    handleInventory: (exp, opts) => handleInventory(exp, joined(opts)),
+    serveHandles: (exp, requests, opts) => serveHandles(exp, requests, joined(opts)),
+    serveHandle: (exp, request, opts) => serveHandle(exp, request, joined(opts)),
+  };
 }

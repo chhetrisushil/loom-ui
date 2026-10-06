@@ -50,6 +50,11 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   reports `binding-class-below-capability` for a planner whose bound nodes carry less than their
   capability declares. The class is the strictest declared over EVERY step of the node's call graph and every capability of the same tool (`requiredClass`; `declaredToolClassesFrom(capabilities)` is the matching read-time table). The same declaration is the READ-time floor a host passes to core as
   `declaredToolClasses` (see `@loom-ui/core`), which covers nodes this planner did not write.
+  **`declaredToolClassesFrom(capabilities)` is THE way a host builds that table**, from the same
+  `CapabilityRef`s it gives the planner, so host and planner derive it identically:
+  `new Lineage({ events, content, readPolicy: { declaredToolClasses: declaredToolClassesFrom(capabilities) } })`
+  (or `createServeSurface({ declaredToolClasses: ... })` in hydration). Add `undeclared: "deny"` to make
+  a tool the capabilities do not list unreadable.
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
   (samples, the current experience's node list, a capability's description/schema) is wrapped as
   DATA in the user message, never `system`; `ReferencePlanner` fences its own prompts rather than

@@ -5,8 +5,10 @@ import {
   type Finding,
   type HeadSignal,
   type ProjectionCatalog,
+  type ReadPolicy,
+  type UndeclaredToolPolicy,
   describeChange,
-  mergeDeclaredToolClasses,
+  mergeReadPolicy,
 } from "@loom-ui/core";
 import {
   EXPERIENCE_BRANCHED,
@@ -131,6 +133,13 @@ export interface LineageChangeFeedOptions {
   readonly hydrationProjectionId?: string;
   /** The host's declared class per tool: a read-time floor (core `DeclaredToolClasses`). */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /** What a tool the declared table does not list reads as (`"allow"` default, or `"deny"`). */
+  readonly undeclared?: UndeclaredToolPolicy;
+  /**
+   * The read policy bound ONCE (the same shape every reader takes). Joined, raise-only, with the
+   * `lineage`'s own bound policy, the individual options above and any per-call `describe` options.
+   */
+  readonly readPolicy?: ReadPolicy;
 }
 
 const err = (code: string, message: string): { ok: false; finding: Finding } => ({
@@ -150,14 +159,10 @@ export class LineageChangeFeed implements ChangeFeed {
   private readonly lineage: Lineage;
   private readonly events: LineageStore;
   private readonly signal: HeadSignal;
-  private readonly projections: ProjectionCatalog | undefined;
-  private readonly hydrationProjectionId: string | undefined;
-  private readonly declaredToolClasses: DeclaredToolClasses | undefined;
+  private readonly policy: ReadPolicy;
 
   constructor(opts: LineageChangeFeedOptions) {
-    this.projections = opts.projections;
-    this.hydrationProjectionId = opts.hydrationProjectionId;
-    this.declaredToolClasses = opts.declaredToolClasses;
+    this.policy = mergeReadPolicy(opts.lineage.readPolicy, opts.readPolicy, opts);
     this.lineage = opts.lineage;
     this.events = opts.events;
     this.signal = opts.signal;
@@ -376,19 +381,23 @@ export class LineageChangeFeed implements ChangeFeed {
     // The ops and the summary belong to ONE version. They describe this event when it IS that
     // version's creation, or when a promotion spans exactly that one step.
     const own = truth.kind !== "promoted" || record.parents.includes(truth.base?.versionHash ?? "");
-    const merged = mergeDeclaredToolClasses(this.declaredToolClasses, opts.declaredToolClasses);
-    const floor = merged === undefined ? {} : { declaredToolClasses: merged };
+    // The bound policy first: a per-call value can only ADD to it (a table is joined strictest-wins,
+    // `"deny"` sticks, a bound projection catalogue is not replaced), so `{}` or an explicit
+    // `undefined` per call cannot lower what the host bound at construction.
+    const policy = mergeReadPolicy(this.policy, opts);
     return {
       ok: true,
       description: describeChange(prev, next.value, {
-        ...(this.projections !== undefined && { projections: this.projections }),
-        ...(this.hydrationProjectionId !== undefined && {
-          hydrationProjectionId: this.hydrationProjectionId,
-        }),
         ...opts,
-        // AFTER `...opts`, and joined: a per-call table can only ADD to the feed's, so `{}` or an
-        // explicit `undefined` cannot lower the floor the host bound at construction.
-        ...floor,
+        // AFTER `...opts`: the joined policy wins over every per-call spelling of these fields.
+        ...(policy.projections !== undefined && { projections: policy.projections }),
+        ...(policy.hydrationProjectionId !== undefined && {
+          hydrationProjectionId: policy.hydrationProjectionId,
+        }),
+        ...(policy.declaredToolClasses !== undefined && {
+          declaredToolClasses: policy.declaredToolClasses,
+        }),
+        ...(policy.undeclared !== undefined && { undeclared: policy.undeclared }),
         ...(own && record.ops.length > 0 && { ops: record.ops }),
         ...(own && record.summary !== undefined && { summary: record.summary }),
         ...(own && record.summaryClass !== undefined && { summaryClass: record.summaryClass }),
