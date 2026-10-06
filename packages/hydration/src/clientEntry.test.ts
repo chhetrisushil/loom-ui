@@ -100,14 +100,13 @@ function forbiddenReach(entry: string): { violations: Reach[]; files: number } {
 }
 
 /** The real directories of the forbidden packages, as a bundler sees them (links resolved). */
+/** Forbidden names that are not dependencies of hydration — refused BY NAME only (no directory). */
+const NOT_A_HYDRATION_DEP = new Set(["@loom-ui/lineage"]);
 const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].flatMap((name) => {
-  try {
-    return [realpathSync(resolve(__dirname, "../node_modules", name))];
-  } catch {
-    // Not a dependency of hydration (e.g. `@loom-ui/lineage`): it is still refused BY NAME in
-    // `forbidden`, there is just no directory of it for the bundler-input check to match.
-    return [];
-  }
+  if (NOT_A_HYDRATION_DEP.has(name)) return [];
+  // Any other forbidden name MUST resolve: a typo or a removed dependency fails here, loudly,
+  // instead of silently dropping its bundler-input directory check.
+  return [realpathSync(resolve(__dirname, "../node_modules", name))];
 });
 
 describe("@loom-ui/hydration/client is browser-safe", () => {
