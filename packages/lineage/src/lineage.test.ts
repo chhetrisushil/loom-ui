@@ -9,7 +9,7 @@ import {
 } from "@loom-ui/core";
 import { putExperience, seal } from "@loom-ui/core/log";
 import { EXPERIENCE_PROMOTED as PLANNER_PROMOTED } from "@loom-ui/planner";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
+import { InMemoryAsyncEventStore, isReservedStream } from "@loom/event-runtime";
 import { InMemoryContentStore } from "@loom/plugin-content";
 import { describe, expect, it } from "vitest";
 import {
@@ -19,7 +19,12 @@ import {
   EXPERIENCE_REVERTED,
 } from "./events";
 import { Lineage, type LineageResult } from "./lineage";
-import { InMemoryLineageStore, type LineageStore, eventStoreLineageStore } from "./store";
+import {
+  InMemoryLineageStore,
+  LINEAGE_STREAM_PREFIX,
+  type LineageStore,
+  eventStoreLineageStore,
+} from "./store";
 
 const by: Provenance = { source: "user" };
 const meta = { author: "a", createdAt: "2026-10-06T00:00:00Z", sourceKind: "prompt" };
@@ -413,7 +418,6 @@ for (const [name, makeStore] of backends) {
           events,
           content: new InMemoryContentStore(),
           now: clock(),
-          allowDeclassify: true,
         });
         const v1 = ok(await lin.start(g(), by));
         const v2 = ok(
@@ -430,6 +434,7 @@ for (const [name, makeStore] of backends) {
             expectedHead: v2.experience.versionHash,
             ops: [{ op: { type: "declassifyHandle", handle: "h" }, by, at: "t" }],
             by,
+            allowDeclassify: true,
           })
         );
         expect(classOf(v3.experience, "h")).toBeUndefined();
@@ -682,6 +687,8 @@ describe("the EventStore adapter", () => {
     ok(await lin.start(g("zz"), by));
     const all = (await store.listExecutions?.()) ?? [];
     expect(all).toEqual(["__loom_ui_lineage__:zz"]);
+    // the namespace IS loom's reserved one (a non-`__loom_` prefix would be mistaken for an execution)
+    expect(isReservedStream(`${LINEAGE_STREAM_PREFIX}zz`)).toBe(true);
     const events = await store.read("__loom_ui_lineage__:zz");
     expect(events.map((e) => [e.eventType, e.sequence])).toEqual([[EXPERIENCE_COMPOSED, 1]]);
   });

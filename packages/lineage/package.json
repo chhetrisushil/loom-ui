@@ -17,8 +17,6 @@
   },
   "dependencies": {
     "@loom-ui/core": "workspace:*",
-    "@loom/classify": "*",
-    "@loom/core": "*",
     "@loom/event-runtime": "*",
     "@loom/plugin-content": "*",
     "zod": "catalog:"

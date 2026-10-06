@@ -10,7 +10,7 @@ import {
 } from "@loom-ui/core";
 import { getExperience, putExperience, seal } from "@loom-ui/core/log";
 import type { ContentRef, ContentStore } from "@loom/plugin-content";
-import { branchArtifact, revertArtifact } from "./derive";
+import { authorOf, branchArtifact, revertArtifact } from "./derive";
 import {
   EXPERIENCE_BRANCHED,
   EXPERIENCE_COMPOSED,
@@ -58,13 +58,6 @@ export interface LineageOptions {
   readonly content: ContentStore;
   /** Clock for event times; injectable so a test (or a replaying host) is deterministic. */
   readonly now?: () => string;
-  /**
-   * Whether replaying a recorded `declassify*` op is allowed. Default FALSE: a declassify lowers a
-   * class and is a trusted caller's act, so a version whose ops carry one is refused unless the
-   * HOST says its own ops may (the same `allowDeclassify` argument `apply` takes, never a field of
-   * the op). A revert never lowers a class either way.
-   */
-  readonly allowDeclassify?: boolean;
 }
 
 const refused = (code: string, message: string): { ok: false; refusal: Refusal } => ({
@@ -79,6 +72,22 @@ const fromFinding = (finding: Finding): { ok: false; refusal: Refusal } => ({
 /** Bound on re-reading after a lost append whose head did not move (a promotion slipped in). */
 const MAX_TIP_RETRIES = 16;
 
+/** Bound on how many source lines `verify` follows through branches (a branch of a branch of ...). */
+const MAX_VERIFY_DEPTH = 32;
+
+/** Whether `hash` is `ancestor` or reaches it through `parents` within the line (iterative, cycle-safe). */
+function descendsFrom(state: LineageState, hash: string, ancestor: string): boolean {
+  const seen = new Set<string>();
+  const stack = [hash];
+  for (let h = stack.pop(); h !== undefined; h = stack.pop()) {
+    if (h === ancestor) return true;
+    if (seen.has(h)) continue;
+    seen.add(h);
+    for (const p of state.versions.get(h)?.parents ?? []) stack.push(p);
+  }
+  return false;
+}
+
 const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
 
@@ -86,13 +95,11 @@ export class Lineage {
   private readonly events: LineageStore;
   private readonly content: ContentStore;
   private readonly now: () => string;
-  private readonly applyOpts: ApplyOptions;
 
   constructor(opts: LineageOptions) {
     this.events = opts.events;
     this.content = opts.content;
     this.now = opts.now ?? (() => new Date().toISOString());
-    this.applyOpts = { allowDeclassify: opts.allowDeclassify === true };
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────
@@ -222,8 +229,15 @@ export class Lineage {
     readonly artifact: Experience;
     readonly ops: readonly RecordedOperation[];
     readonly by: Provenance;
+    /**
+     * Whether a recorded `declassify*` op may be replayed. Per call and HOST-ONLY: it lowers a
+     * class, so the code that authored the ops (never a planner's output, never stored config)
+     * passes it for this one write. Default false. `verify` does not need it (see there).
+     */
+    readonly allowDeclassify?: boolean;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, artifact, ops, by } = input;
+    const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
     return this.commit(experienceId, expectedHead, async (_state, parent) => {
       if (artifact.experienceId !== experienceId)
         return refused(
@@ -248,12 +262,19 @@ export class Lineage {
           `versionHash ${artifact.versionHash} does not match the artifact (${sealed.versionHash})`
         );
       const check =
-        parent === null ? checkGenesis(ops) : this.checkOps(parent, ops, sealed.versionHash);
+        parent === null ? checkGenesis(ops) : checkOps(parent, ops, sealed.versionHash, applyOpts);
       if (check !== undefined) return fromFinding(check);
+      // `meta` is not part of the address and the caller's claim about it is unverified, so the
+      // stored artifact's authorship is derived from the recorded provenance and the clock (as a
+      // revert's is), never taken from the argument.
+      const stored: Experience = {
+        ...sealed,
+        meta: { author: authorOf(by), createdAt: this.now(), sourceKind: "compose" },
+      };
       return {
         ok: true,
         value: {
-          artifact: sealed,
+          artifact: stored,
           type: EXPERIENCE_COMPOSED,
           payload: (ref: ContentRef) => ({
             experienceId,
@@ -279,8 +300,11 @@ export class Lineage {
     readonly expectedHead: string;
     readonly ops: readonly RecordedOperation[];
     readonly by: Provenance;
+    /** As on {@link advance}: per call, host-only, default false. */
+    readonly allowDeclassify?: boolean;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, ops, by } = input;
+    const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
     const s = await this.state(experienceId);
     if (!s.ok) return s;
     if (s.value.head !== expectedHead)
@@ -290,13 +314,20 @@ export class Lineage {
     if (ops.length === 0) return refused("empty-ops", "a composition needs at least one op");
     const first = ops[0] as RecordedOperation;
     let cur = applyAt(parent.value, first.op, {
-      ...this.applyOpts,
+      ...applyOpts,
       ...(first.baseVersion !== undefined && { baseVersion: first.baseVersion }),
     });
     for (let i = 1; cur.ok && i < ops.length; i++)
-      cur = apply(cur.value, (ops[i] as RecordedOperation).op, this.applyOpts);
+      cur = apply(cur.value, (ops[i] as RecordedOperation).op, applyOpts);
     if (!cur.ok) return fromFinding(cur.finding);
-    return this.advance({ experienceId, expectedHead, artifact: cur.value, ops, by });
+    return this.advance({
+      experienceId,
+      expectedHead,
+      artifact: cur.value,
+      ops,
+      by,
+      allowDeclassify: input.allowDeclassify === true,
+    });
   }
 
   /**
@@ -452,18 +483,47 @@ export class Lineage {
    * it from the rebuilt artifacts it names. The rebuilt content address must equal the logged one
    * and the stored blob must hash to it. Returns every finding; `[]` = the line is consistent.
    *
-   * A branch's source versions are trusted by their (verified) address; verify the source line
-   * itself with its own call. A version whose parent could not be rebuilt is reported, not skipped
-   * silently.
+   * A branch is only as sound as its source: `verify` also verifies the source line up to the
+   * version the fork carried classes from (`carriedFrom`), recursively (a visited set and a depth
+   * bound stop a forged cycle), and reports what it finds on the branch, prefixed with the source
+   * line; `carriedFrom` must be the forked version or a descendant of it on the source line. A
+   * version whose parent could not be rebuilt is reported, not skipped silently. Ops replay with
+   * `declassify*` ALLOWED: this checks that addresses reproduce, and the write path is the gate.
    */
   async verify(experienceId: string): Promise<Finding[]> {
+    return this.verifyLine(experienceId, null, new Set(), 0);
+  }
+
+  /** Verify `experienceId` from its start through version `upTo` (null = the whole line). */
+  private async verifyLine(
+    experienceId: string,
+    upTo: string | null,
+    visited: Set<string>,
+    depth: number
+  ): Promise<Finding[]> {
+    const key = `${experienceId}@${upTo ?? ""}`;
+    if (visited.has(key)) return [];
+    visited.add(key);
     const s = await this.state(experienceId);
     if (!s.ok) return [s.refusal.kind === "refused" ? s.refusal.finding : unreachable()];
     const findings: Finding[] = [];
     const rebuilt = new Map<string, Experience>();
     const err = (code: string, message: string) =>
       findings.push({ code, severity: "error", message });
-    for (const hash of s.value.order) {
+    let order = s.value.order;
+    if (upTo !== null) {
+      const at = order.indexOf(upTo);
+      if (at < 0)
+        return [
+          {
+            code: "version-unknown",
+            severity: "error",
+            message: `"${upTo}" is not a version of "${experienceId}"`,
+          },
+        ];
+      order = order.slice(0, at + 1);
+    }
+    for (const hash of order) {
       const v = s.value.versions.get(hash) as VersionRecord;
       const stored = await this.load(s.value, hash);
       if (!stored.ok) {
@@ -486,9 +546,9 @@ export class Lineage {
           err("lineage-parent-unverified", `version ${hash}: its parent could not be rebuilt`);
           continue;
         } else {
-          const f = this.checkOps(parent, v.ops, hash);
+          const f = checkOps(parent, v.ops, hash, VERIFY_APPLY);
           if (f !== undefined) err(f.code, `version ${hash}: ${f.message}`);
-          derived = this.replayed(parent, v.ops);
+          derived = replayed(parent, v.ops, VERIFY_APPLY);
         }
       } else if (v.kind === "reverted") {
         const head = v.parents[0] === undefined ? undefined : rebuilt.get(v.parents[0]);
@@ -525,6 +585,27 @@ export class Lineage {
           );
           continue;
         }
+        if (depth >= MAX_VERIFY_DEPTH) {
+          err(
+            "lineage-verify-depth",
+            `version ${hash}: branches nest over ${MAX_VERIFY_DEPTH} lines deep`
+          );
+          continue;
+        }
+        if (!descendsFrom(srcState.value, v.carriedFrom, v.from.versionHash)) {
+          err(
+            "branch-carried-from-invalid",
+            `version ${hash}: carriedFrom ${v.carriedFrom} is neither ${v.from.versionHash} nor a descendant of it on "${v.from.experienceId}"`
+          );
+          continue;
+        }
+        for (const f of await this.verifyLine(
+          v.from.experienceId,
+          v.carriedFrom,
+          visited,
+          depth + 1
+        ))
+          err(f.code, `version ${hash}: source line "${v.from.experienceId}": ${f.message}`);
         const [src, carried] = await Promise.all([
           this.load(srcState.value, v.from.versionHash),
           this.load(srcState.value, v.carriedFrom),
@@ -558,48 +639,6 @@ export class Lineage {
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
-
-  /** Why replaying `ops` on `parent` does NOT yield `expectedHash`, or undefined when it does. */
-  private checkOps(
-    parent: Experience,
-    ops: readonly RecordedOperation[],
-    expectedHash: string
-  ): Finding | undefined {
-    const f = (code: string, message: string): Finding => ({ code, severity: "error", message });
-    if (ops.length === 0)
-      return f("empty-ops", "a version after the first records at least one op");
-    for (const [i, r] of ops.entries())
-      if (r.baseVersion !== undefined && r.baseVersion !== parent.versionHash)
-        return f(
-          "stale-base-version",
-          `op #${i} (${r.op.type}) was authored against ${r.baseVersion} but its parent is ${parent.versionHash}`
-        );
-    const out = replay(
-      parent,
-      ops.map((r) => r.op),
-      this.applyOpts
-    );
-    if (!out.ok) return f("ops-refused", out.finding.message);
-    const sealed = sealed_(out.value);
-    if (!sealed.ok) return sealed.refusal.kind === "refused" ? sealed.refusal.finding : undefined;
-    if (sealed.value.versionHash !== expectedHash)
-      return f(
-        "ops-artifact-mismatch",
-        `replaying the recorded ops from ${parent.versionHash} gives ${sealed.value.versionHash}, not ${expectedHash}: the ops do not produce this artifact`
-      );
-    return undefined;
-  }
-
-  private replayed(parent: Experience, ops: readonly RecordedOperation[]): Experience | undefined {
-    const out = replay(
-      parent,
-      ops.map((r) => r.op),
-      this.applyOpts
-    );
-    if (!out.ok) return undefined;
-    const sealed = sealed_(out.value);
-    return sealed.ok ? sealed.value : undefined;
-  }
 
   /**
    * The one write path: check `expectedHead` against the head, let `prepare` verify and build the
@@ -658,6 +697,59 @@ export class Lineage {
     );
   }
 }
+
+/** Why replaying `ops` on `parent` does NOT yield `expectedHash`, or undefined when it does. */
+function checkOps(
+  parent: Experience,
+  ops: readonly RecordedOperation[],
+  expectedHash: string,
+  applyOpts: ApplyOptions
+): Finding | undefined {
+  const f = (code: string, message: string): Finding => ({ code, severity: "error", message });
+  if (ops.length === 0) return f("empty-ops", "a version after the first records at least one op");
+  for (const [i, r] of ops.entries())
+    if (r.baseVersion !== undefined && r.baseVersion !== parent.versionHash)
+      return f(
+        "stale-base-version",
+        `op #${i} (${r.op.type}) was authored against ${r.baseVersion} but its parent is ${parent.versionHash}`
+      );
+  const out = replay(
+    parent,
+    ops.map((r) => r.op),
+    applyOpts
+  );
+  if (!out.ok) return f("ops-refused", out.finding.message);
+  const sealed = sealed_(out.value);
+  if (!sealed.ok) return sealed.refusal.kind === "refused" ? sealed.refusal.finding : undefined;
+  if (sealed.value.versionHash !== expectedHash)
+    return f(
+      "ops-artifact-mismatch",
+      `replaying the recorded ops from ${parent.versionHash} gives ${sealed.value.versionHash}, not ${expectedHash}: the ops do not produce this artifact`
+    );
+  return undefined;
+}
+
+function replayed(
+  parent: Experience,
+  ops: readonly RecordedOperation[],
+  applyOpts: ApplyOptions
+): Experience | undefined {
+  const out = replay(
+    parent,
+    ops.map((r) => r.op),
+    applyOpts
+  );
+  if (!out.ok) return undefined;
+  const sealed = sealed_(out.value);
+  return sealed.ok ? sealed.value : undefined;
+}
+
+/**
+ * `verify` checks ADDRESSES, not authority: the write path (`advance`/`compose`) is where a
+ * `declassify*` op is gated, so a version that is already in the log replays with declassify
+ * allowed. Refusing it here would report a legitimately host-authorized version as `ops-refused`.
+ */
+const VERIFY_APPLY: ApplyOptions = { allowDeclassify: true };
 
 interface Prepared {
   readonly artifact: Experience;

@@ -46,6 +46,16 @@ export interface LineageStore {
   read(experienceId: string): Promise<readonly StoredLineageRecord[]>;
 }
 
+/**
+ * A lost slot, by class OR name (a store decorator or a second copy of the package throws an error
+ * that is not `instanceof` ours); mirrors the kernel's `isWriteConflict`.
+ */
+function isWriteConflict(err: unknown): boolean {
+  if (err instanceof DuplicateSequenceError || err instanceof DuplicateEnvelopeIdError) return true;
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "DuplicateSequenceError" || name === "DuplicateEnvelopeIdError";
+}
+
 const clone = <T>(v: T): T => structuredClone(v);
 
 /** Reference in-memory store. Copies on the way in and out, so no caller can mutate the log. */
@@ -77,7 +87,7 @@ const WORKFLOW_ID = "loom-ui.lineage";
 /**
  * A `LineageStore` over loom's `EventStore`. One stream per experience
  * (`__loom_ui_lineage__:<experienceId>`, a RESERVED stream so enumerators of real executions skip
- * it); the lineage sequence IS the envelope sequence, so the CAS is the log's own
+ * it; see the README for what a reserved stream costs); the lineage sequence IS the envelope sequence, so the CAS is the log's own
  * `(executionId, sequence)` uniqueness. The adapter checks the tip first (a store enforces a
  * taken slot, not a skipped one) and treats a `DuplicateSequenceError` from a racing writer as a
  * lost CAS. Fencing, tenancy and sharding decorators wrap `store` as usual.
@@ -102,7 +112,7 @@ export function eventStoreLineageStore(store: EventStore): LineageStore {
           metadata: { at: record.at },
         });
       } catch (err) {
-        if (err instanceof DuplicateSequenceError || err instanceof DuplicateEnvelopeIdError)
+        if (isWriteConflict(err))
           return { ok: false, tip: (await headOf(store, executionId)) ?? sequence };
         throw err;
       }

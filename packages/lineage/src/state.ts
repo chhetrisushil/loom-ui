@@ -1,4 +1,10 @@
-import type { Finding, Provenance, RecordedOperation } from "@loom-ui/core";
+import {
+  type Finding,
+  MAX_TREE_DEPTH,
+  type Provenance,
+  type RecordedOperation,
+  treeDepth,
+} from "@loom-ui/core";
 import {
   type BranchedPayload,
   type ComposedPayload,
@@ -52,6 +58,44 @@ export interface LineageState {
   readonly promoted: string | null;
 }
 
+/** Most ops one version may record. A longer array is a finding before the schema ever walks it. */
+export const MAX_OPS_PER_VERSION = 10_000;
+/** How deep `prompt` ops may nest their `materialized` ops while being checked. */
+export const MAX_OP_NESTING = 16;
+
+/**
+ * Why a stored ops array must not reach the (recursive) zod `Operation` schema, or undefined when
+ * it may. The schema recurses through `insertNode.node` and `prompt.materialized`, so a payload
+ * nested past the caps would blow the stack inside `safeParse` instead of returning an issue;
+ * a log is untrusted input (anyone with append access to the stream wrote it).
+ */
+function opsRefusal(ops: unknown): string | undefined {
+  if (!Array.isArray(ops)) return undefined; // the schema reports the wrong shape
+  if (ops.length > MAX_OPS_PER_VERSION)
+    return `records ${ops.length} ops, over the ${MAX_OPS_PER_VERSION} limit`;
+  const stack: Array<{ op: unknown; nest: number }> = [];
+  for (const r of ops) stack.push({ op: (r as { op?: unknown } | null)?.op, nest: 1 });
+  let seen = 0;
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const { op, nest } = top;
+    if (typeof op !== "object" || op === null) continue;
+    if (++seen > MAX_OPS_PER_VERSION * 2) return "nests too many ops";
+    const node = (op as { node?: unknown }).node;
+    if (node !== undefined) {
+      const depth = treeDepth(node as never);
+      if (depth > MAX_TREE_DEPTH)
+        return `an op's node nests ${depth} levels, over the ${MAX_TREE_DEPTH} limit`;
+    }
+    const inner = (op as { materialized?: unknown }).materialized;
+    if (Array.isArray(inner)) {
+      if (nest >= MAX_OP_NESTING) return `prompt ops nest over ${MAX_OP_NESTING} levels`;
+      if (inner.length > MAX_OPS_PER_VERSION) return "a prompt op materializes too many ops";
+      for (const i of inner) stack.push({ op: i, nest: nest + 1 });
+    }
+  }
+  return undefined;
+}
+
 export type Fold = { ok: true; state: LineageState } | { ok: false; finding: Finding };
 
 const bad = (code: string, message: string): Fold => ({
@@ -60,6 +104,24 @@ const bad = (code: string, message: string): Fold => ({
 });
 
 export function foldLineage(experienceId: string, records: readonly StoredLineageRecord[]): Fold {
+  try {
+    return foldChecked(experienceId, records);
+  } catch (err) {
+    // Total by construction: whatever a hostile record does (a throwing getter, a shape the
+    // checks above did not anticipate) is a finding, never an exception out of every read.
+    return bad("lineage-event-invalid", `lineage "${experienceId}": ${errMessage(err)}`);
+  }
+}
+
+const errMessage = (err: unknown): string => {
+  try {
+    return err instanceof Error ? err.message : String(err);
+  } catch {
+    return "unreadable record";
+  }
+};
+
+function foldChecked(experienceId: string, records: readonly StoredLineageRecord[]): Fold {
   const versions = new Map<string, VersionRecord>();
   const order: string[] = [];
   let head: string | null = null;
@@ -67,6 +129,11 @@ export function foldLineage(experienceId: string, records: readonly StoredLineag
   let expectedSequence = 0;
   for (const rec of records) {
     expectedSequence += 1;
+    if (typeof rec !== "object" || rec === null)
+      return bad(
+        "lineage-event-invalid",
+        `lineage "${experienceId}" event #${expectedSequence}: the record is not an object`
+      );
     const where = `lineage "${experienceId}" event #${rec.sequence} (${rec.type})`;
     if (rec.sequence !== expectedSequence)
       return bad(
@@ -75,6 +142,8 @@ export function foldLineage(experienceId: string, records: readonly StoredLineag
       );
     if (!isLineageEventType(rec.type))
       return bad("lineage-event-unknown", `${where}: unknown type`);
+    const tooBig = opsRefusal((rec.payload as { ops?: unknown } | null)?.ops);
+    if (tooBig !== undefined) return bad("lineage-event-invalid", `${where}: ${tooBig}`);
     const parsed = PAYLOAD_SCHEMAS[rec.type].safeParse(rec.payload);
     if (!parsed.success)
       return bad(
