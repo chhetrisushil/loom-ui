@@ -61,7 +61,7 @@ export interface DecideScope {
   invokeTransient<TIn = unknown, TOut = unknown>(
     toolId: string,
     input: TIn,
-    opts?: { readonly signal?: AbortSignal }
+    opts?: { readonly signal?: AbortSignal; readonly onDelta?: PlannerDeltaSink }
   ): Promise<TOut>;
 }
 export interface DecideContext {
@@ -86,35 +86,48 @@ export interface PlannerUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
 }
+/**
+ * One live chunk of a model reply — structurally loom's `EffectDelta` (ADR 0119,
+ * `@loom/effect-runtime`), so a scope's chunk flows through with no adapter. `delta` is a TAINTED
+ * string (the model's text is untrusted): unwrap it explicitly to display it. A `reset` chunk
+ * (empty `delta`) means the call is retrying and the text so far is void; the terminal `done`
+ * chunk carries the provider's `usage`. Live-only: never recorded, and it may never arrive at all
+ * (a refused sink, a non-streaming model) — the settled return value is authoritative.
+ */
+export interface PlannerDelta {
+  readonly delta: TaintedValue<string>;
+  readonly done?: true;
+  readonly reset?: true;
+  readonly attempt?: number;
+  readonly usage?: PlannerUsage;
+}
+/** Synchronous and fire-and-forget; a throw is swallowed by the runtime. */
+export type PlannerDeltaSink = (chunk: PlannerDelta) => void;
+
 export interface PlannerModelRequest {
   readonly system?: string;
   readonly messages: readonly PlannerMessage[];
 }
 export interface PlannerModel {
   /**
-   * The whole reply. `opts.signal` aborts the call: a model that can honour it (an HTTP request,
-   * a provider SDK) should; one that ignores it is still cancelled at the planner's next check.
+   * The whole reply — the ONE model call, governed like any other (a scope-routed model sends it
+   * through `scope.invokeTransient`, so authorization, middleware, taint and budget admission
+   * apply whether or not anyone is watching). `opts.signal` aborts the call (the planner also
+   * stops waiting for a model that ignores it). `opts.onDelta` is passed ONLY when the caller asked
+   * for partials: a model that can stream forwards it (`scope.invokeTransient(id, req, { signal,
+   * onDelta })`) and the planner shows partials as nodes complete; one that cannot, or whose
+   * runtime refuses the sink, simply never calls it and the turn completes without partials.
+   * What `complete` RETURNS — not the deltas — is what the plan (and so `ctx.decide`) is built
+   * from, and its `usage` is the turn's usage.
    */
   complete(
     request: PlannerModelRequest,
-    opts?: { readonly signal?: AbortSignal }
+    opts?: { readonly signal?: AbortSignal; readonly onDelta?: PlannerDeltaSink }
   ): Promise<{
     readonly content: string;
     /** Absent when the provider reports none — "unreported", not "free". */
     readonly usage?: PlannerUsage;
   }>;
-  /**
-   * OPTIONAL streaming: the same reply, as it is written, in order. The planner uses it only when
-   * the caller asked for partials (`PlanStreamOptions.onPartial`); concatenated, the chunks are
-   * what `complete` would have returned, and THAT assembled text — not the chunks — is what the
-   * plan (and so `ctx.decide`) is built from. A stream reports no token usage (an iterable of
-   * strings has nowhere to), so a streamed attempt's usage is absent: "unreported", not "free".
-   * Ending the iteration early (`return()`) must release the connection.
-   */
-  stream?(
-    request: PlannerModelRequest,
-    opts?: { readonly signal?: AbortSignal }
-  ): AsyncIterable<string>;
 }
 
 /**

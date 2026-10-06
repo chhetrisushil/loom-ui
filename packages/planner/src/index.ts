@@ -19,13 +19,7 @@ export {
   unsampledDrift,
 } from "./drift";
 export type { DriftContextEntry, DriftReviser } from "./drift";
-export {
-  MAX_STREAM_REPLY_CHARS,
-  REFERENCE_POLICY,
-  REFERENCE_SOURCE,
-  ReferencePlanner,
-  scratchGenesis,
-} from "./reference";
+export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } from "./reference";
 export { NodeScanner } from "./streamScan";
 export type { ScanLimits } from "./streamScan";
 export type { ReferencePlannerOptions } from "./reference";
@@ -33,6 +27,7 @@ export { isControlPlaneError } from "./controlPlane";
 export { REACH_DECLARATION, declarePlannerReach, readPlannerReach } from "./reach";
 export type { PlannerReach } from "./reach";
 export { scopeInvoker } from "./scope";
+export type { ScopeInvoker } from "./scope";
 export { addUsage, isPlannerUsage, readReportedUsage, totalUsage } from "./usage";
 export { EXPERIENCE_OP_ACTION, EXPERIENCE_PROMOTED, interpretAction } from "./interaction";
 export type { ExperiencePromotedPayload, Interpretation } from "./interaction";
@@ -67,6 +62,8 @@ export type {
   DecideOptionsLike,
   DecideScope,
   Planner,
+  PlannerDelta,
+  PlannerDeltaSink,
   PlannerMessage,
   PlannerModel,
   PlannerModelRequest,

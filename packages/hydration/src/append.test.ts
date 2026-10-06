@@ -1,6 +1,16 @@
+import {
+  type ContainerNode,
+  type Experience,
+  type SemanticNode,
+  defineSemanticCatalog,
+  genesis,
+} from "@loom-ui/core";
+import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
+import { HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
+import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
 const mk = () => new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
 
@@ -71,5 +81,126 @@ describe("HydrationStore.append — token streams into a handle", () => {
     const b = new HydrationStore(rt, { experienceId: "e", principalId: "b" });
     a.append("t", { seq: 0, text: "secret" });
     expect(b.value("t")).toBeUndefined();
+  });
+});
+
+describe("appends go through the viewer gate (U10) — a controller fronts the store", () => {
+  const catalog = defineSemanticCatalog({
+    id: "append.gate.v1",
+    entries: [
+      {
+        name: "Say",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: { web: { kind: "StreamingText", props: [], binding: "required" } },
+      },
+      {
+        name: "Num",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: { web: { kind: "Kpi", props: [], binding: "required" } },
+      },
+    ],
+  });
+  const node = (
+    id: string,
+    type: string,
+    handle: string,
+    sensitivity?: "secret" | "internal"
+  ): SemanticNode => ({
+    id,
+    order: id,
+    kind: "semantic",
+    type,
+    typeVersion: "1.0.0",
+    span: 4,
+    props: {},
+    binding: { handle, priority: "P0", ...(sensitivity && { sensitivity }) },
+  });
+  const exp = (): Experience => {
+    const g = genesis({
+      experienceId: "exp-1",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-10-06T00:00:00Z", sourceKind: "test" },
+    });
+    const handles = ["say", "audit", "num"];
+    return {
+      ...g,
+      versionHash: "sha256:v1",
+      root: {
+        ...(g.root as ContainerNode),
+        children: [
+          node("a", "Say", "say"),
+          node("b", "Say", "audit", "secret"),
+          node("c", "Num", "num"),
+        ],
+      },
+      providers: Object.fromEntries(
+        handles.map((h) => [h, providerSpec(h, [mcpStep("s", `tool.${h}`)])])
+      ),
+    };
+  };
+  const rig = (viewer: { clearance?: "secret" | "internal" } | undefined, kinds = true) => {
+    const clock = new ManualClock();
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const ctl = new HydrationController({
+      invoker: new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({})),
+      store,
+      clock: clock.now,
+      setTimer: clock.setTimer,
+      ...(viewer !== undefined && { viewer }),
+      ...(kinds && { outputKinds: { catalog, surface: "web" as const } }),
+    });
+    return { store, ctl, clock };
+  };
+  const refused = (r: ReturnType<HydrationStore["append"]>) => (r.ok ? undefined : r.finding.code);
+
+  it("a handle restricted for the viewer is refused, and its value never reaches the store", async () => {
+    const { store, ctl, clock } = rig({ clearance: "internal" });
+    ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    const r = ctl.append("audit", { seq: 0, text: "TOP SECRET" });
+    expect(refused(r)).toBe("restricted");
+    expect(store.value("audit")).toBeUndefined();
+    expect(store.status("audit")).toBeUndefined();
+    // the store's own append is gated the same way once a controller fronts it
+    expect(refused(store.append("audit", { seq: 0, text: "TOP SECRET" }))).toBe("restricted");
+    expect(JSON.stringify(store.state())).not.toContain("TOP SECRET");
+  });
+
+  it("a cleared viewer may stream into it", async () => {
+    const { store, ctl, clock } = rig({ clearance: "secret" });
+    ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    expect(ctl.append("audit", { seq: 0, text: "ok" })).toEqual({ ok: true, applied: true });
+    expect(store.value("audit")).toBe("ok");
+  });
+
+  it("an unbound handle, and a handle bound to a non-StreamingText widget, are refused", async () => {
+    const { store, ctl, clock } = rig({ clearance: "internal" });
+    expect(refused(ctl.append("say", { seq: 0, text: "x" }))).toBe("stream-unbound"); // before load
+    ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    expect(refused(ctl.append("ghost", { seq: 0, text: "x" }))).toBe("stream-unbound");
+    expect(refused(ctl.append("num", { seq: 0, text: "x" }))).toBe("stream-kind-mismatch");
+    expect(store.value("ghost")).toBeUndefined();
+    expect(ctl.append("say", { seq: 0, text: "hi" })).toEqual({ ok: true, applied: true });
+    expect(store.value("say")).toBe("hi");
+  });
+
+  it("a viewer change re-gates: a handle the new viewer may not see stops accepting chunks", async () => {
+    const { store, ctl, clock } = rig({ clearance: "secret" });
+    ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    expect(ctl.append("audit", { seq: 0, text: "a" }).ok).toBe(true);
+    ctl.setViewer({ clearance: "internal" });
+    expect(refused(ctl.append("audit", { seq: 1, text: "b" }))).toBe("restricted");
+    expect(store.value("audit")).toBeUndefined(); // the recompose removed it; nothing re-landed
   });
 });

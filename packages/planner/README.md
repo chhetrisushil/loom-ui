@@ -103,8 +103,9 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 - `ReferencePlanner` — implements `Planner`. Constructor: `{ model: PlannerModel | ((scope: DecideScope) => PlannerModel),
   modelId: string, maxAttempts?: number }` (default 2 attempts, parse/validation retries included).
   Pass a factory to make the model calls AS the deciding execution, e.g.
-  `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req) =>
-  inv.invokeTransient("llm.complete", req) }; }`; a plain model ignores the scope.
+  `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req, o) =>
+  inv.invokeTransient("llm.complete", req, o) }; }` (forward `o`: it carries the signal and, for a
+  streamed turn, the delta sink); a plain model ignores the scope.
 - `reach?: { run?, transient? }` — the planner's **declared reach** for `@loom/verify` (loom L32). A
   flow that calls `planner.compose(input, ctx)` hands its `ctx` to code the verifier cannot see
   into; the planner declares what that code runs, and the verifier counts those tools against the
@@ -232,28 +233,36 @@ the probe's calls carry no `toolId`, so it cannot pass without observing a tool.
 
 ## Streaming a turn (U1)
 
-Optional and generic. A model MAY implement `stream(req, { signal }) → AsyncIterable<string>`; pass
-`{ onPartial, signal }` as the third argument of `compose`/`revise` and the reference planner
-streams (only when a listener AND a streaming model are both present; otherwise it is the
-whole-reply call, byte-for-byte as before).
+Optional and generic, and ONE governed call: there is no second model path. Pass
+`{ onPartial, signal }` as the third argument of `compose`/`revise` and the planner hands
+`model.complete(req, { signal, onDelta })` a sink. A scope-routed model forwards it —
+`scope.invokeTransient("llm.complete", req, { signal, onDelta })` (loom ADR 0119) — so the streamed
+turn is authorised, metered, taint-fenced, kill-switched and cancelled exactly as a non-streamed one
+(a denied streamed turn rejects, records nothing and emits no partial). A model that cannot stream,
+or a runtime that refuses the sink (an output validator with no delta form), never calls `onDelta`:
+the turn simply completes without partials.
 
 - **Partials are a live side channel, the decision is the final.** `ctx.decide` still records ONE
-  value: the plan built from the assembled reply, identical to the non-streaming result for the
-  same model output. A replay serves it with no model call and emits no partial. No loom change
-  is needed: the decider is an ordinary async function and `decide` records what it returns.
+  value: the plan built from what `complete` RETURNS — identical to the non-streaming result for the
+  same model output, usage included. A replay serves it with no model call and emits no partial.
+- **Deltas are tainted** (`PlannerDelta.delta` is a `TaintedValue<string>`, ADR 0085); the planner
+  unwraps them only to scan for completed nodes. A malformed delta is a `model-error` attempt, not a
+  silent skip. A runtime `reset` chunk (the call retried) clears the scanner and emits an empty-ops
+  partial.
 - **Each partial is a whole pending op list** (the nodes the reply has completed so far, through
   the same contract, materialisation, replay and `validateExperience` as the final; a partial that
   would not stand as a final plan is not emitted). Fold them with core's `OpStream` (unsealed
   working copy, never a lineage commit); a later partial supersedes the earlier; a retry starts
   with an empty-ops reset. Partials carry no summary (U7): the summary and its `summaryClass` come
   only with the final result.
-- **Bounded.** `NodeScanner` is a single forward pass over the stream (not a re-parse per chunk),
-  capped by reply size, node size and node count; past a cap you simply get no more partials and
-  the final still arrives. The assembled reply is capped (`MAX_STREAM_REPLY_CHARS`).
-- **Cancellation.** `signal` aborts the turn: it rejects with `AbortError` and records nothing,
-  and the signal is forwarded to `model.complete`/`model.stream`. A stream reports no token usage.
+- **Bounded, linear.** `NodeScanner` scans each chunk once with carried state (only the current
+  element's text is kept), capped by reply size, node size and node count; past a cap you simply
+  get no more partials and the final still arrives. It stops for good once `nodes` has closed.
+- **Cancellation.** `signal` aborts the turn: it rejects with `AbortError` and records nothing. The
+  planner races the call against the abort, so a model that ignores the signal cannot hold the turn.
 - **Conformance.** `checkPlannerConformance` gains `streamProbe` (opt-in): partials arrive and
   apply, final equals whole-reply, replay recalls nothing, a cancelled turn rejects unrecorded.
+  With `denialProbe` too, the refusal is replayed with `onPartial` set (`stream-denial-*`).
 
 ## Examples
 

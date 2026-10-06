@@ -2,7 +2,8 @@ import { type Operation, genesis, replay, validateExperience } from "@loom-ui/co
 import { seal } from "@loom-ui/core/log";
 import { describe, expect, it } from "vitest";
 import { ReferencePlanner } from "./reference";
-import type { PlanPartial, PlannerModel } from "./spi";
+import { scopeInvoker } from "./scope";
+import type { DecideScope, PlanPartial, PlannerDeltaSink, PlannerModel, PlannerUsage } from "./spi";
 import {
   capabilitiesFixture,
   intentFixture,
@@ -10,6 +11,7 @@ import {
   planningCatalog,
   recordingContext,
   scriptedModel,
+  textDelta,
 } from "./testing.test-support";
 
 const metric = (id: string) => ({
@@ -36,43 +38,28 @@ const input = {
   capabilities: capabilitiesFixture,
 };
 
-/** Chunks `text` into `size`-char pieces. Records calls, the signal it saw, and whether it was closed early. */
-function streamingModel(replies: readonly string[], size = 11) {
+/**
+ * Streams each reply to the `onDelta` the planner hands `complete`, in `size`-char tainted chunks
+ * (then a `done`), and returns the whole reply. Records calls, the opts it saw, and the deltas sent.
+ */
+function streamingModel(replies: readonly string[], size = 11, usage?: PlannerUsage) {
   const m = {
-    streamCalls: 0,
     completeCalls: 0,
+    withSink: 0,
     signals: [] as (AbortSignal | undefined)[],
-    closedEarly: 0,
-    async complete() {
+    async complete(_req: unknown, opts?: { signal?: AbortSignal; onDelta?: PlannerDeltaSink }) {
+      const text = replies[Math.min(m.completeCalls, replies.length - 1)] as string;
       m.completeCalls += 1;
-      return { content: replies[Math.min(m.completeCalls - 1, replies.length - 1)] as string };
-    },
-    stream(_req: unknown, opts?: { signal?: AbortSignal }) {
-      const text = replies[Math.min(m.streamCalls, replies.length - 1)] as string;
-      m.streamCalls += 1;
       m.signals.push(opts?.signal);
-      return {
-        [Symbol.asyncIterator]() {
-          let i = 0;
-          let finished = false;
-          return {
-            async next() {
-              if (i >= text.length) {
-                finished = true;
-                return { done: true as const, value: undefined };
-              }
-              const value = text.slice(i, i + size);
-              i += size;
-              await Promise.resolve();
-              return { done: false as const, value };
-            },
-            async return() {
-              if (!finished) m.closedEarly += 1;
-              return { done: true as const, value: undefined };
-            },
-          };
-        },
-      };
+      if (opts?.onDelta !== undefined) {
+        m.withSink += 1;
+        for (let i = 0; i < text.length; i += size) {
+          await Promise.resolve();
+          opts.onDelta(textDelta(text.slice(i, i + size)));
+        }
+        opts.onDelta({ ...textDelta(""), done: true, ...(usage && { usage }) });
+      }
+      return { content: text, ...(usage && { usage }) };
     },
   };
   return m satisfies PlannerModel;
@@ -107,8 +94,8 @@ describe("streaming planner — compose", () => {
     }
     // every node closed before the object did, so the last partial IS the final plan's ops
     expect(partials[partials.length - 1]?.ops).toEqual(r.ops);
-    expect(model.streamCalls).toBe(1);
-    expect(model.completeCalls).toBe(0);
+    expect(model.completeCalls).toBe(1); // ONE call: the stream rides it, there is no second path
+    expect(model.withSink).toBe(1);
   });
 
   it("the FINAL result is identical to the non-streaming planner's for the same model output", async () => {
@@ -133,21 +120,33 @@ describe("streaming planner — compose", () => {
     const again = await planner.compose(input, ctx, { onPartial: (p) => seen.push(p) });
     expect(again).toEqual(first);
     expect(seen).toEqual([]);
-    expect(model.streamCalls).toBe(1);
+    expect(model.completeCalls).toBe(1);
     expect(ctx.deciderCalls).toBe(1);
   });
 
-  it("streams only when someone listens and the model can: otherwise it is the whole-reply call", async () => {
+  it("hands the model a sink only when someone listens; a model with no deltas simply completes without partials", async () => {
     const m1 = streamingModel([draft("a")]);
     await new ReferencePlanner({ model: m1, modelId: "m" }).compose(input, recordingContext());
-    expect([m1.streamCalls, m1.completeCalls]).toEqual([0, 1]);
-    const m2 = scriptedModel([draft("a")]);
+    expect([m1.completeCalls, m1.withSink]).toEqual([1, 0]);
+    const m2 = scriptedModel([draft("a")]); // never calls onDelta (non-streaming / sink refused)
     const seen: PlanPartial[] = [];
-    await new ReferencePlanner({ model: m2, modelId: "m" }).compose(input, recordingContext(), {
-      onPartial: (p) => seen.push(p),
-    });
+    const r = await new ReferencePlanner({ model: m2, modelId: "m" }).compose(
+      input,
+      recordingContext(),
+      { onPartial: (p) => seen.push(p) }
+    );
     expect(m2.calls).toBe(1);
     expect(seen).toEqual([]);
+    expect(r.ops.length).toBeGreaterThan(0);
+  });
+
+  it("usage comes from what complete RETURNS (the old stream path lost it)", async () => {
+    const r = await new ReferencePlanner({
+      model: streamingModel([draft("a")], 11, { inputTokens: 3, outputTokens: 4 }),
+      modelId: "m",
+    }).compose(input, recordingContext(), { onPartial: () => {} });
+    expect(r.report.usage).toEqual({ inputTokens: 3, outputTokens: 4 });
+    expect(r.report.attempts[0]?.usage).toEqual({ inputTokens: 3, outputTokens: 4 });
   });
 
   it("a streamed node the contract refuses is never shown as a partial; the final path still reports and retries", async () => {
@@ -191,63 +190,135 @@ describe("streaming planner — compose", () => {
     expect(r.ops.length).toBeGreaterThan(0);
   });
 
-  it("a stream that never ends is bounded: the reply cap is a model-output-invalid finding, not memory growth", async () => {
-    const endless: PlannerModel = {
-      async complete() {
-        return { content: "" };
-      },
-      stream() {
-        return {
-          async *[Symbol.asyncIterator]() {
-            for (;;) yield "x".repeat(8192);
-          },
-        };
-      },
-    };
-    const r = await new ReferencePlanner({ model: endless, modelId: "m", maxAttempts: 1 }).compose(
-      input,
-      recordingContext(),
-      { onPartial: () => {} }
-    );
-    expect(r.ops).toEqual([]);
-    expect(r.findings.map((f) => f.code)).toContain("plan-failed");
-    expect(r.report.attempts[0]?.findings[0]?.code).toBe("model-output-invalid");
-  });
-
-  it("a stream that throws midway is a model-error attempt and the next attempt can succeed", async () => {
+  it("a call that throws midway is a model-error attempt and the next attempt can succeed", async () => {
     let n = 0;
     const flaky: PlannerModel = {
-      async complete() {
-        return { content: "" };
-      },
-      stream() {
+      async complete(_r, opts) {
         n += 1;
-        const first = n === 1;
-        return {
-          async *[Symbol.asyncIterator]() {
-            yield draft("a").slice(0, 20);
-            if (first) throw new Error("socket reset");
-            yield draft("a").slice(20);
-          },
-        };
+        opts?.onDelta?.(textDelta(draft("a").slice(0, 20)));
+        if (n === 1) throw new Error("socket reset");
+        opts?.onDelta?.(textDelta(draft("a").slice(20)));
+        return { content: draft("a") };
       },
     };
     const r = await new ReferencePlanner({ model: flaky, modelId: "m" }).compose(
       input,
       recordingContext(),
-      {
-        onPartial: () => {},
-      }
+      { onPartial: () => {} }
     );
     expect(
       r.report.attempts.map((a) => a.findings.find((f) => f.severity === "error")?.code)
     ).toEqual(["model-error", undefined]);
     expect(r.ops.length).toBeGreaterThan(0);
   });
+
+  it("a runtime `reset` (the call retried) clears the view: an empty partial, then the new text from scratch", async () => {
+    const model: PlannerModel = {
+      async complete(_r, opts) {
+        const t = draft("a", "b");
+        opts?.onDelta?.(textDelta(t.slice(0, t.indexOf('"id":"b"') - 2))); // node "a" closed
+        opts?.onDelta?.({ delta: textDelta("").delta, reset: true, attempt: 2 });
+        opts?.onDelta?.(textDelta(t));
+        return { content: t };
+      },
+    };
+    const partials: PlanPartial[] = [];
+    await new ReferencePlanner({ model, modelId: "m" }).compose(input, recordingContext(), {
+      onPartial: (p) => partials.push(p),
+    });
+    const at = partials.findIndex((p) => p.ops.length === 0);
+    expect(at).toBeGreaterThan(0);
+    // the retried text is shown from scratch (a stale `seen` set would have swallowed it)
+    expect(partials[at - 1]?.nodes).toBe(1);
+    expect(partials[at + 1]?.nodes).toBe(3);
+  });
+
+  it("a malformed delta is a model-error attempt, not silently skipped", async () => {
+    let n = 0;
+    const model: PlannerModel = {
+      async complete(_r, opts) {
+        n += 1;
+        if (n === 1) opts?.onDelta?.({ delta: 42 } as never);
+        return { content: draft("a") };
+      },
+    };
+    const r = await new ReferencePlanner({ model, modelId: "m" }).compose(
+      input,
+      recordingContext(),
+      { onPartial: () => {} }
+    );
+    expect(r.report.attempts[0]?.findings.map((f) => f.code)).toContain("model-error");
+    expect(r.ops.length).toBeGreaterThan(0); // attempt 2 is clean
+  });
+});
+
+describe("streaming planner — governance (ADR 0119): one governed call", () => {
+  /** A scope-routed model, as the README shows: the delta sink rides `scope.invokeTransient`. */
+  const routed = (scope: DecideScope): PlannerModel => {
+    const inv = scopeInvoker(scope);
+    return { complete: (req, o) => inv.invokeTransient("llm.complete", req, o) };
+  };
+
+  it("a DENYING scope + onPartial: rejects with the denial, records nothing, emits nothing, and the call went through the scope", async () => {
+    const denied = Object.assign(new Error("denied by scope"), { name: "CapabilityDeniedError" });
+    const calls: string[] = [];
+    const scope: DecideScope = {
+      invokeTransient: (id) => {
+        calls.push(id);
+        return Promise.reject(denied);
+      },
+    };
+    const ctx = recordingContext(scope);
+    const partials: PlanPartial[] = [];
+    await expect(
+      new ReferencePlanner({ model: routed, modelId: "m" }).compose(input, ctx, {
+        onPartial: (p) => partials.push(p),
+      })
+    ).rejects.toBe(denied);
+    expect(calls).toEqual(["llm.complete"]);
+    expect(ctx.decisions.size).toBe(0);
+    expect(partials).toEqual([]);
+  });
+
+  it("the sink rides the scope call: the scope sees onDelta, and its deltas become partials", async () => {
+    const text = draft("a", "b");
+    let sawSink = false;
+    const scope: DecideScope = {
+      async invokeTransient(_id, _in, opts) {
+        sawSink = opts?.onDelta !== undefined;
+        for (let i = 0; i < text.length; i += 9) opts?.onDelta?.(textDelta(text.slice(i, i + 9)));
+        return { content: text } as never;
+      },
+    };
+    const partials: PlanPartial[] = [];
+    const r = await new ReferencePlanner({ model: routed, modelId: "m" }).compose(
+      input,
+      recordingContext(scope),
+      { onPartial: (p) => partials.push(p) }
+    );
+    expect(sawSink).toBe(true);
+    expect(partials.length).toBeGreaterThanOrEqual(2);
+    expect(r.ops.length).toBeGreaterThan(0);
+  });
+
+  it("without onPartial the scope call carries no sink", async () => {
+    let sawSink: boolean | undefined;
+    const scope: DecideScope = {
+      async invokeTransient(_id, _in, opts) {
+        sawSink = opts?.onDelta !== undefined;
+        return { content: draft("a") } as never;
+      },
+    };
+    await new ReferencePlanner({ model: routed, modelId: "m" }).compose(
+      input,
+      recordingContext(scope)
+    );
+    expect(sawSink).toBe(false);
+  });
 });
 
 describe("streaming planner — cancellation", () => {
-  it("aborting mid-stream rejects with AbortError, closes the stream, and RECORDS NOTHING", async () => {
+  it("aborting from a partial rejects with AbortError and RECORDS NOTHING; nothing is emitted after", async () => {
     const model = streamingModel([draft("a", "b", "c")], 5);
     const ac = new AbortController();
     const ctx = recordingContext();
@@ -261,13 +332,27 @@ describe("streaming planner — cancellation", () => {
       },
     });
     await expect(p).rejects.toMatchObject({ name: "AbortError" });
-    expect(got).toBe(1); // nothing is emitted after the abort
-    expect(model.closedEarly).toBe(1);
+    expect(got).toBe(1);
     expect(model.signals[0]).toBe(ac.signal);
     expect(ctx.decisions.size).toBe(0);
     // the same input can be planned again: nothing was pinned
     const ok = await planner.compose(input, ctx, { onPartial: () => {} });
     expect(ok.ops.length).toBeGreaterThan(0);
+  });
+
+  it("a model that IGNORES the signal cannot hold an aborted turn: it rejects promptly", async () => {
+    const ac = new AbortController();
+    const model: PlannerModel = {
+      complete: () => new Promise(() => {}), // never settles, never looks at the signal
+    };
+    const ctx = recordingContext();
+    const p = new ReferencePlanner({ model, modelId: "m" }).compose(input, ctx, {
+      signal: ac.signal,
+      onPartial: () => {},
+    });
+    setTimeout(() => ac.abort(), 5);
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(ctx.decisions.size).toBe(0);
   });
 
   it("an already-aborted signal never calls the model", async () => {
@@ -281,7 +366,7 @@ describe("streaming planner — cancellation", () => {
         onPartial: () => {},
       })
     ).rejects.toMatchObject({ name: "AbortError" });
-    expect(model.streamCalls + model.completeCalls).toBe(0);
+    expect(model.completeCalls).toBe(0);
     expect(ctx.decisions.size).toBe(0);
   });
 

@@ -11,6 +11,7 @@ import {
   strictestClass,
   validateExperience,
 } from "@loom-ui/core";
+import { unwrapTainted } from "@loom/classify";
 import { type DraftNode, draftNodeSchema, parseModelJson, planSchema } from "./contract";
 import { isControlPlaneError } from "./controlPlane";
 import { planDecisionId } from "./decision";
@@ -27,6 +28,7 @@ import type {
   PlanResult,
   PlanStreamOptions,
   Planner,
+  PlannerDeltaSink,
   PlannerModel,
   PlannerUsage,
   ReviseInput,
@@ -77,8 +79,29 @@ export function scratchGenesis(intent: Intent): Experience {
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
 const warn = (code: string, message: string): Finding => ({ code, severity: "warn", message });
-/** The longest reply a STREAMED attempt may assemble (the whole-reply call has no bound of its own to apply). */
-export const MAX_STREAM_REPLY_CHARS = 256 * 1024;
+
+/** Settles with `p`, or rejects as soon as `signal` aborts (the call keeps running unobserved). */
+function raceAbort<T>(p: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return p;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError(signal));
+    if (signal.aborted) {
+      p.catch(() => {}); // the call is abandoned: its late failure is nobody's
+      return onAbort();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      }
+    );
+  });
+}
 
 const abortError = (signal: AbortSignal | undefined): Error => {
   const reason = (signal as { reason?: unknown } | undefined)?.reason;
@@ -286,50 +309,66 @@ export class ReferencePlanner implements Planner {
               materialized: ops,
             },
           ];
-    // Stream only when someone is listening AND the model can; otherwise the whole-reply call.
-    const streaming = onPartial !== undefined && model.stream !== undefined;
-    const nodeSchema = streaming ? draftNodeSchema(input.catalog, input.capabilities) : undefined;
+    // Partials only when someone listens; the model call is ONE governed call either way.
+    const nodeSchema =
+      onPartial === undefined ? undefined : draftNodeSchema(input.catalog, input.capabilities);
+    const emit = (p: PlanPartial) => {
+      try {
+        onPartial?.(p);
+      } catch {
+        // a broken consumer must not fail (or record) a plan
+      }
+    };
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       let content: string;
       let reply: object;
       // A cancelled turn is the control plane speaking: reject, record nothing, call nothing.
       if (signal?.aborted) throw abortError(signal);
       try {
-        if (streaming && nodeSchema !== undefined && model.stream !== undefined) {
-          const emit = (p: PlanPartial) => {
-            try {
-              onPartial?.(p);
-            } catch {
-              // a broken consumer must not fail (or record) a plan
-            }
-          };
+        let onDelta: PlannerDeltaSink | undefined;
+        let malformed: string | undefined;
+        if (nodeSchema !== undefined) {
           if (attempt > 0) emit({ attempt, ops: [], findings: [], nodes: 0 });
-          const scanner = new NodeScanner({ maxChars: MAX_STREAM_REPLY_CHARS });
-          const accepted: DraftNode[] = [];
-          const seen = new Set<string>();
-          const parts: string[] = [];
-          let length = 0;
-          const req = messagesFor(previous);
-          for await (const chunk of model.stream(req, signal === undefined ? {} : { signal })) {
-            if (signal?.aborted) throw abortError(signal); // leaving the loop closes the iterator
-            if (typeof chunk !== "string") continue;
-            length += chunk.length;
-            if (length > MAX_STREAM_REPLY_CHARS)
-              throw new StreamOverflow(
-                `the streamed reply exceeded ${MAX_STREAM_REPLY_CHARS} characters`
-              );
-            parts.push(chunk);
+          const scanner = new NodeScanner();
+          let accepted: DraftNode[] = [];
+          let seen = new Set<string>();
+          onDelta = (d) => {
+            if (signal?.aborted || malformed !== undefined) return;
+            if (typeof d !== "object" || d === null) {
+              malformed = "a delta chunk that is not an object";
+              return;
+            }
+            if (d.reset === true) {
+              // The call is retrying: what it showed so far is void.
+              scanner.reset();
+              accepted = [];
+              seen = new Set();
+              emit({ attempt, ops: [], findings: [], nodes: 0 });
+              return;
+            }
+            let text: unknown;
+            try {
+              text = unwrapTainted(d.delta);
+            } catch {
+              text = undefined;
+            }
+            if (d.done === true && (text === "" || text === undefined)) return;
+            if (typeof text !== "string") {
+              malformed = "a delta whose text is not a string";
+              return;
+            }
+            if (text === "") return;
             let grew = false;
-            for (const raw of scanner.feed(chunk)) {
+            for (const raw of scanner.feed(text)) {
               const n = nodeSchema.safeParse(raw);
               // An invalid or repeated node is not shown; the FINAL parse of the whole reply
-              // reports it (and drives the retry), exactly as without streaming.
+              // reports it (and drives the retry), exactly as without partials.
               if (!n.success || seen.has(n.data.id)) continue;
               seen.add(n.data.id);
               accepted.push(n.data);
               grew = true;
             }
-            if (!grew) continue;
+            if (!grew) return;
             const m = materialize(
               { summary: "(streaming)", nodes: accepted },
               base,
@@ -347,31 +386,26 @@ export class ReferencePlanner implements Planner {
                 : [applied.finding]),
             ];
             // The same bar as a final plan: a partial with any error is not shown.
-            if (errorsOf(found).length > 0 || m.ops.length === 0) continue;
-            if (signal?.aborted) throw abortError(signal);
+            if (errorsOf(found).length > 0 || m.ops.length === 0) return;
             emit({ attempt, ops, findings: found, nodes: accepted.length });
-          }
-          content = parts.join("");
-          reply = {}; // a stream reports no usage
-        } else {
-          const r = await model.complete(
-            messagesFor(previous),
-            signal === undefined ? undefined : { signal }
-          );
-          content = r.content;
-          reply = r;
+          };
         }
+        const opts =
+          signal === undefined && onDelta === undefined
+            ? undefined
+            : {
+                ...(signal !== undefined && { signal }),
+                ...(onDelta !== undefined && { onDelta }),
+              };
+        // Race the call against the abort: a model that ignores the signal must not hold the turn.
+        const r = await raceAbort(model.complete(messagesFor(previous), opts), signal);
+        if (malformed !== undefined) throw new Error(`the model streamed ${malformed}`);
+        content = r.content;
+        reply = r;
         if (signal?.aborted) throw abortError(signal); // an abort that landed during the call
       } catch (e) {
         if (signal?.aborted) throw abortError(signal);
         if (isControlPlaneError(e)) throw e; // no retry, no recorded failed plan
-        if (e instanceof StreamOverflow) {
-          const f = err("model-output-invalid", e.message);
-          attempts.push({ parsed: false, findings: [f] });
-          lastFindings = [f];
-          previous = { error: f.message, raw: "" };
-          continue;
-        }
         const f = err(
           "model-error",
           `model call failed: ${e instanceof Error ? e.message : String(e)}`
@@ -497,6 +531,3 @@ export class ReferencePlanner implements Planner {
     };
   }
 }
-
-/** A streamed reply past its bound: an attempt failure (model-output-invalid), never an exception out of the plan. */
-class StreamOverflow extends Error {}

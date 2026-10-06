@@ -245,7 +245,10 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   NOTHING to the store for it: no value and no status, so a store projected to a client does not
   even name the handle (a stale entry is removed). The viewer is snapshotted at construction;
   `setViewer` re-plans (drops now-restricted values, aborts their in-flight loads, loads newly
-  allowed ones). `handleInventory`
+  allowed ones). Token streams obey the same gate: `ctl.append(handle, chunk)` (and `store.append` once a
+  controller fronts the store) refuses a handle that is restricted for the viewer (`restricted`), not
+  bound (`stream-unbound`), or — with `outputKinds` — not a `StreamingText` widget
+  (`stream-kind-mismatch`); nothing is written. `handleInventory`
   omits it (the client learns neither name nor revision); the server answers a client that names it
   anyway exactly as for a handle the experience does not bind (`unknown-handle`, no existence
   oracle) and logs the full `restricted` finding to `onFinding`. No viewer = no clearance, with one

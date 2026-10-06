@@ -107,10 +107,11 @@ export class LuText extends LuWidget {
     const props = this.widget.props as { placeholder?: string };
     const text = (this.value as string) || props.placeholder || "";
     // A token stream (the value grows chunk by chunk — core's `appendChunk`): the span is stable
-    // so Lit patches one text node in place, and it is a POLITE live region that announces only
-    // what is ADDED (`aria-relevant`, non-atomic) so a reader hears the new tokens, not the whole
-    // text again. `aria-busy` holds announcements back while a chunk burst lands and clears when
-    // the store marks the stream done (status `ready`).
+    // so Lit patches one text node in place. It is a POLITE live region, and `aria-busy` is true
+    // while the stream is open: a reader's announcements are held back for the whole stream and
+    // the settled text is announced ONCE, when the store marks the stream done (status `ready`)
+    // and `aria-busy` clears. (`aria-relevant="additions text"` only bounds what is announced
+    // then; it is not what makes a streaming reader hear the tokens one by one.)
     const busy = this.status?.state === "pending";
     return html`<span
       aria-live="polite"
