@@ -1,0 +1,29 @@
+{
+  "name": "@loom-ui/changes",
+  "version": "0.0.1",
+  "description": "Ambient change delivery for loom-ui: a ChangeFeed over lineage events (resume from a cursor, at-least-once, idempotent ids), viewer-safe change descriptions, a per-viewer unread cursor seam, and polling / push head signals",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@loom-ui/core": "workspace:*",
+    "@loom-ui/lineage": "workspace:*",
+    "@loom/event-runtime": "*"
+  },
+  "devDependencies": {
+    "@loom/plugin-content": "*",
+    "@types/node": "catalog:",
+    "typescript": "^5.6.3",
+    "vitest": "catalog:"
+  }
+}

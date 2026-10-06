@@ -3,6 +3,7 @@ import {
   type Finding,
   type Intent,
   type Operation,
+  boundSummary,
   genesis,
   loomCatalogFor,
   replay,
@@ -315,7 +316,9 @@ export class ReferencePlanner implements Planner {
       lastFindings = findings;
       if (errorsOf(findings).length === 0) {
         const report = this.report(decisionId, attempts, attempts.length === 1);
-        if (request === undefined) return { ops: m.ops, findings, report };
+        const summary = boundSummary(parsed.value.summary);
+        const said = summary === undefined ? {} : { summary };
+        if (request === undefined) return { ops: m.ops, findings, report, ...said };
         const prompt: Operation = {
           type: "prompt",
           text: request.text,
@@ -337,6 +340,7 @@ export class ReferencePlanner implements Planner {
                 ]
               : findings,
           report,
+          ...said,
         };
       }
       previous = {

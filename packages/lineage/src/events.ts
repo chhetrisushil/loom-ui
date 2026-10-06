@@ -50,6 +50,13 @@ const Common = {
 export const ComposedPayload = z.object({
   ...Common,
   ops: z.array(RecordedOperationSchema),
+  /**
+   * What the author said about the change (U7): UNTRUSTED text (a planner's model text), bounded
+   * and stripped by `boundSummary` on the way in AND on the way out of the fold, since the log is
+   * untrusted input. Optional, so every version written before it replays unchanged; it is not in
+   * the content address (nothing here is).
+   */
+  summary: z.string().optional(),
 });
 export const RevertedPayload = z.object({ ...Common, revertedTo: Hash });
 export const BranchedPayload = z.object({

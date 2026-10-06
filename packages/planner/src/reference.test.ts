@@ -578,3 +578,30 @@ describe("ReferencePlanner usage from a hostile adapter", () => {
     expect(Object.is(result.report.attempts[0]?.usage?.inputTokens, 0)).toBe(true);
   });
 });
+
+describe("ReferencePlanner keeps the model's summary (U7)", () => {
+  it("returns it as bounded, control-stripped text on the PlanResult", async () => {
+    const planner = new ReferencePlanner({ model: scriptedModel([goodDraft]), modelId: "m" });
+    const composed = await planner.compose(input, recordingContext());
+    expect(composed.summary).toBe("Weekly orders and top SKUs");
+    const noisy = JSON.stringify({
+      ...JSON.parse(goodDraft),
+      summary: `line one\nline two \u202e${"y".repeat(560)}`,
+    });
+    const r = await new ReferencePlanner({ model: scriptedModel([noisy]), modelId: "m" }).compose(
+      input,
+      recordingContext()
+    );
+    expect(r.summary).not.toMatch(/[\n\u202e]/);
+    expect([...(r.summary ?? "")].length).toBeLessThanOrEqual(600);
+  });
+
+  it("has no summary when no plan was produced", async () => {
+    const r = await new ReferencePlanner({
+      model: scriptedModel([badType]),
+      modelId: "m",
+      maxAttempts: 1,
+    }).compose(input, recordingContext());
+    expect(r.summary).toBeUndefined();
+  });
+});

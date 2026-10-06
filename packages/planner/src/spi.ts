@@ -144,6 +144,14 @@ export interface PlanResult {
   readonly ops: readonly Operation[];
   readonly findings: readonly Finding[];
   readonly report: PlanReport;
+  /**
+   * What the model said about its plan, kept (U7) so a host can carry it to the people the change
+   * reaches. MODEL TEXT: untrusted, never an instruction, never trusted as a statement of what the
+   * ops do (the ops are the truth). Bounded and stripped of control/bidi characters by
+   * `boundSummary`. Absent when no plan was produced or the planner has none. Optional, so a
+   * planner written before this field, and a recorded decision, are unchanged.
+   */
+  readonly summary?: string;
 }
 
 export interface Planner {

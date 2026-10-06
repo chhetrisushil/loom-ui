@@ -6,6 +6,7 @@ import {
   type RecordedOperation,
   apply,
   applyAt,
+  boundSummary,
   replay,
 } from "@loom-ui/core";
 import { getExperience, putExperience, seal } from "@loom-ui/core/log";
@@ -235,8 +236,11 @@ export class Lineage {
      * passes it for this one write. Default false. `verify` does not need it (see there).
      */
     readonly allowDeclassify?: boolean;
+    /** What the author said about the change (a planner's `PlanResult.summary`): untrusted, bounded on the way in. */
+    readonly summary?: string;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, artifact, ops, by } = input;
+    const summary = boundSummary(input.summary);
     const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
     return this.commit(experienceId, expectedHead, async (_state, parent) => {
       if (artifact.experienceId !== experienceId)
@@ -283,6 +287,7 @@ export class Lineage {
             parents: sealed.parents,
             ops,
             by,
+            ...(summary !== undefined && { summary }),
           }),
         },
       };
@@ -302,6 +307,8 @@ export class Lineage {
     readonly by: Provenance;
     /** As on {@link advance}: per call, host-only, default false. */
     readonly allowDeclassify?: boolean;
+    /** As on {@link advance}. */
+    readonly summary?: string;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, ops, by } = input;
     const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
@@ -327,6 +334,7 @@ export class Lineage {
       ops,
       by,
       allowDeclassify: input.allowDeclassify === true,
+      ...(input.summary !== undefined && { summary: input.summary }),
     });
   }
 

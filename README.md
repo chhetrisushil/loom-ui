@@ -12,6 +12,7 @@ in the path.
 | Package | Job | README |
 |---|---|---|
 | `@loom-ui/core` | Experience Model, operations + deterministic replay, semantic catalogue, compiler to loom `Blueprint` | [packages/core](packages/core/README.md) |
+| `@loom-ui/changes` | Ambient change delivery (server-side, optional): a `ChangeFeed` over lineage events (resume from a cursor, at-least-once, idempotent ids), viewer-safe change descriptions with attention levels, a per-viewer unread cursor, polling and push head signals | [packages/changes](packages/changes/README.md) |
 | `@loom-ui/hydration` | Resolves an Experience's provider handles through loom's transient effects and publishes them as one loom projection, in-process or split across a trust boundary | [packages/hydration](packages/hydration/README.md) |
 | `@loom-ui/lineage` | Experience lineage runtime (server-side, optional): head pointer with compare-and-set, version walk, revert/undo/branch as new versions, `EXPERIENCE_COMPOSED`/`PROMOTED` events with replay verification, over a ContentStore and an EventStore-shaped seam | [packages/lineage](packages/lineage/README.md) |
 | `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner, drift re-authoring and a conformance kit | [packages/planner](packages/planner/README.md) |

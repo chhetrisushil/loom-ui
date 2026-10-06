@@ -709,3 +709,64 @@ describe("the EventStore adapter", () => {
     expect(await adapter.read("r")).toHaveLength(1);
   });
 });
+
+describe("a composed version keeps the author's summary (U7)", () => {
+  const make = () => {
+    const events = new InMemoryLineageStore();
+    return {
+      events,
+      lin: new Lineage({ events, content: new InMemoryContentStore(), now: clock() }),
+    };
+  };
+
+  it("records it bounded and control-stripped, readable on the version record, and verify stays clean", async () => {
+    const { lin } = make();
+    const v1 = ok(await lin.start(g(), by));
+    const c = ok(
+      await lin.compose({
+        experienceId: "exp",
+        expectedHead: v1.experience.versionHash,
+        ops: [ins(node("m1", "h1"))],
+        by,
+        summary: `added a tile\n\u202e${"z".repeat(5000)}`,
+      })
+    );
+    expect(c.version.summary).toBeDefined();
+    expect(c.version.summary).not.toMatch(/[\n\u202e]/);
+    expect([...(c.version.summary as string)].length).toBeLessThanOrEqual(600);
+    const listed = await lin.versions("exp");
+    expect(listed.ok && listed.value.at(-1)?.summary).toBe(c.version.summary);
+    expect(await lin.verify("exp")).toEqual([]);
+  });
+
+  it("has none when none was given or it is blank, and a hostile logged summary is bounded on read", async () => {
+    const { lin, events } = make();
+    const v1 = ok(await lin.start(g(), by));
+    const c = ok(
+      await lin.compose({
+        experienceId: "exp",
+        expectedHead: v1.experience.versionHash,
+        ops: [ins(node("m1", "h1"))],
+        by,
+        summary: "   ",
+      })
+    );
+    expect(c.version.summary).toBeUndefined();
+    const rows = await events.read("exp");
+    const last = rows.at(-1);
+    // Forge a record whose summary is huge and control-laden (anyone with append access could).
+    const forged = { ...(last?.payload as object), summary: `x\n${"q".repeat(100000)}` };
+    const tip = rows.length;
+    await events.append("exp", tip, {
+      type: EXPERIENCE_COMPOSED,
+      payload: { ...forged, versionHash: "forged", parents: [c.experience.versionHash] },
+      at: "2026-10-06T00:00:00Z",
+    });
+    const state = await lin.versions("exp");
+    expect(state.ok).toBe(true);
+    const forgedVersion = state.ok ? state.value.at(-1) : undefined;
+    expect(forgedVersion?.versionHash).toBe("forged");
+    expect([...(forgedVersion?.summary ?? "")].length).toBeLessThanOrEqual(600);
+    expect(forgedVersion?.summary).not.toContain("\n");
+  });
+});

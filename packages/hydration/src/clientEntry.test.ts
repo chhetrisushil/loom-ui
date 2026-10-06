@@ -34,6 +34,8 @@ const FORBIDDEN_PACKAGES = new Set([
   "@loom/agent",
   // U6 — the lineage runtime is an event log + content store: server-side, never in a client graph.
   "@loom-ui/lineage",
+  // U7 — change delivery reads the lineage and content stores: server-side, never in a client graph.
+  "@loom-ui/changes",
 ]);
 
 /** Hydration's own server-side modules (relative to `dist/`). */
@@ -101,7 +103,7 @@ function forbiddenReach(entry: string): { violations: Reach[]; files: number } {
 
 /** The real directories of the forbidden packages, as a bundler sees them (links resolved). */
 /** Forbidden names that are not dependencies of hydration — refused BY NAME only (no directory). */
-const NOT_A_HYDRATION_DEP = new Set(["@loom-ui/lineage"]);
+const NOT_A_HYDRATION_DEP = new Set(["@loom-ui/lineage", "@loom-ui/changes"]);
 const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].flatMap((name) => {
   if (NOT_A_HYDRATION_DEP.has(name)) return [];
   // Any other forbidden name MUST resolve: a typo or a removed dependency fails here, loudly,
