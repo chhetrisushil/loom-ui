@@ -484,6 +484,13 @@ export function checkHostContract(
   });
   try {
     const r = contract.safeParse(value);
+    // An async contract returns a thenable: it is a malformed (non-synchronous) answer, and its
+    // rejection must not go unhandled (on Node ≥15 that crashes the process).
+    const then = (r as { then?: unknown } | null)?.then;
+    if (typeof then === "function") {
+      (then as (ok: undefined, err: () => void) => unknown).call(r, undefined, () => {});
+      return finding(threw(kind));
+    }
     if (r.success === true) return { ok: true };
     if (r.success !== false || !Array.isArray(r.error.issues)) return finding(threw(kind));
     const issue = r.error.issues[0];

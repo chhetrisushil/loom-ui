@@ -212,3 +212,24 @@ describe("review round 1: compile surfaces contract-overrides-framework", () => 
     expect(r.ok).toBe(false);
   });
 });
+
+describe("U13 review — an async host contract (rejecting thenable)", () => {
+  it("is a fixed finding and its rejection is handled (no unhandled rejection)", async () => {
+    const { checkHostContract } = await import("./kindValues");
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => unhandled.push(e);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const r = checkHostContract(
+        "X",
+        { safeParse: () => Promise.reject(new Error("boom")) as never },
+        1
+      );
+      expect(r.ok).toBe(false);
+      await new Promise((res) => setTimeout(res, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+});
