@@ -15,6 +15,7 @@ import {
   EXPERIENCE_REVERTED,
   PAYLOAD_SCHEMAS,
   type RevertedPayload,
+  type SummaryClass,
   isLineageEventType,
 } from "./events";
 import type { StoredLineageRecord } from "./store";
@@ -41,6 +42,8 @@ export interface VersionRecord {
   readonly ops: readonly RecordedOperation[];
   /** `composed`: what the author said about the change; untrusted text, already bounded. */
   readonly summary?: string;
+  /** `composed`: the class of what the summary was written from (host-stamped); see `ComposedPayload`. */
+  readonly summaryClass?: SummaryClass;
   /** `reverted`: the version whose content this restores. */
   readonly revertedTo?: string;
   /** `branched`: the version of another line this forked, and the source head classes came from. */
@@ -201,6 +204,9 @@ function foldChecked(experienceId: string, records: readonly StoredLineageRecord
             kind: "composed",
             ops: (v as ComposedPayload).ops as RecordedOperation[],
             ...summaryOf((v as ComposedPayload).summary),
+            ...((v as ComposedPayload).summaryClass !== undefined && {
+              summaryClass: (v as ComposedPayload).summaryClass as SummaryClass,
+            }),
           }
         : rec.type === EXPERIENCE_REVERTED
           ? {

@@ -739,6 +739,50 @@ describe("a composed version keeps the author's summary (U7)", () => {
     expect(await lin.verify("exp")).toEqual([]);
   });
 
+  it("records a host-stamped summaryClass on the version, off the content address", async () => {
+    const { lin } = make();
+    const v1 = ok(await lin.start(g(), by));
+    const c = ok(
+      await lin.compose({
+        experienceId: "exp",
+        expectedHead: v1.experience.versionHash,
+        ops: [ins(node("m1", "h1"))],
+        by,
+        summary: "s",
+        summaryClass: "secret",
+      })
+    );
+    expect(c.version.summaryClass).toBe("secret");
+    const plain = make();
+    const p1 = ok(await plain.lin.start(g(), by));
+    const p2 = ok(
+      await plain.lin.compose({
+        experienceId: "exp",
+        expectedHead: p1.experience.versionHash,
+        ops: [ins(node("m1", "h1"))],
+        by,
+        summary: "s",
+      })
+    );
+    expect(p2.version.summaryClass).toBeUndefined();
+    expect(p2.experience.versionHash).toBe(c.experience.versionHash);
+    expect(await lin.verify("exp")).toEqual([]);
+  });
+
+  it("refuses a summaryClass that is not a known class", async () => {
+    const { lin } = make();
+    const v1 = ok(await lin.start(g(), by));
+    const r = await lin.compose({
+      experienceId: "exp",
+      expectedHead: v1.experience.versionHash,
+      ops: [ins(node("m1", "h1"))],
+      by,
+      summary: "s",
+      summaryClass: "top-secret" as never,
+    });
+    expect(r.ok).toBe(false);
+  });
+
   it("has none when none was given or it is blank, and a hostile logged summary is bounded on read", async () => {
     const { lin, events } = make();
     const v1 = ok(await lin.start(g(), by));

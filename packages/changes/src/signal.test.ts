@@ -120,4 +120,43 @@ describe("eventStoreHeadSignal (push over loom's EventStore)", () => {
     await settle();
     expect(seen).toEqual([]);
   });
+
+  it("a throwing onError never becomes an unhandled rejection when the subscription fails", async () => {
+    const store = new InMemoryAsyncEventStore();
+    const events = eventStoreLineageStore(store);
+    const broken = {
+      ...store,
+      subscribe: () => Promise.reject(new Error("no push")),
+    } as unknown as InMemoryAsyncEventStore;
+    const off = eventStoreHeadSignal(broken, events, {
+      onError: () => {
+        throw new Error("hook");
+      },
+    }).watch("e", () => {});
+    await settle();
+    off();
+  });
+
+  it("an optional fallback poll catches a head the push missed, and is cancelled on unwatch", async () => {
+    const store = new InMemoryAsyncEventStore();
+    const events = eventStoreLineageStore(store);
+    const l = makeLineage(events);
+    const broken = {
+      ...store,
+      subscribe: () => Promise.reject(new Error("no push")),
+    } as unknown as InMemoryAsyncEventStore;
+    const timer = manualTimer();
+    const seen: HeadChange[] = [];
+    const off = eventStoreHeadSignal(broken, events, {
+      fallbackIntervalMs: 50,
+      schedule: timer.schedule,
+    }).watch("e", (c) => void seen.push(c));
+    await settle();
+    expect(seen).toEqual([]);
+    await l.compose("e");
+    await timer.fire();
+    expect(seen.map((c) => c.sequence)).toEqual([1]);
+    off();
+    expect(timer.size()).toBe(0);
+  });
 });

@@ -3,6 +3,7 @@ import { effectiveClasses } from "./classes";
 import type { Experience } from "./experience";
 import { type ExperienceNode, walk } from "./node";
 import type { Operation, RecordedOperation } from "./operations";
+import { type ProjectionCatalog, planProjectionBindings } from "./projections";
 import { type Viewer, mayView, strictestClass } from "./viewer";
 
 // ── What changed between two versions, for a viewer ───────────────────────────
@@ -21,9 +22,16 @@ import { type Viewer, mayView, strictestClass } from "./viewer";
 // host-supplied classifier can never see what the viewer may not.
 //
 // The summary a planner wrote is MODEL TEXT: it rides as `UntrustedText` (bounded, stripped of
-// control and bidi characters, tagged `untrusted: true`), is never an instruction, and is dropped
-// whole whenever any restricted content changed (it was written for the composer, who may be
-// cleared for more than this viewer).
+// control and bidi characters, tagged `untrusted: true`), is never an instruction, and is written
+// from the WHOLE experience (not the diff), so it may name anything either version holds. It is
+// shown iff the viewer may see the strictest class of EVERYTHING either version carries (the
+// "class floor": every node, effective class, tool class, projection class, both intents) AND of
+// whatever the planner read (`summaryClass`, stamped by the host at compose); it is dropped
+// whenever restricted content changed or any projection node is hidden from everyone.
+//
+// PROJECTIONS follow `compile`: which exist is the host's fact, so the caller passes the same
+// `ProjectionCatalog`. No catalogue, an unknown id, or a version pin that drifted = the node is
+// hidden (a restricted change when it changed), never shown by default.
 
 /** Attention levels, weakest first. Generic: an app maps them to a badge, a toast, a page. */
 export const ATTENTION_LEVELS = ["none", "info", "attention", "urgent"] as const;
@@ -128,8 +136,19 @@ export interface DescribeOptions {
   readonly classify?: (description: Omit<ChangeDescription, "attention">) => Attention;
   /** Cap on entries returned (default 50, hard cap 500). */
   readonly maxEntries?: number;
-  /** The host catalogue's class of a projection (it may only raise the node's own). */
-  readonly projectionClass?: (projectionId: string) => DataClass | undefined;
+  /**
+   * The projections the host offers: the SAME catalogue `compile` takes. Absent = offers nothing,
+   * so every projection-bound node is hidden (fail-closed); an id it does not list, or a pinned
+   * version that differs, hides the node too. Its classes can only raise a node's own.
+   */
+  readonly projections?: ProjectionCatalog;
+  /** The host's hydration projection id (reserved: a node binding it through `projection` is hidden). */
+  readonly hydrationProjectionId?: string;
+  /**
+   * The strictest class of everything the planner read to write `summary` (host-stamped at compose;
+   * see `ComposedPayload.summaryClass`). Absent = the summary is judged by the class floor alone.
+   */
+  readonly summaryClass?: DataClass;
 }
 
 const KIND_ATTENTION: Record<ChangeKind, Attention> = {
@@ -178,31 +197,54 @@ interface NodeView {
   readonly parentId: string | null;
   /** The strictest class this node's data carries in its version. */
   readonly cls: DataClass | undefined;
+  /** Hidden from EVERY viewer: a projection the host does not offer (or offers at another version). */
+  readonly blocked: boolean;
 }
 
-function nodesOf(exp: Experience, projectionClass: DescribeOptions["projectionClass"]) {
+const NO_HYDRATION = "\u0000";
+
+function nodesOf(exp: Experience, opts: DescribeOptions) {
   const classes = effectiveClasses(exp);
+  const refused = planProjectionBindings(
+    exp,
+    opts.projections,
+    opts.hydrationProjectionId ?? NO_HYDRATION,
+    undefined
+  ).verdicts;
   const out = new Map<string, NodeView>();
+  let floor: DataClass | undefined;
+  let anyBlocked = false;
   walk(exp.root, (node, parent) => {
     let cls: DataClass | undefined;
+    let blocked = false;
     if (node.kind === "semantic") {
       if (node.binding !== undefined)
         cls = strictestClass(node.binding.sensitivity, classes.get(node.binding.handle));
-      if (node.projection !== undefined)
+      if (node.projection !== undefined) {
         cls = strictestClass(
           cls,
           strictestClass(
             node.projection.sensitivity,
-            strictestClass(
-              own(exp.projectionClasses, node.projection.id),
-              projectionClass?.(node.projection.id)
-            )
+            own(exp.projectionClasses, node.projection.id)
           )
         );
+        const offered = (opts.projections ?? []).filter((d) => d.id === node.projection?.id);
+        const known =
+          offered.length > 0 && offered.every((d) => d.version === node.projection?.version);
+        if (!known || refused.get(node.id)?.kind === "refused") blocked = true;
+        for (const d of offered) cls = strictestClass(cls, d.sensitivity);
+      }
     }
-    out.set(node.id, { node, parentId: parent?.id ?? null, cls });
+    if (blocked) anyBlocked = true;
+    floor = strictestClass(floor, cls);
+    out.set(node.id, { node, parentId: parent?.id ?? null, cls, blocked });
   });
-  return { nodes: out, classes };
+  for (const c of classes.values()) floor = strictestClass(floor, c);
+  for (const c of Object.values(exp.toolClasses ?? {})) floor = strictestClass(floor, c);
+  for (const c of Object.values(exp.handleClasses ?? {})) floor = strictestClass(floor, c);
+  for (const c of Object.values(exp.projectionClasses ?? {})) floor = strictestClass(floor, c);
+  floor = strictestClass(floor, exp.intent?.sensitivity);
+  return { nodes: out, classes, floor, anyBlocked };
 }
 
 /** What is not a node's identity-or-placement: everything an edit may change. */
@@ -230,6 +272,22 @@ function contentKey(n: ExperienceNode): string {
   return canon([n.type, n.typeVersion, n.span, n.label, n.props, n.binding?.priority]);
 }
 
+/**
+ * The strictest class anything in `exp` carries: every node, effective handle class, tool class,
+ * projection class and the intent. What a summary written from the whole experience may reveal.
+ * Total: an unreadable experience has no readable floor, so it returns `"secret"` (fail-closed).
+ */
+export function experienceClassFloor(
+  exp: Experience,
+  projections?: ProjectionCatalog
+): DataClass | undefined {
+  try {
+    return nodesOf(exp, projections === undefined ? {} : { projections }).floor;
+  } catch {
+    return "secret";
+  }
+}
+
 const KIND_ORDER = new Map(CHANGE_KINDS.map((k, i) => [k, i]));
 const cmp = (a: string | undefined, b: string | undefined): number =>
   (a ?? "") < (b ?? "") ? -1 : (a ?? "") > (b ?? "") ? 1 : 0;
@@ -250,8 +308,16 @@ export function describeChange(
       Number.isInteger(opts.maxEntries) ? (opts.maxEntries as number) : DEFAULT_MAX_ENTRIES
     )
   );
-  const from = prev?.versionHash ?? null;
-  const to = next.versionHash;
+  let from: string | null = null;
+  let to = "";
+  try {
+    from = prev?.versionHash ?? null;
+    to = next.versionHash;
+  } catch {
+    // unreadable: the description below is already a restricted one
+  }
+  let floor: DataClass | undefined;
+  let blockedAny = false;
   const entries: ChangeEntry[] = [];
   let restricted = false;
   let compared = 0;
@@ -259,14 +325,18 @@ export function describeChange(
   const added: string[] = [];
   const seeable = (c: DataClass | undefined): boolean => mayView(opts.viewer, c);
   try {
-    const a = prev === null ? null : nodesOf(prev, opts.projectionClass);
-    const b = nodesOf(next, opts.projectionClass);
+    const a = prev === null ? null : nodesOf(prev, opts);
+    const b = nodesOf(next, opts);
+    floor = strictestClass(a?.floor, b.floor);
+    blockedAny = (a?.anyBlocked ?? false) || b.anyBlocked;
+    const seeableNode = (v: NodeView | undefined): boolean =>
+      v === undefined || (!v.blocked && seeable(v.cls));
     // A node is restricted when ANY version of it is: a declassified one must not be named either
     // (its previous content was never the viewer's), nor one that became classified.
     const hidden = (id: string): boolean => {
       const x = a?.nodes.get(id);
       const y = b.nodes.get(id);
-      return (x !== undefined && !seeable(x.cls)) || (y !== undefined && !seeable(y.cls));
+      return !seeableNode(x) || !seeableNode(y);
     };
     const touched = new Set<string>();
     for (const id of a?.nodes.keys() ?? []) touched.add(id);
@@ -346,6 +416,7 @@ export function describeChange(
     // Unreadable input: say nothing specific, and never say it was a clean no-op.
     entries.length = 0;
     restricted = true;
+    blockedAny = true;
     dropped.length = 0;
     added.length = 0;
     compared = 0;
@@ -360,6 +431,12 @@ export function describeChange(
   added.sort(cmp);
   const visible = entries.slice(0, maxEntries);
   if (restricted) visible.push({ kind: "restricted-changed" });
+  // The summary was written from the WHOLE experience, so it is judged against everything either
+  // version holds (the floor) and whatever the planner read, not against this diff.
+  const summaryOk =
+    !restricted && !blockedAny && mayView(opts.viewer, strictestClass(floor, opts.summaryClass));
+  const said = summaryOk ? untrustedSummary(opts.summary) : undefined;
+  const origin = originOf(opts.ops, visible.length > 0 && !(visible.length === 1 && restricted));
   const base: Omit<ChangeDescription, "attention"> = {
     from,
     to,
@@ -367,27 +444,39 @@ export function describeChange(
     omitted: Math.max(0, entries.length - maxEntries),
     restricted,
     identity: { compared, dropped, added },
-    ...(opts.ops !== undefined && {
-      origin: opts.ops.some((r) => (r.op as Operation).type === "prompt")
-        ? ("prompt" as const)
-        : ("edit" as const),
-    }),
-    ...(!restricted &&
-      (() => {
-        const s = untrustedSummary(opts.summary);
-        return s === undefined ? {} : { summary: s };
-      })()),
+    ...(origin !== undefined && { origin }),
+    ...(said !== undefined && { summary: said }),
   };
   let attention: Attention = defaultAttention(base);
   if (opts.classify !== undefined) {
     try {
-      const chosen = opts.classify(base);
+      // A frozen deep copy: the hook cannot mutate what is returned, nor see a shared reference.
+      const chosen = opts.classify(deepFreeze(structuredClone(base)));
       if (ATTENTION_LEVELS.includes(chosen)) attention = chosen;
     } catch {
       // a throwing classifier falls back to the default: a change is never lost to a bad hook
     }
   }
   return { ...base, attention };
+}
+
+/** `prompt` when any op is one, else `edit`; undefined when no ops were given, none can be read, or nothing visible changed. */
+function originOf(ops: DescribeOptions["ops"], anyVisible: boolean): "prompt" | "edit" | undefined {
+  if (ops === undefined || !anyVisible) return undefined;
+  try {
+    if (!Array.isArray(ops)) return undefined;
+    return ops.some((r) => (r?.op as Operation | undefined)?.type === "prompt") ? "prompt" : "edit";
+  } catch {
+    return undefined;
+  }
+}
+
+function deepFreeze<T>(v: T): T {
+  if (v !== null && typeof v === "object" && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k]);
+  }
+  return v;
 }
 
 function nodeDiffers(x: NodeView, y: NodeView): boolean {

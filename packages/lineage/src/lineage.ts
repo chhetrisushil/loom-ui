@@ -4,6 +4,7 @@ import {
   type Finding,
   type Provenance,
   type RecordedOperation,
+  Sensitivity,
   apply,
   applyAt,
   boundSummary,
@@ -17,6 +18,7 @@ import {
   EXPERIENCE_COMPOSED,
   EXPERIENCE_PROMOTED,
   EXPERIENCE_REVERTED,
+  type SummaryClass,
 } from "./events";
 import { type LineageState, type VersionRecord, foldLineage } from "./state";
 import type { LineageStore } from "./store";
@@ -238,9 +240,18 @@ export class Lineage {
     readonly allowDeclassify?: boolean;
     /** What the author said about the change (a planner's `PlanResult.summary`): untrusted, bounded on the way in. */
     readonly summary?: string;
+    /**
+     * The strictest class of everything the author read to write `summary` (the planner's inputs,
+     * context and samples included). HOST-STAMPED; a viewer sees the summary only when cleared for
+     * it AND for the version's own class floor. Absent: only the floor gates it, so a host whose
+     * planner saw classified context MUST pass it. Refused when it is not a known class.
+     */
+    readonly summaryClass?: SummaryClass;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, artifact, ops, by } = input;
     const summary = boundSummary(input.summary);
+    if (input.summaryClass !== undefined && !Sensitivity.safeParse(input.summaryClass).success)
+      return refused("summary-class-invalid", "summaryClass is not a known data class");
     const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
     return this.commit(experienceId, expectedHead, async (_state, parent) => {
       if (artifact.experienceId !== experienceId)
@@ -288,6 +299,7 @@ export class Lineage {
             ops,
             by,
             ...(summary !== undefined && { summary }),
+            ...(input.summaryClass !== undefined && { summaryClass: input.summaryClass }),
           }),
         },
       };
@@ -309,6 +321,8 @@ export class Lineage {
     readonly allowDeclassify?: boolean;
     /** As on {@link advance}. */
     readonly summary?: string;
+    /** As on {@link advance}. */
+    readonly summaryClass?: SummaryClass;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, ops, by } = input;
     const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
@@ -335,6 +349,7 @@ export class Lineage {
       by,
       allowDeclassify: input.allowDeclassify === true,
       ...(input.summary !== undefined && { summary: input.summary }),
+      ...(input.summaryClass !== undefined && { summaryClass: input.summaryClass }),
     });
   }
 

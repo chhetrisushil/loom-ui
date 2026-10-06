@@ -56,6 +56,9 @@ importers:
       '@loom-ui/lineage':
         specifier: workspace:*
         version: link:../lineage
+      '@loom/classify':
+        specifier: link:../../../loom/packages/classify
+        version: link:../../../loom/packages/classify
       '@loom/event-runtime':
         specifier: link:../../../loom/packages/event-runtime
         version: link:../../../loom/packages/event-runtime

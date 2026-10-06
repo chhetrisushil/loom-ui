@@ -6,7 +6,7 @@ import type {
   SemanticCatalog,
   Surface,
 } from "@loom-ui/core";
-import type { TaintedValue } from "@loom/classify";
+import type { DataClass, TaintedValue } from "@loom/classify";
 
 /**
  * A tool the planner MAY bind a node to. The framework fetches nothing (spec §7.1: context is an
@@ -96,6 +96,11 @@ export interface ComposeInput {
   readonly capabilities: readonly CapabilityRef[];
   /** Resolved and recorded by the caller (ADR 0092). Rendered into the prompt verbatim as data. */
   readonly context?: unknown;
+  /**
+   * The strictest class of `context` and of the capabilities' samples, which the planner cannot
+   * classify itself. It only rides to `PlanResult.summaryClass`; it is not part of the decision id.
+   */
+  readonly contextClass?: DataClass;
   /** Surface `validateExperience` checks against. Default "web". (Plan ruling; spec §7.1 omits it.) */
   readonly surface?: Surface;
 }
@@ -105,6 +110,8 @@ export interface ReviseInput {
   readonly catalog: SemanticCatalog;
   readonly capabilities: readonly CapabilityRef[];
   readonly context?: unknown;
+  /** As on {@link ComposeInput.contextClass}. */
+  readonly contextClass?: DataClass;
   readonly surface?: Surface;
   /**
    * Observed RAW outputs, keyed by the PROVIDER HANDLE of `experience` that produced them
@@ -152,6 +159,13 @@ export interface PlanResult {
    * planner written before this field, and a recorded decision, are unchanged.
    */
   readonly summary?: string;
+  /**
+   * The strictest class of what the summary was written from (U7): the experience the model saw
+   * and the caller's `contextClass`. Hand it to `Lineage.compose({ summaryClass })` so a viewer is
+   * shown the summary only when cleared for it. Present only with `summary`. What the planner
+   * cannot see the class of (tool samples, context) is the host's to declare via `contextClass`.
+   */
+  readonly summaryClass?: DataClass;
 }
 
 export interface Planner {

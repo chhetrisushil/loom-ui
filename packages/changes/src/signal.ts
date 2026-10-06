@@ -116,11 +116,33 @@ export function pollingHeadSignal(store: LineageStore, opts: PollingOptions = {}
   };
 }
 
+export interface PushOptions extends SignalOptions {
+  /**
+   * A safety-net poll (ms; floor 10) beside the push subscription: a push can be missed (the
+   * subscription failed to attach, a notify was dropped), and the fallback bounds that to one
+   * interval. Absent = push only.
+   */
+  readonly fallbackIntervalMs?: number;
+  /** Injectable timer for the fallback; default `setInterval` (unref'd). */
+  readonly schedule?: (fn: () => void, ms: number) => () => void;
+}
+
 export function eventStoreHeadSignal(
   events: EventStore,
   store: LineageStore,
-  opts: SignalOptions = {}
+  opts: PushOptions = {}
 ): HeadSignal {
+  const fallback = Number.isFinite(opts.fallbackIntervalMs)
+    ? Math.max(10, opts.fallbackIntervalMs as number)
+    : undefined;
+  const schedule = opts.schedule ?? defaultSchedule;
+  const report = (e: unknown) => {
+    try {
+      opts.onError?.(e);
+    } catch {
+      // never break the signal
+    }
+  };
   return {
     watch(experienceId, onChange) {
       const c = checker(store, experienceId, onChange, opts.onError);
@@ -132,11 +154,13 @@ export function eventStoreHeadSignal(
           if (stopped) u();
           else off = u;
         })
-        .catch((e) => opts.onError?.(e));
+        .catch(report);
       void c.check();
+      const cancel = fallback === undefined ? undefined : schedule(() => void c.check(), fallback);
       return () => {
         stopped = true;
         c.stop();
+        cancel?.();
         off?.();
       };
     },
