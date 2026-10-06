@@ -1,4 +1,5 @@
 import {
+  type DeclaredToolClasses,
   type Experience,
   MAX_SEEN_NODE_IDS,
   MAX_SEEN_SOURCES,
@@ -359,6 +360,7 @@ export class SeenLog {
     readonly viewer?: Viewer;
     readonly projections?: ProjectionCatalog;
     readonly hydrationProjectionId?: string;
+    readonly declaredToolClasses?: DeclaredToolClasses;
   }): Promise<SeenResult<{ readonly recorded: boolean; readonly sequence: number }>> {
     const { experienceId, viewerId, snapshot } = input;
     if (!validId(experienceId) || !validId(viewerId))
@@ -411,6 +413,9 @@ export class SeenLog {
       ...(input.projections !== undefined && { projections: input.projections }),
       ...(input.hydrationProjectionId !== undefined && {
         hydrationProjectionId: input.hydrationProjectionId,
+      }),
+      ...(input.declaredToolClasses !== undefined && {
+        declaredToolClasses: input.declaredToolClasses,
       }),
     });
     let total = 0;
@@ -701,6 +706,7 @@ export class SeenLog {
     readonly until?: string;
     readonly projections?: ProjectionCatalog;
     readonly hydrationProjectionId?: string;
+    readonly declaredToolClasses?: DeclaredToolClasses;
   }): Promise<
     SeenResult<{
       readonly views: readonly SeenView[];
@@ -770,6 +776,9 @@ export class SeenLog {
           ...(input.projections !== undefined && { projections: input.projections }),
           ...(input.hydrationProjectionId !== undefined && {
             hydrationProjectionId: input.hydrationProjectionId,
+          }),
+          ...(input.declaredToolClasses !== undefined && {
+            declaredToolClasses: input.declaredToolClasses,
           }),
         }
       );

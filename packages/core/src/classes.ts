@@ -24,6 +24,27 @@ export function toolsOf(spec: ProviderSpec): string[] {
   return [...new Set(spec.executionGraph.map(toolKey))];
 }
 
+/**
+ * A host-declared class per tool, keyed by `toolKey` (the MCP tool NAME, or `<kind>:<name>`), applied
+ * at READ time as a floor under every handle whose provider calls that tool. Unlike the sticky
+ * `Experience.toolClasses` it is not stored: it is the host's current declaration of what a
+ * capability returns (the same `sensitivity` a planner's `CapabilityRef` carries), so a node written
+ * by an older planner, or by a raw op, with no class of its own is still gated as strictly as the
+ * tool is declared. It can only RAISE what a handle reads as; it never lowers anything.
+ */
+export type DeclaredToolClasses = Readonly<Record<string, DataClass>>;
+
+/** The strictest declared class among the tools `spec` calls. */
+function declaredClassOf(
+  declared: DeclaredToolClasses | undefined,
+  spec: ProviderSpec
+): DataClass | undefined {
+  if (declared === undefined) return undefined;
+  let c: DataClass | undefined;
+  for (const k of toolsOf(spec)) c = strictestClass(c, own(declared, k));
+  return c;
+}
+
 /** The strictest class each handle's LIVE nodes carry. */
 export function liveClasses(root: ExperienceNode): Map<string, DataClass> {
   const out = new Map<string, DataClass>();
@@ -95,7 +116,10 @@ function toolClassOf(
  * A handle bound before its tool was classified is gated as soon as the tool is: classification is
  * a READ-time property, so no op order can leave a sibling on a classified tool open.
  */
-export function effectiveClasses(exp: Experience): Map<string, DataClass> {
+export function effectiveClasses(
+  exp: Experience,
+  declared?: DeclaredToolClasses
+): Map<string, DataClass> {
   const live = liveClasses(exp.root);
   const liveTools = liveToolClasses(exp, live);
   const out = new Map<string, DataClass>();
@@ -106,7 +130,9 @@ export function effectiveClasses(exp: Experience): Map<string, DataClass> {
     const spec = own(exp.providers, h);
     const c = strictestClass(
       ownClass(exp, live, h),
-      spec === undefined ? undefined : toolClassOf(exp, spec, liveTools)
+      spec === undefined
+        ? undefined
+        : strictestClass(toolClassOf(exp, spec, liveTools), declaredClassOf(declared, spec))
     );
     if (c !== undefined) out.set(h, c);
   }

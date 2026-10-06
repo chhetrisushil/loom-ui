@@ -21,6 +21,7 @@ import {
   resolveSurface,
   validateExperience,
 } from "./catalog";
+import type { DeclaredToolClasses } from "./classes";
 import type { Experience, Finding } from "./experience";
 import { experienceHandles } from "./handles";
 import { loomCatalogFor } from "./loomCatalog";
@@ -72,6 +73,12 @@ export interface CompileOptions {
    * version in `projectionVersions` (loom ADR 0095).
    */
   readonly projections?: ProjectionCatalog;
+  /**
+   * The host's DECLARED class per tool (`toolKey`: the MCP tool name, or `<kind>:<name>`), applied
+   * at read time as a floor under every handle calling that tool — see `DeclaredToolClasses`.
+   * Absent = only what the experience itself carries.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
   /** Default: the label's fallback text. */
   readonly resolveLabel?: (label: LocalizedText) => string;
   /** Base loom catalogue for built-in kinds; default `builtinCatalog`. */
@@ -170,7 +177,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   // read once; a handle the viewer may not see is restricted for EVERY node that binds it.
   const restrictedHandles = new Set<string>();
   let classified = false;
-  for (const use of experienceHandles(exp)) {
+  for (const use of experienceHandles(exp, opts.declaredToolClasses)) {
     if (use.sensitivity === undefined) continue;
     classified = true;
     if (!mayView(opts.viewer, use.sensitivity)) restrictedHandles.add(use.handle);

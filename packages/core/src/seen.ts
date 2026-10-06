@@ -1,5 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type ExperienceInspection, boundSummary, inspectExperience } from "./change";
+import type { DeclaredToolClasses } from "./classes";
 import type { Experience } from "./experience";
 import { walk } from "./node";
 import type { ProjectionCatalog } from "./projections";
@@ -99,6 +100,12 @@ export interface SnapshotOptions {
   readonly read: SeenReader;
   readonly projections?: ProjectionCatalog;
   readonly hydrationProjectionId?: string;
+  /**
+   * The host's DECLARED class per tool (`toolKey`: the MCP tool name, or `<kind>:<name>`), applied
+   * at read time as a floor under every handle calling that tool — see `DeclaredToolClasses`.
+   * Absent = only what the experience itself carries.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
 }
 
 const sourceKey = (s: SeenSource): string =>
@@ -263,7 +270,10 @@ export interface RedactedSeen {
 export function redactSeen(
   entries: readonly SeenEntry[],
   experience: Experience | undefined,
-  opts: Pick<SnapshotOptions, "viewer" | "projections" | "hydrationProjectionId"> = {}
+  opts: Pick<
+    SnapshotOptions,
+    "viewer" | "projections" | "hydrationProjectionId" | "declaredToolClasses"
+  > = {}
 ): RedactedSeen {
   if (experience === undefined || !Array.isArray(entries))
     return { entries: [], restricted: true, indexes: [] };

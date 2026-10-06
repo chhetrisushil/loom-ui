@@ -1,5 +1,6 @@
 import {
   type ChangeDescription,
+  type DeclaredToolClasses,
   type DescribeOptions,
   type Finding,
   type HeadSignal,
@@ -127,6 +128,8 @@ export interface LineageChangeFeedOptions {
   readonly projections?: ProjectionCatalog;
   /** The host's hydration projection id (reserved; see `DescribeOptions`). */
   readonly hydrationProjectionId?: string;
+  /** The host's declared class per tool: a read-time floor (core `DeclaredToolClasses`). */
+  readonly declaredToolClasses?: DeclaredToolClasses;
 }
 
 const err = (code: string, message: string): { ok: false; finding: Finding } => ({
@@ -148,10 +151,12 @@ export class LineageChangeFeed implements ChangeFeed {
   private readonly signal: HeadSignal;
   private readonly projections: ProjectionCatalog | undefined;
   private readonly hydrationProjectionId: string | undefined;
+  private readonly declaredToolClasses: DeclaredToolClasses | undefined;
 
   constructor(opts: LineageChangeFeedOptions) {
     this.projections = opts.projections;
     this.hydrationProjectionId = opts.hydrationProjectionId;
+    this.declaredToolClasses = opts.declaredToolClasses;
     this.lineage = opts.lineage;
     this.events = opts.events;
     this.signal = opts.signal;
@@ -376,6 +381,9 @@ export class LineageChangeFeed implements ChangeFeed {
         ...(this.projections !== undefined && { projections: this.projections }),
         ...(this.hydrationProjectionId !== undefined && {
           hydrationProjectionId: this.hydrationProjectionId,
+        }),
+        ...(this.declaredToolClasses !== undefined && {
+          declaredToolClasses: this.declaredToolClasses,
         }),
         ...opts,
         ...(own && record.ops.length > 0 && { ops: record.ops }),

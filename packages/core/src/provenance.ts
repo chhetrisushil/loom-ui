@@ -1,6 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type UntrustedText, boundSummary, inspectExperience, untrustedSummary } from "./change";
-import { toolsOf } from "./classes";
+import { type DeclaredToolClasses, toolsOf } from "./classes";
 import type { Experience } from "./experience";
 import { type ExperienceNode, findNode } from "./node";
 import type { Operation, Provenance, RecordedOperation } from "./operations";
@@ -344,6 +344,12 @@ export interface ExplainOptions {
   /** The same projection catalogue `compile` takes (absent = every projection node is hidden). */
   readonly projections?: ProjectionCatalog;
   readonly hydrationProjectionId?: string;
+  /**
+   * The host's DECLARED class per tool (`toolKey`: the MCP tool name, or `<kind>:<name>`), applied
+   * at read time as a floor under every handle calling that tool — see `DeclaredToolClasses`.
+   * Absent = only what the experience itself carries.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
   /** What each version's author said, by version hash (a lineage supplies it from its events). */
   readonly notes?: ReadonlyMap<string, VersionNote>;
   /**

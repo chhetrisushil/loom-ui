@@ -1,4 +1,5 @@
 import {
+  type DeclaredToolClasses,
   type Experience,
   type Finding,
   MAX_TREE_DEPTH,
@@ -48,6 +49,12 @@ export interface InventoryOptions {
    * Pass the same viewer to `serveHandles`, which refuses such a handle even if a client names it.
    */
   readonly viewer?: Viewer;
+  /**
+   * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
+   * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
+   * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
 }
 
 /**
@@ -69,7 +76,10 @@ export function handleInventory(
   if (treeDepth(exp.root) > MAX_TREE_DEPTH) {
     findings.push(tooDeep(exp.experienceId, MAX_TREE_DEPTH));
   } else {
-    const split = partitionByViewer(experienceHandles(exp), snapshotViewer(opts.viewer));
+    const split = partitionByViewer(
+      experienceHandles(exp, opts.declaredToolClasses),
+      snapshotViewer(opts.viewer)
+    );
     findings.push(...split.advisory);
     for (const use of split.allowed) {
       if (isReservedHandle(use.handle)) {
@@ -142,6 +152,12 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
    * FAIL-CLOSED: absent = no clearance. Unclassified handles are unaffected.
    */
   readonly viewer?: Viewer;
+  /**
+   * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
+   * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
+   * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
   /** Keys a `principal`-scoped cache entry; without it such a provider is never cached. */
   readonly principalId?: string;
   readonly onDrift?: (report: DriftReport) => void;
@@ -487,9 +503,10 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     exec,
     bound: new Set(experienceHandles(exp).map((u) => u.handle)),
     restricted: new Set(
-      partitionByViewer(experienceHandles(exp), snapshotViewer(opts.viewer)).restricted.map(
-        (u) => u.handle
-      )
+      partitionByViewer(
+        experienceHandles(exp, opts.declaredToolClasses),
+        snapshotViewer(opts.viewer)
+      ).restricted.map((u) => u.handle)
     ),
     kinds:
       outputKinds === undefined

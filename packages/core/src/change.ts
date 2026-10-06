@@ -1,5 +1,5 @@
 import type { DataClass } from "@loom/classify";
-import { effectiveClasses } from "./classes";
+import { type DeclaredToolClasses, effectiveClasses } from "./classes";
 import type { Experience } from "./experience";
 import { type ExperienceNode, walk } from "./node";
 import type { Operation, RecordedOperation } from "./operations";
@@ -145,6 +145,12 @@ export interface DescribeOptions {
   /** The host's hydration projection id (reserved: a node binding it through `projection` is hidden). */
   readonly hydrationProjectionId?: string;
   /**
+   * The host's DECLARED class per tool (`toolKey`: the MCP tool name, or `<kind>:<name>`), applied
+   * at read time as a floor under every handle calling that tool — see `DeclaredToolClasses`.
+   * Absent = only what the experience itself carries.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
    * The strictest class of everything the planner read to write `summary` (host-stamped at compose;
    * see `ComposedPayload.summaryClass`). Absent = the summary is judged by the class floor alone.
    */
@@ -204,7 +210,7 @@ interface NodeView {
 const NO_HYDRATION = "\u0000";
 
 function nodesOf(exp: Experience, opts: DescribeOptions) {
-  const classes = effectiveClasses(exp);
+  const classes = effectiveClasses(exp, opts.declaredToolClasses);
   const refused = planProjectionBindings(
     exp,
     opts.projections,
@@ -279,10 +285,14 @@ function contentKey(n: ExperienceNode): string {
  */
 export function experienceClassFloor(
   exp: Experience,
-  projections?: ProjectionCatalog
+  projections?: ProjectionCatalog,
+  declaredToolClasses?: DeclaredToolClasses
 ): DataClass | undefined {
   try {
-    return nodesOf(exp, projections === undefined ? {} : { projections }).floor;
+    return nodesOf(exp, {
+      ...(projections !== undefined && { projections }),
+      ...(declaredToolClasses !== undefined && { declaredToolClasses }),
+    }).floor;
   } catch {
     return "secret";
   }
@@ -308,7 +318,7 @@ export interface ExperienceInspection {
 
 export function inspectExperience(
   exp: Experience,
-  opts: Pick<DescribeOptions, "projections" | "hydrationProjectionId"> = {}
+  opts: Pick<DescribeOptions, "projections" | "hydrationProjectionId" | "declaredToolClasses"> = {}
 ): ExperienceInspection {
   try {
     const r = nodesOf(exp, opts);

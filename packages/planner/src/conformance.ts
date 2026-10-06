@@ -8,7 +8,9 @@ import {
   preservesNodes,
   replay,
   strictestClass,
+  toolKey,
   validateExperience,
+  walk,
 } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
 import type { DataClass } from "@loom/classify";
@@ -117,6 +119,50 @@ export interface ConformanceFixture {
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
+
+/**
+ * U10b: classification is tool-level and fail-closed, so a node bound to a capability whose
+ * declared `sensitivity` is `X` must carry a class at least `X` — whether or not the model proposed
+ * one. Checks the nodes of `exp` against the capabilities the planner was offered (a handle whose
+ * provider calls a tool no capability names is not judged; a capability declaring nothing demands
+ * nothing). The declared class is the planner's to apply; the read-time floor in core
+ * (`declaredToolClasses`) is the backstop, not a licence to skip it.
+ */
+function bindingClassFindings(
+  label: string,
+  exp: Experience,
+  capabilities: readonly CapabilityRef[]
+): Finding[] {
+  const declared = new Map<string, DataClass>();
+  for (const c of capabilities)
+    if (c.sensitivity !== undefined)
+      declared.set(
+        toolKey(c),
+        strictestClass(declared.get(toolKey(c)), c.sensitivity) as DataClass
+      );
+  if (declared.size === 0) return [];
+  const out: Finding[] = [];
+  walk(exp.root, (n) => {
+    if (n.kind !== "semantic" || n.binding === undefined) return;
+    const spec = Object.hasOwn(exp.providers, n.binding.handle)
+      ? exp.providers[n.binding.handle]
+      : undefined;
+    if (spec === undefined) return;
+    let need: DataClass | undefined;
+    for (const step of spec.executionGraph)
+      need = strictestClass(need, declared.get(toolKey(step)));
+    if (need !== undefined && strictestClass(n.binding.sensitivity, need) !== n.binding.sensitivity)
+      out.push(
+        err(
+          "binding-class-below-capability",
+          `${label}: node "${n.id}" is bound to a capability declared "${need}" but carries ${
+            n.binding.sensitivity === undefined ? "no class" : `class "${n.binding.sensitivity}"`
+          }: a bound node takes at least its capability's declared class`
+        )
+      );
+  });
+  return out;
+}
 
 /**
  * A `PlanReport` is what a caller stamps provenance from and what a prompt regression is measured
@@ -290,6 +336,8 @@ export async function checkPlannerConformance(
     );
   if (!isContainer(composed.value.root) || composed.value.root.children.length === 0)
     findings.push(err("compose-empty", "compose produced no nodes"));
+
+  findings.push(...bindingClassFindings("compose", composed.value, fx.capabilities));
 
   // U7: a summary is shown to a viewer only when cleared for its stamped class, so the planner
   // must stamp what the model read. The kit declares no `contextClass`, so a sampled capability of
@@ -543,6 +591,7 @@ export async function checkPlannerConformance(
   if (!viaPrompt.ok) return [...findings, err("prompt-replay-failed", viaPrompt.finding.message)];
   if (!viaPrimitives.ok)
     return [...findings, err("prompt-replay-failed", viaPrimitives.finding.message)];
+  findings.push(...bindingClassFindings("revise", viaPrompt.value, fx.capabilities));
   if (seal(viaPrompt.value).versionHash !== seal(viaPrimitives.value).versionHash)
     findings.push(
       err(

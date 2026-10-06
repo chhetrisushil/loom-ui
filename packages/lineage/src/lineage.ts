@@ -1,5 +1,6 @@
 import {
   type ApplyOptions,
+  type DeclaredToolClasses,
   type Experience,
   type ExplainOptions,
   type Finding,
@@ -364,6 +365,7 @@ export class Lineage {
       readonly versionHash?: string;
       readonly projections?: ProjectionCatalog;
       readonly hydrationProjectionId?: string;
+      readonly declaredToolClasses?: DeclaredToolClasses;
     } = {}
   ): Promise<LineageResult<NodeExplanation>> {
     const s = await this.state(experienceId);
@@ -379,6 +381,9 @@ export class Lineage {
       ...(opts.projections !== undefined && { projections: opts.projections }),
       ...(opts.hydrationProjectionId !== undefined && {
         hydrationProjectionId: opts.hydrationProjectionId,
+      }),
+      ...(opts.declaredToolClasses !== undefined && {
+        declaredToolClasses: opts.declaredToolClasses,
       }),
     };
     // Ask first with no notes: an unknown, hidden or unreadable node answers `{ available: false }`
@@ -404,7 +409,9 @@ export class Lineage {
       });
       if (found.record.summary !== undefined || entry?.prompt !== undefined) {
         const art = await this.load(found.state, wrote);
-        extraFloor = art.ok ? experienceClassFloor(art.value, opts.projections) : "secret";
+        extraFloor = art.ok
+          ? experienceClassFloor(art.value, opts.projections, opts.declaredToolClasses)
+          : "secret";
       }
     }
     return {
