@@ -17,6 +17,8 @@ const HYDRATION_DIST = resolve(PACKAGES, "hydration/dist");
 
 const FORBIDDEN_PACKAGES = new Set([
   "@loom/plugin-sandbox",
+  // U6 — the lineage runtime is server-side (an event log + content store); never in a client graph.
+  "@loom-ui/lineage",
   "@loom/plugin-mcp",
   "@loom/effect-runtime",
   "@loom/agent",
