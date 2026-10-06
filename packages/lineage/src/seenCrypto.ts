@@ -96,6 +96,8 @@ export const refAad = (
  * round up to the next multiple, which a real content address never needs.
  */
 export const SEALED_REF_BLOCK = 256;
+/** Longest content address `sealRef` accepts. Real addresses are sha256-sized; anything longer fails closed so padding never rounds up (a length leak). */
+export const MAX_SEALED_ADDRESS_CHARS = 128;
 
 /** The plaintext inside a sealed ref: the content ref and the value's measured size, padded to a constant length. */
 export function sealRef(
@@ -104,6 +106,10 @@ export function sealRef(
   ref: { readonly __loomContent: string },
   bytes: number
 ): string {
+  if (ref.__loomContent.length > MAX_SEALED_ADDRESS_CHARS)
+    throw new Error(
+      `sealRef: a content address over ${MAX_SEALED_ADDRESS_CHARS} characters is refused`
+    );
   const body = JSON.stringify({ r: ref, b: bytes });
   const len = Buffer.byteLength(body, "utf-8");
   const padded = Math.ceil(len / SEALED_REF_BLOCK) * SEALED_REF_BLOCK;
