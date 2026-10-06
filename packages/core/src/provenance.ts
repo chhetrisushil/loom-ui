@@ -1,6 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type UntrustedText, boundSummary, inspectExperience, untrustedSummary } from "./change";
-import { type DeclaredToolClasses, toolsOf } from "./classes";
+import { type DeclaredToolClasses, type UndeclaredToolPolicy, toolsOf } from "./classes";
 import type { Experience } from "./experience";
 import { type ExperienceNode, findNode } from "./node";
 import type { Operation, Provenance, RecordedOperation } from "./operations";
@@ -350,6 +350,11 @@ export interface ExplainOptions {
    * Absent = only what the experience itself carries.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
+  /**
+   * What a tool the `declaredToolClasses` table does not list reads as: `"allow"` (default) = as the
+   * experience itself says; `"deny"` = unreadable by every viewer. Only with a table present.
+   */
+  readonly undeclared?: UndeclaredToolPolicy;
   /** What each version's author said, by version hash (a lineage supplies it from its events). */
   readonly notes?: ReadonlyMap<string, VersionNote>;
   /**

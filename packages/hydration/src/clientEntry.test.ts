@@ -176,6 +176,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "TARGET_UNREGISTERED",
       "checkDataProviderConformance",
       "checkParams",
+      "createServeSurface",
       "defineDataProviders",
       "defineReshapers",
       "effectPin",

@@ -50,6 +50,7 @@ export {
   DEFAULT_MAX_BATCH,
   DEFAULT_MAX_CONCURRENT_CALLS,
   SplitHydrationController,
+  createServeSurface,
   handleInventory,
   publicFinding,
   serveHandle,
@@ -63,6 +64,7 @@ export type {
   InventoryOptions,
   RevisionFn,
   ServeOptions,
+  ServeSurface,
   SplitControllerOptions,
 } from "./split/index";
 export { SCHEMA_REPAIRED, remapOperation } from "./repair";

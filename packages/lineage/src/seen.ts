@@ -6,9 +6,12 @@ import {
   MAX_SEEN_TOTAL_BYTES,
   MAX_SEEN_VALUE_BYTES,
   type ProjectionCatalog,
+  type ReadPolicy,
   type SeenEntry,
   type SeenSnapshot,
+  type UndeclaredToolPolicy,
   type Viewer,
+  mergeReadPolicy,
   redactSeen,
 } from "@loom-ui/core";
 import {
@@ -194,6 +197,11 @@ export interface SeenLogOptions {
   readonly keys: SeenKeyStore;
   readonly retention?: SeenRetention;
   readonly now?: () => string;
+  /**
+   * The read policy bound ONCE: every `record` and `read` applies it, joined (raise-only) with the
+   * `lineage`'s own bound policy and with any per-call values. Absent = the lineage's policy alone.
+   */
+  readonly readPolicy?: ReadPolicy;
 }
 
 export type SeenRefusal = { readonly code: string; readonly message: string };
@@ -273,8 +281,10 @@ export class SeenLog {
   private readonly maxSkewMs: number;
   private readonly slack: number;
   private readonly now: () => string;
+  private readonly policy: ReadPolicy;
 
   constructor(opts: SeenLogOptions) {
+    this.policy = mergeReadPolicy(opts.lineage.readPolicy, opts.readPolicy);
     // A record is per-viewer data; it must never share streams with the lineage it describes (a
     // shared prefix would put a viewer's manifests among the line's versions, and make an
     // experienceId that spells a stream key read as one). An unreadable prefix cannot be proven
@@ -361,6 +371,7 @@ export class SeenLog {
     readonly projections?: ProjectionCatalog;
     readonly hydrationProjectionId?: string;
     readonly declaredToolClasses?: DeclaredToolClasses;
+    readonly undeclared?: UndeclaredToolPolicy;
   }): Promise<SeenResult<{ readonly recorded: boolean; readonly sequence: number }>> {
     const { experienceId, viewerId, snapshot } = input;
     if (!validId(experienceId) || !validId(viewerId))
@@ -410,13 +421,7 @@ export class SeenLog {
     // Restamp + drop what the recording viewer may not see, with core's one redactor.
     const checked = redactSeen(snapshot.entries, art.value, {
       ...(input.viewer !== undefined && { viewer: input.viewer }),
-      ...(input.projections !== undefined && { projections: input.projections }),
-      ...(input.hydrationProjectionId !== undefined && {
-        hydrationProjectionId: input.hydrationProjectionId,
-      }),
-      ...(input.declaredToolClasses !== undefined && {
-        declaredToolClasses: input.declaredToolClasses,
-      }),
+      ...mergeReadPolicy(this.policy, input),
     });
     let total = 0;
     const shapes: Array<Omit<ViewRecordPayload["entries"][number], "sealed">> = [];
@@ -707,6 +712,7 @@ export class SeenLog {
     readonly projections?: ProjectionCatalog;
     readonly hydrationProjectionId?: string;
     readonly declaredToolClasses?: DeclaredToolClasses;
+    readonly undeclared?: UndeclaredToolPolicy;
   }): Promise<
     SeenResult<{
       readonly views: readonly SeenView[];
@@ -773,13 +779,7 @@ export class SeenLog {
         artifacts.get(p.versionHash),
         {
           ...(input.reader !== undefined && { viewer: input.reader }),
-          ...(input.projections !== undefined && { projections: input.projections }),
-          ...(input.hydrationProjectionId !== undefined && {
-            hydrationProjectionId: input.hydrationProjectionId,
-          }),
-          ...(input.declaredToolClasses !== undefined && {
-            declaredToolClasses: input.declaredToolClasses,
-          }),
+          ...mergeReadPolicy(this.policy, input),
         }
       );
       // A ref belongs to the entry at its POSITION in the record (`indexes`), never to a source:

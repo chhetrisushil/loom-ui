@@ -1,6 +1,7 @@
 import {
   type Experience,
   type Provenance,
+  type ReadPolicy,
   type RecordedOperation,
   type SemanticNode,
   genesis,
@@ -57,8 +58,16 @@ export function manualTimer() {
   };
 }
 
-export function makeLineage(events: LineageStore = new InMemoryLineageStore()) {
-  const lineage = new Lineage({ events, content: new InMemoryContentStore(), now: clock() });
+export function makeLineage(
+  events: LineageStore = new InMemoryLineageStore(),
+  readPolicy?: ReadPolicy
+) {
+  const lineage = new Lineage({
+    events,
+    content: new InMemoryContentStore(),
+    now: clock(),
+    ...(readPolicy !== undefined && { readPolicy }),
+  });
   let n = 0;
   /** Append one version: genesis on an empty line, else one more tile. */
   const compose = async (experienceId: string, summary?: string): Promise<void> => {
