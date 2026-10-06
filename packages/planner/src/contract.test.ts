@@ -1,6 +1,6 @@
 import { defineSemanticCatalog } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
-import { entryFor, parseModelJson, planSchema } from "./contract";
+import { type DraftNode, entryFor, parseModelJson, planSchema } from "./contract";
 import { capabilitiesFixture, planningCatalog } from "./testing.test-support";
 
 const schema = planSchema(planningCatalog, capabilitiesFixture);
@@ -38,7 +38,7 @@ describe("planSchema", () => {
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.nodes[2]?.span).toBe(6);
-      expect(r.data.nodes[1]?.binding?.priority).toBe("P1");
+      expect((r.data.nodes[1] as DraftNode | undefined)?.binding?.priority).toBe("P1");
     }
   });
   it("rejects an unknown type, an undeclared prop, an unknown capability, and a duplicate id — each named in the issue path", () => {
@@ -136,7 +136,8 @@ describe("planSchema", () => {
       ],
     });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.nodes[0]?.binding?.sensitivity).toBe("sensitive");
+    if (r.success)
+      expect((r.data.nodes[0] as DraftNode | undefined)?.binding?.sensitivity).toBe("sensitive");
   });
   it("refuses binding.sensitivity on a type that does not declare model-may-set — the default is caller", () => {
     const r = schema.safeParse({

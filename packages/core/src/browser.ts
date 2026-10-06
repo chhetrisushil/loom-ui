@@ -59,3 +59,10 @@ export type {
 export type { Finding } from "./experience";
 export { MAX_CHUNK_TEXT, MAX_STREAM_TEXT, appendChunk } from "./streamText";
 export type { AppendResult, StreamedText, TextChunk } from "./streamText";
+export {
+  REFERENCE_CONTAINER_ROLES,
+  STEPPER_ROLE,
+  TABS_ROLE,
+  roleChildProblems,
+} from "./containerRoles";
+export type { ContainerRoleSpec, RoleChild, RoleChildren } from "./containerRoles";

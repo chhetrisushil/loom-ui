@@ -1,8 +1,10 @@
 import {
+  type ContainerRoleSpec,
   type Experience,
   type Finding,
   Operation,
   type ReadPolicy,
+  containerRoleFindings,
   experienceNodeIds,
   genesis,
   isContainer,
@@ -11,12 +13,14 @@ import {
   strictestClass,
   toolKey,
   toolsOf,
+  treeDepth,
   validateExperience,
   walk,
 } from "@loom-ui/core";
 import { seal } from "@loom-ui/core/log";
 import type { DataClass } from "@loom/classify";
 import { requiredClass } from "./capabilityClass";
+import { MAX_DRAFT_DEPTH, MAX_DRAFT_NODES } from "./contract";
 import { readPlannerReach } from "./reach";
 import type {
   CapabilityRef,
@@ -126,9 +130,78 @@ export interface ConformanceFixture {
   readonly readPolicy?: ReadPolicy;
   /** See {@link StreamProbe}. */
   readonly streamProbe?: StreamProbe;
+  /**
+   * The container roles offered to the planner (U15, `ComposeInput.containers`). Supplying them
+   * also checks that every planner-owned container with one of these roles holds the children its
+   * role needs. The structural bounds, container ownership and diff-not-recompose checks below
+   * run whether or not any are offered.
+   */
+  readonly containers?: readonly ContainerRoleSpec[];
 }
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
+
+/**
+ * U15: what a plan may do to STRUCTURE. A composed or revised experience stays inside the bounds
+ * the contract states (`MAX_DRAFT_DEPTH` levels below the root, `MAX_DRAFT_NODES` entries); every
+ * container the planner inserts is stamped `owner: "planner"` (else the next revise finds it LOCKED
+ * and can never edit what the planner itself made); and a role container holds what its role needs.
+ */
+function structureFindings(
+  label: string,
+  exp: Experience,
+  roles: readonly ContainerRoleSpec[] | undefined
+): Finding[] {
+  const out: Finding[] = [];
+  const depth = treeDepth(exp.root) - 1; // the root is level 0
+  if (depth > MAX_DRAFT_DEPTH)
+    out.push(
+      err(
+        "nesting-too-deep",
+        `${label} produced nesting ${depth} levels deep; the bound is ${MAX_DRAFT_DEPTH}`
+      )
+    );
+  const count = experienceNodeIds(exp).length - 1;
+  if (count > MAX_DRAFT_NODES)
+    out.push(
+      err("too-many-nodes", `${label} produced ${count} entries; the bound is ${MAX_DRAFT_NODES}`)
+    );
+  walk(exp.root, (n, parent) => {
+    if (parent !== null && isContainer(n) && n.owner !== "planner")
+      out.push(
+        err(
+          "container-not-owned",
+          `${label} inserted container "${n.id}" without owner "planner"; a later revise would find it locked`
+        )
+      );
+  });
+  if (roles !== undefined)
+    out.push(...containerRoleFindings(exp.root, roles, { ownedBy: "planner" }));
+  return out;
+}
+
+/** A revise that removes and re-inserts the same id is a recompose wearing a diff's clothes. */
+function recomposeFindings(ops: readonly Operation[]): Finding[] {
+  const removed = new Set<string>();
+  const inserted = new Set<string>();
+  const visit = (op: Operation): void => {
+    if (op.type === "prompt") for (const o of op.materialized) visit(o);
+    else if (op.type === "removeNode") removed.add(op.nodeId);
+    else if (op.type === "insertNode")
+      walk(op.node, (n) => {
+        inserted.add(n.id);
+      });
+  };
+  for (const op of ops) visit(op);
+  return [...removed]
+    .filter((id) => inserted.has(id))
+    .map((id) =>
+      err(
+        "revise-recomposed",
+        `revise removed and re-inserted "${id}"; an unchanged node must not be touched, a moved one is a moveNode`
+      )
+    );
+}
 
 /**
  * U10b: classification is tool-level and fail-closed, so a node bound to a capability whose
@@ -328,6 +401,7 @@ export async function checkPlannerConformance(
     catalog: fx.catalog,
     capabilities: fx.capabilities,
     surface,
+    ...(fx.containers !== undefined && { containers: fx.containers }),
   };
 
   // With a probe, watch whether compose asked the ctx at all and whether the decider actually ran:
@@ -375,6 +449,7 @@ export async function checkPlannerConformance(
   if (!isContainer(composed.value.root) || composed.value.root.children.length === 0)
     findings.push(err("compose-empty", "compose produced no nodes"));
 
+  findings.push(...structureFindings("compose", composed.value, fx.containers));
   findings.push(...bindingClassFindings("compose", composed.value, fx.capabilities));
   findings.push(
     ...undeclaredToolFindings("compose", composed.value, fx.capabilities, fx.readPolicy)
@@ -562,6 +637,7 @@ export async function checkPlannerConformance(
         catalog: fx.catalog,
         capabilities: fx.capabilities,
         surface,
+        ...(fx.containers !== undefined && { containers: fx.containers }),
       } satisfies ReviseInput,
       ctx
     )
@@ -632,6 +708,8 @@ export async function checkPlannerConformance(
   if (!viaPrompt.ok) return [...findings, err("prompt-replay-failed", viaPrompt.finding.message)];
   if (!viaPrimitives.ok)
     return [...findings, err("prompt-replay-failed", viaPrimitives.finding.message)];
+  findings.push(...structureFindings("revise", viaPrompt.value, fx.containers));
+  findings.push(...recomposeFindings(prompt.materialized));
   findings.push(...bindingClassFindings("revise", viaPrompt.value, fx.capabilities));
   findings.push(
     ...undeclaredToolFindings("revise", viaPrompt.value, fx.capabilities, fx.readPolicy)

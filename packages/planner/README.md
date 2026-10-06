@@ -187,8 +187,10 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   dependency graph, check a graph schedules without a cycle or forward reference, and find
   providers a plan's own removals/rebinds orphaned.
 - `DRAFT_ID`, `MAX_DRAFT_NODES`, `entryFor`, `parseModelJson`, `planSchema`, `DraftBinding`,
-  `DraftNode`, `Parsed`, `PlanDraft` — the model-facing draft contract: its zod schema, node-count
-  cap, and the parser that turns a raw model reply into a `PlanDraft`.
+  `DraftNode`, `DraftContainer`, `DraftEntry`, `Parsed`, `PlanDraft` — the model-facing draft
+  contract: its zod schema, entry cap, and the parser that turns a raw model reply into a
+  `PlanDraft`. `MAX_DRAFT_DEPTH`, `MAX_DRAFT_CHILDREN`, `PLAIN_CONTAINERS`, `draftStructureIssues`,
+  `draftEntrySchema` — the nesting bounds and their check (see "Nested structure" below).
 
 ### Prompts
 
@@ -354,9 +356,32 @@ const repaired = await reviseForDrift(planner, {
 - **Replay serves the recorded plan.** Because every model call is one `ctx.decide`, a replayed
   execution never calls the model again — `checkPlannerConformance`'s recording-context assertion
   is exactly this property, tested.
-- **A revision only describes the root's direct children.** A nested container comes back as a
-  locked placeholder (`{ id, kind: "container", locked: true, descendants }`); a draft naming a
-  node inside one is refused (`nested-node`).
+- **A revision describes the region the planner owns.** That is the root's children and, below
+  them, the children of every container a planner authored (`owner: "planner"`). An
+  application-owned container comes back as a locked placeholder
+  (`{ id, kind: "container", locked: true, descendants }`); a draft naming a node inside one is
+  refused (`nested-node`), and one that tries to remove a planner container holding one is
+  refused (`locked-descendant`).
+
+### Nested structure (U15)
+
+The reply stays a FLAT list; a group is an entry with `"container"` (`section`, `row`, `grid`, or a
+role the host offered through `ComposeInput.containers` — `REFERENCE_CONTAINER_ROLES` for the
+`tabs` / `stepper` that `@loom-ui/renderer-lit`'s `referenceContainers()` draws), and its members
+name it with `"parent"`, the id of an EARLIER container. Flat keeps streaming (U1) and the diff
+entry-by-entry; the bounds are counts the contract checks: at most `MAX_DRAFT_DEPTH` (4) levels,
+`MAX_DRAFT_CHILDREN` (24) entries per container, `MAX_DRAFT_NODES` (64) in all, no empty
+container, and a role container's children must satisfy its role (`tabs` / `stepper`: 2+ titled
+containers, the title being the label). Anything else is a schema issue naming the entry, so the
+retry carries the exact complaint, and past the bounds the plan fails closed.
+
+A revise diffs entry by entry against the owned region: a retitle is one `setTitle`, a role change
+one `setRole`, a widget added to a panel one `insertNode` under it, a widget moved between panels
+one `moveNode` (never a remove plus an insert), a removed container one `removeNode` (its contents
+go with it), and a reorder costs the fewest `moveNode`s (the longest run already in order stays
+put). A container's kind (`section` ↔ `row`) cannot change — no op does that — so it is a warning.
+`checkPlannerConformance` checks the bounds, that every container the planner inserts is
+`owner: "planner"`, that a revise does not recompose, and (given `fx.containers`) the role rules.
 - **`setRole` is never interactive.** `interpretAction` refuses `setRole` from a widget action
   (`role-op-not-interactive`) — a role picks which container renderer draws a section, and
   changing it discards that renderer's chrome state; only a planner or the app sets one.

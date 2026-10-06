@@ -96,9 +96,21 @@ export interface ContainerNode {
    * section, a tab set. Absent, or unknown to the renderer in use ⇒ the plain container.
    */
   role?: string;
+  /**
+   * Who may revise this container's membership (U15). `"planner"` marks a container a planner
+   * authored: a later revise may retitle, re-role, move into, move out of and remove it. Absent ⇒
+   * application-owned: a planner treats it as LOCKED (never edits, moves into, or removes it).
+   * It is an edit boundary, not an access control, and it never reaches the compiled Blueprint;
+   * an absent owner hashes exactly as before.
+   */
+  owner?: ContainerOwner;
   gap?: number;
   children: ExperienceNode[];
 }
+
+/** Who a container's membership belongs to. Absent ⇒ the application. */
+export type ContainerOwner = "planner";
+export const ContainerOwner = z.literal("planner");
 
 export interface SemanticNode {
   id: string;
@@ -135,6 +147,7 @@ export const ExperienceNode: z.ZodType<ExperienceNode> = z.lazy(() =>
       column: GridColumn.optional(),
       title: LocalizedText.optional(),
       role: LayoutRole.optional(),
+      owner: ContainerOwner.optional(),
       gap: z.number().optional(),
       children: z.array(ExperienceNode),
     }),

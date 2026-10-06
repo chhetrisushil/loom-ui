@@ -1,4 +1,5 @@
 import type {
+  ContainerRoleSpec,
   Experience,
   Finding,
   Intent,
@@ -175,6 +176,12 @@ export interface ComposeInput {
   readonly contextClass?: DataClass;
   /** Surface `validateExperience` checks against. Default "web". (Plan ruling; spec §7.1 omits it.) */
   readonly surface?: Surface;
+  /**
+   * Container roles the host's renderers draw (U15), on top of the plain `section` / `row` /
+   * `grid` every host gets — `REFERENCE_CONTAINER_ROLES` for `renderer-lit`'s `tabs` and `stepper`.
+   * A reply naming a role not listed here is refused. Part of a decision's id when present.
+   */
+  readonly containers?: readonly ContainerRoleSpec[];
 }
 export interface ReviseInput {
   readonly experience: Experience;
@@ -195,6 +202,8 @@ export interface ReviseInput {
    * against travel in `context`), and — like `sampleOutput` — not part of a decision's id.
    */
   readonly observed?: Readonly<Record<string, TaintedValue<unknown>>>;
+  /** As on {@link ComposeInput.containers}. */
+  readonly containers?: readonly ContainerRoleSpec[];
 }
 
 export interface AttemptTrace {

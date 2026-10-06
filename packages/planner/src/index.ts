@@ -3,13 +3,29 @@ export { checkPlannerConformance } from "./conformance";
 export type { ConformanceFixture, DenialProbe, StreamProbe } from "./conformance";
 export {
   DRAFT_ID,
+  MAX_DRAFT_CHILDREN,
+  MAX_DRAFT_DEPTH,
   MAX_DRAFT_NODES,
+  PLAIN_CONTAINERS,
+  containerKinds,
+  draftContainerSchema,
+  draftEntrySchema,
   draftNodeSchema,
+  draftStructureIssues,
   entryFor,
+  isDraftContainer,
   parseModelJson,
   planSchema,
 } from "./contract";
-export type { DraftBinding, DraftNode, Parsed, PlanDraft } from "./contract";
+export type {
+  DraftBinding,
+  DraftContainer,
+  DraftEntry,
+  DraftNode,
+  Parsed,
+  PlanDraft,
+  StructureIssue,
+} from "./contract";
 export { planDecisionId } from "./decision";
 export {
   driftCapabilities,
@@ -51,6 +67,7 @@ export {
   composeMessages,
   describeCapabilities,
   describeCatalog,
+  describeContainers,
   describeExperience,
   fenceData,
   reviseMessages,

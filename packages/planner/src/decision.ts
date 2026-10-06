@@ -1,4 +1,4 @@
-import type { Surface } from "@loom-ui/core";
+import type { ContainerRoleSpec, Surface } from "@loom-ui/core";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import type { CapabilityRef, ComposeInput, ReviseInput } from "./spi";
 
@@ -39,6 +39,8 @@ export function planDecisionId(
   input: Pick<ComposeInput, "intent" | "catalog" | "capabilities"> & {
     context?: unknown;
     surface?: Surface;
+    /** The container roles offered (U15); keyed only when there are some. */
+    containers?: readonly ContainerRoleSpec[];
   }
 ): string;
 export function planDecisionId(
@@ -52,11 +54,17 @@ export function planDecisionId(
     surface?: Surface;
     /** The handles `ReviseInput.observed` carries a sample for. */
     observedHandles?: readonly string[];
+    /** The container roles offered (U15); keyed only when there are some. */
+    containers?: readonly ContainerRoleSpec[];
   }
 ): string;
 export function planDecisionId(kind: "compose" | "revise", input: Record<string, unknown>): string {
   const surface = (input.surface as Surface | undefined) ?? "web";
   const catalog = input.catalog as ReviseInput["catalog"] | undefined;
+  // The roles shape the prompt and the contract, so they key the decision — but only when offered,
+  // so every decision made without them keeps the id it always had.
+  const roles = input.containers as readonly ContainerRoleSpec[] | undefined;
+  const offered = roles !== undefined && roles.length > 0 ? { containers: roles } : {};
   const key =
     kind === "compose"
       ? {
@@ -65,6 +73,7 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
           capabilities: (input.capabilities as readonly CapabilityRef[]).map(capabilityKey),
           context: input.context ?? null,
           surface,
+          ...offered,
         }
       : {
           versionHash: input.versionHash,
@@ -75,6 +84,7 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
           ),
           context: input.context ?? null,
           surface,
+          ...offered,
           ...(Array.isArray(input.observedHandles) &&
             input.observedHandles.length > 0 && {
               observedHandles: [...(input.observedHandles as readonly string[])].sort(),

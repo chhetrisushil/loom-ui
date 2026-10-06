@@ -18,6 +18,7 @@ export type { OrderKeyOptions } from "./order";
 export {
   ExperienceNode,
   GRID_COLUMNS,
+  ContainerOwner,
   GridColumn,
   GridLine,
   LayoutRole,
@@ -41,6 +42,14 @@ export {
   treeDepth,
   walk,
 } from "./node";
+export {
+  REFERENCE_CONTAINER_ROLES,
+  STEPPER_ROLE,
+  TABS_ROLE,
+  containerRoleFindings,
+  roleChildProblems,
+} from "./containerRoles";
+export type { ContainerRoleSpec, RoleChild, RoleChildren } from "./containerRoles";
 export type { ContainerNode, Placement, SemanticNode } from "./node";
 export {
   Experience,

@@ -1,3 +1,5 @@
+import { MAX_DRAFT_NODES } from "./contract";
+
 /**
  * An incremental, bounded scanner over a model reply of the shape `{ "summary": …, "nodes": [ … ] }`
  * that yields each element of `nodes` the moment its closing brace arrives — the partial-JSON half
@@ -23,7 +25,8 @@ export interface ScanLimits {
 export const DEFAULT_SCAN_LIMITS = {
   maxChars: 256 * 1024,
   maxNodeChars: 16 * 1024,
-  maxNodes: 24,
+  /** The reply cap: containers stream as flat entries (children name their `parent`), so nesting costs the scanner nothing. */
+  maxNodes: MAX_DRAFT_NODES,
 } as const;
 
 export class NodeScanner {
