@@ -51,6 +51,16 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   it performs NO authorization (`by` is an unverified claim; `allowDeclassify` is a per-call host argument)
   and its streams sit in loom's reserved `__loom_` namespace (see its README). Hash goldens are
   untouched (a lineage event is not part of the artifact).
+- `@loom-ui/changes` (U7) is server-side and optional: a `ChangeFeed` over lineage events (cursor = the log's
+  dense sequence, ids `<experienceId>#<sequence>`, at-least-once), a per-viewer unread cursor seam, and
+  polling / `EventStore`-push `HeadSignal`s. It must not enter a client graph (both hydration guards list it).
+  The pure half lives in core: `describeChange(prev, next, { viewer })` is FAIL-CLOSED — anything the viewer may
+  not see (in EITHER version, incl. a node that became classified) collapses into ONE bare `restricted-changed`
+  entry, no id/type/count, and the summary is dropped; the attention classifier only ever sees the redacted
+  description. A planner/author summary is MODEL TEXT: `boundSummary` (bounded, controls and bidi stripped) on
+  the way in and out, carried as `UntrustedText`, never an instruction. `HeadSignal` (core) is types only so a
+  browser can implement it with a `fetch` loop. loom's `@loom/live-query` does not fit (it folds an
+  EXECUTION's state); the push impl uses `EventStore.subscribe` directly.
 - The catalogue is closed at runtime: a planner may only name entries; a gap is a finding.
 - Never `.register()` on a loom default registry (`defaultTerminalRegistry`, React `defaultRegistry`,
   `litRegistry`); build your own and `.merge()` — the defaults are shared singletons.

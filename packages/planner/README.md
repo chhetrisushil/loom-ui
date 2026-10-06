@@ -21,7 +21,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 ## Key concepts
 
 - **A planner returns operations, never an Experience.** `Planner.compose`/`.revise` both resolve
-  to a `PlanResult { ops, findings, report }`; the caller folds `ops` onto its own lineage with
+  to a `PlanResult { ops, findings, report, summary? }`; the caller folds `ops` onto its own lineage with
   `replay`. `@loom-ui/planner` imports no invoker, effect runtime, projection runtime or LLM
   provider (enforced by `noLookups.test.ts`) — capabilities and context arrive resolved from the
   caller.
@@ -54,7 +54,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   ctx): Promise<PlanResult> }`.
 - `ComposeInput`, `ReviseInput` — `{ intent, catalog, capabilities, context?, surface? }` and, for a
   revision, `{ experience, request: { text, scopeNodeIds? }, ..., observed? }`.
-- `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report }`; the report's
+- `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report, summary? }` (`summary` is the model's own description of the plan, kept for change delivery: UNTRUSTED text, bounded and stripped by core's `boundSummary`, never an instruction); the report's
   `decisionId`, `attempts`, `firstAttemptValid`, `modelId` and summed `usage` are what a caller
   stamps provenance from.
 - `CapabilityRef` — one bindable tool: `handle`, optional `kind`, `toolName`, `toolVersion`,

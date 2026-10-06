@@ -3,6 +3,7 @@ import {
   MAX_TREE_DEPTH,
   type Provenance,
   type RecordedOperation,
+  boundSummary,
   treeDepth,
 } from "@loom-ui/core";
 import {
@@ -38,6 +39,8 @@ export interface VersionRecord {
   readonly by: Provenance;
   /** The ops folded onto the parent (`composed` only; `[]` otherwise and for a genesis). */
   readonly ops: readonly RecordedOperation[];
+  /** `composed`: what the author said about the change; untrusted text, already bounded. */
+  readonly summary?: string;
   /** `reverted`: the version whose content this restores. */
   readonly revertedTo?: string;
   /** `branched`: the version of another line this forked, and the source head classes came from. */
@@ -193,7 +196,12 @@ function foldChecked(experienceId: string, records: readonly StoredLineageRecord
     };
     const record: VersionRecord =
       rec.type === EXPERIENCE_COMPOSED
-        ? { ...base, kind: "composed", ops: (v as ComposedPayload).ops as RecordedOperation[] }
+        ? {
+            ...base,
+            kind: "composed",
+            ops: (v as ComposedPayload).ops as RecordedOperation[],
+            ...summaryOf((v as ComposedPayload).summary),
+          }
         : rec.type === EXPERIENCE_REVERTED
           ? {
               ...base,
@@ -217,3 +225,8 @@ function foldChecked(experienceId: string, records: readonly StoredLineageRecord
     state: { experienceId, sequence: expectedSequence, versions, order, head, promoted },
   };
 }
+
+const summaryOf = (raw: string | undefined): { summary?: string } => {
+  const summary = boundSummary(raw);
+  return summary === undefined ? {} : { summary };
+};

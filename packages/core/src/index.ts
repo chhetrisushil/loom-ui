@@ -130,3 +130,23 @@ export {
 } from "./values";
 export { mayView, strictestClass } from "./viewer";
 export type { Viewer } from "./viewer";
+export {
+  ATTENTION_LEVELS,
+  CHANGE_KINDS,
+  DEFAULT_MAX_ENTRIES,
+  MAX_ENTRIES_CAP,
+  MAX_SUMMARY_LENGTH,
+  boundSummary,
+  defaultAttention,
+  describeChange,
+  untrustedSummary,
+} from "./change";
+export type {
+  Attention,
+  ChangeDescription,
+  ChangeEntry,
+  ChangeKind,
+  DescribeOptions,
+  UntrustedText,
+} from "./change";
+export type { HeadChange, HeadSignal } from "./heads";

@@ -242,6 +242,18 @@ test holds it zod-free.
 - `decodeValue`, `encodeValue` — the content codec, re-exported so a caller inspecting a stored
   blob by hand uses the same pair.
 
+### Describing a change (U7)
+
+`describeChange(prev, next, { viewer, ops?, summary?, classify?, maxEntries? })` is pure, deterministic
+and bounded: nodes added / removed / moved / rebound / reclassified / edited, provider and intent
+changes, an identity report over the VISIBLE nodes, an `attention` level (`none | info | attention |
+urgent`, default classifier or the host's) and, when no restricted content changed, the author's
+summary as `UntrustedText`. Fail-closed for the viewer: anything it may not see, in either version,
+collapses into one bare `{ kind: "restricted-changed" }` (no id, type or count); no viewer = no
+clearance. `boundSummary` bounds and strips model text. `HeadChange` / `HeadSignal` are the types of a
+"this experience has a new head" signal (implementations: `@loom-ui/changes`). See
+[`@loom-ui/changes`](../changes/README.md).
+
 ### Ordering
 
 - `orderKeyBetween(a, b, { salt? })` — a fractional order key strictly between `a` and `b` (either

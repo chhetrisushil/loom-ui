@@ -107,3 +107,11 @@ grows without bound. loom will register the prefix as a sanctioned extension str
 loom, not part of this package).
 
 Genericity: nothing here names a consumer.
+
+## Change delivery
+
+`compose({ ..., summary })` records what the author said about a change (a planner's
+`PlanResult.summary`) on the `EXPERIENCE_COMPOSED` event: untrusted model text, bounded and stripped
+(`boundSummary`) on the way in and again when the fold reads it. It is not part of the content
+address. `VersionRecord.summary` carries it. The feed, the unread cursor and the head signals that
+consume the log live in [`@loom-ui/changes`](../changes/README.md).

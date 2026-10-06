@@ -19,6 +19,8 @@ const FORBIDDEN_PACKAGES = new Set([
   "@loom/plugin-sandbox",
   // U6 — the lineage runtime is server-side (an event log + content store); never in a client graph.
   "@loom-ui/lineage",
+  // U7 — change delivery sits on the lineage and content stores; server-side only.
+  "@loom-ui/changes",
   "@loom/plugin-mcp",
   "@loom/effect-runtime",
   "@loom/agent",
