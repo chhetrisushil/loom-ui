@@ -92,8 +92,13 @@ const WORKFLOW_ID = "loom-ui.lineage";
  * taken slot, not a skipped one) and treats a `DuplicateSequenceError` from a racing writer as a
  * lost CAS. Fencing, tenancy and sharding decorators wrap `store` as usual.
  */
-export function eventStoreLineageStore(store: EventStore): LineageStore {
-  const streamOf = (experienceId: string) => `${LINEAGE_STREAM_PREFIX}${experienceId}`;
+export function eventStoreLineageStore(
+  store: EventStore,
+  opts: { readonly streamPrefix?: string; readonly workflowId?: string } = {}
+): LineageStore {
+  const prefix = opts.streamPrefix ?? LINEAGE_STREAM_PREFIX;
+  const workflowId = opts.workflowId ?? WORKFLOW_ID;
+  const streamOf = (experienceId: string) => `${prefix}${experienceId}`;
   return {
     async append(experienceId, expectedSequence, record) {
       const executionId = streamOf(experienceId);
@@ -103,7 +108,7 @@ export function eventStoreLineageStore(store: EventStore): LineageStore {
       try {
         await store.append({
           id: `${executionId}#${sequence}`,
-          workflowId: WORKFLOW_ID,
+          workflowId,
           executionId,
           eventType: record.type,
           sequence,

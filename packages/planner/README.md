@@ -231,6 +231,14 @@ the probe's calls carry no `toolId`, so it cannot pass without observing a tool.
 - `isPlannerUsage(u)` — validate that a value has the `PlannerUsage` shape; exported for a
   caller's own checks, not called by `ReferencePlanner` itself.
 
+## Provenance (U12)
+
+`plannerProvenance(result, { agentId?, ref? })` is the `Provenance` to stamp on the ops of a plan:
+`source: "agent"`, the model, and the loom decision (`PlanReport.decisionId`) that recorded the
+turn. Hand it to `Lineage.compose({ by })` / `RecordedOperation.by`, with `PlanResult.summary` and
+`summaryClass`, and `Lineage.explain` can answer "which model call put this widget here?" without
+the model's text ever entering the op log through the provenance. It copies nothing else.
+
 ## Streaming a turn (U1)
 
 Optional and generic, and ONE governed call: there is no second model path. Pass

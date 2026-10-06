@@ -23,6 +23,7 @@ export { REFERENCE_POLICY, REFERENCE_SOURCE, ReferencePlanner, scratchGenesis } 
 export { NodeScanner } from "./streamScan";
 export type { ScanLimits } from "./streamScan";
 export type { ReferencePlannerOptions } from "./reference";
+export { plannerProvenance } from "./provenance";
 export { isControlPlaneError } from "./controlPlane";
 export { REACH_DECLARATION, declarePlannerReach, readPlannerReach } from "./reach";
 export type { PlannerReach } from "./reach";

@@ -36,6 +36,13 @@ export const Provenance = z.object({
   agentId: z.string().optional(),
   modelId: z.string().optional(),
   ref: z.string().optional(),
+  /**
+   * The loom decision that produced the op (U12): a planner turn is ONE `ctx.decide`, and its id
+   * (`PlanReport.decisionId`) is what a replay serves, so it links a node back to the recorded
+   * model call without copying the model's text into the log. Optional (every log written before it
+   * parses unchanged) and outside the content address, like the rest of provenance.
+   */
+  decisionId: z.string().min(1).max(256).optional(),
 });
 export type Provenance = z.infer<typeof Provenance>;
 

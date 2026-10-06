@@ -30,3 +30,14 @@ export {
 } from "./store";
 export type { AppendOutcome, LineageRecord, LineageStore, StoredLineageRecord } from "./store";
 export { checkLineageStoreConformance } from "./conformance";
+export {
+  MAX_SEEN_READ,
+  MAX_SEEN_RECORDS,
+  SEEN_STREAM_PREFIX,
+  SEEN_WORKFLOW_ID,
+  SeenLog,
+  VIEW_RECORDED,
+  ViewRecordPayload,
+  seenStoreOptions,
+} from "./seen";
+export type { SeenLogOptions, SeenRefusal, SeenResult, SeenView } from "./seen";

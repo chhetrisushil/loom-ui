@@ -256,6 +256,36 @@ clearance. `boundSummary` bounds and strips model text. `HeadChange` / `HeadSign
 "this experience has a new head" signal (implementations: `@loom-ui/changes`). See
 [`@loom-ui/changes`](../changes/README.md).
 
+### Provenance and "why is this here" (U12)
+
+Every recorded op already says who made it; `foldProvenance(base, steps)` turns a lineage's ops into a
+per-node **ledger** (which op created each node, which last changed it, how many changes, and the
+last op to bind/remap/declassify each provider handle or projection), keyed by id and handle only: it
+holds no node content, prop or value, is derived from the log, and is never part of the artifact or its
+content address. `Provenance.decisionId` (optional; the planner's `PlanReport.decisionId`) links an op
+to the loom decision that recorded the model call. `explainNode(experience, nodeId, { viewer, ledger,
+notes, projections })` answers for ONE viewer: the node's type, what it is fed from (a provider
+handle and the tool NAMES it calls, or a projection id/version, never an argument), who created and
+last changed it, and (as `UntrustedText`) the author's summary of the version that created it and the
+request that prompted the op. FAIL-CLOSED: an unknown node, a node this viewer may not see and an
+unreadable input all answer the same bare `{ available: false }` (no oracle); the words are shown only when
+the viewer may see the strictest class of everything the version holds, of what the planner read
+(`summaryClass`) and of `extraFloor`; no viewer is the most restrictive viewer. `inspectExperience`
+(shared with `describeChange`) is the one reading of "what may this viewer see".
+
+### What a viewer saw (U12)
+
+`snapshotSeen(experience, { viewer, read })` captures the values a viewer was actually shown:
+one entry per data source (a handle, or a projection id+path), each with the class it was captured
+under, a delivery state (`seen`, `absent`, `oversize`, `over-budget`, `unreadable`) and, when it fit
+(16 KiB a value, 512 KiB and 256 sources a snapshot), a detached JSON copy of the value. `read` is
+never called for a source the viewer may not see; the snapshot says only that something was
+`restricted`. `redactSeen(entries, experience, { viewer })` is the read side: it re-derives each
+class from the artifact the record names, takes the stricter of that and the stamp, restamps, and
+withholds a missing or unknown stamp (no artifact = everything withheld). `seenToState` rebuilds the
+`values.<handle>` / `status.<handle>` store shape so a surface can be replayed as it was shown.
+Persistence is `@loom-ui/lineage`'s `SeenLog`.
+
 ### Ordering
 
 - `orderKeyBetween(a, b, { salt? })` — a fractional order key strictly between `a` and `b` (either
