@@ -392,7 +392,19 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   handle (`experienceHandles`, the one choke point `compile` and hydration share): a handle's
   effective class is the strictest of its live nodes, its sticky `handleClasses` entry and the class
   of every tool its provider calls, so a sibling bound BEFORE its tool was classified is gated as
-  soon as the tool is. Limits: a class follows MCP tool NAMES only — a provider whose execution
+  soon as the tool is. **A tool's class can also be DECLARED up front** — it is not
+  inferred only from nodes that already carry one. The host passes `declaredToolClasses`
+  (`Record<toolKey, DataClass>`, the same `sensitivity` a planner's `CapabilityRef` declares) to
+  every read path and it floors each handle whose provider calls that tool, whatever the stored
+  nodes say: `compile`, `experienceHandles`, `inspectExperience` / `experienceClassFloor`,
+  `describeChange` (and `LineageChangeFeed`), `explainNode` (and `Lineage.explain`), `snapshotSeen` /
+  `redactSeen` (and `SeenLog.record` / `read`), and hydration (`HydrationController`,
+  `handleInventory`, `serveHandle(s)`). It is a table the host passes, not stored state: it only
+  ever RAISES a read, it is not part of the content address, and omitting it from a call
+  means that call reads only the experience's own classes — so pass the same table everywhere. The
+  reference planner also applies a capability's class to the nodes it writes (see
+  `@loom-ui/planner`), so this floor is the backstop for nodes it did not write (an older planner, a
+  raw op). Limits: a class follows MCP tool NAMES only — a provider whose execution
   graph calls no tool takes no tool class (it fetches nothing), and a different name for the same
   data (an alias, a renamed tool, a different server's tool name) is not caught. **Lowering** is `declassifyHandle { handle, to?, tool? }`, the only
   op that does it: it lowers the handle, and with `tool: true` also its tools; lowering the handle

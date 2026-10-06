@@ -1,6 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
-import { effectiveClasses } from "./classes";
+import { type DeclaredToolClasses, effectiveClasses } from "./classes";
 import type { Experience } from "./experience";
 import { type Priority, walk } from "./node";
 import { strictestClass } from "./viewer";
@@ -26,7 +26,10 @@ export interface HandleUse {
 
 const RANK: Record<Priority, number> = { P0: 0, P1: 1, P2: 2 };
 
-export function experienceHandles(exp: Experience): HandleUse[] {
+export function experienceHandles(
+  exp: Experience,
+  declaredToolClasses?: DeclaredToolClasses
+): HandleUse[] {
   const byHandle = new Map<
     string,
     { priority: Priority; nodeIds: string[]; sensitivity: DataClass | undefined }
@@ -49,7 +52,7 @@ export function experienceHandles(exp: Experience): HandleUse[] {
   // Effective class, read at once: live nodes + the sticky per-handle class + the class of every
   // tool the handle's provider calls (tool-level, fail-closed — a sibling bound before its tool
   // was classified is gated as soon as the tool is).
-  const effective = effectiveClasses(exp);
+  const effective = effectiveClasses(exp, declaredToolClasses);
   return [...byHandle.entries()]
     .map(([handle, v]) => {
       const sensitivity = strictestClass(v.sensitivity, effective.get(handle));

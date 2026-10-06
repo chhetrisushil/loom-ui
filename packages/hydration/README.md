@@ -238,6 +238,9 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 
 ## Notable behaviours and guarantees
 
+- **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,
+  `handleInventory` and `serveHandle(s)`; `@loom-ui/core`'s `DeclaredToolClasses`) makes a handle
+  whose provider calls a declared tool at least that class, even when no stored node carries one.
 - **A classified handle is never fetched for a viewer who may not see it (fail-closed).** Pass
   `viewer: { clearance }` (`@loom-ui/core`'s `Viewer`) to `HydrationController`, `handleInventory`
   and `serveHandle`/`serveHandles`. A handle bound by any node whose `sensitivity` is above the

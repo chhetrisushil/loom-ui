@@ -435,6 +435,11 @@ export function materialize(
       );
       return undefined;
     }
+    // The class this node's data carries: the model's proposal (only ever present where the type is
+    // `model-may-set`) joined with what the CAPABILITY declares it returns. Classification is
+    // tool-level and fail-closed (U10b): a proposal may raise the class, never lower it, and a
+    // capability declared `secret` classes every node bound to it whether or not the model said so.
+    const klass = strictest(n.binding.sensitivity, cap.sensitivity);
     let pinFrom = cap;
     // The node's CURRENT call graph, kept when the draft keeps the tool: a call made behind
     // upstream steps is rebuilt behind the same steps (`CallGraph`) — with the draft's arguments,
@@ -483,13 +488,14 @@ export function materialize(
           return {
             handle,
             priority: n.binding.priority,
-            ...(n.binding.sensitivity !== undefined && { sensitivity: n.binding.sensitivity }),
+            ...(klass !== undefined && { sensitivity: klass }),
           };
         }
         const message = `node "${n.id}" re-binds ${toolKey(cap)}@${cap.toolVersion} with arguments no observed sample belongs to, while other calls of that tool were observed; it is not pinned from their output`;
         if (current?.binding !== undefined) {
           findings.push(warn("sample-not-observed", `${message} — its binding is kept`, n.id));
-          return current.binding;
+          // Kept, but never below what the capability declares (the revise diff raises it).
+          return klass === undefined ? current.binding : { ...current.binding, sensitivity: klass };
         }
         // Dropped, not refused: an error would fail the whole plan and take every OTHER handle's
         // valid repair down with it. The drift request already tells the model this is not
@@ -543,13 +549,13 @@ export function materialize(
     // `sensitivity` rides on the NODE's binding, not on the provider spec: the same fetch can
     // feed two nodes, and the class describes what a node shows, not how it was fetched — so it
     // is deliberately outside `providerHandle`'s identity. What comes out here is the model's
-    // RAW proposal: an inserted node has no current class for it to lower (`strictest(undefined,
-    // p) === p`), so the clamp lives in the revise diff below, which is the only place a
+    // proposal joined with the capability's declared class: an inserted node has no current class
+    // for it to lower (`strictest(undefined, p) === p`), so the clamp lives in the revise diff below, which is the only place a
     // previously-set class exists to be lowered.
     return {
       handle,
       priority: n.binding.priority,
-      ...(n.binding.sensitivity !== undefined && { sensitivity: n.binding.sensitivity }),
+      ...(klass !== undefined && { sensitivity: klass }),
     };
   };
 

@@ -1,4 +1,5 @@
 import {
+  type DeclaredToolClasses,
   type Experience,
   type Finding,
   MAX_TREE_DEPTH,
@@ -92,6 +93,12 @@ export interface ControllerOptions {
    * classified); unclassified handles are unaffected. Pass `{ clearance: "secret" }` for full access.
    */
   readonly viewer?: Viewer;
+  /**
+   * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
+   * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
+   * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
+   */
+  readonly declaredToolClasses?: DeclaredToolClasses;
   readonly onDrift?: (report: DriftReport) => void;
   /**
    * Where `outputCheck: "contract"` providers get their kinds: every bound node resolved on this
@@ -304,7 +311,12 @@ export class HydrationController {
     if (treeDepth(next.root) > MAX_TREE_DEPTH)
       return { findings: [tooDeep(next.experienceId, MAX_TREE_DEPTH)] };
     this.sched.retain(
-      new Set(partitionByViewer(experienceHandles(next), this.viewer).allowed.map((h) => h.handle))
+      new Set(
+        partitionByViewer(
+          experienceHandles(next, this.opts.declaredToolClasses),
+          this.viewer
+        ).allowed.map((h) => h.handle)
+      )
     );
     return this.bind(next);
   }
@@ -393,7 +405,7 @@ export class HydrationController {
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
     // Refused handles: their status says so (and nothing else), and no job exists for them.
     const { allowed, restricted, advisory } = partitionByViewer(
-      experienceHandles(exp),
+      experienceHandles(exp, this.opts.declaredToolClasses),
       this.viewer
     );
     this.bound = new Set(bound);
@@ -427,7 +439,10 @@ export class HydrationController {
     const findings: Finding[] = [];
     const missing: Array<{ handle: string; finding: Finding }> = [];
     // A restricted handle is not a job: it never reaches the scheduler, the cache or a provider.
-    for (const use of partitionByViewer(experienceHandles(exp), this.viewer).allowed) {
+    for (const use of partitionByViewer(
+      experienceHandles(exp, this.opts.declaredToolClasses),
+      this.viewer
+    ).allowed) {
       if (isReservedHandle(use.handle)) {
         findings.push({
           code: "invalid-handle",

@@ -41,6 +41,15 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   OMITTED (warn finding `summary-withheld`; the ops are unaffected) rather than stamped with a guess.
   Declare `sensitivity` on the capability, or `contextClass` to vouch for the lot. The conformance
   kit reports `summary-class-unsound` for a planner that does otherwise.
+- **A capability's declared class classes every node bound to it (tool-level, fail-closed).**
+  `CapabilityRef.sensitivity` is not only the summary's stamp: `materialize` gives each bound node
+  `strictest(the model's proposal, the capability's class)`. A proposal (admitted only on a
+  `sensitivity: "model-may-set"` type) can raise the class, never lower it, and a node on a
+  caller-only type still takes the capability's class although the model could not set one. On a
+  revise it raises an existing node (a `bindProvider` carrying the class). The conformance kit
+  reports `binding-class-below-capability` for a planner whose bound nodes carry less than their
+  capability declares. The same declaration is the READ-time floor a host passes to core as
+  `declaredToolClasses` (see `@loom-ui/core`), which covers nodes this planner did not write.
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
   (samples, the current experience's node list, a capability's description/schema) is wrapped as
   DATA in the user message, never `system`; `ReferencePlanner` fences its own prompts rather than
