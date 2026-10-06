@@ -107,6 +107,11 @@ export interface HydrationScope {
 export class HydrationStore {
   /** Open token streams by handle (see {@link append}). A replace/remove/empty ends the handle's. */
   private readonly streams = new Map<string, StreamedText>();
+  /**
+   * Installed by the controller that fronts this store: a refusal for a handle that may not take
+   * chunks (restricted for the viewer, unbound, not a streaming widget). Absent on a bare store.
+   */
+  private appendGuard: ((handle: string) => Finding | undefined) | undefined;
   private seq = 0; // status seq — monotone per store
   private emitSeq = 0; // envelope sequence — every emit, including remove
   /** The projection state key: the scope, flattened. Derived — never passed in. */
@@ -165,6 +170,16 @@ export class HydrationStore {
   }
 
   /**
+   * Gate every {@link append} through `guard` (a refusal finding, or undefined to allow). A
+   * `HydrationController` installs one over the store it fronts, so a producer cannot write a
+   * viewer-restricted handle's text into the projected store behind the controller's back. A bare
+   * store (no controller) has no viewer and no experience to gate against and stays ungated.
+   */
+  guardAppend(guard: ((handle: string) => Finding | undefined) | undefined): void {
+    this.appendGuard = guard;
+  }
+
+  /**
    * Append one chunk of a token stream (`StreamingText`) to a handle. The handle's value is the
    * accumulated string — widgets and the value contract are unchanged — and its status is
    * `pending` while the stream is open and `ready` once a chunk carries `done`.
@@ -181,6 +196,8 @@ export class HydrationStore {
     chunk: unknown
   ): { ok: true; applied: boolean } | { ok: false; finding: Finding } {
     this.assertValidHandle(handle);
+    const refusal = this.appendGuard?.(handle);
+    if (refusal !== undefined) return { ok: false, finding: refusal };
     const r = appendChunk(this.streams.get(handle), chunk);
     if (!r.ok) return r;
     if (!r.applied) return { ok: true, applied: false };

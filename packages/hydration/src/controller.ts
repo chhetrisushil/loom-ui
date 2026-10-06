@@ -25,7 +25,7 @@ import {
 import { type HydrationStore, isReservedHandle } from "./projection";
 import { type DriftRecord, type InputDriftMode, executeProvider, outcomeResult } from "./provider";
 import type { ReshaperRegistry } from "./reshape";
-import { partitionByViewer, snapshotViewer } from "./restricted";
+import { partitionByViewer, restrictedFinding, snapshotViewer } from "./restricted";
 import {
   type HandleLoadResult,
   HandleScheduler,
@@ -166,9 +166,16 @@ export class HydrationController {
    */
   /** The viewer, copied once at construction so a live mutation of the caller's object is inert. */
   private viewer: Viewer | undefined;
+  /**
+   * Handles that may take token chunks RIGHT NOW: bound by the current experience, cleared for the
+   * viewer, and (when output kinds are known) resolving to `StreamingText`. Rebuilt on every bind.
+   */
+  private streamable: ReadonlySet<string> = new Set();
+  private bound: ReadonlySet<string> = new Set();
 
   constructor(private readonly opts: ControllerOptions) {
     this.viewer = snapshotViewer(opts.viewer);
+    opts.store.guardAppend((handle) => this.appendRefusal(handle));
     this.clock = opts.clock ?? Date.now;
     this.cache = opts.cache ?? new HydrationCache(this.clock);
     if (opts.defaultParams !== undefined) {
@@ -250,6 +257,40 @@ export class HydrationController {
     return this.current === undefined ? { findings: [] } : this.recompose(this.current);
   }
 
+  /**
+   * Append one token chunk to a `StreamingText` handle, through the same viewer gate as `load`:
+   * refused (a finding, nothing written) for a handle that is not bound by the current
+   * experience (`stream-unbound`), is restricted for the viewer (`restricted`, the fixed text that
+   * names nothing), or — when `outputKinds` is configured — does not resolve to `StreamingText`
+   * (`stream-kind-mismatch`). Without `outputKinds` the kind is unknown and is not checked. The
+   * store's own `append` is gated by the same rule once a controller fronts it.
+   */
+  append(
+    handle: string,
+    chunk: unknown
+  ): { ok: true; applied: boolean } | { ok: false; finding: Finding } {
+    return this.opts.store.append(handle, chunk);
+  }
+
+  private appendRefusal(handle: string): Finding | undefined {
+    if (this.sched.isDisposed || !this.bound.has(handle))
+      return {
+        code: "stream-unbound",
+        severity: "error",
+        message: "the handle is not bound by the current experience; the chunk was refused",
+      };
+    if (this.streamable.has(handle)) return undefined;
+    // Bound but not streamable: restricted for the viewer, or the wrong widget kind.
+    return this.restrictedHandles.has(handle)
+      ? restrictedFinding()
+      : {
+          code: "stream-kind-mismatch",
+          severity: "error",
+          message: "the handle's widget does not take a token stream (StreamingText); refused",
+        };
+  }
+  private restrictedHandles: ReadonlySet<string> = new Set();
+
   /** The surface reports a lazy (P2) widget entered the viewport. */
   markVisible(handle: string): void {
     this.sched.markVisible(handle);
@@ -327,6 +368,9 @@ export class HydrationController {
     this.sched.dispose();
     this.lifetime.abort();
     this.current = undefined;
+    this.bound = new Set();
+    this.streamable = new Set();
+    this.restrictedHandles = new Set();
     this.globalParams = {};
     this.scopedParams.clear();
   }
@@ -348,7 +392,21 @@ export class HydrationController {
     for (const m of missing)
       this.opts.store.setStatus(m.handle, { state: "error", finding: m.finding });
     // Refused handles: their status says so (and nothing else), and no job exists for them.
-    const { restricted, advisory } = partitionByViewer(experienceHandles(exp), this.viewer);
+    const { allowed, restricted, advisory } = partitionByViewer(
+      experienceHandles(exp),
+      this.viewer
+    );
+    this.bound = new Set(bound);
+    this.restrictedHandles = new Set(restricted.map((r) => r.handle));
+    this.streamable = new Set(
+      allowed
+        .map((a) => a.handle)
+        .filter(
+          (h) =>
+            this.opts.outputKinds === undefined ||
+            (this.kinds.get(h) ?? []).includes("StreamingText")
+        )
+    );
     for (const r of restricted) {
       if (isReservedHandle(r.handle)) continue;
       // NOTHING is written for it: no value and no status, because a store projected to a client

@@ -68,4 +68,25 @@ describe("NodeScanner — incremental extraction of completed nodes", () => {
     expect(n).toBe(24);
     expect(Date.now() - t).toBeLessThan(1000);
   });
+
+  it("is linear: a 256K reply fed one character at a time stays fast", () => {
+    const big = JSON.stringify({
+      summary: "s",
+      nodes: [{ id: "a", type: "Metric", label: "x".repeat(15_000), props: {} }],
+      pad: "y".repeat(230_000),
+    });
+    const s = new NodeScanner();
+    const t0 = performance.now();
+    let n = 0;
+    for (let i = 0; i < big.length; i++) n += s.feed(big[i] as string).length;
+    const ms = performance.now() - t0;
+    expect(n).toBe(1);
+    expect(ms).toBeLessThan(300);
+  });
+
+  it("stops for good once `nodes` has closed (a duplicate key cannot add ghost nodes)", () => {
+    const s = new NodeScanner();
+    const out = s.feed('{"nodes":[{"id":"a"}],"nodes":[{"id":"ghost"}]}');
+    expect(out.map((n) => (n as { id: string }).id)).toEqual(["a"]);
+  });
 });

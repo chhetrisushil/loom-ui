@@ -1,5 +1,21 @@
 import type { TransientInvoker } from "@loom-ui/hydration/client";
-import type { DecideScope } from "./spi";
+import type { DecideScope, PlannerDeltaSink } from "./spi";
+
+/** A {@link TransientInvoker} that also forwards a per-call delta sink to the scope. */
+export interface ScopeInvoker extends TransientInvoker {
+  invokeTransient<TIn = unknown, TOut = unknown>(
+    toolId: string,
+    input: TIn,
+    opts?: {
+      readonly signal?: AbortSignal;
+      readonly label?: string;
+      readonly principal?: unknown;
+      readonly as?: unknown;
+      readonly resources?: unknown;
+      readonly onDelta?: PlannerDeltaSink;
+    }
+  ): Promise<TOut>;
+}
 
 /**
  * Adapts the {@link DecideScope} a `ctx.decide` decider receives to loom-ui's `TransientInvoker`,
@@ -10,12 +26,12 @@ import type { DecideScope } from "./spi";
  * memo built per decider (the scope's lifetime) never serves a result across executions; do
  * not share one memo across scopes.
  *
- * Only `signal` is forwarded. The scope IS the identity, so options that would choose one —
+ * Only `signal` and `onDelta` (ADR 0119: live deltas for THIS call, governed identically) are forwarded. The scope IS the identity, so options that would choose one —
  * `principal`, `as`, `resources` — are REFUSED (a rejected promise — the `TransientInvoker` contract is never a synchronous throw — and never a silent drop): a call that
  * believes it runs as someone else must not quietly run as the deciding execution instead.
  * `label` is a trace tag and is ignored.
  */
-export function scopeInvoker(scope: DecideScope): TransientInvoker {
+export function scopeInvoker(scope: DecideScope): ScopeInvoker {
   return {
     invokeTransient<TIn = unknown, TOut = unknown>(
       toolId: string,
@@ -26,6 +42,7 @@ export function scopeInvoker(scope: DecideScope): TransientInvoker {
         readonly principal?: unknown;
         readonly as?: unknown;
         readonly resources?: unknown;
+        readonly onDelta?: PlannerDeltaSink;
       }
     ): Promise<TOut> {
       if (opts !== undefined) {
@@ -40,7 +57,12 @@ export function scopeInvoker(scope: DecideScope): TransientInvoker {
       return scope.invokeTransient<TIn, TOut>(
         toolId,
         input,
-        opts?.signal === undefined ? undefined : { signal: opts.signal }
+        opts?.signal === undefined && opts?.onDelta === undefined
+          ? undefined
+          : {
+              ...(opts.signal !== undefined && { signal: opts.signal }),
+              ...(opts.onDelta !== undefined && { onDelta: opts.onDelta }),
+            }
       );
     },
   };

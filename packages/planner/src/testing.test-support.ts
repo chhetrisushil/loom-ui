@@ -4,11 +4,14 @@ import {
   type SemanticCatalog,
   defineSemanticCatalog,
 } from "@loom-ui/core";
+import { tainted } from "@loom/classify";
 import type {
   CapabilityRef,
   DecideContext,
   DecideOptionsLike,
   DecideScope,
+  PlannerDelta,
+  PlannerDeltaSink,
   PlannerModel,
   PlannerUsage,
 } from "./spi";
@@ -168,7 +171,7 @@ export function stampingScope(
     async invokeTransient<TIn, TOut>(
       toolId: string,
       input: TIn,
-      opts?: { readonly signal?: AbortSignal }
+      opts?: { readonly signal?: AbortSignal; readonly onDelta?: PlannerDeltaSink }
     ): Promise<TOut> {
       scope.calls.push({
         toolId,
@@ -182,32 +185,44 @@ export function stampingScope(
   return scope;
 }
 
-/** A model that replies like {@link scriptedModel} and ALSO streams the same reply in `size`-char chunks. */
+/** A tainted live delta, as loom's runtime hands one to a sink (ADR 0119). */
+export const textDelta = (text: string): PlannerDelta => ({
+  delta: tainted(text, "llm:llm.complete"),
+});
+
+/**
+ * A model that replies like {@link scriptedModel} and, when handed `onDelta`, ALSO streams the
+ * same reply to it in `size`-char tainted chunks (then a terminal `done`) before returning it.
+ */
 export function streamingScriptedModel(
   responses: readonly string[],
   size = 13
-): PlannerModel & { calls: number; streamCalls: number } {
+): PlannerModel & { calls: number; deltaCalls: number } {
   const model = {
     calls: 0,
-    streamCalls: 0,
-    async complete() {
-      const i = Math.min(model.calls, responses.length - 1);
+    deltaCalls: 0,
+    plainCalls: 0,
+    async complete(
+      _req: unknown,
+      opts?: { readonly signal?: AbortSignal; readonly onDelta?: PlannerDeltaSink }
+    ) {
+      // Two scripts walk independently (the whole-reply calls and the streamed ones), so a
+      // streamed compose is handed the same reply the plain compose got.
+      const streamed = opts?.onDelta !== undefined;
+      const i = Math.min(streamed ? model.deltaCalls : model.plainCalls, responses.length - 1);
       model.calls += 1;
-      return { content: responses[i] as string };
-    },
-    stream(_req: unknown, opts?: { readonly signal?: AbortSignal }): AsyncIterable<string> {
-      const i = Math.min(model.streamCalls, responses.length - 1);
-      model.streamCalls += 1;
+      if (streamed) model.deltaCalls += 1;
+      else model.plainCalls += 1;
       const text = responses[i] as string;
-      return {
-        async *[Symbol.asyncIterator]() {
-          for (let at = 0; at < text.length; at += size) {
-            if (opts?.signal?.aborted) return;
-            await Promise.resolve();
-            yield text.slice(at, at + size);
-          }
-        },
-      };
+      if (opts?.onDelta !== undefined) {
+        for (let at = 0; at < text.length; at += size) {
+          if (opts.signal?.aborted) break;
+          await Promise.resolve();
+          opts.onDelta(textDelta(text.slice(at, at + size)));
+        }
+        opts.onDelta({ ...textDelta(""), done: true });
+      }
+      return { content: text };
     },
   };
   return model;

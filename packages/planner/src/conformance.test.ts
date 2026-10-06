@@ -673,7 +673,7 @@ describe("checkPlannerConformance", () => {
 });
 
 describe("checkPlannerConformance — streaming (opt-in via fx.streamProbe)", () => {
-  const fixture = (planner: Planner, model: { calls: number; streamCalls: number }) => {
+  const fixture = (planner: Planner, model: { calls: number }) => {
     const abortCtx = recordingContext();
     return {
       intent: intentFixture,
@@ -682,7 +682,7 @@ describe("checkPlannerConformance — streaming (opt-in via fx.streamProbe)", ()
       meta: metaFixture,
       revision: { text: "add an insight" },
       ctx: recordingContext(),
-      modelCalls: () => model.calls + model.streamCalls,
+      modelCalls: () => model.calls,
       streamProbe: {
         ctx: recordingContext(),
         abortCtx,
@@ -782,6 +782,64 @@ describe("checkPlannerConformance — streaming (opt-in via fx.streamProbe)", ()
       (f) => f.code
     );
     expect(codes).toContain("stream-replay-recalled");
+  });
+
+  describe("denial of a STREAMED turn (denialProbe + streamProbe)", () => {
+    const denied = Object.assign(new Error("denied"), { name: "CapabilityDeniedError" });
+    const denyingScope = () => ({
+      invokeTransient: () => Promise.reject(denied),
+    });
+    type M = ReturnType<typeof streamingScriptedModel>;
+    /** Calls through this scope reach the scripted model, deltas and all (a permissive runtime). */
+    const permissive = (model: M) => ({
+      invokeTransient: (_id: string, req: unknown, o?: { signal?: AbortSignal; onDelta?: never }) =>
+        model.complete(req as never, o) as Promise<never>,
+    });
+    const routedPlanner = () =>
+      new ReferencePlanner({
+        model: (scope) => ({
+          complete: (req, o) => scope.invokeTransient("llm.complete", req, o),
+        }),
+        modelId: "m",
+      });
+    const withDenial = (model: M) => {
+      const abortCtx = recordingContext();
+      const denialCtx = recordingContext(denyingScope());
+      return {
+        intent: intentFixture,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+        meta: metaFixture,
+        revision: { text: "add an insight" },
+        ctx: recordingContext(permissive(model)),
+        streamProbe: {
+          ctx: recordingContext(permissive(model)),
+          abortCtx,
+          abortDecisions: () => abortCtx.decisions.size,
+        },
+        denialProbe: { ctx: denialCtx, error: denied, decisions: () => denialCtx.decisions.size },
+      };
+    };
+
+    it("the reference planner (scope-routed) passes with zero findings", async () => {
+      const model = streamingScriptedModel([twoNodes, revised]);
+      const planner = routedPlanner();
+      expect(await checkPlannerConformance(planner, withDenial(model))).toEqual([]);
+    });
+
+    it("a planner that streams AROUND the scope when asked for partials is flagged stream-denial-swallowed", async () => {
+      const model = streamingScriptedModel([twoNodes, revised]);
+      const governed = routedPlanner();
+      const direct = new ReferencePlanner({ model, modelId: "m" }); // never touches the scope
+      const bypass: Planner = {
+        compose: (i, c, o) =>
+          o?.onPartial === undefined ? governed.compose(i, c, o) : direct.compose(i, c, o),
+        revise: (i, c, o) => governed.revise(i, c, o),
+      };
+      const codes = (await checkPlannerConformance(bypass, withDenial(model))).map((f) => f.code);
+      expect(codes).toContain("stream-denial-swallowed");
+      expect(codes).not.toContain("denial-swallowed"); // the plain turn is governed
+    });
   });
 
   it("without a streamProbe, streaming is not checked", async () => {

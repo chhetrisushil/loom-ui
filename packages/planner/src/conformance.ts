@@ -51,7 +51,9 @@ export interface ScopeProbe {
  * authorisation denial, a budget refusal or an abort) must make `compose` REJECT with that error —
  * not return a (failed) plan the runtime would record as the decision, which a later grant could
  * never replace. Supplying it needs a second, FRESH recording context whose scope throws `error`.
- * Omitting it means the control-plane contract is NOT checked.
+ * Omitting it means the control-plane contract is NOT checked. When `streamProbe` is also given,
+ * the same refusal is replayed with `onPartial` set: a denied STREAMED turn must reject too,
+ * record nothing and emit no partial (it is one governed call, not a second path).
  */
 export interface DenialProbe {
   /** A fresh recording context whose decide scope rejects every call with `error`. */
@@ -63,8 +65,9 @@ export interface DenialProbe {
 }
 
 /**
- * Opts the planner into the STREAMING contract (U1). The fixture's model must be able to stream
- * and must produce, streamed, the SAME reply it produced whole for `compose` (a model that
+ * Opts the planner into the STREAMING contract (U1). The fixture's model must forward the
+ * `onDelta` it is handed (through the decide scope, ADR 0119) and stream, as deltas, the SAME reply it
+ * returns for `compose` (a model that
  * replies differently when streamed cannot be told from a planner that plans differently). Both
  * contexts must be FRESH recording contexts. Omitting it means streaming is NOT checked.
  *
@@ -377,6 +380,40 @@ export async function checkPlannerConformance(
           "a refused compose still recorded a decision, which a later grant can never replace"
         )
       );
+    // The streamed turn is the same ONE governed call: asking for partials must not route the
+    // model around the scope (the bypass that made a denied turn still call the model).
+    if (fx.streamProbe !== undefined) {
+      const seen: PlanPartial[] = [];
+      let streamedOutcome: { ok: true } | { ok: false; error: unknown };
+      try {
+        await planner.compose(composeInput, denial.ctx, { onPartial: (p) => seen.push(p) });
+        streamedOutcome = { ok: true };
+      } catch (error) {
+        streamedOutcome = { ok: false, error };
+      }
+      if (streamedOutcome.ok)
+        findings.push(
+          err(
+            "stream-denial-swallowed",
+            "a streamed compose (onPartial given) returned a plan when the decide scope refused its call: the streamed turn must go through the same governed call"
+          )
+        );
+      else if (streamedOutcome.error !== denial.error)
+        findings.push(
+          err(
+            "stream-denial-replaced",
+            "a streamed compose rejected with an error other than the one the decide scope raised"
+          )
+        );
+      if (denial.decisions() !== 0)
+        findings.push(
+          err("stream-denial-recorded", "a refused streamed compose recorded a decision")
+        );
+      if (seen.length > 0)
+        findings.push(
+          err("stream-denial-partials", "a refused streamed compose emitted a partial")
+        );
+    }
   }
 
   const before = fx.modelCalls?.() ?? 0;
@@ -546,7 +583,7 @@ async function streamingFindings(
     out.push(
       err(
         "stream-no-partials",
-        "compose was given onPartial and a model that streams but emitted no partial"
+        "compose was given onPartial and a model that streams deltas but emitted no partial"
       )
     );
   partials.forEach((p, i) => {
