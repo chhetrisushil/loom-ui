@@ -29,7 +29,7 @@ import { type Viewer, mayView, strictestClass } from "./viewer";
 
 /** Most nodes a ledger tracks; a node beyond it simply has no recorded origin (and says so). */
 export const MAX_LEDGER_NODES = 20_000;
-/** Most ops one step contributes; the rest are not folded (the ledger is then marked truncated). */
+/** Most ops one step contributes, nested `prompt.materialized` ops INCLUDED (one shared budget); the rest are not folded and the ledger is marked truncated. */
 export const MAX_STEP_OPS = 10_000;
 /** How deep `prompt` ops may nest while being folded. */
 const MAX_PROMPT_NEST = 16;
@@ -129,6 +129,8 @@ interface Ctx {
   readonly providers: Map<string, ProvenanceEntry>;
   readonly projections: Map<string, ProvenanceEntry>;
   truncated: boolean;
+  /** Ops this step may still fold, nested `prompt.materialized` ops INCLUDED (shared, not per array). */
+  budget: number;
 }
 
 function entryOf(ctx: Ctx, op: Operation["type"], prompt: string | undefined): ProvenanceEntry {
@@ -163,14 +165,22 @@ function changed(ctx: Ctx, id: string, entry: ProvenanceEntry): void {
 
 function foldOp(ctx: Ctx, op: Operation, prompt: string | undefined, depth: number): void {
   if (typeof op !== "object" || op === null) return;
+  if (ctx.budget <= 0) {
+    ctx.truncated = true;
+    return;
+  }
+  ctx.budget -= 1;
   const entry = () => entryOf(ctx, op.type, prompt);
   switch (op.type) {
     case "insertNode": {
       const e = entry();
       // Iterative: a node tree is untrusted here (the log is), so no recursion over its depth.
       const stack: ExperienceNode[] = [op.node];
+      const visited = new Set<object>(); // a shared or cyclic subtree is walked once
       for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
         if (typeof n !== "object" || n === null || typeof n.id !== "string") continue;
+        if (visited.has(n)) continue;
+        visited.add(n);
         created(ctx, n.id, e);
         if (n.kind === "container" && Array.isArray(n.children))
           for (const c of n.children) stack.push(c);
@@ -233,11 +243,13 @@ export function foldProvenance(
     providers: new Map(base.providers),
     projections: new Map(base.projections),
     truncated: base.truncated,
+    budget: 0,
   };
   for (const step of steps) {
     try {
       const ops = Array.isArray(step.ops) ? step.ops : [];
       if (ops.length > MAX_STEP_OPS) ctx.truncated = true;
+      ctx.budget = MAX_STEP_OPS;
       for (const rec of ops.slice(0, MAX_STEP_OPS)) {
         ctx.base = {
           versionHash: cleanField(step.versionHash) ?? "",

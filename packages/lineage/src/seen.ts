@@ -19,7 +19,7 @@ import {
 } from "@loom/plugin-content";
 import { z } from "zod";
 import type { Lineage, LineageResult } from "./lineage";
-import type { LineageStore } from "./store";
+import { LINEAGE_STREAM_PREFIX, type LineageStore, type StoredLineageRecord } from "./store";
 
 // ── The record of what a viewer SAW (U12) ─────────────────────────────────────
 // WHERE IT LIVES, and why not the two obvious places:
@@ -124,6 +124,18 @@ export interface SeenView {
 const streamKey = (experienceId: string, viewerId: string): string =>
   `${encodeURIComponent(experienceId)}/${encodeURIComponent(viewerId)}`;
 
+const sourceKey = (s: unknown): string | undefined => {
+  const o = s as Record<string, unknown> | null;
+  if (typeof o !== "object" || o === null) return undefined;
+  return JSON.stringify(
+    o.kind === "handle"
+      ? ["h", o.handle]
+      : o.kind === "projection"
+        ? ["p", o.id, o.path, o.version]
+        : null
+  );
+};
+
 const validId = (v: unknown): v is string =>
   typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 
@@ -134,6 +146,16 @@ export class SeenLog {
   private readonly now: () => string;
 
   constructor(opts: SeenLogOptions) {
+    // A record is per-viewer data; it must never share streams with the lineage it describes (a
+    // shared prefix would put a viewer's manifests among the line's versions, and make an
+    // experienceId that spells a stream key read as one).
+    if (
+      opts.lineage.sharesStreamsWith(opts.events) ||
+      (opts.events as { streamPrefix?: unknown }).streamPrefix === LINEAGE_STREAM_PREFIX
+    )
+      throw new Error(
+        "SeenLog: `events` must be a store of its own (a different stream prefix from the lineage's): use seenStoreOptions"
+      );
     this.events = opts.events;
     this.content = opts.content;
     this.lineage = opts.lineage;
@@ -159,6 +181,22 @@ export class SeenLog {
     const { experienceId, viewerId, snapshot } = input;
     if (!validId(experienceId) || !validId(viewerId))
       return refused("seen-id-invalid", "experienceId and viewerId are 1-256 character strings");
+    if (typeof snapshot !== "object" || snapshot === null || !Array.isArray(snapshot.entries))
+      return refused("seen-snapshot-invalid", "the snapshot is not a snapshot");
+    if (!Number.isSafeInteger(snapshot.omitted) || snapshot.omitted < 0)
+      return refused("seen-snapshot-invalid", "`omitted` is not a non-negative integer");
+    if (snapshot.entries.length > MAX_SEEN_SOURCES)
+      return refused(
+        "seen-too-many-sources",
+        `a snapshot holds at most ${MAX_SEEN_SOURCES} sources`
+      );
+    const sourceKeys = new Set<string>();
+    for (const e of snapshot.entries) {
+      const k = sourceKey((e as { source?: unknown } | null)?.source);
+      if (k !== undefined && sourceKeys.has(k))
+        return refused("seen-duplicate-source", "a snapshot names one source twice");
+      if (k !== undefined) sourceKeys.add(k);
+    }
     if (snapshot.experienceId !== experienceId)
       return refused("seen-wrong-line", "the snapshot is of another experience");
     const art = await this.lineage.get(experienceId, snapshot.versionHash);
@@ -166,11 +204,6 @@ export class SeenLog {
       return refused(
         "seen-version-unknown",
         "the snapshot's version is not a version of this line"
-      );
-    if (!Array.isArray(snapshot.entries) || snapshot.entries.length > MAX_SEEN_SOURCES)
-      return refused(
-        "seen-too-many-sources",
-        `a snapshot holds at most ${MAX_SEEN_SOURCES} sources`
       );
 
     // Restamp + drop what the recording viewer may not see, with core's one redactor.
@@ -216,11 +249,18 @@ export class SeenLog {
       viewerId,
       ...(input.viewer?.clearance !== undefined && { clearance: String(input.viewer.clearance) }),
       entries,
-      omitted: Math.max(0, Math.trunc(snapshot.omitted) || 0),
+      omitted: snapshot.omitted,
       restricted: snapshot.restricted === true || checked.restricted,
     };
     const digest = contentAddress(new TextEncoder().encode(JSON.stringify(body)));
     const payload: ViewRecordPayload = { ...body, digest };
+    // The record must parse as what a READ will parse: one that does not would be counted `malformed`
+    // forever (the log has no delete), so it is refused here.
+    if (!ViewRecordPayload.safeParse(payload).success)
+      return refused(
+        "seen-record-invalid",
+        "the record would not be readable (a field is out of bounds)"
+      );
 
     const key = streamKey(experienceId, viewerId);
     for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {
@@ -268,10 +308,9 @@ export class SeenLog {
       Math.min(MAX_SEEN_READ, Number.isInteger(input.limit) ? (input.limit as number) : 20)
     );
     const log = await this.events.read(streamKey(experienceId, viewerId));
-    const views: SeenView[] = [];
     let malformed = 0;
-    const artifacts = new Map<string, Experience | undefined>();
-    for (let i = log.length - 1; i >= 0 && views.length < limit; i--) {
+    const picked: Array<{ rec: StoredLineageRecord; p: ViewRecordPayload }> = [];
+    for (let i = log.length - 1; i >= 0 && picked.length < limit; i--) {
       const rec = log[i];
       if (rec === undefined || rec.type !== VIEW_RECORDED) continue;
       if (input.until !== undefined && rec.at > input.until) continue;
@@ -284,11 +323,16 @@ export class SeenLog {
         malformed += 1;
         continue;
       }
-      const p = parsed.data;
-      if (!artifacts.has(p.versionHash)) {
-        const a = await this.lineage.get(experienceId, p.versionHash);
-        artifacts.set(p.versionHash, a.ok ? a.value : undefined);
-      }
+      picked.push({ rec, p: parsed.data });
+    }
+    // The line is folded ONCE for the whole read (not once per distinct version).
+    const got = await this.lineage.getMany(
+      experienceId,
+      picked.map(({ p }) => p.versionHash)
+    );
+    const artifacts: ReadonlyMap<string, Experience | undefined> = got.ok ? got.value : new Map();
+    const views: SeenView[] = [];
+    for (const { rec, p } of picked) {
       const shown = redactSeen(
         p.entries.map((e) => ({
           source: e.source,
@@ -307,21 +351,25 @@ export class SeenLog {
           }),
         }
       );
-      // Refs are looked up by the entry's position in the RECORD, matched on source: redaction
-      // preserves order and only removes, so walk both lists together.
-      const refs = new Map(p.entries.map((e) => [JSON.stringify(e.source), e.ref]));
+      // A ref belongs to the entry at its POSITION in the record (`indexes`), never to a source:
+      // two entries may not be told apart by what they name.
       let restricted = p.restricted || shown.restricted;
       const resolved: SeenEntry[] = [];
-      for (const e of shown.entries) {
+      for (const [k, e] of shown.entries.entries()) {
         if (e.state !== "seen") {
           resolved.push(e);
           continue;
         }
-        const ref = refs.get(JSON.stringify(e.source));
+        const ref = p.entries[shown.indexes[k] as number]?.ref;
         const bytes = ref === undefined ? undefined : await this.content.get(ref as ContentRef);
         if (bytes === undefined || bytes === null) {
           // erased or lost: the value is gone, the fact that it was seen is not
           resolved.push({ ...e, state: "absent" });
+          continue;
+        }
+        if (ref === undefined || contentAddress(bytes) !== ref.__loomContent) {
+          // the store handed back bytes that are not what the manifest named
+          resolved.push({ ...e, state: "corrupt" });
           continue;
         }
         try {

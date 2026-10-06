@@ -4,6 +4,7 @@ import type { SemanticNode } from "./node";
 import { type Operation, type Provenance, type RecordedOperation, apply } from "./operations";
 import {
   MAX_LEDGER_NODES,
+  MAX_STEP_OPS,
   type ProvenanceStep,
   cleanProvenance,
   emptyLedger,
@@ -146,6 +147,35 @@ describe("foldProvenance", () => {
     const out = foldProvenance(l, [step("v", many)]);
     expect(out.nodes.size).toBe(MAX_LEDGER_NODES);
     expect(out.truncated).toBe(true);
+  });
+
+  it("one shared op budget covers nested prompt ops: 16 arrays of MAX_STEP_OPS cannot fan out", () => {
+    const inner = Array.from({ length: MAX_STEP_OPS }, (_, i) => insert(sem(`n${i}`)));
+    const prompt = (): Operation => ({ type: "prompt", text: "t", materialized: inner });
+    const out = foldProvenance(emptyLedger(origin), [
+      step("v", [rec(prompt(), user), rec(prompt(), user), rec(prompt(), user)]),
+    ]);
+    // the three prompts' arrays reuse ids, so count work through the truncation flag instead:
+    expect(out.truncated).toBe(true);
+    const small = foldProvenance(emptyLedger(origin), [
+      step("v", [rec({ type: "prompt", text: "t", materialized: [insert(sem("a"))] }, user)]),
+    ]);
+    expect(small.truncated).toBe(false);
+  });
+
+  it("a shared or cyclic subtree under insertNode is walked once", () => {
+    const a = {
+      id: "c",
+      order: "c",
+      kind: "container",
+      layout: "stack",
+      children: [] as unknown[],
+    };
+    a.children.push(a, a);
+    const out = foldProvenance(emptyLedger(origin), [
+      step("v", [rec({ type: "insertNode", parentId: "root", node: a as never }, user)]),
+    ]);
+    expect(out.nodes.size).toBe(1);
   });
 
   it("strips control and bidi characters and bounds recorded provenance strings", () => {

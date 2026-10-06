@@ -26,9 +26,16 @@ export type { Fold, LineageState, VersionKind, VersionRecord } from "./state";
 export {
   InMemoryLineageStore,
   LINEAGE_STREAM_PREFIX,
+  LOOM_UI_STREAM_NAMESPACE,
   eventStoreLineageStore,
 } from "./store";
-export type { AppendOutcome, LineageRecord, LineageStore, StoredLineageRecord } from "./store";
+export type {
+  AppendOutcome,
+  LineageRecord,
+  LineageStore,
+  PrefixedLineageStore,
+  StoredLineageRecord,
+} from "./store";
 export { checkLineageStoreConformance } from "./conformance";
 export {
   MAX_SEEN_READ,
