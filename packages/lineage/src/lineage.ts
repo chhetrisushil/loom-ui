@@ -7,6 +7,7 @@ import {
   type ProjectionCatalog,
   type Provenance,
   type ProvenanceLedger,
+  Provenance as ProvenanceSchema,
   type RecordedOperation,
   Sensitivity,
   type VersionNote,
@@ -30,7 +31,7 @@ import {
   EXPERIENCE_REVERTED,
   type SummaryClass,
 } from "./events";
-import { type LineageState, type VersionRecord, foldLineage } from "./state";
+import { type LineageState, type VersionRecord, foldLineage, payloadRefusal } from "./state";
 import type { LineageStore } from "./store";
 
 // ── The lineage runtime ───────────────────────────────────────────────────────
@@ -101,6 +102,27 @@ function descendsFrom(state: LineageState, hash: string, ancestor: string): bool
   return false;
 }
 
+/**
+ * Every `by` a write would record (the write's own and each op's) must satisfy core's `Provenance`,
+ * the schema the fold enforces on read. The fold stays strict; the REFUSAL is here, because the log
+ * has no delete and one event that does not fold bricks the line for every reader.
+ */
+function provenanceRefusal(
+  by: unknown,
+  ops?: readonly RecordedOperation[]
+): { ok: false; refusal: Refusal } | undefined {
+  const bad = (what: string) =>
+    refused("provenance-invalid", `${what} is not a valid provenance (nothing was written)`);
+  if (!ProvenanceSchema.safeParse(by).success) return bad("`by`");
+  if (ops !== undefined) {
+    if (!Array.isArray(ops)) return refused("ops-invalid", "ops must be an array");
+    for (const [i, r] of ops.entries())
+      if (typeof r !== "object" || r === null || !ProvenanceSchema.safeParse(r.by).success)
+        return bad(`op #${i}'s \`by\``);
+  }
+  return undefined;
+}
+
 const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
 
@@ -113,6 +135,17 @@ export class Lineage {
     this.events = opts.events;
     this.content = opts.content;
     this.now = opts.now ?? (() => new Date().toISOString());
+  }
+
+  /**
+   * Whether `other` is this lineage's own store, or writes under the same stream prefix. A `SeenLog`
+   * refuses such a store: a viewer's record must never share streams with the line it describes.
+   */
+  sharesStreamsWith(other: LineageStore): boolean {
+    if (other === this.events) return true;
+    const a = (this.events as { streamPrefix?: unknown }).streamPrefix;
+    const b = (other as { streamPrefix?: unknown }).streamPrefix;
+    return typeof a === "string" && a === b;
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────
@@ -295,33 +328,92 @@ export class Lineage {
     const exp = await this.load(s.value, target);
     if (!exp.ok) return exp;
     const ledger = await this.ledgerAt(s.value, target, 0);
-    const wrote = ledger.nodes.get(nodeId)?.created?.versionHash ?? ledger.origin?.versionHash;
+    const viewOpts = {
+      ledger,
+      ...(opts.viewer !== undefined && { viewer: opts.viewer }),
+      ...(opts.projections !== undefined && { projections: opts.projections }),
+      ...(opts.hydrationProjectionId !== undefined && {
+        hydrationProjectionId: opts.hydrationProjectionId,
+      }),
+    };
+    // Ask first with no notes: an unknown, hidden or unreadable node answers `{ available: false }`
+    // HERE, before the writer is loaded, so the I/O a probe costs is the same for all three (a
+    // hidden node must not be told apart from an unknown id by how many blobs a call fetched).
+    const first = explainNode(exp.value, nodeId, viewOpts);
+    if (!first.available) return { ok: true, value: first };
+    const entry = ledger.nodes.get(nodeId)?.created;
+    const wrote = entry?.versionHash ?? ledger.origin?.versionHash;
+    if (wrote === undefined) return { ok: true, value: first };
     const notes = new Map<string, VersionNote>();
     let extraFloor: ExplainOptions["extraFloor"];
-    const writer = wrote === undefined ? undefined : s.value.versions.get(wrote);
-    if (wrote !== undefined && writer !== undefined) {
+    // The writer may live on ANOTHER line (a branch's ledger starts from its source's): resolve it
+    // across lines, bounded. Unresolvable = fail closed (the text it wrote cannot be classed).
+    const found = await this.findVersion(s.value, wrote);
+    if (found === undefined) extraFloor = "secret";
+    else {
       notes.set(wrote, {
-        ...(writer.summary !== undefined && { summary: writer.summary }),
-        ...(writer.summaryClass !== undefined && { summaryClass: writer.summaryClass }),
+        ...(found.record.summary !== undefined && { summary: found.record.summary }),
+        ...(found.record.summaryClass !== undefined && {
+          summaryClass: found.record.summaryClass,
+        }),
       });
-      if (writer.summary !== undefined || ledger.nodes.get(nodeId)?.created?.prompt !== undefined) {
-        const art = await this.load(s.value, wrote);
+      if (found.record.summary !== undefined || entry?.prompt !== undefined) {
+        const art = await this.load(found.state, wrote);
         extraFloor = art.ok ? experienceClassFloor(art.value, opts.projections) : "secret";
       }
     }
     return {
       ok: true,
       value: explainNode(exp.value, nodeId, {
-        ledger,
+        ...viewOpts,
         notes,
         ...(extraFloor !== undefined && { extraFloor }),
-        ...(opts.viewer !== undefined && { viewer: opts.viewer }),
-        ...(opts.projections !== undefined && { projections: opts.projections }),
-        ...(opts.hydrationProjectionId !== undefined && {
-          hydrationProjectionId: opts.hydrationProjectionId,
-        }),
       }),
     };
+  }
+
+  /**
+   * The line state and record of version `hash`, on this line or on a line it was branched from
+   * (breadth-first through `branched` versions, at most `MAX_VERIFY_DEPTH` lines, each visited once).
+   */
+  private async findVersion(
+    state: LineageState,
+    hash: string
+  ): Promise<{ state: LineageState; record: VersionRecord } | undefined> {
+    const visited = new Set<string>([state.experienceId]);
+    const queue: LineageState[] = [state];
+    for (let i = 0; i < queue.length; i++) {
+      const st = queue[i] as LineageState;
+      const record = st.versions.get(hash);
+      if (record !== undefined) return { state: st, record };
+      for (const v of st.versions.values()) {
+        const from = v.kind === "branched" ? v.from : undefined;
+        if (from === undefined || visited.has(from.experienceId)) continue;
+        if (visited.size >= MAX_VERIFY_DEPTH) return undefined;
+        visited.add(from.experienceId);
+        const src = await this.state(from.experienceId);
+        if (src.ok) queue.push(src.value);
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Several versions' artifacts from ONE fold of the line (`get` refolds the whole log per call).
+   * A version that is unknown or cannot be read maps to `undefined`.
+   */
+  async getMany(
+    experienceId: string,
+    versionHashes: readonly string[]
+  ): Promise<LineageResult<ReadonlyMap<string, Experience | undefined>>> {
+    const s = await this.state(experienceId);
+    if (!s.ok) return s;
+    const out = new Map<string, Experience | undefined>();
+    for (const h of new Set(versionHashes)) {
+      const r = await this.load(s.value, h);
+      out.set(h, r.ok ? r.value : undefined);
+    }
+    return { ok: true, value: out };
   }
 
   // ── writes ──────────────────────────────────────────────────────────────────
@@ -372,6 +464,8 @@ export class Lineage {
     readonly summaryClass?: SummaryClass;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, artifact, ops, by } = input;
+    const badBy = provenanceRefusal(by, ops);
+    if (badBy !== undefined) return badBy;
     const summary = boundSummary(input.summary);
     if (input.summaryClass !== undefined && !Sensitivity.safeParse(input.summaryClass).success)
       return refused("summary-class-invalid", "summaryClass is not a known data class");
@@ -448,6 +542,8 @@ export class Lineage {
     readonly summaryClass?: SummaryClass;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, ops, by } = input;
+    const badBy = provenanceRefusal(by, ops);
+    if (badBy !== undefined) return badBy;
     const applyOpts: ApplyOptions = { allowDeclassify: input.allowDeclassify === true };
     const s = await this.state(experienceId);
     if (!s.ok) return s;
@@ -489,6 +585,8 @@ export class Lineage {
     readonly by: Provenance;
   }): Promise<LineageResult<Committed>> {
     const { experienceId, expectedHead, to, by } = input;
+    const badBy = provenanceRefusal(by);
+    if (badBy !== undefined) return badBy;
     return this.commit(experienceId, expectedHead, async (state, head) => {
       if (head === null) return refused("lineage-empty", `"${experienceId}" has no versions`);
       if (to === expectedHead) return refused("revert-to-head", "the head is already that version");
@@ -546,6 +644,8 @@ export class Lineage {
     readonly by: Provenance;
   }): Promise<LineageResult<Committed>> {
     const { from, experienceId, by } = input;
+    const badBy = provenanceRefusal(by);
+    if (badBy !== undefined) return badBy;
     if (experienceId === from.experienceId)
       return refused("branch-same-line", "a branch is a NEW line; use revert within one");
     const src = await this.state(from.experienceId);
@@ -595,6 +695,8 @@ export class Lineage {
     readonly by: Provenance;
   }): Promise<LineageResult<{ readonly promoted: string; readonly sequence: number }>> {
     const { experienceId, versionHash, expectedPromoted, by } = input;
+    const badBy = provenanceRefusal(by);
+    if (badBy !== undefined) return badBy;
     for (let attempt = 0; attempt < MAX_TIP_RETRIES; attempt++) {
       const s = await this.state(experienceId);
       if (!s.ok) return s;
@@ -606,10 +708,13 @@ export class Lineage {
       const art = await this.load(s.value, versionHash);
       if (!art.ok) return art;
       const v = s.value.versions.get(versionHash) as VersionRecord;
+      const promotedPayload = { ref: v.ref, experienceId, versionHash, by };
+      const badPayload = payloadRefusal(EXPERIENCE_PROMOTED, promotedPayload);
+      if (badPayload !== undefined) return refused(badPayload.code, badPayload.message);
       const out = await this.events.append(experienceId, s.value.sequence, {
         type: EXPERIENCE_PROMOTED,
         at: this.now(),
-        payload: { ref: v.ref, experienceId, versionHash, by },
+        payload: promotedPayload,
       });
       if (out.ok) return { ok: true, value: { promoted: versionHash, sequence: out.sequence } };
     }
@@ -822,6 +927,9 @@ export class Lineage {
     const prepared = await prepare(s.value, head);
     if (!prepared.ok) return prepared;
     const { artifact, type, payload } = prepared.value;
+    // The write-side twin of the fold: an event the fold would refuse must never reach the log.
+    const badPayload = payloadRefusal(type, payload({ __loomContent: "sha256:pending" }));
+    if (badPayload !== undefined) return refused(badPayload.code, badPayload.message);
     const put = await putExperience(this.content, artifact);
     if (!put.ok) return fromFinding(put.finding);
     for (let attempt = 0; attempt < MAX_TIP_RETRIES; attempt++) {

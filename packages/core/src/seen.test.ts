@@ -225,7 +225,46 @@ describe("redactSeen", () => {
     expect(redactSeen([entry({})], undefined, { viewer: { clearance: "secret" } })).toEqual({
       entries: [],
       restricted: true,
+      indexes: [],
     });
+  });
+
+  it("an entry is judged by what its nodes ACTUALLY bind: a node listed for another source withholds it", () => {
+    const e = redactSeen(
+      [entry({ source: { kind: "handle", handle: "hs" }, nodeIds: ["a"], class: "unclassified" })],
+      exp,
+      {}
+    );
+    expect(e.entries).toEqual([]);
+    expect(e.restricted).toBe(true);
+    // the right pairing (and a projection with the wrong path) behave as before
+    expect(redactSeen([entry({})], exp, {}).entries).toHaveLength(1);
+    const px = build(
+      sem("p", { projection: { id: "pr", path: "x", version: "1" } }),
+      bound("a", "h")
+    );
+    const forged = entry({
+      source: { kind: "projection", id: "pr", path: "OTHER", version: "1" },
+      nodeIds: ["p"],
+    });
+    expect(
+      redactSeen([forged], px, { projections: [{ id: "pr", version: "1" }] as never }).entries
+    ).toEqual([]);
+    expect(redactSeen([entry({ source: { kind: "handle" } as never })], exp, {}).entries).toEqual(
+      []
+    );
+  });
+
+  it("reports the input position of every kept entry", () => {
+    const r = redactSeen(
+      [
+        entry({ source: { kind: "handle", handle: "hs" }, nodeIds: ["s"], class: "internal" }),
+        entry({}),
+      ],
+      exp,
+      {}
+    );
+    expect(r.indexes).toEqual([1]);
   });
 
   it("is total over hostile input", () => {

@@ -54,8 +54,10 @@ export const SEEN_CLASSES: readonly SeenClass[] = [
  * - `oversize`: the value was over `MAX_SEEN_VALUE_BYTES` and is not kept.
  * - `over-budget`: the snapshot's total byte budget was already spent.
  * - `unreadable`: the value is not JSON-safe (a cycle, a bigint, a throwing getter).
+ * - `corrupt`: a READ-side state, never recorded: the stored bytes no longer hash to the content
+ *   address the manifest names, so they are not shown (the fact of the view stands, the value does not).
  */
-export type SeenState = "seen" | "absent" | "oversize" | "over-budget" | "unreadable";
+export type SeenState = "seen" | "absent" | "oversize" | "over-budget" | "unreadable" | "corrupt";
 
 export interface SeenEntry {
   readonly source: SeenSource;
@@ -102,6 +104,39 @@ export interface SnapshotOptions {
 const sourceKey = (s: SeenSource): string =>
   s.kind === "handle" ? `h\u0000${s.handle}` : `p\u0000${s.id}\u0000${s.path}\u0000${s.version}`;
 
+/** The source a semantic node reads its data from, or undefined for a static node. */
+function sourceOfNode(n: {
+  readonly kind: string;
+  readonly binding?: { readonly handle: string };
+  readonly projection?: { readonly id: string; readonly path: string; readonly version: string };
+}): SeenSource | undefined {
+  if (n.kind !== "semantic") return undefined;
+  if (n.binding !== undefined) return { kind: "handle", handle: n.binding.handle };
+  if (n.projection !== undefined)
+    return {
+      kind: "projection",
+      id: n.projection.id,
+      path: n.projection.path,
+      version: n.projection.version,
+    };
+  return undefined;
+}
+
+/** The key of an UNTRUSTED source (a stored entry's), or undefined when it is not well formed. */
+function sourceKeyOf(s: unknown): string | undefined {
+  const o = s as Record<string, unknown> | null;
+  if (typeof o !== "object" || o === null) return undefined;
+  if (o.kind === "handle" && typeof o.handle === "string") return `h\u0000${o.handle}`;
+  if (
+    o.kind === "projection" &&
+    typeof o.id === "string" &&
+    typeof o.path === "string" &&
+    typeof o.version === "string"
+  )
+    return `p\u0000${o.id}\u0000${o.path}\u0000${o.version}`;
+  return undefined;
+}
+
 const encoder = new TextEncoder();
 
 /** A detached JSON copy of `value` and its UTF-8 size, or undefined when it is not JSON-safe. */
@@ -137,17 +172,7 @@ export function snapshotSeen(exp: Experience, opts: SnapshotOptions): SeenSnapsh
   let restricted = false;
   walk(exp.root, (n) => {
     if (n.kind !== "semantic") return;
-    const source: SeenSource | undefined =
-      n.binding !== undefined
-        ? { kind: "handle", handle: n.binding.handle }
-        : n.projection !== undefined
-          ? {
-              kind: "projection",
-              id: n.projection.id,
-              path: n.projection.path,
-              version: n.projection.version,
-            }
-          : undefined;
+    const source = sourceOfNode(n);
     if (source === undefined) return;
     const view = inspected.nodes.get(n.id);
     if (view === undefined || view.blocked || !mayView(opts.viewer, view.cls)) {
@@ -220,6 +245,8 @@ export interface RedactedSeen {
   readonly entries: readonly SeenEntry[];
   /** Some entry was withheld (its class, a missing artifact, an unreadable stamp): no count, no name. */
   readonly restricted: boolean;
+  /** For each kept entry, its position in the input list (so a caller can carry side data by index). */
+  readonly indexes: readonly number[];
 }
 
 /**
@@ -227,7 +254,9 @@ export interface RedactedSeen {
  * names (its `versionHash`): each entry's class is re-derived from it and the stricter of that and
  * the stamp governs, so a record is never readable at a class lower than the experience says.
  * FAIL-CLOSED: no artifact, a stamp that is not a known class, a node the artifact does not hold, a
- * node hidden from every viewer, and a class the viewer may not see all withhold the entry, and the
+ * node hidden from every viewer, a node that does NOT bind the entry's `source` (an entry is judged
+ * by the class of what it actually names, never by a node it merely lists), an entry with no nodes,
+ * and a class the viewer may not see all withhold the entry, and the
  * viewer learns only that `restricted` is true. Surviving entries are RESTAMPED with the effective
  * class (the stricter of the stamp and the artifact). Total.
  */
@@ -236,17 +265,26 @@ export function redactSeen(
   experience: Experience | undefined,
   opts: Pick<SnapshotOptions, "viewer" | "projections" | "hydrationProjectionId"> = {}
 ): RedactedSeen {
-  if (experience === undefined || !Array.isArray(entries)) return { entries: [], restricted: true };
+  if (experience === undefined || !Array.isArray(entries))
+    return { entries: [], restricted: true, indexes: [] };
   let inspected: ExperienceInspection;
   try {
     inspected = inspectExperience(experience, opts);
   } catch {
-    return { entries: [], restricted: true };
+    return { entries: [], restricted: true, indexes: [] };
   }
-  if (!inspected.readable) return { entries: [], restricted: true };
+  if (!inspected.readable) return { entries: [], restricted: true, indexes: [] };
+  // What each node of the artifact really binds. A duplicated node id is ambiguous: bound to nothing.
+  const bound = new Map<string, string | null>();
+  walk(experience.root, (n) => {
+    const src = sourceOfNode(n);
+    const k = src === undefined ? null : sourceKey(src);
+    bound.set(n.id, bound.has(n.id) ? null : k);
+  });
   const out: SeenEntry[] = [];
+  const indexes: number[] = [];
   let restricted = false;
-  for (const e of entries) {
+  for (const [index, e] of entries.entries()) {
     try {
       const stamp = (e as { class?: unknown } | null)?.class;
       if (typeof stamp !== "string" || !SEEN_CLASSES.includes(stamp as SeenClass)) {
@@ -254,10 +292,11 @@ export function redactSeen(
         continue;
       }
       let cls: DataClass | undefined = stamp === "unclassified" ? undefined : (stamp as DataClass);
-      let known = Array.isArray(e.nodeIds) && e.nodeIds.length > 0;
-      for (const id of Array.isArray(e.nodeIds) ? e.nodeIds : []) {
+      const want = sourceKeyOf(e.source);
+      let known = want !== undefined && Array.isArray(e.nodeIds) && e.nodeIds.length > 0;
+      for (const id of known && Array.isArray(e.nodeIds) ? e.nodeIds : []) {
         const v = inspected.nodes.get(id);
-        if (v === undefined || v.blocked) {
+        if (v === undefined || v.blocked || bound.get(id) !== want) {
           known = false;
           break;
         }
@@ -269,11 +308,12 @@ export function redactSeen(
       }
       // Restamped to the effective class, so a stored stamp can only ever be raised by a read.
       out.push({ ...e, class: (cls ?? "unclassified") as SeenClass });
+      indexes.push(index);
     } catch {
       restricted = true;
     }
   }
-  return { entries: out, restricted };
+  return { entries: out, restricted, indexes };
 }
 
 /**

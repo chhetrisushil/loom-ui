@@ -29,6 +29,16 @@ describe("plannerProvenance", () => {
     });
   });
 
+  it("omits (never truncates) a decision id the provenance schema would refuse", () => {
+    for (const decisionId of ["d".repeat(257), ""]) {
+      const p = plannerProvenance({ report: report({ decisionId }) });
+      expect(p).not.toHaveProperty("decisionId");
+      expect(Provenance.safeParse(p).success).toBe(true);
+    }
+    const edge = "d".repeat(256);
+    expect(plannerProvenance({ report: report({ decisionId: edge }) }).decisionId).toBe(edge);
+  });
+
   it("copies no model text: the summary is the lineage's, under its class rules", () => {
     const p = plannerProvenance({ report: report() });
     expect(Object.keys(p).sort()).toEqual(["decisionId", "modelId", "source"]);

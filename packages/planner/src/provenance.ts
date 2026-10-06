@@ -16,11 +16,15 @@ export function plannerProvenance(
   opts: { readonly agentId?: string; readonly ref?: string } = {}
 ): Provenance {
   const { decisionId, modelId } = result.report;
+  // `Provenance.decisionId` is 1-256 characters. A decision id outside that is OMITTED, never
+  // truncated (a cut id links to a different decision) and never stamped (an invalid provenance is
+  // refused by the lineage's write path).
+  const linkable = decisionId !== "" && decisionId.length <= 256;
   return {
     source: "agent",
     ...(opts.agentId !== undefined && { agentId: opts.agentId }),
     ...(modelId !== "" && { modelId }),
-    ...(decisionId !== "" && { decisionId }),
+    ...(linkable && { decisionId }),
     ...(opts.ref !== undefined && { ref: opts.ref }),
   };
 }

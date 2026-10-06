@@ -102,6 +102,36 @@ function opsRefusal(ops: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * The WRITE-SIDE twin of the fold's payload check: why `payload` would make the line unreadable
+ * (`lineage-event-invalid` on every later read), or undefined when it folds. A write that fails this
+ * must be refused BEFORE the append — the fold stays strict, the log has no delete, and one bad event
+ * would brick the line for everyone. `by` marks a provenance problem (the caller gives it its own code).
+ */
+export function payloadRefusal(
+  type: string,
+  payload: unknown
+):
+  | { readonly code: "provenance-invalid" | "event-payload-invalid"; readonly message: string }
+  | undefined {
+  if (!isLineageEventType(type))
+    return { code: "event-payload-invalid", message: `unknown event type ${String(type)}` };
+  try {
+    const tooBig = opsRefusal((payload as { ops?: unknown } | null)?.ops);
+    if (tooBig !== undefined) return { code: "event-payload-invalid", message: tooBig };
+    const parsed = PAYLOAD_SCHEMAS[type].safeParse(payload);
+    if (parsed.success) return undefined;
+    const issue = parsed.error.issues[0];
+    const inBy = parsed.error.issues.some((i) => i.path.includes("by"));
+    return {
+      code: inBy ? "provenance-invalid" : "event-payload-invalid",
+      message: `${inBy ? "a provenance (`by`) is invalid" : "the event payload is malformed"}: ${issue?.message ?? "invalid"}${issue ? ` at ${issue.path.join(".")}` : ""}`,
+    };
+  } catch (err) {
+    return { code: "event-payload-invalid", message: errMessage(err) };
+  }
+}
+
 export type Fold = { ok: true; state: LineageState } | { ok: false; finding: Finding };
 
 const bad = (code: string, message: string): Fold => ({

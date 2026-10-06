@@ -128,6 +128,16 @@ creating version's own class floor added (a class can be lowered between version
 cannot be read counts as `secret`). Stamp the planner's decision on the ops with
 `@loom-ui/planner`'s `plannerProvenance(result)` so a node links back to the recorded model call.
 
+Every `by` a write records (the write's own and each op's) is checked against core's `Provenance`
+before the append and refused `provenance-invalid` (any other payload the fold would refuse is
+`event-payload-invalid`): the fold stays strict, and the log has no delete, so the refusal is on the
+write side. `plannerProvenance` omits a decision id outside 1-256 characters rather than stamp one.
+`explain` resolves the creating version across lines (a branch's ledger starts from its source's,
+bounded), and a writer it cannot find counts as `secret`; it asks the viewer-safe question first, so a
+hidden node and an unknown id cost the same reads. `source.lastChanged` names the latest op that bound,
+remapped or declassified a provider, so a viewer cleared for the node can learn that a declassify
+happened (not what the class was): accepted, it is the audit trail.
+
 **`SeenLog` records what a viewer was shown.** `record({ experienceId, viewerId, snapshot, viewer })`
 takes a core `snapshotSeen` snapshot, does not trust it (the version must be on the line; entries are
 re-validated, restamped against that version's artifact, dropped when the recording viewer may not see
@@ -153,3 +163,18 @@ above apply (no crypto-shred; erase by deleting the stream's events and blobs). 
 capped at `MAX_SEEN_RECORDS` views (a write past it is refused `seen-log-full`; retention is the
 host's), and an append reads the stream's tip, so it is O(views) per write. `viewerId` and `viewer`
 are the host's claims: this package authorizes nothing.
+
+Seen-record details. An entry is judged by what its nodes actually bind: every node it lists must bind
+exactly its `source`, an entry with no nodes is withheld, and `record` refuses a snapshot that names
+one source twice (`seen-duplicate-source`); a read carries each value ref by the entry's position in
+the record, never by source. A read hashes the bytes the content store returns and compares them to the
+address in the manifest; a mismatch is state `corrupt` (no value). Trust boundary: a manifest ref points
+at whatever the store holds under that address, so write access to the `ContentStore` (or the seen
+stream) is write access to what a viewer is later shown, exactly as for the lineage's artifacts; this
+package does not prove a blob was written by the stream that names it. `record` refuses a snapshot or
+record that a read could not parse (`seen-snapshot-invalid`, `seen-record-invalid`) rather than append
+a permanently malformed one. A `read` folds the lineage once for all the versions it touches; `record`
+folds it once (O(line length) per write). An identical consecutive view is not re-recorded, so the
+kept record carries the FIRST view's `at`. The seen stream's prefix must differ from the lineage's
+(`SeenLog` throws on a shared store or prefix), and `eventStoreLineageStore` throws for a
+`streamPrefix` not under `__loom_ui_` or a malformed `workflowId`.

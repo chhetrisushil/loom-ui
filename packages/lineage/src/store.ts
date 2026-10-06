@@ -84,6 +84,15 @@ export class InMemoryLineageStore implements LineageStore {
 export const LINEAGE_STREAM_PREFIX = "__loom_ui_lineage__:";
 const WORKFLOW_ID = "loom-ui.lineage";
 
+/** Every stream prefix this package may write under; the kernel's own reserved prefixes are not ours. */
+export const LOOM_UI_STREAM_NAMESPACE = "__loom_ui_";
+const WORKFLOW_ID_SHAPE = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** A `LineageStore` that knows which stream prefix it writes under (see {@link eventStoreLineageStore}). */
+export interface PrefixedLineageStore extends LineageStore {
+  readonly streamPrefix: string;
+}
+
 /**
  * A `LineageStore` over loom's `EventStore`. One stream per experience
  * (`__loom_ui_lineage__:<experienceId>`, a RESERVED stream so enumerators of real executions skip
@@ -91,15 +100,32 @@ const WORKFLOW_ID = "loom-ui.lineage";
  * `(executionId, sequence)` uniqueness. The adapter checks the tip first (a store enforces a
  * taken slot, not a skipped one) and treats a `DuplicateSequenceError` from a racing writer as a
  * lost CAS. Fencing, tenancy and sharding decorators wrap `store` as usual.
+ *
+ * `streamPrefix` must start with `__loom_ui_` (and say more): it is the namespace this package owns
+ * inside loom's reserved `__loom_` space, so a configuration can never write into the kernel's own
+ * control streams (`__loom_lifecycle__`, `__loom_erasure__`) or an execution's id space. `workflowId`
+ * is a short identifier. A bad value THROWS at construction (a misconfiguration, found at startup).
  */
 export function eventStoreLineageStore(
   store: EventStore,
   opts: { readonly streamPrefix?: string; readonly workflowId?: string } = {}
-): LineageStore {
+): PrefixedLineageStore {
   const prefix = opts.streamPrefix ?? LINEAGE_STREAM_PREFIX;
   const workflowId = opts.workflowId ?? WORKFLOW_ID;
+  if (
+    typeof prefix !== "string" ||
+    !prefix.startsWith(LOOM_UI_STREAM_NAMESPACE) ||
+    prefix.length <= LOOM_UI_STREAM_NAMESPACE.length ||
+    prefix.length > 128
+  )
+    throw new Error(
+      `streamPrefix must start with "${LOOM_UI_STREAM_NAMESPACE}" and name its stream (got ${JSON.stringify(String(prefix).slice(0, 40))})`
+    );
+  if (typeof workflowId !== "string" || !WORKFLOW_ID_SHAPE.test(workflowId))
+    throw new Error("workflowId must be 1-128 characters of [A-Za-z0-9._:-]");
   const streamOf = (experienceId: string) => `${prefix}${experienceId}`;
   return {
+    streamPrefix: prefix,
     async append(experienceId, expectedSequence, record) {
       const executionId = streamOf(experienceId);
       const tip = (await headOf(store, executionId)) ?? 0;
