@@ -12,9 +12,9 @@
  * Matched structurally on `name` (not `instanceof`) so a second copy of loom's classes, or a
  * wrapper that re-creates the error across a package boundary, is still recognised.
  *
- * No cancellation signal is consulted: `plan()` receives none (the model SPI's `complete` takes
- * only messages, and the scope adapter forwards a signal only when its caller passes one), so
- * classification rests on names alone.
+ * Classification rests on error NAMES alone (errors cross package copies, so `instanceof` is
+ * unreliable). A turn's own cancellation is separate: the caller's `signal` is forwarded to
+ * `complete(req, { signal, onDelta })` and an abort surfaces as `AbortError` (listed below).
  */
 const CONTROL_PLANE_NAMES: ReadonlySet<string> = new Set([
   // effect-runtime authz / middleware metering / the platform's cancellation name
