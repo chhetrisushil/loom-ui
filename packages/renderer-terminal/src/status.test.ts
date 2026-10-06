@@ -4,7 +4,7 @@ import { MetricCard, blueprint$, cell, customWidget$, grid, stack } from "@loom/
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { terminalRegistry } from "./registry";
-import { kindValueCheck, renderExperience } from "./status";
+import { kindValueCheck, kindValueCheckFor, renderExperience } from "./status";
 
 /** A binding on the hydration projection, with its status channel declared. */
 const bound = (handle: string) => ({
@@ -115,6 +115,25 @@ describe("kindValueCheck", () => {
   });
   it("says nothing about a value that satisfies its kind contract", () => {
     expect(kindValueCheck(widget, 412)).toBeUndefined();
+  });
+  it("U13: checks a host kind against the supplied contracts, and never loosens a framework kind", () => {
+    const contracts = {
+      SpokenGauge: {
+        safeParse: (v: unknown) =>
+          typeof v === "number"
+            ? { success: true as const }
+            : {
+                success: false as const,
+                error: { issues: [{ path: [], message: "not a number" }] },
+              },
+      },
+    };
+    const host = customWidget$({ id: "g", kind: "SpokenGauge", title: "g", binding: bound("h") });
+    expect(kindValueCheckFor(contracts)(host, "x")?.code).toBe("value-contract");
+    expect(kindValueCheckFor(contracts)(host, 3)).toBeUndefined();
+    expect(kindValueCheck(host, "x")).toBeUndefined(); // no registry: uncontracted, as before
+    const loosen = { MetricCard: { safeParse: () => ({ success: true as const }) } };
+    expect(kindValueCheckFor(loosen)(widget, "oops")?.code).toBe("value-contract");
   });
 });
 

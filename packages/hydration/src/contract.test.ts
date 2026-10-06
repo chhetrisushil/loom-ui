@@ -10,6 +10,7 @@ import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { HydrationCache } from "./cache";
 import { HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
@@ -124,14 +125,6 @@ describe("output check by contract", () => {
     const r = await executeProvider(contract(), { invoker: replying({ series: [] }) });
     expect(!r.ok && r.finding.code).toBe("output-contract-unbound");
     expect(!r.ok && r.drift).toEqual([]);
-  });
-
-  it("kinds with no contract pass with a warning, never silently", async () => {
-    const r = await executeProvider(contract(), {
-      invoker: replying({ anything: 1 }),
-      kinds: ["CustomGauge"],
-    });
-    expect(r.ok && r.findings.map((f) => f.code)).toEqual(["output-contract-unchecked"]);
   });
 
   it("an undefined value is drift even for a kind whose contract accepts anything", async () => {
@@ -401,5 +394,123 @@ describe("a shape provider's fingerprint ignores kind changes", () => {
     await flush();
     expect(inv.calls).toHaveLength(1); // no second run
     expect(store.status("h")?.state).toBe("ready");
+  });
+});
+
+describe("output check by contract — host kinds (U13)", () => {
+  const contracts = { SpokenGauge: z.object({ level: z.number() }) };
+
+  it("a host kind's contract is enforced: a bad value is drift naming the kind", async () => {
+    const r = await executeProvider(contract(), {
+      invoker: replying({ level: "high" }),
+      kinds: ["SpokenGauge"],
+      contracts,
+    });
+    expect(!r.ok && r.finding.code).toBe("output-contract-drift");
+    expect(!r.ok && r.drift[0]?.contractKind).toBe("SpokenGauge");
+  });
+
+  it("a good value for a host kind is ready, with no warning", async () => {
+    const r = await executeProvider(contract(), {
+      invoker: replying({ level: 3 }),
+      kinds: ["SpokenGauge"],
+      contracts,
+    });
+    expect(r).toEqual({ ok: true, value: { level: 3 }, findings: [] });
+  });
+
+  it("a kind with NO contract is REFUSED, not passed: no drift to repair, nothing published", async () => {
+    const r = await executeProvider(contract(), {
+      invoker: replying({ anything: 1 }),
+      kinds: ["CustomGauge"],
+    });
+    expect(!r.ok && r.finding.code).toBe("output-contract-missing");
+    expect(!r.ok && r.finding.message).toContain("CustomGauge");
+    expect(!r.ok && r.drift).toEqual([]);
+  });
+
+  it("one uncontracted kind among contracted ones still refuses (the old pass was only all-or-nothing)", async () => {
+    const r = await executeProvider(contract(), {
+      invoker: replying({ level: 3 }),
+      kinds: ["SpokenGauge", "CustomGauge"],
+      contracts,
+    });
+    expect(!r.ok && r.finding.code).toBe("output-contract-missing");
+  });
+
+  it("a registry entry for a framework kind does not loosen it", async () => {
+    const r = await executeProvider(contract(), {
+      invoker: replying("text"),
+      kinds: ["Kpi"],
+      contracts: { Kpi: z.unknown() },
+    });
+    expect(!r.ok && r.finding.code).toBe("output-contract-drift");
+  });
+});
+
+describe("HydrationController with a host kind (U13)", () => {
+  const entry = (value: unknown) => ({
+    value,
+    catalog: defineSemanticCatalog({
+      id: "host.v1",
+      entries: [
+        {
+          name: "Gauge",
+          version: "1.0.0",
+          props: [],
+          binding: "required" as const,
+          surfaces: { voice: { kind: "SpokenGauge", props: [], binding: "required" as const } },
+        },
+      ],
+      valueContracts: { SpokenGauge: z.object({ level: z.number() }) },
+    }),
+  });
+  const run = async (value: unknown, withContracts: boolean) => {
+    const e = entry(value);
+    const catalog = withContracts
+      ? e.catalog
+      : defineSemanticCatalog({ id: e.catalog.id, entries: e.catalog.entries });
+    const g = genesis({
+      experienceId: "exp-1",
+      intent: { objective: "x", source: "user" },
+      meta: { author: "a", createdAt: "2026-09-23T00:00:00Z", sourceKind: "test" },
+    });
+    const n: SemanticNode = {
+      id: "a",
+      order: "a",
+      kind: "semantic",
+      type: "Gauge",
+      typeVersion: "1.0.0",
+      span: 4,
+      props: {},
+      binding: { handle: "h", priority: "P0" },
+    };
+    const exp: Experience = {
+      ...g,
+      versionHash: "sha256:v1",
+      root: { ...(g.root as ContainerNode), children: [n] },
+      providers: { h: contract() },
+    };
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    new HydrationController({
+      invoker: replying(value),
+      store,
+      outputKinds: { catalog, surface: "voice" },
+    }).load(exp);
+    await flush();
+    return store.status("h");
+  };
+
+  it("checks a host kind's value through the catalogue's valueContracts", async () => {
+    expect((await run({ level: 3 }, true))?.state).toBe("ready");
+    const bad = await run({ level: "x" }, true);
+    expect(bad?.state).toBe("stale");
+    expect(bad?.finding?.code).toBe("output-contract-drift");
+  });
+
+  it("without a declared contract the load is an error — never an unchecked ready", async () => {
+    const s = await run({ level: 3 }, false);
+    expect(s?.state).toBe("error");
+    expect(s?.finding?.code).toBe("output-contract-missing");
   });
 });

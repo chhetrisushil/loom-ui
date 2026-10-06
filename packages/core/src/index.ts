@@ -65,6 +65,8 @@ export {
   defineSemanticCatalog,
   findEntry,
   resolveSurface,
+  WELL_KNOWN_SURFACES,
+  catalogContractFindings,
   validateExperience,
 } from "./catalog";
 export type {
@@ -76,6 +78,7 @@ export type {
   Surface,
   SurfaceResolution,
 } from "./catalog";
+export type { ContractRegistry, ValueContract } from "./kindValues";
 export { loomCatalogFor } from "./loomCatalog";
 export {
   DELTA_FORMAT,
@@ -118,6 +121,8 @@ export {
   TableValue,
   TimeSeriesValue,
   checkKindValue,
+  hasKindContract,
+  isFrameworkContractKind,
   kindValueContract,
   kindValueContracts,
   tableColumnFormat,

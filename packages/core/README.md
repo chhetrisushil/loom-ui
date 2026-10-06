@@ -32,8 +32,10 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 - **Semantic catalogue.** What a planner (or a caller) may NAME — closed at runtime. A
   `SemanticEntry` declares its allowed `props`, whether it binds data (`binding`), which props
   carry display text (`textProps`), who may set a binding's `sensitivity`, and how each `Surface`
-  (`"web" | "terminal" | "chat"`) resolves it: to a loom widget kind, or a degrade to another
-  entry.
+  (an OPEN string — `"web"` and `"terminal"` have first-party renderers, any other name is the
+  host's own modality) resolves it: to a loom widget kind, or a degrade to another entry. The
+  catalogue's optional `valueContracts` give the host's own kinds a value contract (composed under
+  the framework's, which a host cannot override).
 - **Operations.** An `Operation` is one of `insertNode`, `removeNode`, `moveNode`, `setProps`,
   `setLabel`, `setTitle`, `setRole`, `setPlacement`, `bindProvider`, `declassifyHandle`,
   `remapProvider`, `removeProvider`, `prompt`. `apply`/`replay` are deterministic and never throw on bad input —

@@ -1,9 +1,10 @@
 import {
+  type ContractRegistry,
   type Finding,
   type MCPToolNode,
   type ProviderSpec,
   checkKindValue,
-  kindValueContract,
+  hasKindContract,
   stepKind,
 } from "@loom-ui/core";
 import { type TaintedValue, tainted } from "@loom/classify";
@@ -134,6 +135,11 @@ export interface ExecuteOptions {
    * without them: a contract check over no kinds would pass every value.
    */
   readonly kinds?: readonly string[];
+  /**
+   * The host's value contracts for kinds outside the framework's (`SemanticCatalog.valueContracts`).
+   * A `"contract"` provider feeding a kind with neither contract is REFUSED (`output-contract-missing`).
+   */
+  readonly contracts?: ContractRegistry;
   /**
    * Per-load params: applied only to arguments a step declares `overridable`, never to a
    * `{{steps.…}}` template. A param no step declares is ignored with a `param-not-overridable` warn.
@@ -528,6 +534,18 @@ function checkContract(
     findings.push(f);
     return { ok: false, finding: f, drift, findings };
   }
+  // A contract check over a kind with NO contract passes every value, and a green check nobody
+  // populated reads as coverage. So it is a refusal — and no drift record: reshaping the value
+  // differently cannot repair a missing contract, which is the catalogue's to declare.
+  const uncontracted = kinds.filter((k) => !hasKindContract(k, opts.contracts));
+  if (uncontracted.length > 0) {
+    const f = err(
+      "output-contract-missing",
+      `provider "${spec.handle}" checks its output by contract, but kind${uncontracted.length > 1 ? "s" : ""} ${uncontracted.map((k) => `"${k}"`).join(", ")} ${uncontracted.length > 1 ? "have" : "has"} no value contract (declare one in the catalogue's valueContracts); the value cannot be checked`
+    );
+    findings.push(f);
+    return { ok: false, finding: f, drift, findings };
+  }
   for (const kind of kinds) {
     const r =
       value === undefined
@@ -538,7 +556,7 @@ function checkContract(
               `value for kind "${kind}" is undefined: the reshaping produced nothing`
             ),
           }
-        : checkKindValue(kind, value);
+        : checkKindValue(kind, value, opts.contracts);
     if (r.ok) continue;
     let observed = "unhashable";
     try {
@@ -562,12 +580,6 @@ function checkContract(
     findings.push(f);
     return { ok: false, finding: f, drift, findings };
   }
-  if (kinds.every((k) => kindValueContract(k) === undefined))
-    findings.push({
-      code: "output-contract-unchecked",
-      severity: "warn",
-      message: `provider "${spec.handle}" feeds only kinds with no value contract (${kinds.join(", ")}); the value is unchecked`,
-    });
   return okOutcome(value, findings, drift);
 }
 

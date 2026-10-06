@@ -364,3 +364,33 @@ describe("prompt", () => {
     expect(JSON.stringify(described)).not.toContain("sensitive");
   });
 });
+
+describe("describeCatalog and host value contracts (U13)", () => {
+  const withContract = (description?: string) => ({
+    id: "host.v1",
+    entries: [
+      {
+        name: "Gauge",
+        version: "1.0.0",
+        props: [],
+        binding: "required" as const,
+        surfaces: { voice: { kind: "SpokenGauge", props: [], binding: "required" as const } },
+      },
+    ],
+    valueContracts: {
+      SpokenGauge: {
+        ...(description !== undefined && { description }),
+        safeParse: () => ({ success: true as const }),
+      },
+    },
+  });
+  it("tells the model what a host kind's bound value looks like, when the host says", () => {
+    expect(describeCatalog(withContract("{ level: number }"))).toContain(
+      "; value (SpokenGauge): { level: number }"
+    );
+  });
+  it("adds nothing for an undescribed contract, so existing prompts are byte-identical", () => {
+    expect(describeCatalog(withContract())).not.toContain("value (");
+    expect(describeCatalog(planningCatalog)).not.toContain("value (");
+  });
+});
