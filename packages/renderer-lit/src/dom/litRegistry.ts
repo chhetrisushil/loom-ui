@@ -1,4 +1,4 @@
-import { FRAMEWORK_KINDS } from "@loom-ui/core/browser";
+import { type ContractRegistry, FRAMEWORK_KINDS } from "@loom-ui/core/browser";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import "../widgets/index";
 import type { TitleChrome } from "../widgets/base";
@@ -7,6 +7,7 @@ import type { DomRegistry, DomWidgetRenderer } from "./registry";
 /** A renderer that mounts `<tag>` and drives its `widget/value/status/onAction` properties. */
 export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): DomWidgetRenderer {
   const chrome = opts.chrome;
+  const contracts = opts.contracts;
   return (host, props) => {
     const el = document.createElement(tag) as HTMLElement & {
       widget: unknown;
@@ -14,8 +15,10 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
       status: BindingStatus | undefined;
       onAction: unknown;
       chrome: TitleChrome;
+      contracts?: ContractRegistry;
     };
     if (chrome !== undefined) el.chrome = chrome;
+    if (contracts !== undefined) el.contracts = contracts;
     el.widget = props.widget;
     el.value = props.value;
     el.status = props.status;
@@ -60,6 +63,12 @@ export interface LitRegistryOptions {
    * accessible name still carries the title. Also settable per element (`el.chrome = "host"`).
    */
   readonly chrome?: TitleChrome;
+  /**
+   * The catalogue's `valueContracts`: a widget of a host kind (one you registered a Lit element
+   * for) checks its bound value against these. Without a contract for it, the widget renders
+   * with `data-unchecked` rather than silently passing.
+   */
+  readonly contracts?: ContractRegistry;
 }
 
 /** The widget registry, configured. A NEW registry each call; `litRegistry` is `createLitRegistry()`. */

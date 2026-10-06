@@ -4,6 +4,7 @@ import {
   type ContractRegistry,
   FRAMEWORK_KINDS,
   type ValueContract,
+  checkHostContract,
   hasKindContract,
   isFrameworkContractKind,
   tableColumnFormat,
@@ -183,6 +184,8 @@ export function checkKindValue(
 ): { ok: true } | { ok: false; finding: Finding } {
   const schema = kindValueContract(kind, contracts);
   if (schema === undefined || value === undefined) return { ok: true };
+  // A HOST contract is untrusted code (see `checkHostContract`); the framework's is ours.
+  if (!Object.hasOwn(kindValueContracts, kind)) return checkHostContract(kind, schema, value);
   const r = schema.safeParse(value);
   if (r.success) return { ok: true };
   const issue = r.error.issues[0];

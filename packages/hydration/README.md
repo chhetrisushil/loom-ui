@@ -86,7 +86,7 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 - `HandleLoadResult` — what every load resolves to and what both controllers publish:
   `{ state: "ready", value, finding? } | { state: "stale" | "error", finding } | { state:
   "empty", finding }`.
-- `HydrationCache`, `CacheVariant` — the per-principal, per-params cache `HydrationController` uses
+- `HydrationCache`, `CacheVariant` (`params`, `kinds`, `contracts` — the bound kinds' `ValueContract.version`s are folded into the key; unversioned contracts leave keys unchanged, so call `invalidate()` after changing one) — the per-principal, per-params cache `HydrationController` uses
   by default (inject your own, or a fresh one per controller).
 - `limitInvoker`, `memoInvoker`, `signalInvoker` — `TransientInvoker` wrappers: cap concurrency,
   de-duplicate identical calls within one pass, and bind an `AbortSignal`. `memoInvoker` keys on

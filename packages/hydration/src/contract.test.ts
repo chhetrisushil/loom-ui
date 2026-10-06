@@ -514,3 +514,70 @@ describe("HydrationController with a host kind (U13)", () => {
     expect(s?.finding?.code).toBe("output-contract-missing");
   });
 });
+
+describe("review round 1: a throwing host contract does not escape executeProvider", () => {
+  const throwing = {
+    X: {
+      safeParse: () => {
+        throw new Error("boom secret");
+      },
+    },
+  };
+  it("is a drift finding with fixed text, never the exception", async () => {
+    const r = await executeProvider(contract(), {
+      invoker: replying({ a: 1 }),
+      kinds: ["X"],
+      contracts: throwing,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("output-contract-drift");
+    expect(r.finding.message).not.toContain("secret");
+    expect(r.finding.message).toContain('contract for "X" threw');
+  });
+  it("caps and cleans a host's echoed issue message", async () => {
+    const c = {
+      X: {
+        safeParse: () => ({
+          success: false as const,
+          error: { issues: [{ path: [], message: `q\u0007${"y".repeat(1000)}` }] },
+        }),
+      },
+    };
+    const r = await executeProvider(contract(), {
+      invoker: replying({ a: 1 }),
+      kinds: ["X"],
+      contracts: c,
+    });
+    expect(!r.ok && r.finding.message.length).toBeLessThan(500);
+    expect([...(!r.ok ? r.finding.message : "")].some((c) => c.charCodeAt(0) < 32)).toBe(false);
+  });
+});
+
+describe("review round 1: the cache key follows a contract's version", () => {
+  const spec = contract();
+  const c = (version?: string) => ({
+    X: { safeParse: () => ({ success: true as const }), ...(version && { version }) },
+  });
+  it("a changed version is a different key; an absent version leaves the key as before", () => {
+    const cache = new HydrationCache(() => 0);
+    cache.set(spec, undefined, "v1", { kinds: ["X"], contracts: c("1") });
+    expect(cache.get(spec, undefined, { kinds: ["X"], contracts: c("1") })?.value).toBe("v1");
+    expect(cache.get(spec, undefined, { kinds: ["X"], contracts: c("2") })).toBeUndefined();
+    expect(cache.get(spec, undefined, { kinds: ["X"], contracts: c() })).toBeUndefined();
+    // unversioned contracts == no contracts: existing keys unchanged
+    cache.set(spec, undefined, "v0", { kinds: ["X"] });
+    expect(cache.get(spec, undefined, { kinds: ["X"], contracts: c() })?.value).toBe("v0");
+  });
+  it("only the bound kinds' versions count", () => {
+    const cache = new HydrationCache(() => 0);
+    const both = { ...c("1"), Y: { safeParse: () => ({ success: true as const }), version: "9" } };
+    cache.set(spec, undefined, "v", { kinds: ["X"], contracts: both });
+    expect(
+      cache.get(spec, undefined, {
+        kinds: ["X"],
+        contracts: { ...both, Y: { ...both.Y, version: "10" } },
+      })?.value
+    ).toBe("v");
+  });
+});

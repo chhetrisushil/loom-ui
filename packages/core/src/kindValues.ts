@@ -420,6 +420,20 @@ export interface ValueContract {
    * host text, like a prop name — never put tool- or user-authored content here.
    */
   readonly description?: string | undefined;
+  /**
+   * An opaque version of this contract. When present it is folded into the hydration cache key
+   * of every provider checked against the kind, so a changed contract never serves a value that
+   * only the old one cleared. A contract WITHOUT a `version` gives the cache no way to see it
+   * change: call `invalidate()` after changing one.
+   */
+  readonly version?: string | undefined;
+  /**
+   * HOST CODE, run in-process on every bound value — a throw or a malformed return is caught and
+   * reported as a fixed finding, but the host owns its cost (a regex that backtracks, a schema
+   * that walks forever). Each issue's `message` MUST be value-free: it reaches the viewer's
+   * error state and the in-process finding stream verbatim (capped at 200 characters, control
+   * characters stripped), so never echo the checked value or a secret into it.
+   */
   safeParse(value: unknown):
     | { readonly success: true }
     | {
@@ -451,6 +465,48 @@ export function hasKindContract(kind: string, contracts?: ContractRegistry): boo
   );
 }
 
+/** The longest issue message a host contract may echo into a finding. */
+export const MAX_CONTRACT_MESSAGE = 200;
+
+/**
+ * Run a HOST contract as untrusted code. A throw, or an answer outside `safeParse`'s shape, is a
+ * `value-contract` finding with FIXED text — never the exception's. A real issue's message is
+ * control-character-free and capped at {@link MAX_CONTRACT_MESSAGE}.
+ */
+export function checkHostContract(
+  kind: string,
+  contract: ValueContract,
+  value: unknown
+): { ok: true } | { ok: false; finding: Finding } {
+  const finding = (message: string): { ok: false; finding: Finding } => ({
+    ok: false,
+    finding: { code: "value-contract", severity: "error", message },
+  });
+  try {
+    const r = contract.safeParse(value);
+    if (r.success === true) return { ok: true };
+    if (r.success !== false || !Array.isArray(r.error.issues)) return finding(threw(kind));
+    const issue = r.error.issues[0];
+    if (issue === undefined)
+      return finding(`value for kind "${kind}" does not match its contract at <root>: invalid`);
+    if (!Array.isArray(issue.path) || typeof issue.message !== "string")
+      return finding(threw(kind));
+    const path = issue.path.map(String).join(".");
+    return finding(
+      `value for kind "${kind}" does not match its contract at ${path || "<root>"}: ${cleanMessage(issue.message)}`
+    );
+  } catch {
+    return finding(threw(kind));
+  }
+}
+const threw = (kind: string): string => `contract for "${kind}" threw`;
+/** Strip control characters and cap a host-supplied message. */
+export function cleanMessage(m: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+  const clean = m.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  return clean.length > MAX_CONTRACT_MESSAGE ? `${clean.slice(0, MAX_CONTRACT_MESSAGE)}…` : clean;
+}
+
 /**
  * `@loom-ui/core`'s `checkKindValue`, without zod: `undefined` is "not hydrated yet" and passes,
  * an uncontracted kind (neither the framework's nor in the host's `contracts`) passes here — see
@@ -466,8 +522,7 @@ export function checkKindValue(
   let issue: { path: readonly (string | number | symbol)[]; message: string } | undefined;
   if (Object.hasOwn(CONTRACTS, kind)) issue = checkKindValueIssues(kind, value)[0];
   else if (contracts !== undefined && Object.hasOwn(contracts, kind) && value !== undefined) {
-    const r = (contracts[kind] as ValueContract).safeParse(value);
-    if (!r.success) issue = r.error.issues[0] ?? { path: [], message: "invalid" };
+    return checkHostContract(kind, contracts[kind] as ValueContract, value);
   }
   if (issue === undefined) return { ok: true };
   const path = issue.path.map(String).join(".");

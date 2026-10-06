@@ -540,7 +540,14 @@ async function serveOne(
     const params = relevantParams(spec, snap.params);
     // As in-process: only a contract provider's value is answerable to a kind.
     const kinds = spec.outputCheck === "contract" ? (pass.kinds.get(handle) ?? []) : undefined;
-    const variant = kinds === undefined ? { params } : { params, kinds };
+    const variant =
+      kinds === undefined
+        ? { params }
+        : {
+            params,
+            kinds,
+            ...(pass.exec.contracts !== undefined && { contracts: pass.exec.contracts }),
+          };
     const hit = opts.cache?.get(spec, opts.principalId, variant);
     if (hit) return { state: "ready", value: hit.value };
     const outcome = await executeProvider(spec, {

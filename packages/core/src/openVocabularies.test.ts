@@ -151,3 +151,64 @@ describe("a contract-checked provider never feeds an uncontracted kind", () => {
     expect(validateExperience(exp(), noContracts, "voice").findings).toEqual([]);
   });
 });
+
+describe("review round 1: a host contract is untrusted code", () => {
+  const throwing = {
+    X: {
+      safeParse: () => {
+        throw new Error("boom secret");
+      },
+    },
+  };
+  const malformed = [
+    { X: { safeParse: () => undefined } },
+    { X: { safeParse: () => ({ success: false }) } },
+    { X: { safeParse: () => ({ success: false, error: {} }) } },
+    { X: { safeParse: () => ({ success: false, error: { issues: [{ path: 3, message: 5 }] } }) } },
+  ];
+  for (const [name, check] of [
+    ["zod-backed", checkKindValue],
+    ["browser", checkBrowser],
+  ] as const) {
+    it(`${name}: a throwing safeParse is a fixed-text value-contract finding, never the exception`, () => {
+      const r = check("X", 1, throwing as never);
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      expect(r.finding.code).toBe("value-contract");
+      expect(r.finding.message).toBe('contract for "X" threw');
+      expect(r.finding.message).not.toContain("secret");
+    });
+    it(`${name}: a malformed return is the same fixed finding`, () => {
+      for (const c of malformed) {
+        const r = check("X", 1, c as never);
+        expect(r.ok).toBe(false);
+        if (!r.ok) expect(r.finding.message).toBe('contract for "X" threw');
+      }
+    });
+    it(`${name}: an echoed issue message is capped and stripped of control characters`, () => {
+      const c = {
+        X: {
+          safeParse: () => ({
+            success: false as const,
+            error: { issues: [{ path: [], message: `a\u0000b\n${"z".repeat(500)}` }] },
+          }),
+        },
+      };
+      const r = check("X", 1, c);
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      expect([...r.finding.message].some((c) => c.charCodeAt(0) < 32)).toBe(false);
+      expect(r.finding.message.length).toBeLessThan(400);
+      expect(r.finding.message).toContain("ab");
+    });
+  }
+});
+
+describe("review round 1: compile surfaces contract-overrides-framework", () => {
+  it("through compile, not only validateExperience", () => {
+    const bad = defineSemanticCatalog({ ...catalog, valueContracts: { MetricCard: z.unknown() } });
+    const r = compile(exp(), { ...opts, catalog: bad, surface: "web" });
+    expect(r.findings.some((f) => f.code === "contract-overrides-framework")).toBe(true);
+    expect(r.ok).toBe(false);
+  });
+});
