@@ -115,3 +115,41 @@ Genericity: nothing here names a consumer.
 (`boundSummary`) on the way in and again when the fold reads it. It is not part of the content
 address. `VersionRecord.summary` carries it. The feed, the unread cursor and the head signals that
 consume the log live in [`@loom-ui/changes`](../changes/README.md).
+
+## Provenance and what a viewer saw (U12)
+
+`lineage.provenance(experienceId, versionHash?)` is the per-node ledger of a version (see core's
+`foldProvenance`), derived from the recorded ops alone: no artifact is read and nothing is stored. A
+revert has the ledger of the version it restores; a branch starts from its source version's (depth
+bounded; beyond it the origin is unknown and the ledger says it was truncated). `lineage.explain(
+experienceId, nodeId, { viewer, versionHash?, projections? })` is core's `explainNode` over that
+ledger, plus the notes the line holds: the creating version's `summary` / `summaryClass`, with the
+creating version's own class floor added (a class can be lowered between versions; a version that
+cannot be read counts as `secret`). Stamp the planner's decision on the ops with
+`@loom-ui/planner`'s `plannerProvenance(result)` so a node links back to the recorded model call.
+
+**`SeenLog` records what a viewer was shown.** `record({ experienceId, viewerId, snapshot, viewer })`
+takes a core `snapshotSeen` snapshot, does not trust it (the version must be on the line; entries are
+re-validated, restamped against that version's artifact, dropped when the recording viewer may not see
+them, and re-capped), writes the value bytes to the `ContentStore` (content-addressed) and appends a
+manifest (`VIEW_RECORDED`: the version, per source a class stamp, state, status and a content ref) to a
+per-(experience, viewer) stream. `read({ ..., reader })` returns the views newest first (`until` = as
+of a time), redacted for the READER before any blob is fetched. An identical consecutive view is not
+re-recorded.
+
+*Why a separate log, and not the lineage stream or the hydration store.* A lineage line is the shared
+history of an experience with one compare-and-set tip that every writer contends for and every reader
+(the change feed, fanned out to every viewer) folds; a view is per-viewer, frequent and carries data,
+so recording it there would put every open of a surface in a race with every writer, mix one viewer's
+classified values into a log all readers fold, and change what `verify` of the line must explain. The
+hydration store is a latest-value cache for the surface being drawn (evicts, projected to a client,
+no history): it cannot say what a viewer saw on Tuesday. The manifest holds NO value, so erasing a
+blob (a subject's right to erasure) leaves the fact of the view, not the value; a read of an erased
+entry says `absent`.
+
+Operations: the stream lives in its own reserved namespace (`eventStoreLineageStore(store,
+seenStoreOptions)` writes `__loom_ui_seen__:<experience>/<viewer>`), so the notes on reserved streams
+above apply (no crypto-shred; erase by deleting the stream's events and blobs). A viewer's stream is
+capped at `MAX_SEEN_RECORDS` views (a write past it is refused `seen-log-full`; retention is the
+host's), and an append reads the stream's tip, so it is O(views) per write. `viewerId` and `viewer`
+are the host's claims: this package authorizes nothing.

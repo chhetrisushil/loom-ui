@@ -1,13 +1,23 @@
 import {
   type ApplyOptions,
   type Experience,
+  type ExplainOptions,
   type Finding,
+  type NodeExplanation,
+  type ProjectionCatalog,
   type Provenance,
+  type ProvenanceLedger,
   type RecordedOperation,
   Sensitivity,
+  type VersionNote,
+  type Viewer,
   apply,
   applyAt,
   boundSummary,
+  emptyLedger,
+  experienceClassFloor,
+  explainNode,
+  foldProvenance,
   replay,
 } from "@loom-ui/core";
 import { getExperience, putExperience, seal } from "@loom-ui/core/log";
@@ -199,6 +209,119 @@ export class Lineage {
         `the content at ${v.ref.__loomContent} is not version ${versionHash} of "${state.experienceId}"`
       );
     return { ok: true, value: r.experience };
+  }
+
+  // ── provenance (U12) ────────────────────────────────────────────────────────
+
+  /**
+   * The per-node ledger of version `versionHash` (default the head): which recorded op created and
+   * last changed each node, derived from the log alone (no artifact is read, nothing is stored).
+   * A revert has the ledger of the version it restores; a branch starts from its source version's.
+   * Bounded: a chain of reverts or branches deeper than `MAX_VERIFY_DEPTH` ends in an unknown
+   * origin rather than recursing without limit.
+   */
+  async provenance(
+    experienceId: string,
+    versionHash?: string
+  ): Promise<LineageResult<ProvenanceLedger>> {
+    const s = await this.state(experienceId);
+    if (!s.ok) return s;
+    const target = versionHash ?? s.value.head;
+    if (target === null) return refused("lineage-empty", `"${experienceId}" has no versions`);
+    if (!s.value.versions.has(target))
+      return refused("version-unknown", `"${target}" is not a version of "${experienceId}"`);
+    return { ok: true, value: await this.ledgerAt(s.value, target, 0) };
+  }
+
+  private async ledgerAt(
+    state: LineageState,
+    target: string,
+    depth: number
+  ): Promise<ProvenanceLedger> {
+    const unknown = { ...emptyLedger(null), truncated: true };
+    if (depth > MAX_VERIFY_DEPTH) return unknown;
+    const chain: VersionRecord[] = [];
+    const seen = new Set<string>();
+    let base: ProvenanceLedger = unknown;
+    for (let h: string | undefined = target; h !== undefined; ) {
+      const v = state.versions.get(h);
+      if (v === undefined || seen.has(h)) break;
+      seen.add(h);
+      if (v.kind === "reverted" && v.revertedTo !== undefined) {
+        base = await this.ledgerAt(state, v.revertedTo, depth + 1);
+        break;
+      }
+      if (v.kind === "branched" && v.from !== undefined) {
+        const src = await this.state(v.from.experienceId);
+        base =
+          src.ok && src.value.versions.has(v.from.versionHash)
+            ? await this.ledgerAt(src.value, v.from.versionHash, depth + 1)
+            : unknown;
+        break;
+      }
+      if (v.parents.length === 0) {
+        base = emptyLedger({ versionHash: v.versionHash, at: v.at, by: v.by });
+        chain.push(v);
+        break;
+      }
+      chain.push(v);
+      h = v.parents[0];
+    }
+    return foldProvenance(base, chain.reverse());
+  }
+
+  /**
+   * Why is `nodeId` in version `versionHash` (default the head), FOR `viewer`? The ledger of that
+   * version read through core's `explainNode`: unknown, restricted and unreadable all answer the
+   * same bare `{ available: false }`. The creating version's summary and the request that prompted
+   * it are shown only when the viewer may see the strictest class of the viewed version, of the
+   * version that wrote them, and of what the planner read (`summaryClass`); a version that cannot be
+   * read counts as `secret`. Performs no authorization: `viewer` is the host's claim.
+   */
+  async explain(
+    experienceId: string,
+    nodeId: string,
+    opts: {
+      readonly viewer?: Viewer;
+      readonly versionHash?: string;
+      readonly projections?: ProjectionCatalog;
+      readonly hydrationProjectionId?: string;
+    } = {}
+  ): Promise<LineageResult<NodeExplanation>> {
+    const s = await this.state(experienceId);
+    if (!s.ok) return s;
+    const target = opts.versionHash ?? s.value.head;
+    if (target === null) return refused("lineage-empty", `"${experienceId}" has no versions`);
+    const exp = await this.load(s.value, target);
+    if (!exp.ok) return exp;
+    const ledger = await this.ledgerAt(s.value, target, 0);
+    const wrote = ledger.nodes.get(nodeId)?.created?.versionHash ?? ledger.origin?.versionHash;
+    const notes = new Map<string, VersionNote>();
+    let extraFloor: ExplainOptions["extraFloor"];
+    const writer = wrote === undefined ? undefined : s.value.versions.get(wrote);
+    if (wrote !== undefined && writer !== undefined) {
+      notes.set(wrote, {
+        ...(writer.summary !== undefined && { summary: writer.summary }),
+        ...(writer.summaryClass !== undefined && { summaryClass: writer.summaryClass }),
+      });
+      if (writer.summary !== undefined || ledger.nodes.get(nodeId)?.created?.prompt !== undefined) {
+        const art = await this.load(s.value, wrote);
+        extraFloor = art.ok ? experienceClassFloor(art.value, opts.projections) : "secret";
+      }
+    }
+    return {
+      ok: true,
+      value: explainNode(exp.value, nodeId, {
+        ledger,
+        notes,
+        ...(extraFloor !== undefined && { extraFloor }),
+        ...(opts.viewer !== undefined && { viewer: opts.viewer }),
+        ...(opts.projections !== undefined && { projections: opts.projections }),
+        ...(opts.hydrationProjectionId !== undefined && {
+          hydrationProjectionId: opts.hydrationProjectionId,
+        }),
+      }),
+    };
   }
 
   // ── writes ──────────────────────────────────────────────────────────────────

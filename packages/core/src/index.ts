@@ -140,6 +140,7 @@ export {
   defaultAttention,
   describeChange,
   experienceClassFloor,
+  inspectExperience,
   untrustedSummary,
 } from "./change";
 export type {
@@ -148,9 +149,50 @@ export type {
   ChangeEntry,
   ChangeKind,
   DescribeOptions,
+  ExperienceInspection,
   UntrustedText,
 } from "./change";
+export {
+  MAX_LEDGER_NODES,
+  MAX_STEP_OPS,
+  cleanProvenance,
+  emptyLedger,
+  explainNode,
+  foldProvenance,
+} from "./provenance";
+export type {
+  ExplainOptions,
+  ExplainedEntry,
+  NodeExplanation,
+  NodeLedger,
+  NodeSource,
+  ProvenanceEntry,
+  ProvenanceLedger,
+  ProvenanceStep,
+  VersionNote,
+} from "./provenance";
 export type { HeadChange, HeadSignal } from "./heads";
 export { MAX_CHUNK_TEXT, MAX_STREAM_TEXT, appendChunk } from "./streamText";
 export type { AppendResult, StreamedText, TextChunk } from "./streamText";
 export { OpStream } from "./opStream";
+export {
+  MAX_SEEN_NODE_IDS,
+  MAX_SEEN_SOURCES,
+  MAX_SEEN_TOTAL_BYTES,
+  MAX_SEEN_VALUE_BYTES,
+  SEEN_CLASSES,
+  redactSeen,
+  seenToState,
+  snapshotSeen,
+} from "./seen";
+export type {
+  RedactedSeen,
+  SeenClass,
+  SeenEntry,
+  SeenReader,
+  SeenReading,
+  SeenSnapshot,
+  SeenSource,
+  SeenState,
+  SnapshotOptions,
+} from "./seen";

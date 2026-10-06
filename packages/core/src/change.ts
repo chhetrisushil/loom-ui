@@ -288,6 +288,41 @@ export function experienceClassFloor(
   }
 }
 
+/**
+ * What a viewer-safe reader needs to know about every node of ONE version: the strictest class each
+ * node's data carries (`undefined` = unclassified), whether it is hidden from EVERY viewer (a
+ * projection the host does not offer, or offers at another version), the version's class floor, and
+ * whether any node is blocked. The same inspection `describeChange` judges with, exported so a second
+ * reader (`explainNode`) cannot disagree with it about what a viewer may see. Total: an unreadable
+ * experience yields `readable: false`, and a caller must treat that as everything restricted.
+ */
+export interface ExperienceInspection {
+  readonly readable: boolean;
+  readonly nodes: ReadonlyMap<
+    string,
+    { readonly cls: DataClass | undefined; readonly blocked: boolean }
+  >;
+  readonly floor: DataClass | undefined;
+  readonly anyBlocked: boolean;
+}
+
+export function inspectExperience(
+  exp: Experience,
+  opts: Pick<DescribeOptions, "projections" | "hydrationProjectionId"> = {}
+): ExperienceInspection {
+  try {
+    const r = nodesOf(exp, opts);
+    return {
+      readable: true,
+      nodes: new Map([...r.nodes].map(([id, v]) => [id, { cls: v.cls, blocked: v.blocked }])),
+      floor: r.floor,
+      anyBlocked: r.anyBlocked,
+    };
+  } catch {
+    return { readable: false, nodes: new Map(), floor: "secret", anyBlocked: true };
+  }
+}
+
 const KIND_ORDER = new Map(CHANGE_KINDS.map((k, i) => [k, i]));
 const cmp = (a: string | undefined, b: string | undefined): number =>
   (a ?? "") < (b ?? "") ? -1 : (a ?? "") > (b ?? "") ? 1 : 0;
