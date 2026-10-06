@@ -59,10 +59,10 @@ export function entryFor(
  * over (spec §7.1). Anything the catalogue does not declare is a schema issue here, not a finding
  * later — so the retry message names the exact path.
  */
-export function planSchema(
+export function draftNodeSchema(
   catalog: SemanticCatalog,
   capabilities: readonly CapabilityRef[]
-): z.ZodType<PlanDraft> {
+): z.ZodType<DraftNode> {
   const handles = new Set(capabilities.map((c) => c.handle));
   const node = z
     .object({
@@ -129,6 +129,15 @@ export function planSchema(
           message: `"${entry.name}" does not let the model set a sensitivity class`,
         });
     });
+  return node as unknown as z.ZodType<DraftNode>;
+}
+
+/** The whole-reply contract, built from {@link draftNodeSchema}. */
+export function planSchema(
+  catalog: SemanticCatalog,
+  capabilities: readonly CapabilityRef[]
+): z.ZodType<PlanDraft> {
+  const node = draftNodeSchema(catalog, capabilities);
   return z
     .object({
       summary: z.string().min(1).max(600),

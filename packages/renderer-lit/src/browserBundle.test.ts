@@ -29,6 +29,7 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "format.js",
   "kindValues.js",
   "paths.js",
+  "streamText.js",
 ]);
 
 async function bundle(entry: string) {

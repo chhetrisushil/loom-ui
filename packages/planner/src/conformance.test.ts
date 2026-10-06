@@ -11,6 +11,7 @@ import {
   recordingContext,
   scriptedModel,
   stampingScope,
+  streamingScriptedModel,
 } from "./testing.test-support";
 
 const compose = JSON.stringify({
@@ -668,5 +669,133 @@ describe("checkPlannerConformance", () => {
       expect(codes).toContain("fixture-ctx-not-fresh");
       expect(codes).not.toContain("scope-unused");
     });
+  });
+});
+
+describe("checkPlannerConformance — streaming (opt-in via fx.streamProbe)", () => {
+  const fixture = (planner: Planner, model: { calls: number; streamCalls: number }) => {
+    const abortCtx = recordingContext();
+    return {
+      intent: intentFixture,
+      catalog: planningCatalog,
+      capabilities: capabilitiesFixture,
+      meta: metaFixture,
+      revision: { text: "add an insight" },
+      ctx: recordingContext(),
+      modelCalls: () => model.calls + model.streamCalls,
+      streamProbe: {
+        ctx: recordingContext(),
+        abortCtx,
+        abortDecisions: () => abortCtx.decisions.size,
+      },
+    };
+  };
+  const twoNodes = JSON.stringify({
+    summary: "s",
+    nodes: [
+      {
+        id: "orders",
+        type: "Metric",
+        label: "Orders",
+        span: 4,
+        props: {},
+        binding: {
+          capability: "orders_summary",
+          arguments: { window: "7d" },
+          path: "totals.count",
+          priority: "P0",
+        },
+      },
+      { id: "why", type: "Insight", label: "Why", span: 12, props: {} },
+    ],
+  });
+
+  const revised = JSON.stringify({
+    ...JSON.parse(twoNodes),
+    nodes: [
+      ...JSON.parse(twoNodes).nodes,
+      { id: "more", type: "Insight", label: "More", span: 12, props: {} },
+    ],
+  });
+  it("the reference planner on a streaming model passes with zero findings", async () => {
+    const model = streamingScriptedModel([twoNodes, revised]);
+    const planner = new ReferencePlanner({ model, modelId: "m" });
+    expect(await checkPlannerConformance(planner, fixture(planner, model))).toEqual([]);
+  });
+
+  it("a planner that ignores the stream options is told so (no partials, abort not honoured)", async () => {
+    const model = streamingScriptedModel([twoNodes, revised]);
+    const inner = new ReferencePlanner({ model, modelId: "m" });
+    const deaf: Planner = {
+      compose: (i, c) => inner.compose(i, c),
+      revise: (i, c) => inner.revise(i, c),
+    };
+    const codes = (await checkPlannerConformance(deaf, fixture(deaf, model))).map((f) => f.code);
+    expect(codes).toContain("stream-no-partials");
+    expect(codes).toContain("stream-abort-ignored");
+  });
+
+  it("a planner whose streamed final differs from the whole-reply final is flagged", async () => {
+    const model = streamingScriptedModel([twoNodes, revised]);
+    const inner = new ReferencePlanner({ model, modelId: "m" });
+    const liar: Planner = {
+      compose: async (i, c, o) => {
+        const r = await inner.compose(i, c, o);
+        return o?.onPartial === undefined ? r : { ...r, ops: r.ops.slice(0, 1) };
+      },
+      revise: (i, c, o) => inner.revise(i, c, o),
+    };
+    const codes = (await checkPlannerConformance(liar, fixture(liar, model))).map((f) => f.code);
+    expect(codes).toContain("stream-final-differs");
+  });
+
+  it("a cancelled turn that is still RECORDED is flagged", async () => {
+    const model = streamingScriptedModel([twoNodes, revised]);
+    const inner = new ReferencePlanner({ model, modelId: "m" });
+    const recorder: Planner = {
+      compose: (i, c, o) => {
+        if (o?.signal?.aborted === true) return c.decide("x", () => inner.compose(i, c));
+        return inner.compose(i, c, o);
+      },
+      revise: (i, c, o) => inner.revise(i, c, o),
+    };
+    const codes = (await checkPlannerConformance(recorder, fixture(recorder, model))).map(
+      (f) => f.code
+    );
+    expect(codes).toContain("stream-abort-recorded");
+  });
+
+  it("a replay that streams again is flagged", async () => {
+    const model = streamingScriptedModel([twoNodes, revised]);
+    const inner = new ReferencePlanner({ model, modelId: "m" });
+    let n = 0;
+    const chatty: Planner = {
+      compose: async (i, c, o) => {
+        const r = await inner.compose(i, c, o);
+        if (o?.onPartial !== undefined && ++n > 1)
+          o.onPartial({ attempt: 0, ops: r.ops, findings: [], nodes: 1 });
+        return r;
+      },
+      revise: (i, c, o) => inner.revise(i, c, o),
+    };
+    const codes = (await checkPlannerConformance(chatty, fixture(chatty, model))).map(
+      (f) => f.code
+    );
+    expect(codes).toContain("stream-replay-recalled");
+  });
+
+  it("without a streamProbe, streaming is not checked", async () => {
+    const model = scriptedModel([compose, revise]);
+    const planner = new ReferencePlanner({ model, modelId: "m" });
+    expect(
+      await checkPlannerConformance(planner, {
+        intent: intentFixture,
+        catalog: planningCatalog,
+        capabilities: capabilitiesFixture,
+        meta: metaFixture,
+        revision: { text: "add an insight" },
+        ctx: recordingContext(),
+      })
+    ).toEqual([]);
   });
 });

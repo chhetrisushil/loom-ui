@@ -151,3 +151,6 @@ export type {
   UntrustedText,
 } from "./change";
 export type { HeadChange, HeadSignal } from "./heads";
+export { MAX_CHUNK_TEXT, MAX_STREAM_TEXT, appendChunk } from "./streamText";
+export type { AppendResult, StreamedText, TextChunk } from "./streamText";
+export { OpStream } from "./opStream";

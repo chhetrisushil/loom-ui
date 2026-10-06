@@ -11,7 +11,7 @@ import {
   strictestClass,
   validateExperience,
 } from "@loom-ui/core";
-import { parseModelJson, planSchema } from "./contract";
+import { type DraftNode, draftNodeSchema, parseModelJson, planSchema } from "./contract";
 import { isControlPlaneError } from "./controlPlane";
 import { planDecisionId } from "./decision";
 import { materialize } from "./materialize";
@@ -22,13 +22,16 @@ import type {
   ComposeInput,
   DecideContext,
   DecideScope,
+  PlanPartial,
   PlanReport,
   PlanResult,
+  PlanStreamOptions,
   Planner,
   PlannerModel,
   PlannerUsage,
   ReviseInput,
 } from "./spi";
+import { NodeScanner } from "./streamScan";
 import { addUsage, readReportedUsage, totalUsage } from "./usage";
 
 export const REFERENCE_POLICY = { id: "loom-ui.reference-planner", version: "1.0.0" } as const;
@@ -74,6 +77,15 @@ export function scratchGenesis(intent: Intent): Experience {
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
 const warn = (code: string, message: string): Finding => ({ code, severity: "warn", message });
+/** The longest reply a STREAMED attempt may assemble (the whole-reply call has no bound of its own to apply). */
+export const MAX_STREAM_REPLY_CHARS = 256 * 1024;
+
+const abortError = (signal: AbortSignal | undefined): Error => {
+  const reason = (signal as { reason?: unknown } | undefined)?.reason;
+  const e = new Error(reason instanceof Error ? reason.message : "the planner turn was aborted");
+  e.name = "AbortError"; // a control-plane name: rethrown, never recorded as the decision
+  return e;
+};
 const errorsOf = (fs: readonly Finding[]) => fs.filter((f) => f.severity === "error");
 
 export class ReferencePlanner implements Planner {
@@ -103,7 +115,11 @@ export class ReferencePlanner implements Planner {
     };
   }
 
-  compose(input: ComposeInput, ctx: DecideContext): Promise<PlanResult> {
+  compose(
+    input: ComposeInput,
+    ctx: DecideContext,
+    stream: PlanStreamOptions = {}
+  ): Promise<PlanResult> {
     const decisionId = planDecisionId("compose", input);
     return ctx.decide(
       decisionId,
@@ -114,7 +130,8 @@ export class ReferencePlanner implements Planner {
           scratchGenesis(input.intent),
           input,
           (prev) => composeMessages(input, prev),
-          undefined
+          undefined,
+          stream
         ),
       {
         source: REFERENCE_SOURCE,
@@ -129,7 +146,11 @@ export class ReferencePlanner implements Planner {
     );
   }
 
-  revise(input: ReviseInput, ctx: DecideContext): Promise<PlanResult> {
+  revise(
+    input: ReviseInput,
+    ctx: DecideContext,
+    stream: PlanStreamOptions = {}
+  ): Promise<PlanResult> {
     const decisionId = planDecisionId("revise", {
       versionHash: input.experience.versionHash,
       request: input.request,
@@ -166,7 +187,8 @@ export class ReferencePlanner implements Planner {
           input.experience,
           input,
           (prev) => reviseMessages(input, prev),
-          input.request
+          input.request,
+          stream
         ),
       {
         source: REFERENCE_SOURCE,
@@ -198,8 +220,10 @@ export class ReferencePlanner implements Planner {
       system: string;
       messages: readonly { role: "system" | "user" | "assistant"; content: string }[];
     },
-    request: ReviseInput["request"] | undefined
+    request: ReviseInput["request"] | undefined,
+    stream: PlanStreamOptions
   ): Promise<PlanResult> {
+    const { signal, onPartial } = stream;
     const surface = input.surface ?? "web";
     // A catalogue whose entries cannot produce a loom widget catalogue for this surface is a
     // DEFECT IN THE INPUT, not a bad draft: no reply the model could write would satisfy the
@@ -249,15 +273,105 @@ export class ReferencePlanner implements Planner {
     let lastFindings: Finding[] = [];
     // Running total of the usage recorded so far; guards the plan total against overflow.
     let spent: PlannerUsage = { inputTokens: 0, outputTokens: 0 };
+    const salt = this.opts.orderSalt === undefined ? {} : { orderSalt: this.opts.orderSalt };
+    // Ops as the plan hands them out: a revise wraps its primitives in ONE `prompt` op.
+    const wrap = (ops: Operation[]): Operation[] =>
+      request === undefined
+        ? ops
+        : [
+            {
+              type: "prompt",
+              text: request.text,
+              ...(request.scopeNodeIds && { scopeNodeIds: [...request.scopeNodeIds] }),
+              materialized: ops,
+            },
+          ];
+    // Stream only when someone is listening AND the model can; otherwise the whole-reply call.
+    const streaming = onPartial !== undefined && model.stream !== undefined;
+    const nodeSchema = streaming ? draftNodeSchema(input.catalog, input.capabilities) : undefined;
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       let content: string;
       let reply: object;
+      // A cancelled turn is the control plane speaking: reject, record nothing, call nothing.
+      if (signal?.aborted) throw abortError(signal);
       try {
-        const r = await model.complete(messagesFor(previous));
-        content = r.content;
-        reply = r;
+        if (streaming && nodeSchema !== undefined && model.stream !== undefined) {
+          const emit = (p: PlanPartial) => {
+            try {
+              onPartial?.(p);
+            } catch {
+              // a broken consumer must not fail (or record) a plan
+            }
+          };
+          if (attempt > 0) emit({ attempt, ops: [], findings: [], nodes: 0 });
+          const scanner = new NodeScanner({ maxChars: MAX_STREAM_REPLY_CHARS });
+          const accepted: DraftNode[] = [];
+          const seen = new Set<string>();
+          const parts: string[] = [];
+          let length = 0;
+          const req = messagesFor(previous);
+          for await (const chunk of model.stream(req, signal === undefined ? {} : { signal })) {
+            if (signal?.aborted) throw abortError(signal); // leaving the loop closes the iterator
+            if (typeof chunk !== "string") continue;
+            length += chunk.length;
+            if (length > MAX_STREAM_REPLY_CHARS)
+              throw new StreamOverflow(
+                `the streamed reply exceeded ${MAX_STREAM_REPLY_CHARS} characters`
+              );
+            parts.push(chunk);
+            let grew = false;
+            for (const raw of scanner.feed(chunk)) {
+              const n = nodeSchema.safeParse(raw);
+              // An invalid or repeated node is not shown; the FINAL parse of the whole reply
+              // reports it (and drives the retry), exactly as without streaming.
+              if (!n.success || seen.has(n.data.id)) continue;
+              seen.add(n.data.id);
+              accepted.push(n.data);
+              grew = true;
+            }
+            if (!grew) continue;
+            const m = materialize(
+              { summary: "(streaming)", nodes: accepted },
+              base,
+              input.catalog,
+              input.capabilities,
+              input.observed,
+              salt
+            );
+            const ops = wrap(m.ops);
+            const applied = replay(base, ops);
+            const found = [
+              ...m.findings,
+              ...(applied.ok
+                ? validateExperience(applied.value, input.catalog, surface).findings
+                : [applied.finding]),
+            ];
+            // The same bar as a final plan: a partial with any error is not shown.
+            if (errorsOf(found).length > 0 || m.ops.length === 0) continue;
+            if (signal?.aborted) throw abortError(signal);
+            emit({ attempt, ops, findings: found, nodes: accepted.length });
+          }
+          content = parts.join("");
+          reply = {}; // a stream reports no usage
+        } else {
+          const r = await model.complete(
+            messagesFor(previous),
+            signal === undefined ? undefined : { signal }
+          );
+          content = r.content;
+          reply = r;
+        }
+        if (signal?.aborted) throw abortError(signal); // an abort that landed during the call
       } catch (e) {
+        if (signal?.aborted) throw abortError(signal);
         if (isControlPlaneError(e)) throw e; // no retry, no recorded failed plan
+        if (e instanceof StreamOverflow) {
+          const f = err("model-output-invalid", e.message);
+          attempts.push({ parsed: false, findings: [f] });
+          lastFindings = [f];
+          previous = { error: f.message, raw: "" };
+          continue;
+        }
         const f = err(
           "model-error",
           `model call failed: ${e instanceof Error ? e.message : String(e)}`
@@ -309,7 +423,7 @@ export class ReferencePlanner implements Planner {
         input.catalog,
         input.capabilities,
         input.observed,
-        this.opts.orderSalt === undefined ? {} : { orderSalt: this.opts.orderSalt }
+        salt
       );
       const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
@@ -348,14 +462,8 @@ export class ReferencePlanner implements Planner {
             ? {}
             : { summary, ...(summaryClass !== undefined && { summaryClass }) };
         if (request === undefined) return { ops: m.ops, findings, report, ...said };
-        const prompt: Operation = {
-          type: "prompt",
-          text: request.text,
-          ...(request.scopeNodeIds && { scopeNodeIds: [...request.scopeNodeIds] }),
-          materialized: m.ops,
-        };
         return {
-          ops: [prompt],
+          ops: wrap(m.ops),
           findings:
             m.ops.length === 0
               ? [
@@ -389,3 +497,6 @@ export class ReferencePlanner implements Planner {
     };
   }
 }
+
+/** A streamed reply past its bound: an attempt failure (model-output-invalid), never an exception out of the plan. */
+class StreamOverflow extends Error {}

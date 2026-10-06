@@ -86,15 +86,67 @@ export interface PlannerUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
 }
+export interface PlannerModelRequest {
+  readonly system?: string;
+  readonly messages: readonly PlannerMessage[];
+}
 export interface PlannerModel {
-  complete(request: {
-    readonly system?: string;
-    readonly messages: readonly PlannerMessage[];
-  }): Promise<{
+  /**
+   * The whole reply. `opts.signal` aborts the call: a model that can honour it (an HTTP request,
+   * a provider SDK) should; one that ignores it is still cancelled at the planner's next check.
+   */
+  complete(
+    request: PlannerModelRequest,
+    opts?: { readonly signal?: AbortSignal }
+  ): Promise<{
     readonly content: string;
     /** Absent when the provider reports none — "unreported", not "free". */
     readonly usage?: PlannerUsage;
   }>;
+  /**
+   * OPTIONAL streaming: the same reply, as it is written, in order. The planner uses it only when
+   * the caller asked for partials (`PlanStreamOptions.onPartial`); concatenated, the chunks are
+   * what `complete` would have returned, and THAT assembled text — not the chunks — is what the
+   * plan (and so `ctx.decide`) is built from. A stream reports no token usage (an iterable of
+   * strings has nowhere to), so a streamed attempt's usage is absent: "unreported", not "free".
+   * Ending the iteration early (`return()`) must release the connection.
+   */
+  stream?(
+    request: PlannerModelRequest,
+    opts?: { readonly signal?: AbortSignal }
+  ): AsyncIterable<string>;
+}
+
+/**
+ * One incremental view of a plan being written (U1). NOT a decision and never recorded: it is the
+ * ops the reply has made parseable SO FAR, each node already through the same contract,
+ * materialisation, replay and `validateExperience` as the final plan, so a partial that would
+ * not stand as a final plan is simply not emitted. `ops` is the WHOLE pending list (a later
+ * partial supersedes the earlier — fold it with core's `OpStream`). For a revise it is the single
+ * `prompt` op the final is. There is no `summary`: a summary is stamped with a class and handed
+ * out only with the final result (`PlanResult.summary` / `summaryClass`, U7), never as live text.
+ */
+export interface PlanPartial {
+  /** Which model attempt wrote it (0-based). A new attempt starts with an empty `ops` reset. */
+  readonly attempt: number;
+  readonly ops: readonly Operation[];
+  /** Warnings only; a partial with an error is not emitted. */
+  readonly findings: readonly Finding[];
+  /** How many of the reply's nodes `ops` covers. */
+  readonly nodes: number;
+}
+export interface PlanStreamOptions {
+  /**
+   * Called with each incremental view as a node completes. A LIVE side channel: it is not part of
+   * the decision, is never called when a recorded decision is served (a replay makes no model call
+   * and shows the final at once), and a throw from it is swallowed — a broken UI cannot fail a plan.
+   */
+  readonly onPartial?: (partial: PlanPartial) => void;
+  /**
+   * Cancels the turn. A cancelled turn REJECTS with an `AbortError` and records nothing (a
+   * control-plane error, see `isControlPlaneError`), so the same input can be planned again.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface ComposeInput {
@@ -183,6 +235,6 @@ export interface Planner {
    * a new sample is a new REVISION (`reviseForDrift` asks for one), never a silent re-plan of a
    * decision a replay is already serving.
    */
-  compose(input: ComposeInput, ctx: DecideContext): Promise<PlanResult>;
-  revise(input: ReviseInput, ctx: DecideContext): Promise<PlanResult>;
+  compose(input: ComposeInput, ctx: DecideContext, opts?: PlanStreamOptions): Promise<PlanResult>;
+  revise(input: ReviseInput, ctx: DecideContext, opts?: PlanStreamOptions): Promise<PlanResult>;
 }

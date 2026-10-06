@@ -1,4 +1,5 @@
 import type { Finding } from "@loom-ui/core";
+import { type StreamedText, appendChunk } from "@loom-ui/core/browser";
 import type { EventEnvelope } from "@loom/core";
 import type { Projection, ProjectionRuntime } from "@loom/projection-runtime";
 
@@ -104,6 +105,8 @@ export interface HydrationScope {
 }
 
 export class HydrationStore {
+  /** Open token streams by handle (see {@link append}). A replace/remove/empty ends the handle's. */
+  private readonly streams = new Map<string, StreamedText>();
   private seq = 0; // status seq — monotone per store
   private emitSeq = 0; // envelope sequence — every emit, including remove
   /** The projection state key: the scope, flattened. Derived — never passed in. */
@@ -143,15 +146,52 @@ export class HydrationStore {
 
   setStatus(handle: string, status: Omit<HandleStatus, "seq">): void {
     this.assertValidHandle(handle);
+    // `empty` drops the value, so a stream continuing onto it would resurrect a value the fold cleared.
+    if (status.state === "empty") this.streams.delete(handle);
     this.emit({ kind: "status", handle, status: this.stamp(status) });
   }
   setValue(handle: string, value: unknown, status: Omit<HandleStatus, "seq">): void {
     this.assertValidHandle(handle);
+    // A whole-value replace (a controller load, a supersede) ends the handle's token stream: the
+    // stream's accumulated text is no longer what the handle holds, so a producer's later chunks
+    // are refused (`stream-gap`) instead of being spliced onto the replacement.
+    this.streams.delete(handle);
     this.emit({ kind: "value", handle, value, status: this.stamp(status) });
   }
   remove(handle: string): void {
     this.assertValidHandle(handle);
+    this.streams.delete(handle);
     this.emit({ kind: "remove", handle });
+  }
+
+  /**
+   * Append one chunk of a token stream (`StreamingText`) to a handle. The handle's value is the
+   * accumulated string — widgets and the value contract are unchanged — and its status is
+   * `pending` while the stream is open and `ready` once a chunk carries `done`.
+   *
+   * ORDERING with a whole-value writer (`setValue`/`remove`, e.g. the controller superseding a
+   * load): they are synchronous and the last writer wins. A replace ENDS the stream; the
+   * producer's next chunk then refuses (`stream-gap`, `seq` no longer 0) rather than corrupt the
+   * replacement, and a producer that wants to stream again starts a new stream at `seq` 0, which
+   * replaces the value. The contract itself (idempotence, gap, close, bounds) is core's
+   * `appendChunk`. A refusal emits nothing; a duplicate is `applied: false` and emits nothing.
+   */
+  append(
+    handle: string,
+    chunk: unknown
+  ): { ok: true; applied: boolean } | { ok: false; finding: Finding } {
+    this.assertValidHandle(handle);
+    const r = appendChunk(this.streams.get(handle), chunk);
+    if (!r.ok) return r;
+    if (!r.applied) return { ok: true, applied: false };
+    this.streams.set(handle, r.state);
+    this.emit({
+      kind: "value",
+      handle,
+      value: r.state.text,
+      status: this.stamp({ state: r.state.done ? "ready" : "pending" }),
+    });
+    return { ok: true, applied: true };
   }
 
   /** Whole-state subscription: fires on ANY handle's value or status change. For a surface that renders the full projection (e.g. a terminal `watch` loop) rather than one widget's slice. */

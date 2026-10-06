@@ -181,3 +181,34 @@ export function stampingScope(
   };
   return scope;
 }
+
+/** A model that replies like {@link scriptedModel} and ALSO streams the same reply in `size`-char chunks. */
+export function streamingScriptedModel(
+  responses: readonly string[],
+  size = 13
+): PlannerModel & { calls: number; streamCalls: number } {
+  const model = {
+    calls: 0,
+    streamCalls: 0,
+    async complete() {
+      const i = Math.min(model.calls, responses.length - 1);
+      model.calls += 1;
+      return { content: responses[i] as string };
+    },
+    stream(_req: unknown, opts?: { readonly signal?: AbortSignal }): AsyncIterable<string> {
+      const i = Math.min(model.streamCalls, responses.length - 1);
+      model.streamCalls += 1;
+      const text = responses[i] as string;
+      return {
+        async *[Symbol.asyncIterator]() {
+          for (let at = 0; at < text.length; at += size) {
+            if (opts?.signal?.aborted) return;
+            await Promise.resolve();
+            yield text.slice(at, at + size);
+          }
+        },
+      };
+    },
+  };
+  return model;
+}
