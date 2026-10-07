@@ -127,3 +127,45 @@ describe("a container whose children are all restricted, in the terminal", () =>
     expect(renderExperience(r.blueprint, store2)).toContain("Section s1");
   });
 });
+
+// U10c: a restricted node (and a collapsed container) is emitted under an opaque alias; the
+// terminal output never carries the lexical id of what it hides.
+describe("opaque ids on restricted placeholders, in the terminal", () => {
+  it("prints no real id of a restricted node or a collapsed container", () => {
+    const leaf = (id: string, sensitivity?: "sensitive") => ({
+      ...(exp.root.children[0] as object),
+      id,
+      order: id,
+      label: { key: id, fallback: "Value" },
+      binding: { handle: `h-${id}`, priority: "P0" as const, ...(sensitivity && { sensitivity }) },
+    });
+    const e = {
+      ...exp,
+      root: {
+        ...exp.root,
+        children: [
+          {
+            id: "payroll_section",
+            order: "A",
+            kind: "container" as const,
+            direction: "column" as const,
+            span: 12,
+            children: [leaf("payroll_salary_by_employee", "sensitive")],
+          },
+          leaf("public_latency"),
+        ],
+      },
+    } as never;
+    const r = compile(e, {
+      ...opts,
+      viewer: { clearance: "internal" },
+      placeholderKey: "terminal-u10c-key-0123456789",
+      title: { omit: true }, // the default title is the objective ("payroll review"), not an id
+    });
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "u10" });
+    const out = renderExperience(r.blueprint, store);
+    expect(out).toContain("Restricted");
+    expect(JSON.stringify(r.blueprint)).not.toContain("payroll");
+    expect(out).not.toContain("payroll");
+  });
+});

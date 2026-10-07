@@ -121,6 +121,29 @@ describe("declaredToolClasses on the hydration read paths", () => {
     ).toEqual(["open", "pay"]);
   });
 
+  // U10c: an `unknown-handle` finding names the nodes that bind the handle. It is only raised for a
+  // handle the viewer may read, so those nodes are visible to it: a restricted node's (lexical) id
+  // is never named, on the inventory a client receives or on the controller's findings.
+  it("a restricted node with no provider is not named by any finding or inventory entry", () => {
+    const g = genesis({ experienceId: "exp-1", intent: { objective: "x", source: "user" }, meta });
+    const hidden: SemanticNode = {
+      ...node("payroll_salary_by_employee", "hpay"),
+      binding: { handle: "hpay", priority: "P0", sensitivity: "secret" },
+    };
+    const e: Experience = {
+      ...g,
+      versionHash: "sha256:v2",
+      root: { ...(g.root as ContainerNode), children: [hidden, node("visible_latency", "hv")] },
+      providers: {}, // neither handle has a provider
+    };
+    const out = handleInventory(e, { revisionOf, viewer: low });
+    expect(JSON.stringify(out)).not.toContain("payroll_salary_by_employee");
+    expect(JSON.stringify(out)).toContain("visible_latency"); // the visible node is still reported
+    const { ctl } = rig({ viewer: low });
+    const loaded = ctl.load(e);
+    expect(JSON.stringify(loaded.findings)).not.toContain("payroll_salary_by_employee");
+  });
+
   const req = (e: Experience, handle: string) => ({
     experienceId: e.experienceId,
     versionHash: e.versionHash,

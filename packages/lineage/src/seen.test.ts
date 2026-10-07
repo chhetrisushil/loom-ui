@@ -152,6 +152,10 @@ for (const [name, makeStore] of backends) {
       expect(low.views[0]?.restricted).toBe(true);
       expect(JSON.stringify(low)).not.toContain("top");
       expect(JSON.stringify(low)).not.toContain("hs");
+      // U10c: the hidden node's id (`s`) is named nowhere either, only the visible `a` and `i`
+      expect(JSON.stringify(low.views.map((v) => v.entries.map((e) => e.nodeIds)))).not.toContain(
+        '"s"'
+      );
       // the artifact, h and hi: never the secret value's blob
       expect(fetched).toHaveLength(3);
       expect(fetched).not.toContain(contentAddress(encodeValue("top")));

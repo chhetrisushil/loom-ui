@@ -43,8 +43,8 @@ export interface DomRenderOptions {
    */
   readonly onAction?: (action: StampedAction & WidgetAction) => void;
   /**
-   * The compile fingerprint of THIS view (`compileFingerprint({ clearance, restrictedHandles,
-   * locale })` from `@loom-ui/core`): what the Blueprint depends on besides the Experience. Stamped
+   * The compile fingerprint of THIS view (`compileFingerprint({ clearance, locale,
+   * ...result.fingerprint })` from `@loom-ui/core`): what the Blueprint depends on besides the Experience. Stamped
    * on every action as `viewedVersion.compile`, so a host that serves the viewer a different
    * redaction/locale can refuse an action taken on the other one. Optional; the renderer cannot
    * derive it (it never sees the compile options).

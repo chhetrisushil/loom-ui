@@ -90,7 +90,11 @@ export function viewedVersionOf(
 export interface CompileFingerprintInput {
   /** The viewer's clearance (`Viewer.clearance`). */
   readonly clearance?: string;
-  /** The handles redacted for this viewer (order-insensitive). */
+  /**
+   * The handles redacted for this viewer (order-insensitive). The fingerprint is NOT secret and the
+   * viewer carries it on every action, so pass `CompileResult.fingerprint.restrictedHandles` (opaque
+   * aliases), never the real names: a plain hash of a handle list lets the viewer confirm a guess.
+   */
   readonly restrictedHandles?: readonly string[];
   /** The locale `resolveLabel` renders in. */
   readonly locale?: string;
@@ -100,7 +104,7 @@ export interface CompileFingerprintInput {
    * Order-insensitive; omitted = the fingerprint is exactly what it was without this field.
    */
   readonly extra?: Readonly<Record<string, string>>;
-  /** `CompileResult.restrictedProjectionNodes` (order-insensitive); empty/absent adds nothing. */
+  /** `CompileResult.fingerprint.restrictedProjectionNodes` (the aliased form; order-insensitive); empty/absent adds nothing. */
   readonly restrictedProjectionNodes?: readonly string[];
   /** The projection id → version the host's catalogue offers; empty/absent adds nothing. */
   readonly projectionVersions?: Readonly<Record<string, string>>;

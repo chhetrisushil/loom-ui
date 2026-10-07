@@ -1,6 +1,7 @@
 import type { Layout, Widget } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { compileFingerprint } from "./action";
+import { placeholderAlias } from "./alias";
 import { defineSemanticCatalog } from "./catalog";
 import { compile } from "./compile";
 import { type Experience, genesis } from "./experience";
@@ -58,7 +59,10 @@ const offered = [
   { id: "agent-status", version: "2" },
   { id: "approvals", version: "1", sensitivity: "sensitive" as const },
 ];
+const KEY = "projection-test-placeholder-key-0123456789";
+const UNALIAS = new Map(["a", "b", "x", "y"].map((id) => [placeholderAlias(KEY, "e", id), id]));
 const opts = {
+  placeholderKey: KEY,
   surface: "web" as const,
   catalog,
   hydrationProjectionId: "hydration",
@@ -78,7 +82,7 @@ const widgets = (r: ReturnType<typeof compile>): Widget[] => {
 const kinds = (r: ReturnType<typeof compile>) =>
   widgets(r)
     .filter((w) => w.id !== "keep")
-    .map((w) => `${w.id}:${w.kind}`);
+    .map((w) => `${UNALIAS.get(w.id) ?? w.id}:${w.kind}`);
 const codes = (r: ReturnType<typeof compile>) => r.findings.map((f) => f.code);
 const run = (ops: Operation[], from: Experience = build([]), o?: { allowDeclassify?: boolean }) => {
   let e = from;
