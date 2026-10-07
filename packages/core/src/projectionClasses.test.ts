@@ -29,6 +29,15 @@ const pnode = (id: string, extra: Partial<SemanticNode> = {}): SemanticNode => (
   projection: proj(),
   ...extra,
 });
+const KEEP: SemanticNode = {
+  id: "keep",
+  order: "0",
+  kind: "semantic",
+  type: "Explainer",
+  typeVersion: "1.0.0",
+  span: 6,
+  props: {},
+};
 const build = (children: SemanticNode[]) => {
   const root: ContainerNode = {
     id: "root",
@@ -36,7 +45,8 @@ const build = (children: SemanticNode[]) => {
     kind: "container",
     direction: "grid",
     span: 12,
-    children,
+    // A visible sibling: a root whose children are ALL restricted collapses to one bare placeholder.
+    children: [KEEP, ...children],
   };
   return {
     ...genesis({ experienceId: "e", intent: { objective: "obj", source: "user" }, meta }),
@@ -65,7 +75,10 @@ const widgets = (r: ReturnType<typeof compile>): Widget[] => {
   visit(r.blueprint.layout);
   return out;
 };
-const kinds = (r: ReturnType<typeof compile>) => widgets(r).map((w) => `${w.id}:${w.kind}`);
+const kinds = (r: ReturnType<typeof compile>) =>
+  widgets(r)
+    .filter((w) => w.id !== "keep")
+    .map((w) => `${w.id}:${w.kind}`);
 const codes = (r: ReturnType<typeof compile>) => r.findings.map((f) => f.code);
 const run = (ops: Operation[], from: Experience = build([]), o?: { allowDeclassify?: boolean }) => {
   let e = from;

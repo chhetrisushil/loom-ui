@@ -1,4 +1,12 @@
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
+import {
+  type ContainerNode,
+  type ExperienceNode,
+  compile,
+  defineSemanticCatalog,
+  genesis,
+  hydrationPath,
+  hydrationStatusPath,
+} from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
 import {
   type Blueprint,
@@ -213,5 +221,105 @@ describe("reference containers — stepper", () => {
     handle.update(withRole(undefined, { Account: ["a"], Payment: ["b"], Pickup: ["c"] }));
     expect(host.querySelector("nav[data-chrome=stepper]")).toBeNull();
     expect(panels(host).every((p) => !p.hidden && !p.hasAttribute("inert"))).toBe(true);
+  });
+});
+
+// A container whose compiled children are all restricted is a bare placeholder (U15 fix round 2):
+// as a tabs PANEL it is one Note-sized child like any restricted node — no leaked title, no crash.
+describe("reference containers — collapsed panels", () => {
+  const catalog = defineSemanticCatalog({
+    id: "collapse",
+    entries: [
+      {
+        name: "Figure",
+        version: "1.0.0",
+        props: [],
+        binding: "required",
+        surfaces: { web: { kind: "MetricCard", props: [], binding: "required" } },
+      },
+    ],
+  });
+  const g = genesis({
+    experienceId: "e",
+    intent: { objective: "o", source: "user" },
+    meta: { author: "t", createdAt: "2026-10-07T00:00:00Z", sourceKind: "prompt" },
+  });
+  const figure = (id: string, sensitivity?: "secret"): ExperienceNode => ({
+    id,
+    order: id,
+    kind: "semantic",
+    type: "Figure",
+    typeVersion: "1.0.0",
+    span: 6,
+    props: {},
+    binding: { handle: `h-${id}`, priority: "P1", ...(sensitivity && { sensitivity }) },
+  });
+  const panel = (id: string, children: ExperienceNode[]): ExperienceNode => ({
+    id,
+    order: id,
+    kind: "container",
+    direction: "column",
+    span: 12,
+    title: { key: id, fallback: `Panel ${id}` },
+    children,
+  });
+  const experience = (panels: ExperienceNode[]) => ({
+    ...g,
+    versionHash: "sha256:c",
+    root: {
+      ...(g.root as ContainerNode),
+      children: [
+        {
+          id: "set",
+          order: "A",
+          kind: "container" as const,
+          direction: "column" as const,
+          span: 12,
+          role: "tabs",
+          children: panels,
+        },
+        figure("outside"),
+      ],
+    },
+    providers: {},
+  });
+  const compiled = (panels: ExperienceNode[]) =>
+    compile(experience(panels), {
+      surface: "web",
+      catalog,
+      hydrationProjectionId: HYDRATION_PROJECTION_ID,
+      hydrationProjectionVersion: "1.0.0",
+      viewer: { clearance: "internal" },
+    }).blueprint;
+  const text = (host: HTMLElement) => host.textContent ?? "";
+
+  it("a tabs set with one all-secret panel and one visible renders both tabs, no secret title", () => {
+    const { host } = mount(
+      compiled([panel("p1", [figure("a", "secret")]), panel("p2", [figure("c")])])
+    );
+    const tabs = [...host.querySelectorAll('[role="tab"]')];
+    expect(tabs).toHaveLength(2);
+    expect(text(host)).not.toContain("Panel p1");
+    expect(text(host)).toContain("Panel p2");
+  });
+
+  it("a tabs set whose panels are ALL restricted collapses whole: no tablist, no crash", () => {
+    const { host } = mount(
+      compiled([panel("p1", [figure("a", "secret")]), panel("p2", [figure("b", "secret")])])
+    );
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(text(host)).not.toContain("Panel p");
+  });
+
+  it("a single visible panel among collapsed ones still renders", () => {
+    const { host } = mount(
+      compiled([
+        panel("p1", [figure("a", "secret")]),
+        panel("p2", [figure("b", "secret")]),
+        panel("p3", [figure("c")]),
+      ])
+    );
+    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    expect(text(host)).toContain("Panel p3");
   });
 });

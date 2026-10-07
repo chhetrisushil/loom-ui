@@ -426,7 +426,17 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   keeps flooring every handle that calls it, so `declassifyHandle` has no read-time effect on a
   declared tool (lower the declaration to lower the read; covered by a test). `CompileResult.restrictedHandles` lists
   the handles redacted for the viewer; feed it to `compileFingerprint` (`restrictedHandles`) so a
-  RAISED declaration changes freshness. The
+  RAISED declaration changes freshness. **A container is classified by what it would show**: when every
+  child it compiles is a bare placeholder (a restricted node, or itself a collapsed container — the rule
+  runs bottom-up) the container is emitted as the SAME bare placeholder, its id only: no title, no role,
+  no child count, no per-child placeholders (`node-restricted` is reported against it). One visible
+  descendant keeps the container, title and role as authored. An EMPTY container (or one whose children
+  all failed to compile) holds nothing restricted and stays as authored; a root that collapses is a
+  plain column holding the one placeholder. The collapse is a function of the restricted handles and
+  projection nodes, so a raised class that causes one already changes `compileFingerprint`. The readers
+  agree: `inspectExperience` gives a container the weakest class among its non-blocked children, so
+  `describeChange` reports a hidden container's addition, removal or edit as a bare `restricted-changed`,
+  and `explainNode` / `Lineage.explain` answer `{ available: false }` for it. The
   reference planner also applies a capability's class to the nodes it writes (see
   `@loom-ui/planner`), so this floor is the backstop for nodes it did not write (an older planner, a
   raw op). Limits: a class follows MCP tool NAMES only — a provider whose execution

@@ -4,7 +4,7 @@ import type { Experience } from "./experience";
 import { type ExperienceNode, walk } from "./node";
 import type { Operation, RecordedOperation } from "./operations";
 import { type ProjectionCatalog, planProjectionBindings } from "./projections";
-import { type Viewer, mayView, strictestClass } from "./viewer";
+import { type Viewer, mayView, strictestClass, weakestClass } from "./viewer";
 
 // ── What changed between two versions, for a viewer ───────────────────────────
 // `describeChange(prev, next)` answers "what is different, in words an app can show" from the two
@@ -250,6 +250,22 @@ function nodesOf(exp: Experience, opts: DescribeOptions) {
     floor = strictestClass(floor, cls);
     out.set(node.id, { node, parentId: parent?.id ?? null, cls, blocked });
   });
+  // A CONTAINER is classified by what it would show: as visible as its MOST visible child (the
+  // weakest class among its non-blocked children, bottom-up). A container none of whose children a
+  // viewer may see compiles to a bare placeholder (`compile`), contributing nothing but its id, so
+  // it must read as classified exactly when `weakest` is above the viewer. One unclassified child
+  // makes it unclassified; no children (or only blocked ones) leave nothing restricted to hide, so
+  // it stays unclassified. `walk` is pre-order, so a reverse pass sees every descendant before its
+  // ancestor (a nested container's own class is final by the time its parent reads it).
+  const weakest = new Map<string, { cls: DataClass | undefined }>();
+  for (const [id, view] of [...out].reverse()) {
+    if (view.node.kind === "container")
+      (view as { cls: DataClass | undefined }).cls = weakest.get(id)?.cls;
+    if (view.parentId === null || view.blocked) continue;
+    const acc = weakest.get(view.parentId);
+    if (acc === undefined) weakest.set(view.parentId, { cls: view.cls });
+    else acc.cls = weakestClass(acc.cls, view.cls);
+  }
   for (const c of classes.values()) floor = strictestClass(floor, c);
   for (const c of Object.values(exp.toolClasses ?? {})) floor = strictestClass(floor, c);
   for (const c of Object.values(exp.handleClasses ?? {})) floor = strictestClass(floor, c);
@@ -419,7 +435,9 @@ export function describeChange(
       if (x.parentId !== y.parentId || placementKey(x.node) !== placementKey(y.node))
         push({ kind: "node-moved", nodeId: id });
       if (bindingKey(x.node) !== bindingKey(y.node)) push({ kind: "node-rebound", nodeId: id });
-      if (classKey(x) !== classKey(y)) push({ kind: "node-reclassified", nodeId: id });
+      // A container's class is derived from its children, which report their own reclassification.
+      if (y.node.kind === "semantic" && classKey(x) !== classKey(y))
+        push({ kind: "node-reclassified", nodeId: id });
       if (contentKey(x.node) !== contentKey(y.node)) push({ kind: "node-edited", nodeId: id });
     }
     for (const [id, x] of a?.nodes ?? []) {
