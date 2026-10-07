@@ -306,10 +306,42 @@ Persistence is `@loom-ui/lineage`'s `SeenLog`: refs are sealed under a per-viewe
   order. There is no key below `"0"` or between
   `k` and `k + "0"`; salted keys never end in `"0"` for that reason.
 
+### Opaque ids on restricted placeholders (U10c)
+
+Node ids are lexical (the reference planner mints `payroll_salary_by_employee`), so the id of a node a
+viewer may not see says what it is about. `compile` therefore emits a restricted placeholder, and a
+policy-A collapsed container, under an ALIAS: `r_` + 16 base64url characters of
+`HMAC-SHA256(placeholderKey, experienceId, nodeId)` (`placeholderAlias` is the exported derivation).
+Stable across versions and compiles with the same key (keyed reconciliation in both renderers keeps the
+element, zero remounts; the layout cell is unchanged), different per experience, and neither recoverable
+nor confirmable by a dictionary of likely ids without the key. Unrestricted nodes keep their own ids
+(a refine addresses a node by `data-widget-id`).
+
+- **`CompileOptions.placeholderKey`**: a secret the HOST holds, at least `MIN_ALIAS_KEY_BYTES` (16). Keep
+  it in your secret store, the same on every replica, and rotate it only when a one-time remount of
+  placeholders is acceptable. **Fail-closed when absent or too short**: `compile` uses a random per-process
+  key and says so with one `placeholder-alias-key-not-supplied` warn (only when something was aliased). Nothing
+  confidential is lost (the key is still secret); aliases just change on restart or between replicas, and a
+  `compileFingerprint` built from `result.fingerprint` changes with them (an action stamped before the change
+  reads as stale: the safe direction). It is never an unkeyed hash, which a dictionary of lexical ids would break.
+  Zero-config dev works; production should pass the key.
+- **A collision is impossible by construction**: an alias that equals a real node id (or another alias) is
+  re-derived.
+- **Leak model.** Viewer-facing, and covered by the `opaqueIds` property test (random experiences x
+  sensitivities x viewers; no hidden node's id or handle anywhere): the Blueprint (widget ids, container ids,
+  cells), `CompileResult.fingerprint`, `describeChange` / the `@loom-ui/changes` feed (a restricted change is a bare
+  `restricted-changed`; `identity` lists visible nodes only), `explainNode` / `Lineage.explain` (a hidden node is
+  `{ available: false }`), `snapshotSeen` / `SeenLog` (`nodeIds` of viewable nodes only), the hydration findings
+  and handle inventory (raised only for handles the viewer may read), both renderers' output (they draw the
+  Blueprint). **Server-side only; never serialise to a viewer:** `CompileResult.findings` (`node-restricted`,
+  validation findings: real ids and messages), `restrictedProjectionNodes`, `restrictedHandles`, and
+  `inspectExperience` (an unviewered reader of every node). Also not covered: a node id written into free
+  text a viewer can read (a visible node's label or a model summary the class floor lets through).
+
 ### Action provenance
 
 `StampedAction`, `ViewedVersion`, `viewedVersionOf(blueprintId, binding?, compile?)`,
-`parseBlueprintId`, `compileFingerprint({ clearance, restrictedHandles, locale })`,
+`parseBlueprintId`, `compileFingerprint({ clearance, locale, ...result.fingerprint })`,
 `actionFreshness(action, head): "fresh" | "stale" | "data-moved" | "unstamped" | "unverifiable"` and
 the fail-closed `isStaleAction(action, head)` — renderers stamp every action with the version the
 user saw; a host compares it with the head before acting. `CurrentHead` is
@@ -425,8 +457,9 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   `declassifyHandle`**: declassifying a handle lowers its stored class, but a tool the host declares
   keeps flooring every handle that calls it, so `declassifyHandle` has no read-time effect on a
   declared tool (lower the declaration to lower the read; covered by a test). `CompileResult.restrictedHandles` lists
-  the handles redacted for the viewer; feed it to `compileFingerprint` (`restrictedHandles`) so a
-  RAISED declaration changes freshness. **A container is classified by what it would show**: when it has at least one
+  the handles redacted for the viewer (SERVER-SIDE: real handle names); feed `CompileResult.fingerprint`
+  (the same lists as opaque aliases) to `compileFingerprint` so a RAISED declaration changes freshness
+  without handing the viewer a confirmable hash of a handle name (see "Opaque ids" below). **A container is classified by what it would show**: when it has at least one
   child compile drew or tried to draw, and EVERY such child is a bare placeholder (a restricted node, a
   projection the host does not offer or at another version, or itself a collapsed container — the rule
   runs bottom-up) the container is emitted as the SAME bare placeholder, its id only: no title, no role,
@@ -470,17 +503,17 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   stored; the content address moves only when a class outlives the node that carried it
   (removed or rebound) or is inherited by tool, which is new information. An unrecognised class
   ranks strictest (`strictestClass` is monotone, fail-closed). In `compile` a restricted node becomes a static `Note`
-  placeholder: same id, same grid cell (no reflow), neutral "Restricted" title/text
-  (`restrictedLabel`), and no binding, props, label, type or handle of the node it replaced; a
-  `node-restricted` warn names only the node id. The classified-but-no-viewer case adds one
+  placeholder: an OPAQUE ALIAS id (see "Opaque ids" below), the same grid cell (no reflow), neutral
+  "Restricted" title/text (`restrictedLabel`), and no binding, props, label, type or handle of the node
+  it replaced; a `node-restricted` warn (SERVER-SIDE) names the real node id. The classified-but-no-viewer case adds one
   `viewer-not-supplied` warn. The default Blueprint title (`intent.objective`) is withheld (`""`,
   `title-restricted` warn) when `intent.sensitivity` is above the viewer; an explicit `opts.title`
   is the app's own text and always wins. The `Experience` artifact itself is NOT redacted —
   compile for a restricted viewer on the trusted side and send only the Blueprint. Pass
   `viewer: { clearance: "secret" }` for full access. Enforcement is the output boundary's job, not
   a renderer's: a renderer draws what it is given. **Scope limits:** only bindings and
-  `Intent.sensitivity` are classified. Container titles, static-node props/labels and node ids are
-  author text and are never gated, so do not put classified text there. Planner inputs
+  `Intent.sensitivity` are classified. Container titles and static-node props/labels are
+  author text and are never gated, and the ids of nodes the viewer CAN see are author text too, so do not put classified text there. Planner inputs
   (`ReviseInput.observed`, a capability's `sampleOutput`, drift context) and outputs (summary,
   labels) are not viewer-filtered: `observed` taken from the same controller excludes restricted
   handles, but host-supplied material is unchecked.

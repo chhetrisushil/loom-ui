@@ -61,6 +61,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   the way in and out, carried as `UntrustedText`, never an instruction. `HeadSignal` (core) is types only so a
   browser can implement it with a `fetch` loop. loom's `@loom/live-query` does not fit (it folds an
   EXECUTION's state); the push impl uses `EventStore.subscribe` directly.
+- Opaque ids on restricted placeholders (U10c): node ids are lexical, so `compile` emits a restricted node (and a
+  collapsed container) under a keyed alias (`placeholderKey`, HMAC of `(experienceId, nodeId)`; a missing key falls
+  back to a random per-process key + a warn, never an unkeyed hash). `CompileResult.findings`,
+  `restrictedProjectionNodes`, `restrictedHandles` and `inspectExperience` are SERVER-SIDE (real ids); the viewer's
+  `compileFingerprint` is built from `result.fingerprint`. See the core README "Opaque ids".
 - Provenance and "what was seen" (U12): the per-node ledger is DERIVED from lineage ops (ids and handles only,
   never content; not in the content address), and `explainNode` is fail-closed (unknown, restricted and unreadable all
   answer `{ available: false }`; model text is `UntrustedText`, gated by the class floor + `summaryClass`). What a

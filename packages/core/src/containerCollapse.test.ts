@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileFingerprint } from "./action";
+import { placeholderAlias } from "./alias";
 import { describeChange, inspectExperience } from "./change";
 import { type CompileResult, compile } from "./compile";
 import { genesis } from "./experience";
@@ -64,7 +65,10 @@ const build = (children: ExperienceNode[], hash = "sha256:v") => {
     providers,
   };
 };
+const KEY = "collapse-test-placeholder-key-0123456789";
+const al = (id: string) => placeholderAlias(KEY, "e", id);
 const opts = {
+  placeholderKey: KEY,
   surface: "web" as const,
   catalog: testCatalog,
   hydrationProjectionId: "hydration",
@@ -77,7 +81,7 @@ const find = (r: CompileResult, id: string) => {
   let out: unknown;
   type N = { id?: string; children?: N[]; node?: N };
   const visit = (n: N): void => {
-    if (n.id === id) out = n;
+    if (n.id === id || n.id === al(id)) out = n;
     for (const c of n.children ?? []) visit(c);
     if (n.node) visit(n.node);
   };

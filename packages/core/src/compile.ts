@@ -36,6 +36,7 @@ import {
   placementOf,
   placementProblems,
   treeDepth,
+  walk,
 } from "./node";
 
 // ── Experience → loom Blueprint ───────────────────────────────────────────────
@@ -50,6 +51,7 @@ import {
 // 0101). Nothing semantic is smuggled into props: the experience is the source of truth, the
 // blueprint derived.
 
+import { type AliasDomain, type AliasKey, derive, resolveAliasKey } from "./alias";
 import { hydrationPath, hydrationStatusPath } from "./paths";
 import { type ProjectionCatalog, type ProjectionPlan, planProjectionBindings } from "./projections";
 import { type Viewer, mayView } from "./viewer";
@@ -115,8 +117,22 @@ export interface CompileOptions {
    * clearance, so every classified binding is redacted (and one `viewer-not-supplied` warn says
    * so); unclassified nodes are never affected. Pass `{ clearance: "secret" }` for full access.
    * The Experience itself is unredacted — compile for a restricted viewer on the trusted side.
+   *
+   * The placeholder's id is an OPAQUE ALIAS, never the node's own (ids are lexical and say what a
+   * hidden node is about): see `placeholderKey`. Its grid cell is unchanged.
    */
   readonly viewer?: Viewer;
+  /**
+   * A secret the HOST holds (at least 16 bytes; a string is UTF-8). A restricted placeholder, and a
+   * container collapsed over nothing but placeholders, is emitted under `r_` + a keyed hash
+   * (HMAC-SHA256) of `(experienceId, nodeId)`: stable across versions and compiles with the same
+   * key (so a renderer reconciles it in place), different per experience, and not recoverable or
+   * confirmable without the key. FAIL-CLOSED: absent or too short = a random per-process key
+   * (confidentiality intact; the alias just changes on restart or between replicas) and one
+   * `placeholder-alias-key-not-supplied` warn when an alias was needed. Never an unkeyed hash.
+   * Unrestricted nodes keep their own ids.
+   */
+  readonly placeholderKey?: AliasKey;
   /** The placeholder's title and text. Default: `{ key: "restricted", fallback: "Restricted" }`. */
   readonly restrictedLabel?: LocalizedText;
 }
@@ -142,6 +158,17 @@ export interface CompileResult {
    * experience, so a stamp that omits it stays "fresh" over a now-stale view.
    */
   readonly restrictedHandles: readonly string[];
+  /**
+   * The two lists above as OPAQUE aliases (same keyed hash as the placeholder ids), sorted. `findings`,
+   * `restrictedProjectionNodes` and `restrictedHandles` are SERVER-SIDE: they name real node ids and
+   * handles. `compileFingerprint` is hashed into a stamp the VIEWER carries (and its hash is not
+   * secret), so feed it these instead — `compileFingerprint({ clearance, locale, ...result.fingerprint })`
+   * — or a viewer can confirm a guessed handle against its own stamp.
+   */
+  readonly fingerprint: {
+    readonly restrictedHandles: readonly string[];
+    readonly restrictedProjectionNodes: readonly string[];
+  };
 }
 
 export function compile(exp: Experience, opts: CompileOptions): CompileResult {
@@ -180,6 +207,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
       ok: false,
       restrictedProjectionNodes: [],
       restrictedHandles: [],
+      fingerprint: { restrictedHandles: [], restrictedProjectionNodes: [] },
     };
   }
   const semantic = validateExperience(exp, opts.catalog, opts.surface);
@@ -241,6 +269,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     text: placeholderHasText,
     projections: projectionPlan,
     bare: new WeakSet<object>(),
+    alias: aliasMinter(exp, opts, findings),
   };
 
   const compiledRoot = compileContainer(
@@ -288,12 +317,18 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     .filter(([, v]) => v.kind === "restricted")
     .map(([id]) => id)
     .sort();
+  const opaque = (ids: readonly string[], domain: AliasDomain): string[] =>
+    ids.map((id) => redaction.alias.of(id, domain)).sort();
   return {
     blueprint,
     findings,
     ok: findings.every((f) => f.severity !== "error"),
     restrictedProjectionNodes,
     restrictedHandles: [...restrictedHandles].sort(),
+    fingerprint: {
+      restrictedHandles: opaque([...restrictedHandles], "handle"),
+      restrictedProjectionNodes: opaque(restrictedProjectionNodes, "node"),
+    },
   };
 }
 
@@ -349,15 +384,66 @@ interface Redaction {
    * children and every one of them is in here.
    */
   readonly bare: WeakSet<object>;
+  /** The opaque ids a redacted node or handle is emitted under. */
+  readonly alias: AliasMinter;
 }
 
-/** The restricted placeholder for `id`: its id (and, in the parent, its cell) and a neutral text. */
+interface AliasMinter {
+  /** The alias of an id, memoised and collision-free against every real node id in the tree. */
+  of(id: string, domain?: AliasDomain): string;
+}
+
+/**
+ * One key resolution per compile. An alias is re-derived (a counter in the hash input) when it
+ * would equal any real node id of the experience or another alias — a hostile or unlucky id can
+ * never make two widgets share an id. The warn (no usable key) is pushed once, on first use.
+ */
+function aliasMinter(exp: Experience, opts: CompileOptions, findings: Finding[]): AliasMinter {
+  const key = resolveAliasKey(opts.placeholderKey);
+  const real = new Set<string>();
+  walk(exp.root, (n) => {
+    real.add(n.id);
+  });
+  const memo = new Map<string, string>();
+  const taken = new Map<string, string>();
+  let warned = false;
+  return {
+    of(id, domain = "node") {
+      const mk = `${domain}\u0000${id}`;
+      const hit = memo.get(mk);
+      if (hit !== undefined) return hit;
+      if (key.source !== "supplied" && !warned) {
+        warned = true;
+        findings.push({
+          code: "placeholder-alias-key-not-supplied",
+          severity: "warn",
+          message:
+            key.source === "weak"
+              ? "placeholderKey is under 16 bytes: a random per-process key is used, so restricted placeholder ids change on restart and between replicas"
+              : "no placeholderKey was supplied: a random per-process key is used, so restricted placeholder ids change on restart and between replicas",
+        });
+      }
+      let alias = "";
+      for (let attempt = 0; ; attempt++) {
+        alias = derive(key.bytes, exp.experienceId, id, domain, attempt);
+        const owner = taken.get(alias);
+        if (!real.has(alias) && (owner === undefined || owner === mk)) break;
+      }
+      taken.set(alias, mk);
+      memo.set(mk, alias);
+      return alias;
+    },
+  };
+}
+
+/** The restricted placeholder for `id`: an opaque alias (and, in the parent, the node's cell) and a neutral text. */
 function barePlaceholder(
   id: string,
   resolveLabel: (l: LocalizedText) => string,
   redaction: Redaction,
   findings: Finding[]
 ): Widget {
+  // The finding is SERVER-SIDE and names the real id; the Blueprint carries only the alias.
   findings.push({
     code: "node-restricted",
     severity: "warn",
@@ -367,7 +453,7 @@ function barePlaceholder(
   const text = resolveLabel(redaction.label);
   const out = customWidget$({
     kind: PLACEHOLDER_KIND,
-    id,
+    id: redaction.alias.of(id),
     title: text,
     props: redaction.text ? { text } : {},
   });

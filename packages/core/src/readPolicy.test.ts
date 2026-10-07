@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { placeholderAlias } from "./alias";
 import { defineSemanticCatalog } from "./catalog";
 import { describeChange, experienceClassFloor, inspectExperience } from "./change";
 import { UNDECLARED_TOOL_CLASS, mergeReadPolicy } from "./classes";
@@ -74,7 +75,10 @@ const noteCatalog = defineSemanticCatalog({
       : e
   ),
 });
+const KEY = "policy-test-placeholder-key-0123456789";
+const al = (id: string) => placeholderAlias(KEY, "e", id);
 const copts = {
+  placeholderKey: KEY,
   surface: "web" as const,
   catalog: noteCatalog,
   hydrationProjectionId: "hydration",
@@ -83,7 +87,7 @@ const copts = {
 const kindOf = (r: ReturnType<typeof compile>, id: string): string | undefined => {
   const walkW = (n: unknown): string | undefined => {
     const o = n as { id?: string; kind?: string; children?: unknown[]; node?: unknown };
-    if (o.id === id && o.kind !== undefined) return o.kind;
+    if ((o.id === id || o.id === al(id)) && o.kind !== undefined) return o.kind;
     for (const c of o.children ?? []) {
       const f = walkW((c as { node?: unknown }).node ?? c);
       if (f !== undefined) return f;

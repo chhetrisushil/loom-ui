@@ -92,7 +92,7 @@ is still on the previous head):
 
 ```ts
 import { actionFreshness, compileFingerprint, isStaleAction } from "@loom-ui/core";
-const compile = compileFingerprint({ clearance, restrictedHandles, locale }); // what you compiled with
+const compile = compileFingerprint({ clearance, locale, ...result.fingerprint }); // what you compiled with (result = compile(…); `fingerprint` is the OPAQUE form of the restricted lists)
 const handle = renderBlueprintDom(host, blueprint, { /* … */, compile, onAction });
 // in onAction(action):
 if (isStaleAction(action, handle.head())) return refuse(actionFreshness(action, handle.head()));

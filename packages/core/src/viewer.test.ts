@@ -1,5 +1,6 @@
 import type { GridLayout, Layout, Widget } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
+import { placeholderAlias } from "./alias";
 import { defineSemanticCatalog } from "./catalog";
 import { compile } from "./compile";
 import { genesis } from "./experience";
@@ -58,7 +59,10 @@ const noteWithText = defineSemanticCatalog({
       : en
   ),
 });
+const KEY = "viewer-test-placeholder-key-0123456789";
+const al = (id: string) => placeholderAlias(KEY, "e", id);
 const opts = {
+  placeholderKey: KEY,
   surface: "web" as const,
   catalog: noteWithText,
   hydrationProjectionId: "hydration",
@@ -130,7 +134,7 @@ describe("compile for a viewer (U10)", () => {
   const cleared = compile(e, { ...opts, viewer: { clearance: "sensitive" } });
 
   it("redacts a node above the viewer's clearance: no value path, props, label, type or handle survive", () => {
-    const w = widgets(restricted).find((x) => x.id === "salary") as Widget;
+    const w = widgets(restricted).find((x) => x.id === al("salary")) as Widget;
     expect(w.kind).toBe("Note");
     expect(w.binding).toBeUndefined();
     expect(w.source).toBeUndefined();
@@ -157,8 +161,9 @@ describe("compile for a viewer (U10)", () => {
         c.span,
         c.column,
       ]);
-    expect(cellsOf(restricted)).toEqual(cellsOf(cleared));
-    expect(cellsOf(restricted)[1]).toEqual(["salary", 4, 3]);
+    const ids = (cells: ReturnType<typeof cellsOf>) => cells.map(([, ...rest]) => rest);
+    expect(ids(cellsOf(restricted))).toEqual(ids(cellsOf(cleared)));
+    expect(cellsOf(restricted)[1]).toEqual([al("salary"), 4, 3]);
   });
   it("is deterministic and the blueprint validates against its own catalogue", () => {
     expect(
@@ -184,7 +189,7 @@ describe("compile for a viewer (U10)", () => {
       viewer: { clearance: "internal" },
     });
     expect(widgets(r).map((w) => w.kind)).toEqual(["Note", "Note", "Note"]);
-    expect(widgets(r).map((w) => w.id)).toEqual(["keep", "salary", "sib"]);
+    expect(widgets(r).map((w) => w.id)).toEqual(["keep", al("salary"), al("sib")]);
     expect(widgets(r).find((w) => w.id === "keep")?.props).toEqual({});
   });
   it("uses a custom restricted label through the same resolver", () => {
@@ -194,7 +199,9 @@ describe("compile for a viewer (U10)", () => {
       restrictedLabel: { key: "r", fallback: "x" },
       resolveLabel: (l) => (l.key === "r" ? "Eingeschränkt" : l.fallback),
     });
-    expect(widgets(r).find((w) => w.id === "salary")?.props).toEqual({ text: "Eingeschränkt" });
+    expect(widgets(r).find((w) => w.id === al("salary"))?.props).toEqual({
+      text: "Eingeschränkt",
+    });
   });
 });
 
@@ -296,7 +303,7 @@ describe("compile for a viewer: tool-level class at read time (U10 round 3)", ()
       providers: { "h-open": onTool("h-open"), "h-secret": onTool("h-secret") },
     };
     const r = compile(e, { ...opts, viewer: { clearance: "internal" } });
-    const w = widgets(r).find((x) => x.id === "open") as Widget;
+    const w = widgets(r).find((x) => x.id === al("open")) as Widget;
     expect(w.kind).toBe("Note");
     expect(w.binding).toBeUndefined();
     expect(JSON.stringify(r.blueprint)).not.toContain("h-open");
