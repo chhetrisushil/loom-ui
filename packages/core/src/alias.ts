@@ -9,7 +9,8 @@ import { createHmac, randomBytes } from "node:crypto";
 //   - meaningless: without the key an alias cannot be inverted or confirmed by a dictionary of
 //     likely ids (an UNKEYED hash could be, for exactly the lexical ids this protects);
 //   - per experience: the same node id in another experience aliases differently.
-// FAIL-CLOSED KEY STORY: a missing (or too short) key is replaced by a random per-process key. That
+// FAIL-CLOSED KEY STORY: a missing key is replaced by a random per-process key (a SUPPLIED key that
+// is too short is a `PlaceholderKeyError`; `requirePlaceholderKey` makes a missing key one too). That
 // loses nothing confidential — the key is still secret — and costs only cross-process stability
 // (aliases change on restart or between replicas, so a placeholder remounts once), reported as a
 // `placeholder-alias-key-not-supplied` warn finding. Never an unkeyed hash.
@@ -36,16 +37,37 @@ function usableKey(key: unknown): Uint8Array | undefined {
   return bytes !== undefined && bytes.length >= MIN_ALIAS_KEY_BYTES ? bytes : undefined;
 }
 
-export interface ResolvedAliasKey {
-  readonly bytes: Uint8Array;
-  /** `supplied`, `weak` (supplied but too short: replaced) or `absent` (replaced). */
-  readonly source: "supplied" | "weak" | "absent";
+/** A misconfigured alias key: thrown by `compile`, never papered over with a random key. */
+export class PlaceholderKeyError extends Error {
+  readonly code: "placeholder-key-weak" | "placeholder-key-required";
+  constructor(code: PlaceholderKeyError["code"], message: string) {
+    super(message);
+    this.name = "PlaceholderKeyError";
+    this.code = code;
+  }
 }
 
+export interface ResolvedAliasKey {
+  readonly bytes: Uint8Array;
+  /** `supplied`, or `absent` (replaced by the random per-process key). */
+  readonly source: "supplied" | "absent";
+}
+
+/**
+ * A SUPPLIED key that is not a string / bytes of at least `MIN_ALIAS_KEY_BYTES` is a configuration
+ * error (`PlaceholderKeyError`), never silently replaced: a host that believes its aliases are
+ * stable would otherwise get a random key and no signal. An ABSENT key falls back to the random
+ * per-process key.
+ */
 export function resolveAliasKey(key: unknown): ResolvedAliasKey {
+  if (key === undefined) return { bytes: processAliasKey(), source: "absent" };
   const usable = usableKey(key);
-  if (usable !== undefined) return { bytes: usable, source: "supplied" };
-  return { bytes: processAliasKey(), source: key === undefined ? "absent" : "weak" };
+  if (usable === undefined)
+    throw new PlaceholderKeyError(
+      "placeholder-key-weak",
+      `placeholderKey must be a string or bytes of at least ${MIN_ALIAS_KEY_BYTES} bytes`
+    );
+  return { bytes: usable, source: "supplied" };
 }
 
 /** What an alias stands for: a node id, or a handle (for the viewer-visible fingerprint). */
@@ -55,7 +77,7 @@ export type AliasDomain = "node" | "handle";
  * The alias of `id` in `experienceId` under `key`: `r_` + 16 base64url characters (96 bits of an
  * HMAC-SHA256). `attempt` > 0 re-derives after a collision. Length-prefixed, so
  * `("ab", "c")` and `("a", "bc")` can never hash the same input. Throws on a key under
- * `MIN_ALIAS_KEY_BYTES` — `compile` resolves a key first and never reaches that.
+ * `MIN_ALIAS_KEY_BYTES`.
  */
 export function placeholderAlias(
   key: AliasKey,
@@ -79,5 +101,7 @@ export function derive(
   attempt: number
 ): string {
   const input = `loom-ui/alias/v1\u0000${domain}\u0000${attempt}\u0000${experienceId.length}:${experienceId}${id}`;
-  return `r_${createHmac("sha256", key).update(input).digest().subarray(0, 12).toString("base64url")}`;
+  // UTF-16 code units, not UTF-8: UTF-8 maps every lone surrogate to U+FFFD, so two different
+  // (malformed) ids would hash alike. Code units keep the encoding injective for any JS string.
+  return `r_${createHmac("sha256", key).update(Buffer.from(input, "utf16le")).digest().subarray(0, 12).toString("base64url")}`;
 }

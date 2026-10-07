@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MIN_ALIAS_KEY_BYTES, placeholderAlias } from "./alias";
+import { MIN_ALIAS_KEY_BYTES, PlaceholderKeyError, placeholderAlias } from "./alias";
 import { describeChange, inspectExperience } from "./change";
 import { compile } from "./compile";
 import { type Experience, genesis } from "./experience";
@@ -262,13 +262,50 @@ describe("U10c: the key story is fail-closed", () => {
     expect(second).not.toEqual(first); // an unkeyed or constant-keyed fallback would repeat
   });
 
-  it("a key under the minimum is treated as absent and says so; a good key is silent", () => {
-    const weak = noKey({ placeholderKey: "short" });
-    const f = weak.findings.find((x) => x.code === "placeholder-alias-key-not-supplied");
-    expect(f?.message).toContain("under 16 bytes");
-    expect(aliasesOf(weak)).toEqual(aliasesOf(noKey()));
+  it("the absent-key warn states the consequence", () => {
+    const f = noKey().findings.find((x) => x.code === "placeholder-alias-key-not-supplied");
+    expect(f?.message).toMatch(/differ across replicas and restarts/);
+    expect(f?.message).toMatch(/refused as stale/);
+  });
+
+  it("a SUPPLIED key under the minimum (or of a wrong type) throws a typed error, never a random key", () => {
+    for (const bad of ["short", "", new Uint8Array(8), 12345 as never, null as never]) {
+      let err: unknown;
+      try {
+        noKey({ placeholderKey: bad });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(PlaceholderKeyError);
+      expect((err as PlaceholderKeyError).code).toBe("placeholder-key-weak");
+    }
     const good = compile(exp, baseOpts(projections, tc, undefined));
     expect(good.findings.map((x) => x.code)).not.toContain("placeholder-alias-key-not-supplied");
+  });
+
+  it("requirePlaceholderKey: no key + anything redacted throws; a key, or nothing redacted, does not", () => {
+    expect(() => noKey({ requirePlaceholderKey: true })).toThrow(PlaceholderKeyError);
+    try {
+      noKey({ requirePlaceholderKey: true });
+    } catch (e) {
+      expect((e as PlaceholderKeyError).code).toBe("placeholder-key-required");
+    }
+    expect(() =>
+      compile(exp, { ...baseOpts(projections, tc, undefined), requirePlaceholderKey: true })
+    ).not.toThrow();
+    // nothing redacted (an empty experience): no alias is needed, so no key is required
+    const empty = genesis({
+      experienceId: "empty",
+      intent: { objective: "o", source: "user" },
+      meta: { author: "a", createdAt: "2026-10-08T00:00:00Z", sourceKind: "prompt" },
+    });
+    expect(() =>
+      compile(empty, {
+        ...baseOpts([], {}, undefined),
+        placeholderKey: undefined,
+        requirePlaceholderKey: true,
+      } as never)
+    ).not.toThrow();
   });
 
   it("no warn when nothing is redacted", () => {
@@ -278,6 +315,18 @@ describe("U10c: the key story is fail-closed", () => {
     } as never);
     if (aliasesOf(r).length === 0)
       expect(r.findings.map((x) => x.code)).not.toContain("placeholder-alias-key-not-supplied");
+  });
+
+  it("domain separation: a node id and a handle of the same text alias differently", () => {
+    expect(placeholderAlias(KEY, "e", "x", "node")).not.toBe(
+      placeholderAlias(KEY, "e", "x", "handle")
+    );
+  });
+
+  it("lone surrogates hash injectively (UTF-16 code units, not UTF-8)", () => {
+    expect(placeholderAlias(KEY, "e", "x\uD800")).not.toBe(placeholderAlias(KEY, "e", "x\uFFFD"));
+    expect(placeholderAlias(KEY, "e", "x\uD800")).not.toBe(placeholderAlias(KEY, "e", "x\uDFFF"));
+    expect(placeholderAlias(KEY, "e\uD800", "x")).not.toBe(placeholderAlias(KEY, "e\uFFFD", "x"));
   });
 
   it("placeholderAlias refuses a weak key rather than hashing under it", () => {
@@ -292,5 +341,62 @@ describe("U10c: the key story is fail-closed", () => {
     expect(r.fingerprint.restrictedHandles).toEqual(
       r.restrictedHandles.map((h) => placeholderAlias(KEY, exp.experienceId, h, "handle")).sort()
     );
+  });
+});
+
+describe("U10c: tied order keys do not leak a comparison bit of a hidden id", () => {
+  const mk = (hiddenId: string) => {
+    const leaf = (id: string, sens?: "secret") => ({
+      id,
+      order: "T", // every sibling tied
+      kind: "semantic",
+      type: "Metric",
+      typeVersion: "1.0.0",
+      span: 6,
+      props: {},
+      binding: { handle: `hnd_${id}`, priority: "P1", ...(sens && { sensitivity: sens }) },
+    });
+    const kids = [leaf("m_visible"), leaf(hiddenId, "secret"), leaf("zz_visible")];
+    const g = genesis({
+      experienceId: "tie",
+      intent: { objective: "o", source: "user" },
+      meta: { author: "a", createdAt: "2026-10-08T00:00:00Z", sourceKind: "prompt" },
+    });
+    const e = {
+      ...g,
+      versionHash: "sha256:t",
+      root: { ...(g.root as Any), children: kids },
+      providers: Object.fromEntries(
+        kids.map((k) => [
+          k.binding.handle,
+          {
+            handle: k.binding.handle,
+            executionGraph: [],
+            reshaping: { engine: "JSONPath", scriptRef: "sha256:s" },
+            outputShapeHash: "sha256:o",
+            cachePolicy: { ttlSeconds: 60, scope: "global" },
+          },
+        ])
+      ),
+    } as Any;
+    const r = compile(e, {
+      ...baseOpts([], {}, { clearance: "internal" }),
+      projections: [],
+    } as never);
+    const ids: string[] = [];
+    const visit = (x: Any): void => {
+      if (x.id) ids.push(x.id);
+      for (const c of x.children ?? []) visit(c.node ?? c);
+      if (x.node) visit(x.node);
+    };
+    visit(r.blueprint.layout);
+    return ids.filter((i) => i !== (e.root as Any).id);
+  };
+  it("the hidden node's slot among tied siblings does not depend on its real id", () => {
+    const a = mk("aa_hidden"); // sorts BEFORE the visible ones by real id
+    const z = mk("zzz_hidden"); // sorts AFTER them
+    const slot = (ids: string[]) => ids.findIndex((i) => i.startsWith("r_"));
+    expect(slot(a)).toBe(slot(z));
+    expect(a.filter((i) => !i.startsWith("r_"))).toEqual(["m_visible", "zz_visible"]);
   });
 });

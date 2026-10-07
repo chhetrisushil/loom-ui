@@ -229,7 +229,7 @@ describe("CompileResult.restrictedHandles feeds the fingerprint", () => {
     expect(before.restrictedHandles).toEqual([]);
     expect(after.restrictedHandles).toEqual(["h-pay"]);
     const stamp = (r: ReturnType<typeof compile>) =>
-      compileFingerprint({ clearance: "internal", restrictedHandles: r.restrictedHandles });
+      compileFingerprint({ clearance: "internal", ...r.fingerprint });
     expect(stamp(after)).not.toBe(stamp(before));
     const head = { experienceId: "e", versionHash: "sha256:v", compile: stamp(after) };
     const viewed = (r: ReturnType<typeof compile>) => ({

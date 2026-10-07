@@ -319,14 +319,26 @@ nor confirmable by a dictionary of likely ids without the key. Unrestricted node
 
 - **`CompileOptions.placeholderKey`**: a secret the HOST holds, at least `MIN_ALIAS_KEY_BYTES` (16). Keep
   it in your secret store, the same on every replica, and rotate it only when a one-time remount of
-  placeholders is acceptable. **Fail-closed when absent or too short**: `compile` uses a random per-process
-  key and says so with one `placeholder-alias-key-not-supplied` warn (only when something was aliased). Nothing
-  confidential is lost (the key is still secret); aliases just change on restart or between replicas, and a
-  `compileFingerprint` built from `result.fingerprint` changes with them (an action stamped before the change
-  reads as stale: the safe direction). It is never an unkeyed hash, which a dictionary of lexical ids would break.
-  Zero-config dev works; production should pass the key.
-- **A collision is impossible by construction**: an alias that equals a real node id (or another alias) is
-  re-derived.
+  placeholders is acceptable. **Fail-closed:** a key that is ABSENT falls back to a random per-process key
+  and one `placeholder-alias-key-not-supplied` warn (only when something was aliased): nothing confidential
+  is lost, but aliases and `result.fingerprint` differ across replicas and restarts, so actions stamped
+  before are refused as stale. A key that is SUPPLIED but under 16 bytes (or not a string/bytes) throws
+  `PlaceholderKeyError` (`code: "placeholder-key-weak"`) and is never silently replaced. It is never an
+  unkeyed hash, which a dictionary of lexical ids would break.
+- **Production setting: `requirePlaceholderKey: true`.** With no key, a compile that needs an alias throws
+  `PlaceholderKeyError` (`code: "placeholder-key-required"`) instead of using the random key. Zero-config dev
+  works without it.
+- **Collisions are handled, not assumed away**: an alias that equals a real node id or another alias is
+  re-derived (the alias is 96 bits of HMAC, so this is a guard, not an expected path). The hash input is
+  UTF-16 code units, so even malformed ids (lone surrogates) stay distinct.
+- **Sibling order.** Ties on `order` are broken on the id a node is EMITTED under (a restricted node's alias),
+  so a hidden node's real id never decides where it sits among tied siblings. Hashed paths keep their order.
+- **Known limits.** (1) The alias is stable across versions by design (keyed reconciliation), so a viewer can
+  tell that the same hidden node persisted. (2) A hidden node's span and grid cell are emitted by design
+  (no reflow). (3) The `r_` prefix is not reserved: do not identify placeholders by prefix; use the `Note`
+  kind and the restricted label. (4) Pre-existing: `versionHash` is an unkeyed sha256 over the whole
+  Experience including hidden content, so a party able to guess an entire Experience could confirm it
+  (high entropy in practice); a keyed content address is a follow-up.
 - **Leak model.** Viewer-facing, and covered by the `opaqueIds` property test (random experiences x
   sensitivities x viewers; no hidden node's id or handle anywhere): the Blueprint (widget ids, container ids,
   cells), `CompileResult.fingerprint`, `describeChange` / the `@loom-ui/changes` feed (a restricted change is a bare
