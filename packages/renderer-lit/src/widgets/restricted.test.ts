@@ -76,8 +76,10 @@ describe("a restricted node on the web surface", () => {
     registry: litRegistry,
     viewer: {},
   });
-  const layout = r.blueprint.layout as Layout & { children: Array<{ node: Widget }> };
-  const placeholder = (layout.children[0] as { node: Widget }).node;
+  // The root's only child is restricted, so the root itself collapses to a plain column holding the
+  // one placeholder (a root with a visible child would hold it in a grid cell).
+  const layout = r.blueprint.layout as Layout & { children: Widget[] };
+  const placeholder = layout.children[0] as Widget;
 
   it("compiles clean against the Lit registry (Note is registered)", () => {
     expect(r.ok).toBe(true);

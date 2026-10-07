@@ -58,3 +58,18 @@ export function strictestClass(
     Object.hasOwn(RANK, c) ? (RANK[c] as number) : Number.POSITIVE_INFINITY;
   return rank(a) >= rank(b) ? a : b;
 }
+
+/**
+ * The weakest of two classes (`undefined`, unclassified, is weakest) — the class a container whose
+ * visibility is its most visible child carries. FAIL-CLOSED: an unrecognised class outranks every
+ * known one, so it is never the weaker side against a known class.
+ */
+export function weakestClass(
+  a: DataClass | undefined,
+  b: DataClass | undefined
+): DataClass | undefined {
+  if (a === undefined || b === undefined) return undefined;
+  const rank = (c: DataClass): number =>
+    Object.hasOwn(RANK, c) ? (RANK[c] as number) : Number.POSITIVE_INFINITY;
+  return rank(a) <= rank(b) ? a : b;
+}

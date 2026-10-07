@@ -86,3 +86,44 @@ describe("a restricted node in the terminal", () => {
     expect(renderExperience(r.blueprint, store)).toContain("987654");
   });
 });
+
+// A container whose compiled children are all restricted is a bare placeholder: no title, no
+// children, drawn exactly like a restricted node (U15 fix round 2).
+describe("a container whose children are all restricted, in the terminal", () => {
+  const figure = (id: string, sensitivity?: "sensitive") => ({
+    ...(exp.root.children[0] as object),
+    id,
+    order: id,
+    label: { key: id, fallback: `Label ${id}` },
+    binding: { handle: `h-${id}`, priority: "P0" as const, ...(sensitivity && { sensitivity }) },
+  });
+  const section = (id: string, children: unknown[]) => ({
+    id,
+    order: id,
+    kind: "container" as const,
+    direction: "column" as const,
+    span: 12,
+    role: "tabs",
+    title: { key: id, fallback: `Section ${id}` },
+    children,
+  });
+  const build = (children: unknown[]) =>
+    ({ ...exp, root: { ...exp.root, children: [...children, figure("pub")] } }) as never;
+  const store2 = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "u10" });
+  for (const h of ["h-a", "h-b", "h-pub"]) store2.setValue(h, 424242, { state: "ready" });
+
+  it("prints one restricted state, no section title and no child label", () => {
+    const e = build([section("s1", [figure("a", "sensitive"), figure("b", "sensitive")])]);
+    const r = compile(e, { ...opts, viewer: { clearance: "internal" } });
+    const out = renderExperience(r.blueprint, store2);
+    expect(out).toContain("Restricted");
+    expect(out).not.toContain("Section s1");
+    expect(out).not.toContain("Label a");
+    expect(out).toContain("Label pub");
+  });
+  it("keeps the title when a child is visible", () => {
+    const e = build([section("s1", [figure("a", "sensitive"), figure("b")])]);
+    const r = compile(e, { ...opts, viewer: { clearance: "internal" } });
+    expect(renderExperience(r.blueprint, store2)).toContain("Section s1");
+  });
+});

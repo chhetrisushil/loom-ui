@@ -240,9 +240,10 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     label: opts.restrictedLabel ?? RESTRICTED_LABEL,
     text: placeholderHasText,
     projections: projectionPlan,
+    bare: new WeakSet<object>(),
   };
 
-  const layout = compileContainer(
+  const compiledRoot = compileContainer(
     normalize(exp.root, compareSiblings) as ContainerNode,
     opts,
     resolveLabel,
@@ -250,6 +251,11 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     findings,
     redaction
   );
+  // A root collapsed to a bare placeholder is still a Layout: a plain column holding just that
+  // placeholder, with no title, role, id or direction of the root's own.
+  const layout: Layout = redaction.bare.has(compiledRoot)
+    ? flex({ direction: "column", children: [compiledRoot] })
+    : (compiledRoot as Layout);
   const blueprint = blueprint$({
     id: `${exp.experienceId}@${exp.versionHash || "unsealed"}`,
     title: title.text,
@@ -337,6 +343,36 @@ interface Redaction {
   /** Whether the placeholder kind's contract declares the `text` prop. */
   readonly text: boolean;
   readonly projections: ProjectionPlan;
+  /**
+   * The compiled outputs that are BARE placeholders (a restricted node, or a container collapsed
+   * over nothing but bare placeholders). Identity-keyed: a container collapses iff it has compiled
+   * children and every one of them is in here.
+   */
+  readonly bare: WeakSet<object>;
+}
+
+/** The restricted placeholder for `id`: its id (and, in the parent, its cell) and a neutral text. */
+function barePlaceholder(
+  id: string,
+  resolveLabel: (l: LocalizedText) => string,
+  redaction: Redaction,
+  findings: Finding[]
+): Widget {
+  findings.push({
+    code: "node-restricted",
+    severity: "warn",
+    message: `node "${id}" is restricted for this viewer`,
+    nodeId: id,
+  });
+  const text = resolveLabel(redaction.label);
+  const out = customWidget$({
+    kind: PLACEHOLDER_KIND,
+    id,
+    title: text,
+    props: redaction.text ? { text } : {},
+  });
+  redaction.bare.add(out);
+  return out;
 }
 
 /** loom's finding codes that restate one this compiler already reported for the same node. */
@@ -358,7 +394,7 @@ function compileContainer(
   catalogByKind: ReadonlyMap<string, CatalogEntry>,
   findings: Finding[],
   redaction: Redaction
-): Layout {
+): Layout | Widget {
   // Each compiled child is paired with the SOURCE node it came from, because a grid needs the
   // child's own `span` and placement to wrap it in a `GridCell` and the compiled Widget/Layout no
   // longer carries one. A child that compiled to `undefined` (unresolvable, no contract) is
@@ -368,6 +404,13 @@ function compileContainer(
     const out = compileNode(child, opts, resolveLabel, catalogByKind, findings, redaction);
     if (out !== undefined) compiled.push({ from: child, child: out });
   }
+  // A container whose compiled children are ALL bare placeholders has nothing visible in it for
+  // this viewer, so it contributes nothing but its id — exactly like a restricted node: no title,
+  // no role, no child count, no per-child placeholders (its own cell in the parent stays). Applies
+  // bottom-up, so a container of all-restricted containers collapses too. An EMPTY container (or
+  // one whose children all failed to compile) holds nothing restricted and stays as authored.
+  if (compiled.length > 0 && compiled.every(({ child }) => redaction.bare.has(child)))
+    return barePlaceholder(node.id, resolveLabel, redaction, findings);
   // A container title resolves like a label: the locale is a compile input, and the blueprint
   // carries display text, never a message key. An empty resolution is no heading at all — every
   // renderer draws only a non-empty title (loom ADR 0098 D4) — so no key is emitted for it.
@@ -434,19 +477,7 @@ function compileNode(
     verdict?.kind === "restricted" ||
     (node.binding !== undefined && redaction.handles.has(node.binding.handle))
   ) {
-    findings.push({
-      code: "node-restricted",
-      severity: "warn",
-      message: `node "${node.id}" is restricted for this viewer`,
-      nodeId: node.id,
-    });
-    const text = resolveLabel(redaction.label);
-    return customWidget$({
-      kind: PLACEHOLDER_KIND,
-      id: node.id,
-      title: text,
-      props: redaction.text ? { text } : {},
-    });
+    return barePlaceholder(node.id, resolveLabel, redaction, findings);
   }
   const r = resolveSurface(opts.catalog, node.type, node.typeVersion, opts.surface, node.id);
   if (!r.ok) return undefined; // the finding was recorded by validateExperience; the node is omitted, never faked

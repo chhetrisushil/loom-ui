@@ -380,6 +380,12 @@ application panels locked inside a role container, and `{ partial: true }` for a
 `ReferencePlanner` passes the roles it was offered plus those already on planner containers in the
 base, so a revise can echo `tabs`/`stepper` without `containers`.
 
+Viewer-redaction note: the planner always reads the FULL experience (`describeExperience` takes no
+viewer; compose and revise run on the trusted side), so nothing there is collapsed. A container whose
+children are all restricted for a viewer collapses to a bare placeholder only in `compile(..., { viewer })`
+and the viewer-facing readers (see `@loom-ui/core`, "A container is classified by what it would show");
+a tabs / stepper panel that collapses is drawn like any restricted node, so the set keeps its panel count.
+
 Behaviour notes for this release: the prompt gained a CONTAINERS block and a grouping rule;
 `MAX_DRAFT_NODES` went 24 → 64 (the top level, and each container, stays 24), and decision ids are
 unchanged when `containers` is absent. Under a revise, the first-listed NEW entry is keyed before

@@ -177,8 +177,15 @@ describe("compile for a viewer (U10)", () => {
   });
   it("redacts every node bound to a handle the viewer may not see, even an unclassified sibling", () => {
     const sibling = sem("sib", "Metric", { binding: { handle: "h-salary", priority: "P1" } });
-    const r = compile(build([salary, sibling]), { ...opts, viewer: { clearance: "internal" } });
-    expect(widgets(r).map((w) => w.kind)).toEqual(["Note", "Note"]);
+    // `keep` is visible: a root whose children are ALL restricted collapses to one placeholder.
+    const { binding: _b, ...unbound } = sem("keep", "Explainer");
+    const r = compile(build([salary, sibling, unbound]), {
+      ...opts,
+      viewer: { clearance: "internal" },
+    });
+    expect(widgets(r).map((w) => w.kind)).toEqual(["Note", "Note", "Note"]);
+    expect(widgets(r).map((w) => w.id)).toEqual(["keep", "salary", "sib"]);
+    expect(widgets(r).find((w) => w.id === "keep")?.props).toEqual({});
   });
   it("uses a custom restricted label through the same resolver", () => {
     const r = compile(e, {
@@ -283,8 +290,9 @@ describe("compile for a viewer: tool-level class at read time (U10 round 3)", ()
     const secretOne = sem("secretOne", "Metric", {
       binding: { handle: "h-secret", priority: "P1", sensitivity: "secret" },
     });
+    const { binding: _b, ...keep } = sem("keep", "Explainer");
     const e = {
-      ...build([open, secretOne]),
+      ...build([open, secretOne, keep]),
       providers: { "h-open": onTool("h-open"), "h-secret": onTool("h-secret") },
     };
     const r = compile(e, { ...opts, viewer: { clearance: "internal" } });
