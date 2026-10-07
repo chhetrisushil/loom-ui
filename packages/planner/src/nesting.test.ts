@@ -756,6 +756,47 @@ describe("U15 — what is not the planner's", () => {
     expect(kinds(inner(r.ops))).toEqual(["insertNode"]);
   });
 
+  it("a role not offered this call may stay on a container that carries it, never go on a new one", async () => {
+    const { exp } = await composed(tabsEntries());
+    const { containers: _drop, ...bare } = input;
+    const grow = [
+      ...tabsEntries(),
+      box("more", "tabs"),
+      box("p1", "section", "more"),
+      insight("i1", "p1"),
+      box("p2", "section", "more"),
+      insight("i2", "p2"),
+    ];
+    const bad = await planner(scriptedModel([reply(grow), reply(grow)])).revise(
+      { experience: exp, request: { text: "add" }, ...bare },
+      recordingContext()
+    );
+    expect(bad.findings.map((f) => f.code)).toContain("role-not-offered");
+    expect(bad.ops).toEqual([]);
+    // Offered on this call, the same plan is fine.
+    const ok = await planner(scriptedModel([reply(grow)])).revise(
+      { experience: exp, request: { text: "add" }, ...input },
+      recordingContext()
+    );
+    expect(ok.findings.filter((f) => f.severity === "error")).toEqual([]);
+  });
+
+  it("an already-carried reference role is judged by its own rules, not as a bare one", async () => {
+    const { exp } = await composed(tabsEntries());
+    const { containers: _drop, ...bare } = input;
+    // `views` (tabs) is left with ONE panel: a tab set needs two, which a bare spec would not say.
+    const shrunk = [
+      box("views", "tabs"),
+      box("overview", "section", "views"),
+      insight("x", "overview"),
+    ];
+    const r = await planner(scriptedModel([reply(shrunk), reply(shrunk)])).revise(
+      { experience: exp, request: { text: "trim" }, ...bare },
+      recordingContext()
+    );
+    expect(r.findings.map((f) => f.message).join("\n")).toContain("needs at least 2");
+  });
+
   it("moving a placed widget into a non-grid container clears its placement first", async () => {
     const base = g();
     const placed = replay(base, [

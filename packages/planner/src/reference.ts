@@ -4,6 +4,7 @@ import {
   type Finding,
   type Intent,
   type Operation,
+  REFERENCE_CONTAINER_ROLES,
   boundSummary,
   containerRoleFindings,
   experienceClassFloor,
@@ -305,7 +306,7 @@ export class ReferencePlanner implements Planner {
     }
     // The roles the host offered, plus any already on a planner container in the base: a revise
     // echoes what exists, and that must never be refused for want of `containers` on this call.
-    const roles = withExistingRoles(input.containers ?? [], base);
+    const { roles, carriedOnly } = withExistingRoles(input.containers ?? [], base);
     const schema = planSchema(input.catalog, input.capabilities, roles);
     const attempts: AttemptTrace[] = [];
     let previous: PreviousError | undefined;
@@ -398,7 +399,7 @@ export class ReferencePlanner implements Planner {
               input.capabilities,
               input.observed,
               salt,
-              { roles, partial: true }
+              { roles, carriedOnly, partial: true }
             );
             const ops = wrap(m.ops);
             const applied = replay(base, ops);
@@ -481,7 +482,7 @@ export class ReferencePlanner implements Planner {
         input.capabilities,
         input.observed,
         salt,
-        { roles }
+        { roles, carriedOnly }
       );
       const findings: Finding[] = [...usageFindings, ...m.findings];
       const applied = replay(base, m.ops);
@@ -567,18 +568,30 @@ export class ReferencePlanner implements Planner {
   }
 }
 
-/** `offered`, plus a bare spec for each role a planner-owned container in `base` already carries. */
+/**
+ * `offered`, plus a spec for each role a planner-owned container in `base` already carries (the
+ * reference vocabulary's own rules when it is one of those, else a bare spec). Those extra roles
+ * were NOT offered on this call, so they come back in `carriedOnly`: a container that already
+ * carries one may keep it, but a NEW container (or a re-roled one) may not take it.
+ */
 function withExistingRoles(
   offered: readonly ContainerRoleSpec[],
   base: Experience
-): readonly ContainerRoleSpec[] {
+): { roles: readonly ContainerRoleSpec[]; carriedOnly: ReadonlySet<string> } {
   const known = new Set(offered.map((r) => r.role));
   const extra: ContainerRoleSpec[] = [];
+  const carriedOnly = new Set<string>();
   walk(base.root, (n) => {
     if (isContainer(n) && n.owner === "planner" && n.role !== undefined && !known.has(n.role)) {
       known.add(n.role);
-      extra.push({ role: n.role, description: "a role already present in the experience" });
+      carriedOnly.add(n.role);
+      extra.push(
+        REFERENCE_CONTAINER_ROLES.find((r) => r.role === n.role) ?? {
+          role: n.role,
+          description: "a role already present in the experience",
+        }
+      );
     }
   });
-  return extra.length === 0 ? offered : [...offered, ...extra];
+  return { roles: extra.length === 0 ? offered : [...offered, ...extra], carriedOnly };
 }

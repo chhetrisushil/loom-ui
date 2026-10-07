@@ -216,12 +216,17 @@ const NO_HYDRATION = "\u0000";
 
 function nodesOf(exp: Experience, opts: DescribeOptions) {
   const classes = effectiveClasses(exp, opts.declaredToolClasses, opts.undeclared);
-  const refused = planProjectionBindings(
+  // The SAME plan `compile` redacts with: a projection's class is the one value every node binding
+  // it carries (`plan.classes`), so the readers cannot read a node unclassified that compile
+  // restricts (a hand-built experience whose class sits on a sibling binding).
+  const plan = planProjectionBindings(
     exp,
     opts.projections,
     opts.hydrationProjectionId ?? NO_HYDRATION,
     undefined
-  ).verdicts;
+  );
+  const refusedIds = new Set<string>();
+  for (const [id, v] of plan.verdicts) if (v.kind === "refused") refusedIds.add(id);
   const out = new Map<string, NodeView>();
   let floor: DataClass | undefined;
   let anyBlocked = false;
@@ -232,39 +237,41 @@ function nodesOf(exp: Experience, opts: DescribeOptions) {
       if (node.binding !== undefined)
         cls = strictestClass(node.binding.sensitivity, classes.get(node.binding.handle));
       if (node.projection !== undefined) {
-        cls = strictestClass(
-          cls,
-          strictestClass(
-            node.projection.sensitivity,
-            own(exp.projectionClasses, node.projection.id)
-          )
-        );
+        cls = strictestClass(cls, plan.classes.get(node.projection.id));
         const offered = (opts.projections ?? []).filter((d) => d.id === node.projection?.id);
         const known =
           offered.length > 0 && offered.every((d) => d.version === node.projection?.version);
-        if (!known || refused.get(node.id)?.kind === "refused") blocked = true;
-        for (const d of offered) cls = strictestClass(cls, d.sensitivity);
+        if (!known || refusedIds.has(node.id)) blocked = true;
       }
     }
     if (blocked) anyBlocked = true;
     floor = strictestClass(floor, cls);
     out.set(node.id, { node, parentId: parent?.id ?? null, cls, blocked });
   });
-  // A CONTAINER is classified by what it would show: as visible as its MOST visible child (the
-  // weakest class among its non-blocked children, bottom-up). A container none of whose children a
-  // viewer may see compiles to a bare placeholder (`compile`), contributing nothing but its id, so
-  // it must read as classified exactly when `weakest` is above the viewer. One unclassified child
-  // makes it unclassified; no children (or only blocked ones) leave nothing restricted to hide, so
-  // it stays unclassified. `walk` is pre-order, so a reverse pass sees every descendant before its
-  // ancestor (a nested container's own class is final by the time its parent reads it).
-  const weakest = new Map<string, { cls: DataClass | undefined }>();
+  // A CONTAINER is classified by what it would show, exactly as `compile` draws it. A child the
+  // plan REFUSED is omitted by compile and does not count. Every other child counts: one that is
+  // BLOCKED (a projection the host does not offer, or at another version) is drawn as a restricted
+  // placeholder for everyone, so it is hidden from every viewer; the rest are as visible as their
+  // own class. A container is as visible as its MOST visible counted child (the weakest class among
+  // the non-blocked ones); with counted children that are ALL blocked it is `blocked` itself (a bare
+  // placeholder for everyone); with no counted children there is nothing restricted to hide, so it
+  // stays unclassified. `walk` is pre-order, so a reverse pass sees every descendant before its
+  // ancestor (a nested container's own class and blocked flag are final when its parent reads them).
+  const acc = new Map<string, { counted: number; visible: boolean; cls: DataClass | undefined }>();
   for (const [id, view] of [...out].reverse()) {
-    if (view.node.kind === "container")
-      (view as { cls: DataClass | undefined }).cls = weakest.get(id)?.cls;
-    if (view.parentId === null || view.blocked) continue;
-    const acc = weakest.get(view.parentId);
-    if (acc === undefined) weakest.set(view.parentId, { cls: view.cls });
-    else acc.cls = weakestClass(acc.cls, view.cls);
+    const v = view as { cls: DataClass | undefined; blocked: boolean };
+    if (view.node.kind === "container") {
+      const a = acc.get(id);
+      v.cls = a?.cls;
+      v.blocked = a !== undefined && a.counted > 0 && !a.visible;
+    }
+    if (view.parentId === null || refusedIds.has(id)) continue;
+    const p = acc.get(view.parentId) ?? { counted: 0, visible: false, cls: undefined };
+    acc.set(view.parentId, p);
+    p.counted++;
+    if (view.blocked) continue;
+    p.cls = p.visible ? weakestClass(p.cls, view.cls) : view.cls;
+    p.visible = true;
   }
   for (const c of classes.values()) floor = strictestClass(floor, c);
   for (const c of Object.values(exp.toolClasses ?? {})) floor = strictestClass(floor, c);
