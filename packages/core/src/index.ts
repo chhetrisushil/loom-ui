@@ -115,7 +115,7 @@ export {
   hydrationStatusPath,
 } from "./compile";
 export type { CompileOptions, CompileResult } from "./compile";
-export { MIN_ALIAS_KEY_BYTES, placeholderAlias } from "./alias";
+export { MIN_ALIAS_KEY_BYTES, PlaceholderKeyError, placeholderAlias } from "./alias";
 export type { AliasKey } from "./alias";
 export { planProjectionBindings } from "./projections";
 export type {

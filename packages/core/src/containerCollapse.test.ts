@@ -204,8 +204,7 @@ describe("a container whose children are all restricted collapses to a bare plac
     const fp = (r: CompileResult) =>
       compileFingerprint({
         clearance: "internal",
-        restrictedHandles: r.restrictedHandles,
-        restrictedProjectionNodes: r.restrictedProjectionNodes,
+        ...r.fingerprint,
       });
     expect(fp(after)).not.toBe(fp(before));
   });

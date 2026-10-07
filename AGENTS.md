@@ -63,7 +63,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   EXECUTION's state); the push impl uses `EventStore.subscribe` directly.
 - Opaque ids on restricted placeholders (U10c): node ids are lexical, so `compile` emits a restricted node (and a
   collapsed container) under a keyed alias (`placeholderKey`, HMAC of `(experienceId, nodeId)`; a missing key falls
-  back to a random per-process key + a warn, never an unkeyed hash). `CompileResult.findings`,
+  back to a random per-process key + a warn; a supplied key under 16 bytes throws `PlaceholderKeyError`; `requirePlaceholderKey` makes a missing key an error; never an unkeyed hash). `CompileResult.findings`,
   `restrictedProjectionNodes`, `restrictedHandles` and `inspectExperience` are SERVER-SIDE (real ids); the viewer's
   `compileFingerprint` is built from `result.fingerprint`. See the core README "Opaque ids".
 - Provenance and "what was seen" (U12): the per-node ledger is DERIVED from lineage ops (ids and handles only,

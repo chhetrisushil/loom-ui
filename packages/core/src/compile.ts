@@ -31,7 +31,6 @@ import {
   GRID_COLUMNS,
   LocalizedText,
   MAX_TREE_DEPTH,
-  compareSiblings,
   normalize,
   placementOf,
   placementProblems,
@@ -51,7 +50,13 @@ import {
 // 0101). Nothing semantic is smuggled into props: the experience is the source of truth, the
 // blueprint derived.
 
-import { type AliasDomain, type AliasKey, derive, resolveAliasKey } from "./alias";
+import {
+  type AliasDomain,
+  type AliasKey,
+  PlaceholderKeyError,
+  derive,
+  resolveAliasKey,
+} from "./alias";
 import { hydrationPath, hydrationStatusPath } from "./paths";
 import { type ProjectionCatalog, type ProjectionPlan, planProjectionBindings } from "./projections";
 import { type Viewer, mayView } from "./viewer";
@@ -127,12 +132,19 @@ export interface CompileOptions {
    * container collapsed over nothing but placeholders, is emitted under `r_` + a keyed hash
    * (HMAC-SHA256) of `(experienceId, nodeId)`: stable across versions and compiles with the same
    * key (so a renderer reconciles it in place), different per experience, and not recoverable or
-   * confirmable without the key. FAIL-CLOSED: absent or too short = a random per-process key
-   * (confidentiality intact; the alias just changes on restart or between replicas) and one
-   * `placeholder-alias-key-not-supplied` warn when an alias was needed. Never an unkeyed hash.
-   * Unrestricted nodes keep their own ids.
+   * confirmable without the key. FAIL-CLOSED: ABSENT = a random per-process key (confidentiality
+   * intact; aliases AND `fingerprint` change on restart or between replicas, so actions stamped
+   * before are refused as stale) and one `placeholder-alias-key-not-supplied` warn when an alias was
+   * needed. A SUPPLIED key under 16 bytes throws `PlaceholderKeyError` (never a silent random key).
+   * Never an unkeyed hash. Unrestricted nodes keep their own ids.
    */
   readonly placeholderKey?: AliasKey;
+  /**
+   * Production setting: with no `placeholderKey`, compiling anything that needs an alias (a
+   * restricted node, a collapsed container, a non-empty `fingerprint`) throws `PlaceholderKeyError`
+   * instead of falling back to the random per-process key. Default false.
+   */
+  readonly requirePlaceholderKey?: boolean;
   /** The placeholder's title and text. Default: `{ key: "restricted", fallback: "Restricted" }`. */
   readonly restrictedLabel?: LocalizedText;
 }
@@ -273,7 +285,9 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
   };
 
   const compiledRoot = compileContainer(
-    normalize(exp.root, compareSiblings) as ContainerNode,
+    // Ties on `order` keep their authored order here; `compileContainer` breaks them on the EMITTED
+    // id, so a hidden node's real id never decides where it sits among its siblings.
+    normalize(exp.root) as ContainerNode,
     opts,
     resolveLabel,
     catalogByKind,
@@ -412,16 +426,21 @@ function aliasMinter(exp: Experience, opts: CompileOptions, findings: Finding[])
       const mk = `${domain}\u0000${id}`;
       const hit = memo.get(mk);
       if (hit !== undefined) return hit;
-      if (key.source !== "supplied" && !warned) {
-        warned = true;
-        findings.push({
-          code: "placeholder-alias-key-not-supplied",
-          severity: "warn",
-          message:
-            key.source === "weak"
-              ? "placeholderKey is under 16 bytes: a random per-process key is used, so restricted placeholder ids change on restart and between replicas"
-              : "no placeholderKey was supplied: a random per-process key is used, so restricted placeholder ids change on restart and between replicas",
-        });
+      if (key.source !== "supplied") {
+        if (opts.requirePlaceholderKey === true)
+          throw new PlaceholderKeyError(
+            "placeholder-key-required",
+            "requirePlaceholderKey is set and no placeholderKey was supplied, but this compile redacts something"
+          );
+        if (!warned) {
+          warned = true;
+          findings.push({
+            code: "placeholder-alias-key-not-supplied",
+            severity: "warn",
+            message:
+              "no placeholderKey was supplied: a random per-process key is used, so placeholder aliases and fingerprints differ across replicas and restarts, and actions stamped before are refused as stale",
+          });
+        }
       }
       let alias = "";
       for (let attempt = 0; ; attempt++) {
@@ -501,6 +520,21 @@ function compileContainer(
     )
       droppedOther = true;
   }
+  // Total sibling order: `order`, then the id the child is EMITTED under (a restricted child's alias,
+  // never its real id: the position among tied siblings would otherwise leak a comparison bit of it).
+  const emitted = (c: { from: ExperienceNode; child: Widget | Layout }): string =>
+    c.child.id ?? c.from.id;
+  compiled.sort((x, y) =>
+    x.from.order < y.from.order
+      ? -1
+      : x.from.order > y.from.order
+        ? 1
+        : emitted(x) < emitted(y)
+          ? -1
+          : emitted(x) > emitted(y)
+            ? 1
+            : 0
+  );
   // A container whose compiled children are ALL bare placeholders has nothing visible in it for
   // this viewer, so it contributes nothing but its id — exactly like a restricted node: no title,
   // no role, no child count, no per-child placeholders (its own cell in the parent stays). Applies
