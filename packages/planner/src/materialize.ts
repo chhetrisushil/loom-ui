@@ -552,6 +552,11 @@ export function materialize(
    */
   structure: {
     readonly roles?: readonly ContainerRoleSpec[];
+    /**
+     * Roles in `roles` that were NOT offered (they came from containers already in the base): a
+     * container that already carries one keeps it, a new or re-roled container may not take it.
+     */
+    readonly carriedOnly?: ReadonlySet<string>;
     readonly partial?: boolean;
   } = {}
 ): { ops: Operation[]; findings: Finding[] } {
@@ -913,6 +918,20 @@ export function materialize(
     }
     const direction = containerDirection(e.container);
     const role = isPlainContainer(e.container) ? undefined : e.container;
+    if (
+      role !== undefined &&
+      structure.carriedOnly?.has(role) === true &&
+      (slot === undefined || slot.node.kind !== "container" || slot.node.role !== role)
+    ) {
+      findings.push(
+        err(
+          "role-not-offered",
+          `container "${e.id}": the role "${role}" was not offered for this plan; only a container that already carries it may keep it`,
+          e.id
+        )
+      );
+      return false;
+    }
     if (slot !== undefined) {
       const cur = slot.node;
       if (cur.kind !== "container") {

@@ -44,6 +44,13 @@ export interface ProjectionPlan {
   readonly used: ReadonlyMap<string, string>;
   /** True iff some projection-bound node carries a class (so a missing viewer is worth a warn). */
   readonly classified: boolean;
+  /**
+   * id → the ONE class every node binding that projection carries (the strictest of every node's
+   * own, the Experience's sticky `projectionClasses` and the catalogue's). The readers
+   * (`inspectExperience`, `describeChange`, ...) classify a projection-bound node with exactly this,
+   * so they agree with what `compile` redacts.
+   */
+  readonly classes: ReadonlyMap<string, DataClass>;
 }
 
 const err = (code: string, message: string, nodeId: string): Finding => ({
@@ -185,5 +192,5 @@ export function planProjectionBindings(
       ...(sensitivity !== undefined && { sensitivity }),
     });
   });
-  return { verdicts, findings, used, classified };
+  return { verdicts, findings, used, classified, classes: classOf };
 }

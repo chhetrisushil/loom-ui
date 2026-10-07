@@ -426,17 +426,26 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   keeps flooring every handle that calls it, so `declassifyHandle` has no read-time effect on a
   declared tool (lower the declaration to lower the read; covered by a test). `CompileResult.restrictedHandles` lists
   the handles redacted for the viewer; feed it to `compileFingerprint` (`restrictedHandles`) so a
-  RAISED declaration changes freshness. **A container is classified by what it would show**: when every
-  child it compiles is a bare placeholder (a restricted node, or itself a collapsed container — the rule
+  RAISED declaration changes freshness. **A container is classified by what it would show**: when it has at least one
+  child compile drew or tried to draw, and EVERY such child is a bare placeholder (a restricted node, a
+  projection the host does not offer or at another version, or itself a collapsed container — the rule
   runs bottom-up) the container is emitted as the SAME bare placeholder, its id only: no title, no role,
-  no child count, no per-child placeholders (`node-restricted` is reported against it). One visible
-  descendant keeps the container, title and role as authored. An EMPTY container (or one whose children
-  all failed to compile) holds nothing restricted and stays as authored; a root that collapses is a
-  plain column holding the one placeholder. The collapse is a function of the restricted handles and
-  projection nodes, so a raised class that causes one already changes `compileFingerprint`. The readers
-  agree: `inspectExperience` gives a container the weakest class among its non-blocked children, so
-  `describeChange` reports a hidden container's addition, removal or edit as a bare `restricted-changed`,
-  and `explainNode` / `Lineage.explain` answer `{ available: false }` for it. The
+  no child count, no per-child placeholders; `node-restricted` is reported against it alone, never against
+  the children it hides. Only a child whose projection binding was REFUSED does not count (compile omits it, like a
+  reported defect). Any child omitted for another reason (an
+  unresolvable type, a kind with no contract) keeps the container as authored. One visible descendant
+  keeps the container, title and role as authored. A container with nothing counted (empty, or only
+  refused children) stays as authored; a root that collapses is a plain column holding the one
+  placeholder. The collapse is a function of the restricted handles and projection nodes, so a raised
+  class that causes one already changes `compileFingerprint`. **The readers agree, by the same rule**:
+  `inspectExperience` classifies a projection-bound node with compile's own derivation (one class per
+  projection: the strictest of every node binding it, the sticky `projectionClasses` and the catalogue),
+  counts every non-refused child, and gives a container the weakest class among its non-blocked counted
+  children; when all its counted children are blocked (hidden from every viewer) the container is
+  `blocked` itself. So `describeChange` reports a hidden container's addition, removal or edit as a bare
+  `restricted-changed`, and `explainNode` / `Lineage.explain` answer `{ available: false }` for it.
+  A seeded property test (`containerAgreement.test.ts`) asserts that compile's collapsed containers and the
+  readers' hidden ones are the same set over randomised trees and viewers. The
   reference planner also applies a capability's class to the nodes it writes (see
   `@loom-ui/planner`), so this floor is the backstop for nodes it did not write (an older planner, a
   raw op). Limits: a class follows MCP tool NAMES only — a provider whose execution

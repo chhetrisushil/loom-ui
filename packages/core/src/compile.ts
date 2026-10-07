@@ -400,17 +400,38 @@ function compileContainer(
   // longer carries one. A child that compiled to `undefined` (unresolvable, no contract) is
   // skipped — its finding was already recorded.
   const compiled: Array<{ from: ExperienceNode; child: Widget | Layout }> = [];
+  const findingsBefore = findings.length;
+  // A child omitted for any reason OTHER than a projection refusal (unresolvable, no contract):
+  // it is not a bare placeholder and not ignorable, so it keeps its container from collapsing.
+  let droppedOther = false;
   for (const child of node.children) {
     const out = compileNode(child, opts, resolveLabel, catalogByKind, findings, redaction);
     if (out !== undefined) compiled.push({ from: child, child: out });
+    else if (
+      !(
+        child.kind === "semantic" &&
+        redaction.projections.verdicts.get(child.id)?.kind === "refused"
+      )
+    )
+      droppedOther = true;
   }
   // A container whose compiled children are ALL bare placeholders has nothing visible in it for
   // this viewer, so it contributes nothing but its id — exactly like a restricted node: no title,
   // no role, no child count, no per-child placeholders (its own cell in the parent stays). Applies
   // bottom-up, so a container of all-restricted containers collapses too. An EMPTY container (or
-  // one whose children all failed to compile) holds nothing restricted and stays as authored.
-  if (compiled.length > 0 && compiled.every(({ child }) => redaction.bare.has(child)))
+  // one whose children were all refused projection bindings) holds nothing restricted and stays as
+  // authored; so does one with ANY child omitted for another reason (unresolvable, no contract).
+  if (
+    !droppedOther &&
+    compiled.length > 0 &&
+    compiled.every(({ child }) => redaction.bare.has(child))
+  ) {
+    // The container is ONE restricted node: the `node-restricted` findings of the children it
+    // swallowed would name them (and their count), so only its own remains.
+    for (let i = findings.length - 1; i >= findingsBefore; i--)
+      if (findings[i]?.code === "node-restricted") findings.splice(i, 1);
     return barePlaceholder(node.id, resolveLabel, redaction, findings);
+  }
   // A container title resolves like a label: the locale is a compile input, and the blueprint
   // carries display text, never a message key. An empty resolution is no heading at all — every
   // renderer draws only a non-empty title (loom ADR 0098 D4) — so no key is emitted for it.
