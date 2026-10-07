@@ -437,7 +437,9 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   keeps the container, title and role as authored. A container with nothing counted (empty, or only
   refused children) stays as authored; a root that collapses is a plain column holding the one
   placeholder. The collapse is a function of the restricted handles and projection nodes, so a raised
-  class that causes one already changes `compileFingerprint`. **The readers agree, by the same rule**:
+  class that causes one already changes `compileFingerprint`; whether a child is dropped for another
+  reason depends on the catalogue and the surface, which are compile inputs the host already keys on
+  (the surface-agnostic readers count such a child as visible, and compile keeps the container too). **The readers agree, by the same rule**:
   `inspectExperience` classifies a projection-bound node with compile's own derivation (one class per
   projection: the strictest of every node binding it, the sticky `projectionClasses` and the catalogue),
   counts every non-refused child, and gives a container the weakest class among its non-blocked counted

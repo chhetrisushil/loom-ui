@@ -340,6 +340,15 @@ describe("U15 round 3: the exact collapse rule", () => {
     expect(restricted).toEqual(["k"]);
   });
 
+  it("collapsing a container keeps the findings of a restricted sibling compiled BEFORE it", () => {
+    // `early` is restricted outside the container and compiled first: its finding is not one of
+    // the swallowed children's and must survive the container's collapse.
+    const e = exp([bound("early", "secret"), box("k", [bound("a", "secret")]), bound("pub")]);
+    const r = compile(e, { ...copts, viewer: low });
+    const restricted = r.findings.filter((f) => f.code === "node-restricted").map((f) => f.nodeId);
+    expect(restricted).toEqual(["early", "k"]);
+  });
+
   it("a projection's class is ONE value for every node binding it: the readers use compile's derivation", () => {
     // `a` carries the class on the shared projection; `b` does not. Compile restricts both.
     const e = exp([box("ka", [proj("a", "pA", "1", "secret")]), box("kb", [proj("b", "pA")])]);
