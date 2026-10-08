@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ContainerRoleSpec,
   type Experience,
@@ -17,7 +18,6 @@ import {
   walk,
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
-import { fnv1a64 } from "@loom/core";
 import { type Policy, decideWithPolicy } from "@loom/learning";
 import { declaredToolClassesFrom } from "./capabilityClass";
 import { contentRefArgsFrom } from "./contentRefs";
@@ -187,7 +187,9 @@ export class ReferencePlanner implements Planner {
         "variant-unit-invalid",
         "this planner assigns a variant by `unit`, and the input carries none (or one that is not an opaque token); the model was not called"
       );
-    const decisionId = `plan-variant:${fnv1a64(`${kind}\u0000${planKey}\u0000${unit}`)}`;
+    // SHA-256, not FNV: this id keys a LEARNABLE decision a reward attaches to, and a 64-bit
+    // non-cryptographic hash of attacker-influenced input (intent text, unit) is collidable.
+    const decisionId = `plan-variant:${createHash("sha256").update(`${kind}\u0000${planKey}\u0000${unit}`).digest("hex").slice(0, 40)}`;
     const ids = Object.keys(vs.variants).sort();
     // Capture the policy's own answer so the report can say what propensity THIS run produced.
     let produced: { action: string; propensity?: number } | undefined;

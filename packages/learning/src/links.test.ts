@@ -37,14 +37,16 @@ describe("U11 decision links", () => {
     expect(link.decisions).toHaveLength(2);
     expect(link.tenant).toBe("acme");
     // a decision whose execution is unknown is left out
-    expect(linkFromLedger(ledger, { executionOf: () => undefined }).decisions).toEqual([]);
+    expect(
+      linkFromLedger(ledger, { executionOf: () => undefined, tenant: "acme" }).decisions
+    ).toEqual([]);
   });
 
   it("the registry is bounded: the oldest view is forgotten and then attributes nothing", () => {
     const links = new DecisionLinks(2);
-    for (const v of ["1", "2", "3"]) links.register("e", v, { decisions: [] });
+    for (const v of ["1", "2", "3"]) links.register("e", v, { tenant: "t", decisions: [] });
     expect(links.size).toBe(2);
-    expect(links.resolve("e", "1")).toBeUndefined();
-    expect(links.resolve("e", "3")).toBeDefined();
+    expect(links.resolve({ tenant: "t", experienceId: "e", versionHash: "1" })).toBeUndefined();
+    expect(links.resolve({ tenant: "t", experienceId: "e", versionHash: "3" })).toBeDefined();
   });
 });

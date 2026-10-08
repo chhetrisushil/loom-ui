@@ -4,7 +4,7 @@ import type { ProvenanceLedger } from "@loom-ui/core";
 // A reward is attributed to a loom DECISION of a loom EXECUTION. The surface a viewer saw is a
 // VERSION of an Experience; the host knows which decision(s) produced it (the planner turn's
 // `PlanReport.variant.decisionId`, stamped on the ops as `Provenance.policyDecisionId`) and which
-// execution ran that turn. `DecisionLink` is that knowledge, registered per (experience, version).
+// execution ran that turn. `DecisionLink` is that knowledge, registered per (tenant, experience, version).
 
 /** One learnable decision of one execution. */
 export interface DecisionRef {
@@ -13,44 +13,62 @@ export interface DecisionRef {
 }
 
 export interface DecisionLink {
+  /**
+   * The tenant this surface belongs to. REQUIRED: a link without one would accept any tenant's
+   * viewer. A single-tenant host uses one constant.
+   */
+  readonly tenant: string;
   /** Decisions that shaped this version as a whole. A version-level signal credits each. */
   readonly decisions: readonly DecisionRef[];
   /**
-   * Node id → the decision that wrote it (`linkFromLedger`). When present, a signal naming a node it
-   * does not list is refused (`unknown-node`), and a node signal credits that one decision. Absent =
-   * every node signal credits `decisions`.
+   * Node id -> the decision that wrote it (`linkFromLedger`). A node signal naming a node it does not
+   * list is refused (`unknown-node`) and credits that one decision. Absent, a node signal credits
+   * every decision of the version and ANY node id is accepted (bounded per viewer by the ledger):
+   * give a host-checked list wherever you can.
    */
   readonly nodes?: Readonly<Record<string, DecisionRef>>;
   /**
-   * The tenant this surface belongs to. A viewer of another tenant gets `unknown-view` (the same
-   * answer as for a version nobody registered, so it is not an oracle). Absent = single-tenant.
+   * The node ids compiled VISIBLE (not as a restricted placeholder) for this viewer, from the host's
+   * own compile for them. A node not in the set is refused exactly as an unlisted node is, so the
+   * answer to "does this node exist?" never depends on what the viewer may not see. Absent = every
+   * listed node counts for everyone (fine only when nothing in the version is classified).
    */
-  readonly tenant?: string;
+  readonly visibleTo?: (viewer: { readonly id: string; readonly tenant: string }) =>
+    | ReadonlySet<string>
+    | undefined;
+}
+
+export interface LinkQuery {
+  readonly tenant: string;
+  readonly experienceId: string;
+  readonly versionHash: string;
 }
 
 /** Where the ingestor looks a view up. Return `undefined` for a view the host does not know. */
 export interface DecisionLinkResolver {
-  resolve(experienceId: string, versionHash: string): DecisionLink | undefined;
+  resolve(q: LinkQuery): DecisionLink | undefined;
 }
 
 /**
- * A bounded in-memory registry (least-recently-registered out). An evicted view simply stops
- * attributing: its signals are refused as `unknown-view`, never guessed.
+ * A bounded in-memory registry (least-recently-registered out), keyed by tenant too. An evicted view
+ * simply stops attributing: its signals are refused as `unknown-view`, never guessed.
  */
 export class DecisionLinks implements DecisionLinkResolver {
   private readonly map = new Map<string, DecisionLink>();
   constructor(private readonly max = 10_000) {}
-  private static key(experienceId: string, versionHash: string): string {
-    return `${experienceId}\u0000${versionHash}`;
+  private static key(tenant: string, experienceId: string, versionHash: string): string {
+    return `${tenant}\u0000${experienceId}\u0000${versionHash}`;
   }
   register(experienceId: string, versionHash: string, link: DecisionLink): void {
-    const k = DecisionLinks.key(experienceId, versionHash);
+    if (typeof link.tenant !== "string" || link.tenant === "")
+      throw new Error("DecisionLinks.register: a link must name its tenant");
+    const k = DecisionLinks.key(link.tenant, experienceId, versionHash);
     this.map.delete(k);
     this.map.set(k, link);
     while (this.map.size > this.max) this.map.delete(this.map.keys().next().value as string);
   }
-  resolve(experienceId: string, versionHash: string): DecisionLink | undefined {
-    return this.map.get(DecisionLinks.key(experienceId, versionHash));
+  resolve(q: LinkQuery): DecisionLink | undefined {
+    return this.map.get(DecisionLinks.key(q.tenant, q.experienceId, q.versionHash));
   }
   get size(): number {
     return this.map.size;
@@ -60,9 +78,10 @@ export class DecisionLinks implements DecisionLinkResolver {
 export interface LinkFromLedgerOptions {
   /** Which execution ran the planner turn that made `decisionId`. Return `undefined` if unknown. */
   readonly executionOf: (decisionId: string) => string | undefined;
-  readonly tenant?: string;
+  readonly tenant: string;
   /** Node ids to keep (e.g. the nodes of the version). Default: every node the ledger knows. */
   readonly only?: ReadonlySet<string>;
+  readonly visibleTo?: DecisionLink["visibleTo"];
 }
 
 /**
@@ -88,8 +107,9 @@ export function linkFromLedger(
     all.set(`${executionId}\u0000${decisionId}`, ref);
   }
   return {
+    tenant: opts.tenant,
     decisions: [...all.values()],
     nodes,
-    ...(opts.tenant !== undefined && { tenant: opts.tenant }),
+    ...(opts.visibleTo !== undefined && { visibleTo: opts.visibleTo }),
   };
 }

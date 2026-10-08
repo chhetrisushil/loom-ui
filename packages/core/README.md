@@ -663,8 +663,10 @@ widget's stamped seq must equal the current one (else `data-moved`; unknown is `
 `InteractionSignal`s, and `validateSignalBatch`, the shared total validator a host runs on untrusted
 batches. Four facts only: `exposure` (a node was rendered and visible), `engagement` (a click/expand
 **count**, capped at 255, or a **dwell bucket** 0-3 at 1 s / 5 s / 30 s — raw timing never leaves the
-client), `feedback` (a 1-5 rating, on a node or the surface) and `outcome` (a token and a boolean). Every
-string is a bounded token; there is no text field. A node drawn as a restricted placeholder is reported
+client, and a node's dwell is sent ONCE per view, when the view is sealed: `flush({ final: true })`, a new
+version, or a page hide; unchanged state is never re-sent), `feedback` (a 1-5 rating, on a node or the surface) and `outcome` (a token and a boolean). Every
+string is bounded and control-free (a node id is the Blueprint's own id, <= 128 chars; an outcome name and
+a batch id are strict `[A-Za-z0-9_.:-]` tokens); there is no text field. A node drawn as a restricted placeholder is reported
 `restricted: true` under the alias it already has (`CompileResult.fingerprint.placeholderNodes`, new in
 U11 — the aliases of the placeholders that survived into the Blueprint). The collector is bounded
 (512 tracked nodes per view, 64 signals per batch, 16 queued batches; a bound drops and counts) and

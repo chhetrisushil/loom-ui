@@ -1,76 +1,84 @@
 import { describe, expect, it } from "vitest";
-import { RewardAccumulator, type WindowSummary } from "./ingest";
+import { InMemoryVoteLog, VoteLedger, type VoteSummary } from "./ledger";
 import type { DecisionRef } from "./links";
-import { type OutcomeRuntime, defaultReward, settleRewards } from "./rewards";
+import { type OutcomeRuntime, defaultReward, isNotTerminal, settleRewards } from "./rewards";
 
-const sum = (p: Partial<WindowSummary> = {}): WindowSummary => ({
-  exposed: 10,
-  clicked: 0,
-  dwell: [0, 0, 0, 0],
-  engaged: 0,
-  feedbackCount: 0,
+const sum = (p: Partial<VoteSummary> = {}): VoteSummary => ({
+  viewers: 10,
+  engagementSum: 0,
+  feedbackViewers: 0,
   feedbackSum: 0,
-  outcomes: 0,
-  outcomeSuccesses: 0,
+  outcomeViewers: 0,
+  outcomeSum: 0,
+  overflowViewers: 0,
   ...p,
 });
 
 describe("U11 defaultReward", () => {
-  it("is bounded in [0,1] and undefined without exposure — over a sweep, including hostile counts", () => {
+  it("is bounded in [0,1] and undefined without a viewer - over a sweep, including hostile sums", () => {
     const f = defaultReward();
-    expect(f(sum({ exposed: 0, engaged: 5 }))).toBeUndefined();
+    expect(f(sum({ viewers: 0 }))).toBeUndefined();
     let seen = 0;
-    for (const exposed of [1, 7, 100])
-      for (const engaged of [0, 3, 1000])
-        for (const [fc, fs] of [
+    for (const viewers of [1, 7, 100])
+      for (const engagementSum of [0, 3, 1e9, -5])
+        for (const [fv, fs] of [
           [0, 0],
           [2, 2],
-          [2, 10],
-          [3, 9999],
+          [2, 99],
+          [3, -4],
         ] as const)
-          for (const [o, os] of [
+          for (const [ov, os] of [
             [0, 0],
             [4, 1],
             [4, 4],
-            [2, 9],
+            [2, 9e9],
           ] as const) {
             const r = f(
               sum({
-                exposed,
-                engaged,
-                feedbackCount: fc,
+                viewers,
+                engagementSum,
+                feedbackViewers: fv,
                 feedbackSum: fs,
-                outcomes: o,
-                outcomeSuccesses: os,
+                outcomeViewers: ov,
+                outcomeSum: os,
               })
             );
             expect(r).toBeGreaterThanOrEqual(0);
             expect(r).toBeLessThanOrEqual(1);
             seen++;
           }
-    expect(seen).toBe(144);
+    expect(seen).toBe(192);
   });
-  it("weights the components that have data and leaves out those that do not", () => {
-    expect(defaultReward()(sum({ engaged: 5 }))).toBe(0.5);
-    // engagement 0.5 (w1) + rating 5 -> 1 (w2): (0.5 + 2) / 3
-    expect(defaultReward()(sum({ engaged: 5, feedbackCount: 1, feedbackSum: 5 }))).toBe(0.833333);
+  it("weights the components that have data (mean of per-viewer terms) and leaves out those that do not", () => {
+    expect(defaultReward()(sum({ engagementSum: 5 }))).toBe(0.5);
+    expect(defaultReward()(sum({ engagementSum: 5, feedbackViewers: 1, feedbackSum: 1 }))).toBe(
+      0.833333
+    );
     expect(
-      defaultReward({ engagement: 0, feedback: 0, outcome: 1 })(sum({ engaged: 5 }))
+      defaultReward({ engagement: 0, feedback: 0, outcome: 1 })(sum({ engagementSum: 5 }))
     ).toBeUndefined();
     expect(
-      defaultReward({ engagement: 0, outcome: 1 })(sum({ outcomes: 2, outcomeSuccesses: 1 }))
+      defaultReward({ engagement: 0, outcome: 1 })(sum({ outcomeViewers: 2, outcomeSum: 1 }))
     ).toBe(0.5);
   });
 });
 
-const REF: DecisionRef = { executionId: "e1", decisionId: "plan-variant:x" };
+let uniq = 0;
+const fresh = (): DecisionRef => ({ executionId: `e${++uniq}`, decisionId: "plan-variant:x" });
 type Call = {
   executionId: string;
   outcome: { decisionId: string; key: string; score?: number };
   options?: unknown;
 };
 
-function fakeRuntime(behave: (c: Call, n: number) => void = () => {}) {
+function rig(behave: (c: Call, n: number) => void = () => {}) {
+  let now = 1_000_000;
+  const ledger = new VoteLedger({
+    log: new InMemoryVoteLog(),
+    pseudonymKey: "0123456789abcdef0123456789abcdef",
+    clock: () => now,
+    outcomes: ["approved"],
+  });
   const calls: Call[] = [];
   const store = new Map<string, number>();
   const runtime: OutcomeRuntime = {
@@ -89,120 +97,203 @@ function fakeRuntime(behave: (c: Call, n: number) => void = () => {}) {
       return { appended: true };
     },
   };
-  return { runtime, calls, store };
-}
-function filled(...windows: number[]) {
-  const acc = new RewardAccumulator();
-  for (const w of windows) {
-    const b = acc.bucket(REF, w);
-    if (b) {
-      b.exposed = 4;
-      b.engaged = 2;
-    }
-  }
-  return acc;
-}
-
-describe("U11 settleRewards", () => {
-  const base = {
-    rewardId: "r1",
-    reward: defaultReward(),
-    authorize: () => ({ principal: "owner" }),
+  const vote = async (ref: DecisionRef, n: number, engaged = true) => {
+    for (let i = 0; i < n; i++)
+      await ledger.recordVote(ref, {
+        v: `v${i}`,
+        b: "b",
+        s: [
+          { k: "x", n: "n:a" },
+          ...(engaged ? [{ k: "c" as const, n: "n:a", a: "click" as const, c: 1 }] : []),
+        ],
+      });
   };
-
-  it("records ONE bounded score per closed (decision, window) under ui:<rewardId>:<window>, as the owner", async () => {
-    const acc = filled(5, 6, 9);
-    const f = fakeRuntime();
-    const rep = await settleRewards({ ...base, accumulator: acc, runtime: f.runtime, before: 7 });
-    expect(rep).toMatchObject({ appended: 2, duplicates: 0, empty: 0, deferred: 0, refused: [] });
-    expect(f.calls.map((c) => c.outcome.key)).toEqual(["ui:r1:5", "ui:r1:6"]);
-    expect(f.calls.every((c) => c.outcome.score === 0.5 && c.options !== undefined)).toBe(true);
-    expect(f.calls[0]?.options).toEqual({ principal: "owner" });
-    expect(acc.size).toBe(1); // the open window is untouched
+  const base = (ref: DecisionRef) => ({
+    ledger,
+    runtime,
+    decisions: [ref],
+    reward: defaultReward(),
+    rewardId: "r1",
+    closeId: "end",
+    clock: () => now,
+    authorize: () => ({ principal: "pipeline" }),
   });
+  return {
+    ledger,
+    runtime,
+    calls,
+    store,
+    vote,
+    base,
+    advance: (ms: number) => {
+      now += ms;
+    },
+  };
+}
 
-  it("is idempotent: re-running (a crash between record and forget) appends nothing new", async () => {
-    const f = fakeRuntime();
-    await settleRewards({ ...base, accumulator: filled(5), runtime: f.runtime, before: 7 });
-    const rep = await settleRewards({
-      ...base,
-      accumulator: filled(5),
-      runtime: f.runtime,
-      before: 7,
+describe("U11 settleRewards (once per decision, at a close)", () => {
+  it("freezes the ledger, records ONE pooled score under ui:<rewardId>:<closeId>:<specHash>, as the host-supplied principal", async () => {
+    const r = rig();
+    const ref = fresh();
+    await r.vote(ref, 4);
+    const rep = await settleRewards(r.base(ref));
+    expect(rep).toMatchObject({
+      appended: 1,
+      duplicates: 0,
+      empty: 0,
+      deferred: 0,
+      refused: [],
+      abandoned: [],
     });
-    expect(rep).toMatchObject({ appended: 0, duplicates: 1 });
-    expect(f.store.size).toBe(1);
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0]?.outcome.key).toBe(`ui:r1:end:${r.ledger.specHash}`);
+    expect(r.calls[0]?.outcome.score).toBe(1); // all 4 viewers engaged: engagement 1
+    expect(r.calls[0]?.options).toEqual({ principal: "pipeline" });
+    // votes after the close change nothing and are refused at the door
+    expect(await r.ledger.recordVote(ref, { v: "late", b: "b", s: [{ k: "x", n: "n:a" }] })).toBe(
+      "closed"
+    );
   });
 
-  it("a still-running execution is deferred and retried; a refusal is dropped and reported", async () => {
-    const acc = filled(5);
+  it("pools COUNTS, not window means: 1 unengaged viewer among 99 engaged weighs 1/100", async () => {
+    const r = rig();
+    const ref = fresh();
+    await r.vote(ref, 99, true);
+    await r.ledger.recordVote(ref, { v: "lonely", b: "b", s: [{ k: "x", n: "n:a" }] });
+    await settleRewards(r.base(ref));
+    expect(r.calls[0]?.outcome.score).toBe(0.99);
+  });
+
+  it("is idempotent and replica-safe: concurrent settlements compute the same frozen score; the kernel appends once", async () => {
+    const r = rig();
+    const ref = fresh();
+    await r.vote(ref, 5);
+    const reps = await Promise.all([
+      settleRewards(r.base(ref)),
+      settleRewards(r.base(ref)),
+      settleRewards(r.base(ref)),
+    ]);
+    expect(new Set(r.calls.map((c) => c.outcome.score)).size).toBe(1);
+    expect(r.store.size).toBe(1);
+    expect(reps.reduce((n, x) => n + x.appended, 0)).toBe(1);
+    const again = await settleRewards(r.base(ref));
+    expect(again.alreadySettled).toBe(1);
+  });
+
+  it("a changed reward spec records under a NEW key: it cannot reuse or collide with an old number", () => {
+    const a = rig();
+    const b = new VoteLedger({
+      log: new InMemoryVoteLog(),
+      pseudonymKey: "0123456789abcdef0123456789abcdef",
+      clock: () => 0,
+      outcomes: ["approved", "refunded"],
+    });
+    expect(b.specHash).not.toBe(a.ledger.specHash);
+    const c = new VoteLedger({
+      log: new InMemoryVoteLog(),
+      pseudonymKey: "0123456789abcdef0123456789abcdef",
+      clock: () => 0,
+      outcomes: ["approved"],
+      maxNodesPerViewer: 8,
+    });
+    expect(c.specHash).not.toBe(a.ledger.specHash);
+  });
+
+  it("not terminal: deferred (the ledger stays frozen), then recorded once the execution ends", async () => {
     let terminal = false;
-    const f = fakeRuntime(() => {
+    const r = rig(() => {
       if (!terminal)
-        throw Object.assign(new Error("running"), {
-          name: "ExecutionNotTerminalError",
-          retryable: false,
-        });
+        throw Object.assign(new Error("running"), { name: "ExecutionNotTerminalError" });
     });
-    const first = await settleRewards({ ...base, accumulator: acc, runtime: f.runtime, before: 7 });
-    expect(first).toMatchObject({ deferred: 1, appended: 0 });
-    expect(acc.size).toBe(1);
-    terminal = true;
+    const ref = fresh();
+    await r.vote(ref, 2);
     expect(
-      await settleRewards({ ...base, accumulator: acc, runtime: f.runtime, before: 7 })
-    ).toMatchObject({ appended: 1 });
-    expect(acc.size).toBe(0);
+      isNotTerminal(Object.assign(new Error("x"), { name: "ExecutionNotTerminalError" }))
+    ).toBe(true);
+    expect(await settleRewards(r.base(ref))).toMatchObject({ deferred: 1, appended: 0 });
+    terminal = true;
+    expect(await settleRewards(r.base(ref))).toMatchObject({ appended: 1, deferred: 0 });
+  });
 
-    const denied = fakeRuntime(() => {
+  it("P2-9: a deferral does not live forever: past maxDeferralMs it is abandoned, marked, and reported", async () => {
+    const r = rig(() => {
+      throw Object.assign(new Error("running"), { name: "ExecutionNotTerminalError" });
+    });
+    const ref = fresh();
+    await r.vote(ref, 2);
+    expect((await settleRewards({ ...r.base(ref), maxDeferralMs: 1000 })).deferred).toBe(1);
+    r.advance(5_000);
+    const rep = await settleRewards({ ...r.base(ref), maxDeferralMs: 1000 });
+    expect(rep.abandoned).toHaveLength(1);
+    expect(rep.abandoned[0]?.reason).toMatch(/maxDeferralMs/);
+    expect((await settleRewards({ ...r.base(ref), maxDeferralMs: 1000 })).alreadySettled).toBe(1);
+  });
+
+  it("P2-8: a transient failure is NOT a permanent drop: it is retried, and only abandoned after maxAttempts", async () => {
+    let fail = 2;
+    const r = rig(() => {
+      if (fail-- > 0) throw new Error("connection reset");
+    });
+    const ref = fresh();
+    await r.vote(ref, 3);
+    expect(await settleRewards({ ...r.base(ref), maxAttempts: 5 })).toMatchObject({
+      deferred: 1,
+      refused: [],
+    });
+    expect(await settleRewards({ ...r.base(ref), maxAttempts: 5 })).toMatchObject({ deferred: 1 });
+    expect(await settleRewards({ ...r.base(ref), maxAttempts: 5 })).toMatchObject({ appended: 1 });
+    // a failure that never clears is abandoned after the bound
+    const r2 = rig(() => {
+      throw new Error("db down");
+    });
+    const ref2 = fresh();
+    await r2.vote(ref2, 3);
+    const outs = [];
+    for (let i = 0; i < 3; i++)
+      outs.push(await settleRewards({ ...r2.base(ref2), maxAttempts: 3 }));
+    expect(outs.map((o) => o.deferred)).toEqual([1, 1, 0]);
+    expect(outs[2]?.abandoned).toHaveLength(1);
+  });
+
+  it("a typed permanent refusal (unauthorized, conflicting score) is marked settled and reported, not retried", async () => {
+    const r = rig(() => {
       throw Object.assign(new Error("denied"), { name: "ExecutionDeniedError" });
     });
-    const acc2 = filled(5);
-    const rep = await settleRewards({
-      ...base,
-      accumulator: acc2,
-      runtime: denied.runtime,
-      before: 7,
-    });
+    const ref = fresh();
+    await r.vote(ref, 2);
+    const rep = await settleRewards(r.base(ref));
     expect(rep.refused).toHaveLength(1);
-    expect(rep.refused[0]?.ref).toEqual(REF);
-    expect(acc2.size).toBe(0); // not retried forever
+    expect(rep.refused[0]?.ref).toEqual(ref);
+    expect((await settleRewards(r.base(ref))).alreadySettled).toBe(1);
+    expect(r.calls).toHaveLength(1);
   });
 
-  it("a reward function outside [0,1] or non-finite cannot put a bad number in the log", async () => {
+  it("a reward outside [0,1] or non-finite cannot put a bad number in the log; an empty decision records nothing", async () => {
     for (const [out, expected] of [
       [7, 1],
       [-3, 0],
-      [Number.NaN, undefined],
-      [Number.POSITIVE_INFINITY, undefined],
     ] as const) {
-      const f = fakeRuntime();
-      const rep = await settleRewards({
-        ...base,
-        reward: () => out,
-        accumulator: filled(5),
-        runtime: f.runtime,
-        before: 7,
-      });
-      if (expected === undefined) expect(rep.empty).toBe(1);
-      else expect(f.calls[0]?.outcome.score).toBe(expected);
+      const r = rig();
+      const ref = fresh();
+      await r.vote(ref, 2);
+      await settleRewards({ ...r.base(ref), reward: () => out });
+      expect(r.calls[0]?.outcome.score).toBe(expected);
     }
-    await expect(
-      settleRewards({
-        ...base,
-        rewardId: "bad id",
-        accumulator: filled(5),
-        runtime: fakeRuntime().runtime,
-        before: 7,
-      })
-    ).rejects.toThrow(/token/);
-  });
-
-  it("a window the function has nothing to say about records nothing", async () => {
-    const f = fakeRuntime();
-    const acc = new RewardAccumulator();
-    acc.bucket(REF, 5); // zero exposure
-    const rep = await settleRewards({ ...base, accumulator: acc, runtime: f.runtime, before: 7 });
-    expect(rep.empty).toBe(1);
-    expect(f.calls).toHaveLength(0);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const r = rig();
+      const ref = fresh();
+      await r.vote(ref, 2);
+      expect((await settleRewards({ ...r.base(ref), reward: () => bad })).empty).toBe(1);
+      expect(r.calls).toHaveLength(0);
+    }
+    const none = rig();
+    const ref = fresh();
+    expect((await settleRewards(none.base(ref))).empty).toBe(1);
+    expect(none.calls).toHaveLength(0);
+    expect((await settleRewards({ ...none.base(fresh()), minViewers: 5 })).empty).toBe(1);
+    await expect(settleRewards({ ...none.base(ref), rewardId: "bad id" })).rejects.toThrow(/token/);
+    await expect(settleRewards({ ...none.base(ref), closeId: "x".repeat(33) })).rejects.toThrow(
+      /token/
+    );
   });
 });

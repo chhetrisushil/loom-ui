@@ -145,7 +145,7 @@ describe("U11 ReferencePlanner with variants", () => {
     expect(r.findings.filter((f) => f.severity === "error")).toEqual([]);
     const v = r.report.variant;
     expect(v).toBeDefined();
-    expect(v?.decisionId.startsWith("plan-variant:")).toBe(true);
+    expect(v?.decisionId).toMatch(/^plan-variant:[0-9a-f]{40}$/); // SHA-256, not a 64-bit FNV
     expect(v?.propensity).toBe(0.5);
     expect(v?.policy).toEqual({ id: "ab", version: "1" });
     const o = ctx.opts.get(v?.decisionId ?? "");

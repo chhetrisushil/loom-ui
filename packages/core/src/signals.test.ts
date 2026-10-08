@@ -41,7 +41,7 @@ describe("U11 SignalCollector", () => {
     c.engage("kpi", "expand");
     c.dwell("kpi", 700);
     c.dwell("kpi", 2000); // 2.7 s total -> bucket 1
-    await c.flush();
+    await c.flush({ final: true });
     expect(sent).toHaveLength(1);
     const s = sent[0]?.signals ?? [];
     expect(s.filter((x) => x.kind === "exposure")).toHaveLength(1);
@@ -54,6 +54,36 @@ describe("U11 SignalCollector", () => {
     expect(dwellBucket(DWELL_EDGES_MS[0] as number)).toBe(1);
     expect(dwellBucket(1e9)).toBe(DWELL_EDGES_MS.length);
     expect(dwellBucket(Number.NaN)).toBe(0);
+  });
+
+  it("dwell is sent ONCE per view, when sealed: per-view totals survive intermediate flushes; unchanged state is not re-sent", async () => {
+    const { c, sent } = make();
+    c.expose("kpi");
+    c.dwell("kpi", 600);
+    await c.flush(); // intermediate: exposure only, no dwell bucket yet
+    c.dwell("kpi", 700); // 1.3 s in total (bucket 1), not two 0.6/0.7 s buckets
+    await c.flush();
+    expect(sent).toHaveLength(1);
+    expect(JSON.stringify(sent[0]?.signals)).not.toContain("dwell");
+    await c.flush({ final: true });
+    const dwell = sent
+      .flatMap((b) => b.signals)
+      .filter((s) => s.kind === "engagement" && s.action === "dwell");
+    expect(dwell).toEqual([{ kind: "engagement", action: "dwell", bucket: 1, node: "kpi" }]);
+    // nothing changed since: nothing more goes out
+    const n = sent.length;
+    await c.flush({ final: true });
+    expect(sent).toHaveLength(n);
+    // a sealed view (a new version) emits its dwell exactly once too
+    const v2 = make();
+    v2.c.expose("a");
+    v2.c.dwell("a", 6000);
+    await v2.c.flush();
+    v2.c.setView({ ...VIEW, versionHash: "sha256:v2" });
+    await v2.c.flush();
+    expect(v2.sent.flatMap((b) => b.signals).filter((s) => s.kind === "engagement")).toEqual([
+      { kind: "engagement", action: "dwell", bucket: 2, node: "a" },
+    ]);
   });
 
   it("a restricted placeholder is reported flagged, under its alias, with no content", async () => {

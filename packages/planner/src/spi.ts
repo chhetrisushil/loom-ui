@@ -193,8 +193,11 @@ export interface ComposeInput {
   readonly containers?: readonly ContainerRoleSpec[];
   /**
    * The stable UNIT a planner with `variants` assigns a variant by (U11): an opaque id of a user,
-   * tenant or cohort, `[A-Za-z0-9_.:-]{1,128}` — never a name or an email. It is recorded in the
-   * variant decision's context. Not part of the plan decision's id. Required when the planner has
+   * tenant or cohort, `[A-Za-z0-9_.:-]{1,128}`. The HOST derives it server-side as a keyed HMAC alias
+   * (`unitAlias(key, userId)` in `@loom-ui/learning`) — never client-supplied, never a name or an
+   * email. It is a PSEUDONYM, recorded in the decision log for good: destroying the key severs it
+   * from the person, but the log still ties one alias's decisions together. Not part of the plan
+   * decision's id. Required when the planner has
    * variants (a missing or malformed unit is refused, no model call); ignored otherwise.
    */
   readonly unit?: string;

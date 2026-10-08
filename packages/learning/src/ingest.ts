@@ -1,41 +1,51 @@
 import { type InteractionSignal, validateSignalBatch } from "@loom-ui/core/signals";
 import type { ExposureCheck } from "./exposure";
+import {
+  RESTRICTED_NODE,
+  type Vote,
+  type VoteLedger,
+  type VoteSignal,
+  visibleNode,
+} from "./ledger";
 import type { DecisionLink, DecisionLinkResolver, DecisionRef } from "./links";
 
 // ── Ingesting untrusted signals (U11) ─────────────────────────────────────────
-// A batch arrives from a browser the host does not control. Before any of it can move a reward:
-//   1. SHAPE   — `validateSignalBatch` (bounded tokens, in-range integers, ≤64 signals; extra keys gone);
-//   2. WHO     — the viewer comes from the host's AUTHENTICATED session, never from the payload;
-//   3. RATE    — a per-viewer budget per window; a batch over it is refused whole and NOT remembered;
-//   4. REPLAY  — a batchId already accepted for this viewer is a duplicate, whole;
-//   5. WHICH   — the view must be one the host registered, in the viewer's tenant (a foreign tenant's
-//                view and an unknown one answer the same);
-//   6. SAW IT  — an engagement / feedback / outcome counts only after the viewer is known to have been
-//                shown the node (the ledger of their own accepted exposures, AND the host's
-//                authoritative `ExposureCheck` when given);
-//   7. ONCE    — exposure, engagement, dwell, feedback and outcome count at most once per
-//                (viewer, version, node, kind): a client cannot raise a reward by repeating itself.
-// Everything is bounded; a bound that is hit refuses or forgets (documented), it never grows.
+// A batch arrives from a browser the host does not control. The ingestor's job is to decide which
+// of its signals may be APPENDED to which decision's vote log; the log's fold (see ledger.ts) then
+// reduces each viewer to one bounded vote. In order:
+//   1. COST     — every call is charged to the viewer's rate budget BEFORE anything is parsed, so a
+//                 refusal (malformed, unknown view, replay) costs the sender as much as an acceptance;
+//   2. SHAPE    — `validateSignalBatch` (bounded strings, in-range integers, <=64 signals);
+//   3. WHICH    — the view must be registered for THIS tenant (a link without a tenant cannot exist);
+//   4. NODE     — a visible node must be listed in the link and visible to this viewer; unlisted and
+//                 hidden answer identically. A restricted placeholder is credited at VERSION level
+//                 only, all of them collapsed onto one — its alias carries no weight, and a
+//                 `restricted` flag on a node the link lists is refused;
+//   5. SAW IT   — `exposure` is REQUIRED: an authoritative check (`seenLogExposure`), or the explicit
+//                 `"client-claimed"` opt-out, where the fold credits an engagement only after the
+//                 same viewer's claimed exposure of that node;
+//   6. OUTCOME  — only a name the host registered with the ledger.
+// The viewer is the host's authenticated session, keyed by tenant AND id, never the payload.
+//
+// WHAT THE CALLER SEES. `IngestResult` says why a signal was refused, including `unknown-node`; that
+// is for the HOST's logs. Do not echo it to the client: answer every well-formed POST with the same
+// bare 204, or the reasons become an oracle.
 
-export type IngestRefusal =
-  | "batch-invalid"
-  | "rate-limited"
-  | "duplicate-batch"
-  | "unknown-view"
-  | "capacity";
+export type IngestRefusal = "batch-invalid" | "rate-limited" | "duplicate-batch" | "unknown-view";
 
-/** Why one signal inside an accepted batch did not count. */
+/** Why one signal inside an accepted batch was not appended. */
 export type SignalRejection =
   | "invalid"
-  | "duplicate"
   | "unexposed"
   | "unknown-node"
-  | "restricted-cap"
-  | "capacity";
+  | "restricted-misuse"
+  | "unknown-outcome"
+  | "capacity"
+  | "closed";
 
 export interface IngestResult {
+  /** Signals appended to at least one decision's log. */
   readonly accepted: number;
-  /** Per-reason counts for signals that did not count. */
   readonly rejected: Readonly<Partial<Record<SignalRejection, number>>>;
   /** Set when the WHOLE batch was refused (then `accepted` is 0). */
   readonly refused?: IngestRefusal;
@@ -45,324 +55,241 @@ export interface IngestResult {
 export interface Viewer {
   /** The authenticated viewer id: from the host's session, NEVER from the batch. */
   readonly id: string;
-  readonly tenant?: string;
-}
-
-/** What one decision's signals add up to in one window: the input to a reward function. */
-export interface WindowSummary {
-  /** Distinct (viewer, node) exposures. */
-  readonly exposed: number;
-  /** Of those, pairs with a click or expand. */
-  readonly clicked: number;
-  /** Distinct (viewer, node) pairs by dwell bucket 0..3. */
-  readonly dwell: readonly [number, number, number, number];
-  /** Pairs that count as ENGAGED: a click, an expand, or a dwell of bucket ≥ 2 (≥ 5 s). */
-  readonly engaged: number;
-  readonly feedbackCount: number;
-  /** Sum of ratings 1..5. */
-  readonly feedbackSum: number;
-  readonly outcomes: number;
-  readonly outcomeSuccesses: number;
-}
-
-interface MutableSummary {
-  exposed: number;
-  clicked: number;
-  dwell: [number, number, number, number];
-  engaged: number;
-  feedbackCount: number;
-  feedbackSum: number;
-  outcomes: number;
-  outcomeSuccesses: number;
-}
-const blank = (): MutableSummary => ({
-  exposed: 0,
-  clicked: 0,
-  dwell: [0, 0, 0, 0],
-  engaged: 0,
-  feedbackCount: 0,
-  feedbackSum: 0,
-  outcomes: 0,
-  outcomeSuccesses: 0,
-});
-
-export interface AccumulatedEntry {
-  readonly ref: DecisionRef;
-  readonly window: number;
-  readonly summary: WindowSummary;
-}
-
-/** The per-(decision, window) counters. Bounded: a new key past `max` is refused. */
-export class RewardAccumulator {
-  private readonly map = new Map<string, { ref: DecisionRef; window: number; s: MutableSummary }>();
-  constructor(private readonly max = 4_096) {}
-  private static key(ref: DecisionRef, window: number): string {
-    return `${ref.executionId}\u0000${ref.decisionId}\u0000${window}`;
-  }
-  /** The counters for a key, or `undefined` when a NEW key would pass the bound. */
-  bucket(ref: DecisionRef, window: number): MutableSummary | undefined {
-    const k = RewardAccumulator.key(ref, window);
-    const hit = this.map.get(k);
-    if (hit !== undefined) return hit.s;
-    if (this.map.size >= this.max) return undefined;
-    const s = blank();
-    this.map.set(k, { ref, window, s });
-    return s;
-  }
-  /** Entries of windows strictly before `before` (closed windows). */
-  closed(before: number): AccumulatedEntry[] {
-    const out: AccumulatedEntry[] = [];
-    for (const { ref, window, s } of this.map.values())
-      if (window < before)
-        out.push({ ref, window, summary: { ...s, dwell: [...s.dwell] as WindowSummary["dwell"] } });
-    return out;
-  }
-  drop(ref: DecisionRef, window: number): void {
-    this.map.delete(RewardAccumulator.key(ref, window));
-  }
-  get size(): number {
-    return this.map.size;
-  }
+  /** REQUIRED. Part of the viewer's identity and of the link lookup. */
+  readonly tenant: string;
 }
 
 export interface SignalIngestorOptions {
   readonly links: DecisionLinkResolver;
-  readonly accumulator: RewardAccumulator;
-  /** Injected time (ms). Windows and rate budgets are functions of it; nothing reads a wall clock. */
+  readonly ledger: VoteLedger;
+  /** Injected time (ms) for the rate budget. */
   readonly clock: () => number;
-  /** Reward window length (ms). Default one hour. */
-  readonly windowMs?: number;
-  /** The host's authoritative "was it shown" check (e.g. `seenLogExposure`). Optional but advised. */
-  readonly exposure?: ExposureCheck;
-  /** Signals one viewer may submit per `rateWindowMs`. Default 512. */
+  /**
+   * REQUIRED. An authoritative "was it shown" check (e.g. `seenLogExposure(log, { versionIsEnough:
+   * false })`), or `"client-claimed"`: trust the client's own exposure signals, which stops an
+   * engagement on a node the client never claimed to show and nothing more. Demos and tests only.
+   */
+  readonly exposure: ExposureCheck | "client-claimed";
+  /** Signals one viewer may submit per `rateWindowMs` (each refused call costs at least 1). Default 512. */
   readonly rateLimit?: number;
   /** Default 60 s. */
   readonly rateWindowMs?: number;
-  /** Distinct (viewer, version, node, kind) keys remembered for "once". Default 100 000. */
-  readonly maxRemembered?: number;
-  /** Batch ids remembered for replay refusal. Default 50 000. */
-  readonly maxBatches?: number;
-  /** Viewers with a live rate budget. Default 50 000. */
+  /** Viewers tracked for rate/replay at once (least recently seen out). Default 50 000. */
   readonly maxViewers?: number;
-  /** Distinct restricted-placeholder exposures counted per viewer and version. Default 16. */
-  readonly maxRestrictedPerView?: number;
 }
 
-/** Remembers a bounded set of keys, forgetting the oldest. */
-class Forgetful {
-  private readonly set = new Set<string>();
-  constructor(private readonly max: number) {}
-  has(k: string): boolean {
-    return this.set.has(k);
-  }
-  add(k: string): void {
-    if (this.set.has(k)) return;
-    this.set.add(k);
-    if (this.set.size > this.max) this.set.delete(this.set.values().next().value as string);
-  }
+interface ViewerRuntime {
+  start: number;
+  used: number;
+  batches: Set<string>;
 }
+const MAX_RECENT_BATCHES = 128;
 
 const SEP = "\u0000";
+const refKey = (r: DecisionRef): string => `${r.executionId}${SEP}${r.decisionId}`;
+
+/** What a raw call costs before it is parsed: its claimed signal count, at least 1, at most a batch. */
+function rawCost(raw: unknown): number {
+  const s = (raw as { signals?: unknown } | null)?.signals;
+  return Array.isArray(s) ? Math.max(1, Math.min(s.length, 65)) : 1;
+}
 
 export class SignalIngestor {
-  private readonly windowMs: number;
   private readonly rateLimit: number;
   private readonly rateWindowMs: number;
-  private readonly maxRestricted: number;
-  private readonly once: Forgetful;
-  private readonly batches: Forgetful;
-  /** viewer → { windowStart, used }. Insertion-ordered; the oldest viewer is dropped past `maxViewers`. */
-  private readonly rate = new Map<string, { start: number; used: number }>();
   private readonly maxViewers: number;
-  /** viewer+version → restricted exposures counted. */
-  private readonly restrictedSeen = new Map<string, number>();
+  private readonly viewers = new Map<string, ViewerRuntime>();
 
   constructor(private readonly opts: SignalIngestorOptions) {
-    this.windowMs = Math.max(1, opts.windowMs ?? 3_600_000);
+    if (opts.exposure === undefined)
+      throw new Error(
+        'SignalIngestor: `exposure` is required - pass an ExposureCheck (seenLogExposure) or the explicit "client-claimed"'
+      );
     this.rateLimit = Math.max(1, opts.rateLimit ?? 512);
     this.rateWindowMs = Math.max(1, opts.rateWindowMs ?? 60_000);
-    this.maxRestricted = Math.max(0, opts.maxRestrictedPerView ?? 16);
     this.maxViewers = Math.max(1, opts.maxViewers ?? 50_000);
-    this.once = new Forgetful(Math.max(1, opts.maxRemembered ?? 100_000));
-    this.batches = new Forgetful(Math.max(1, opts.maxBatches ?? 50_000));
-  }
-
-  /** The reward window `t` falls in. */
-  windowOf(t: number): number {
-    return Math.floor(t / this.windowMs);
   }
 
   async ingest(input: { readonly viewer: Viewer; readonly raw: unknown }): Promise<IngestResult> {
     const { viewer } = input;
+    if (
+      typeof viewer?.id !== "string" ||
+      viewer.id === "" ||
+      typeof viewer.tenant !== "string" ||
+      viewer.tenant === ""
+    )
+      throw new TypeError(
+        "SignalIngestor.ingest: the viewer must name an id and a tenant (from the session)"
+      );
     const none = (refused: IngestRefusal, detail?: string): IngestResult => ({
       accepted: 0,
       rejected: {},
       refused,
       ...(detail !== undefined && { detail }),
     });
+    const ledger = this.opts.ledger;
+    const vk = ledger.viewerKey(viewer.tenant, viewer.id);
+
+    // 1. cost, before anything else
+    const rt = this.runtimeOf(vk);
+    const now = this.opts.clock();
+    if (now - rt.start >= this.rateWindowMs || now < rt.start) {
+      rt.start = now;
+      rt.used = 0;
+    }
+    const cost = rawCost(input.raw);
+    if (rt.used + cost > this.rateLimit) return none("rate-limited");
+    rt.used += cost;
+
     const v = validateSignalBatch(input.raw);
     if (!v.ok) return none("batch-invalid", v.reason);
     const { batch } = v;
+    if (rt.batches.has(batch.batchId)) return none("duplicate-batch");
+
+    const link = this.opts.links.resolve({
+      tenant: viewer.tenant,
+      experienceId: batch.view.experienceId,
+      versionHash: batch.view.versionHash,
+    });
+    if (link === undefined || link.tenant !== viewer.tenant) return none("unknown-view");
+
     const rejected: Partial<Record<SignalRejection, number>> = {};
     const reject = (r: SignalRejection, n = 1) => {
       rejected[r] = (rejected[r] ?? 0) + n;
     };
     if (v.rejected > 0) reject("invalid", v.rejected);
 
-    // 4. replay — before the rate budget, so an honest resend of an accepted batch costs nothing.
-    const batchKey = `${viewer.id}${SEP}${batch.batchId}`;
-    if (this.batches.has(batchKey)) return none("duplicate-batch");
-
-    // 5. which view (a foreign tenant's is indistinguishable from an unknown one)
-    const { experienceId, versionHash } = batch.view;
-    const link = this.opts.links.resolve(experienceId, versionHash);
-    if (link === undefined || (link.tenant !== undefined && link.tenant !== viewer.tenant))
-      return none("unknown-view");
-
-    // 3. rate — charged for the whole batch, refused whole when it does not fit
-    const now = this.opts.clock();
-    if (!this.charge(viewer.id, now, batch.signals.length)) return none("rate-limited");
-    this.batches.add(batchKey);
-
-    const window = this.windowOf(now);
-    let accepted = 0;
-    // Exposures first: an engagement in the same batch is then judged against them.
-    const ordered = [...batch.signals].sort(
-      (a, b) => (a.kind === "exposure" ? 0 : 1) - (b.kind === "exposure" ? 0 : 1)
-    );
-    for (const s of ordered) {
-      const r = await this.one(viewer, batch.view, link, window, s);
-      if (r === undefined) accepted += 1;
-      else reject(r);
-    }
-    return { accepted, rejected };
-  }
-
-  private charge(viewerId: string, now: number, n: number): boolean {
-    let e = this.rate.get(viewerId);
-    if (e === undefined || now - e.start >= this.rateWindowMs || now < e.start) {
-      e = { start: now, used: 0 };
-    }
-    if (e.used + n > this.rateLimit) return false;
-    e.used += n;
-    this.rate.delete(viewerId);
-    this.rate.set(viewerId, e);
-    while (this.rate.size > this.maxViewers)
-      this.rate.delete(this.rate.keys().next().value as string);
-    return true;
-  }
-
-  /** The decisions a signal credits, or the reason it credits none. */
-  private targets(
-    link: DecisionLink,
-    node: string | undefined,
-    restricted: boolean
-  ): readonly DecisionRef[] | "unknown-node" {
-    if (node === undefined || restricted || link.nodes === undefined) return link.decisions;
-    return Object.hasOwn(link.nodes, node) ? [link.nodes[node] as DecisionRef] : "unknown-node";
-  }
-
-  private async one(
-    viewer: Viewer,
-    view: { readonly experienceId: string; readonly versionHash: string },
-    link: DecisionLink,
-    window: number,
-    s: InteractionSignal
-  ): Promise<SignalRejection | undefined> {
-    const node = "node" in s ? s.node : undefined;
-    const restricted = "restricted" in s && s.restricted === true;
-    const targets = this.targets(link, node, restricted);
-    if (targets === "unknown-node") return "unknown-node";
-    if (targets.length === 0) return "unknown-node";
-    const pair = `${viewer.id}${SEP}${view.experienceId}${SEP}${view.versionHash}${SEP}${node ?? ""}`;
-    const q = {
+    const visible = link.visibleTo?.(viewer);
+    const check = this.opts.exposure === "client-claimed" ? undefined : this.opts.exposure;
+    const base = {
       viewerId: viewer.id,
-      experienceId: view.experienceId,
-      versionHash: view.versionHash,
-      ...(node !== undefined && { node }),
-      ...(restricted && { restricted: true }),
+      experienceId: batch.view.experienceId,
+      versionHash: batch.view.versionHash,
+    };
+    const memo = new Map<string, Promise<boolean>>();
+    const saw = (node: string | undefined, restricted: boolean): Promise<boolean> => {
+      if (check === undefined) return Promise.resolve(true);
+      const k = `${node ?? ""}${SEP}${restricted}`;
+      let p = memo.get(k);
+      if (p === undefined) {
+        p = Promise.resolve(
+          check.saw({
+            ...base,
+            ...(node !== undefined && { node }),
+            ...(restricted && { restricted: true }),
+          })
+        ).catch(() => false);
+        memo.set(k, p);
+      }
+      return p;
     };
 
-    // 6. saw it (the exposure signal itself needs only the authoritative check, if any)
-    const exposedKey = `${pair}${SEP}exposure`;
-    if (s.kind !== "exposure") {
-      const claimed =
-        node === undefined ? this.versionClaimed(viewer.id, view) : this.once.has(exposedKey);
-      if (!claimed) return "unexposed";
+    const perDecision = new Map<string, { ref: DecisionRef; sigs: VoteSignal[] }>();
+    const put = (ref: DecisionRef, s: VoteSignal) => {
+      const k = refKey(ref);
+      const e = perDecision.get(k) ?? { ref, sigs: [] as VoteSignal[] };
+      perDecision.set(k, e);
+      e.sigs.push(s);
+    };
+    const everyDecision = (s: VoteSignal) => {
+      for (const d of link.decisions) put(d, s);
+    };
+    let versionExposed = false;
+    let appended = 0;
+
+    for (const s of batch.signals as readonly InteractionSignal[]) {
+      const node = "node" in s ? s.node : undefined;
+      const restricted = "restricted" in s && s.restricted === true;
+      // 4. node
+      let target: readonly DecisionRef[] | undefined;
+      let tag: string | undefined;
+      if (node !== undefined && restricted) {
+        if (link.nodes !== undefined && Object.hasOwn(link.nodes, node)) {
+          reject("restricted-misuse");
+          continue;
+        }
+        target = link.decisions;
+        tag = RESTRICTED_NODE;
+      } else if (node !== undefined) {
+        const listed = link.nodes === undefined || Object.hasOwn(link.nodes, node);
+        if (!listed || (visible !== undefined && !visible.has(node))) {
+          reject("unknown-node");
+          continue;
+        }
+        target =
+          link.nodes === undefined
+            ? link.decisions
+            : [(link.nodes as Record<string, DecisionRef>)[node] as DecisionRef];
+        tag = visibleNode(node);
+      } else target = link.decisions;
+      if (target.length === 0) {
+        reject("unknown-node");
+        continue;
+      }
+      // 6. outcome names
+      if (s.kind === "outcome" && !ledger.spec.outcomes.includes(s.name)) {
+        reject("unknown-outcome");
+        continue;
+      }
+      // 5. saw it
+      if (!(await saw(node === undefined ? undefined : node, restricted))) {
+        reject("unexposed");
+        continue;
+      }
+      const emit = (vs: VoteSignal) => {
+        for (const d of target as readonly DecisionRef[]) put(d, vs);
+      };
+      switch (s.kind) {
+        case "exposure":
+          emit({ k: "x", n: tag as string });
+          versionExposed = true;
+          break;
+        case "engagement":
+          emit(
+            s.action === "dwell"
+              ? { k: "d", n: tag as string, b: s.bucket }
+              : { k: "c", n: tag as string, a: s.action, c: s.count }
+          );
+          break;
+        case "feedback":
+          emit({ k: "f", r: s.rating, ...(tag !== undefined && { n: tag }) });
+          break;
+        case "outcome":
+          everyDecision({ k: "o", name: s.name, ok: s.success });
+          break;
+      }
+      appended += 1;
     }
-    if (this.opts.exposure !== undefined && !(await this.opts.exposure.saw(q))) return "unexposed";
 
-    // 7. once
-    const onceKey =
-      s.kind === "exposure"
-        ? exposedKey
-        : s.kind === "engagement"
-          ? `${pair}${SEP}engagement${SEP}${s.action}`
-          : s.kind === "feedback"
-            ? `${pair}${SEP}feedback`
-            : `${viewer.id}${SEP}${view.experienceId}${SEP}${view.versionHash}${SEP}outcome${SEP}${s.name}`;
-    if (this.once.has(onceKey)) return "duplicate";
-
-    if (s.kind === "exposure" && restricted) {
-      const rk = `${viewer.id}${SEP}${view.experienceId}${SEP}${view.versionHash}`;
-      const n = this.restrictedSeen.get(rk) ?? 0;
-      if (n >= this.maxRestricted) return "restricted-cap";
-      this.restrictedSeen.set(rk, n + 1);
-      if (this.restrictedSeen.size > 50_000)
-        this.restrictedSeen.delete(this.restrictedSeen.keys().next().value as string);
-    }
-
-    // credit every target; refuse the signal if any bucket would pass the capacity bound
-    const buckets = [];
-    for (const t of targets) {
-      const b = this.opts.accumulator.bucket(t, window);
-      if (b === undefined) return "capacity";
-      buckets.push(b);
-    }
-    this.once.add(onceKey);
-    if (s.kind === "exposure")
-      this.once.add(`${viewer.id}${SEP}${view.experienceId}${SEP}${view.versionHash}${SEP}seen`);
-    for (const b of buckets) apply(b, s, this.engagedBefore(pair));
-    if (s.kind === "engagement") this.markEngaged(pair, s);
-    return undefined;
-  }
-
-  private versionClaimed(
-    viewerId: string,
-    view: { experienceId: string; versionHash: string }
-  ): boolean {
-    return this.once.has(
-      `${viewerId}${SEP}${view.experienceId}${SEP}${view.versionHash}${SEP}seen`
+    // version-level exposure (what version-level feedback / outcomes lean on)
+    const versionLevel = batch.signals.some(
+      (s) => s.kind === "outcome" || (s.kind === "feedback" && s.node === undefined)
     );
+    if (versionExposed || (versionLevel && check !== undefined && (await saw(undefined, false))))
+      everyDecision({ k: "vx" });
+
+    let wrote = 0;
+    for (const { ref, sigs } of perDecision.values()) {
+      const vote: Vote = { v: vk, b: batch.batchId, s: sigs };
+      const r = await ledger.recordVote(ref, vote);
+      if (r === "ok") wrote += 1;
+      else reject(r, sigs.filter((x) => x.k !== "vx").length);
+    }
+    rt.batches.add(batch.batchId);
+    if (rt.batches.size > MAX_RECENT_BATCHES)
+      rt.batches.delete(rt.batches.values().next().value as string);
+    return { accepted: wrote > 0 ? appended : 0, rejected };
   }
-  private engagedBefore(pair: string): boolean {
-    return this.once.has(`${pair}${SEP}engaged`);
-  }
-  private markEngaged(pair: string, s: InteractionSignal): void {
-    if (s.kind === "engagement" && (s.action !== "dwell" || s.bucket >= 2))
-      this.once.add(`${pair}${SEP}engaged`);
+
+  private runtimeOf(vk: string): ViewerRuntime {
+    let rt = this.viewers.get(vk);
+    if (rt === undefined) rt = { start: 0, used: 0, batches: new Set() };
+    this.viewers.delete(vk);
+    this.viewers.set(vk, rt);
+    while (this.viewers.size > this.maxViewers)
+      this.viewers.delete(this.viewers.keys().next().value as string);
+    return rt;
   }
 }
 
-function apply(b: MutableSummary, s: InteractionSignal, alreadyEngaged: boolean): void {
-  switch (s.kind) {
-    case "exposure":
-      b.exposed += 1;
-      return;
-    case "engagement": {
-      if (s.action === "dwell")
-        b.dwell[Math.min(3, s.bucket)] = (b.dwell[Math.min(3, s.bucket)] as number) + 1;
-      else b.clicked += 1;
-      const counts = s.action !== "dwell" || s.bucket >= 2;
-      if (counts && !alreadyEngaged) b.engaged += 1;
-      return;
-    }
-    case "feedback":
-      b.feedbackCount += 1;
-      b.feedbackSum += s.rating;
-      return;
-    case "outcome":
-      b.outcomes += 1;
-      if (s.success) b.outcomeSuccesses += 1;
-  }
-}
+export type { DecisionLink };

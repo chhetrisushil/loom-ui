@@ -268,7 +268,10 @@ additionally on the variant (a plan made under one variant is not a plan for ano
 of application-authored layout guidance appended to the system prompt.
 
 The turn needs `ComposeInput.unit` / `ReviseInput.unit`, an opaque `[A-Za-z0-9_.:-]{1,128}` id of the
-user, tenant or cohort (an email is refused). Without a valid unit the turn returns a
+user, tenant or cohort (an email is refused). The host derives it SERVER-SIDE as a keyed HMAC alias
+(`unitAlias(key, userId)` in `@loom-ui/learning`), never from a client: it is a pseudonym recorded in the
+decision log, so destroying the key severs it from the person (the log still links one alias's decisions).
+The variant decision id is a SHA-256 of the plan key and unit (it keys what a reward attaches to). Without a valid unit the turn returns a
 `variant-unit-invalid` finding and calls nothing. Policies shipped: `stableBucketPolicy` (A/B by a
 hash of the unit, propensity = weight share), `epsilonGreedyPolicy` (propensity `eps/k` plus `1-eps`
 for the greedy arm — exact) and `ucbPolicy` (deterministic, propensity 1, over a stats snapshot). All are
