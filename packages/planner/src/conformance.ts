@@ -19,6 +19,7 @@ import {
 import { seal } from "@loom-ui/core/log";
 import type { DataClass } from "@loom/classify";
 import { requiredClass } from "./capabilityClass";
+import { contentRefArgsFrom } from "./contentRefs";
 import { MAX_DRAFT_DEPTH, MAX_DRAFT_NODES } from "./contract";
 import { readPlannerReach } from "./reach";
 import type {
@@ -419,6 +420,8 @@ export async function checkPlannerConformance(
 ): Promise<Finding[]> {
   const findings: Finding[] = [];
   const surface = fx.surface ?? "web";
+  // U9b: a literal at a content-reference argument of an offered capability is `compose-invalid:media-arg-literal`.
+  const refs = { contentRefArgs: contentRefArgsFrom(fx.capabilities) };
   const g = genesis({ experienceId: "conformance", intent: fx.intent, meta: fx.meta });
   const composeInput: ComposeInput = {
     intent: fx.intent,
@@ -463,7 +466,7 @@ export async function checkPlannerConformance(
   if (findings.some((f) => f.code === "op-invalid")) return findings;
   const composed = replay(g, first.ops);
   if (!composed.ok) return [err("compose-replay-failed", composed.finding.message)];
-  const v = validateExperience(composed.value, fx.catalog, surface);
+  const v = validateExperience(composed.value, fx.catalog, surface, refs);
   if (!v.ok)
     findings.push(
       ...v.findings
@@ -747,7 +750,7 @@ export async function checkPlannerConformance(
         "replaying the prompt op and replaying its materialized primitives yield different artifacts"
       )
     );
-  const rv = validateExperience(viaPrompt.value, fx.catalog, surface);
+  const rv = validateExperience(viaPrompt.value, fx.catalog, surface, refs);
   if (!rv.ok)
     findings.push(
       ...rv.findings
@@ -803,9 +806,9 @@ async function streamingFindings(
       );
       return;
     }
-    const bad = validateExperience(applied.value, fx.catalog, surface).findings.filter(
-      (f) => f.severity === "error"
-    );
+    const bad = validateExperience(applied.value, fx.catalog, surface, {
+      contentRefArgs: contentRefArgsFrom(fx.capabilities),
+    }).findings.filter((f) => f.severity === "error");
     if (bad.length > 0)
       out.push(err("stream-partial-invalid", `partial #${i} fails validation: ${bad[0]?.code}`));
   });

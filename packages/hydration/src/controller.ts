@@ -1,4 +1,5 @@
 import {
+  type ContentRefTable,
   type DeclaredToolClasses,
   type Experience,
   type Finding,
@@ -18,6 +19,7 @@ import {
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
+import type { ContentRefParamGate } from "./contentRefs";
 import type { DataProviderRegistry } from "./dataProvider";
 import type { TransientInvoker } from "./invoker";
 import { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
@@ -127,6 +129,18 @@ export interface ControllerOptions {
   readonly inputDrift?: InputDriftMode;
   /** The host's last word on each step's arguments (after params, time tokens, templates). */
   readonly argumentHook?: ArgumentHook;
+  /**
+   * U9b: the marked content-reference argument paths per tool (planner `contentRefArgsFrom`). A step
+   * whose tool is listed and whose marked argument holds a literal is refused (`media-arg-literal`)
+   * and its call is NOT made, whatever validation did or did not run.
+   */
+  readonly contentRefArgs?: ContentRefTable;
+  /**
+   * U9b: the host's gate on a PARAM that fills a marked argument. Return `true` only for a reference
+   * the host vouches for, i.e. one that `acceptMediaAttach` accepted for this principal. Absent =
+   * every such param is refused.
+   */
+  readonly acceptContentRefParam?: ContentRefParamGate;
   /** Where `Named` reshaping looks its reshapers up. */
   readonly reshapers?: ReshaperRegistry;
   /** The data-provider kinds composed for this controller (default: MCP only). */
@@ -554,6 +568,12 @@ export class HydrationController {
       ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
       ...(this.opts.inputDrift !== undefined && { inputDrift: this.opts.inputDrift }),
       ...(this.opts.argumentHook !== undefined && { argumentHook: this.opts.argumentHook }),
+      ...(this.opts.contentRefArgs !== undefined && {
+        contentRefArgs: this.opts.contentRefArgs,
+      }),
+      ...(this.opts.acceptContentRefParam !== undefined && {
+        acceptContentRefParam: this.opts.acceptContentRefParam,
+      }),
       ...(this.opts.reshapers !== undefined && { reshapers: this.opts.reshapers }),
       ...(this.opts.providers !== undefined && { providers: this.opts.providers }),
       ...(this.opts.captureSample !== undefined && { captureSample: this.opts.captureSample }),

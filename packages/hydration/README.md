@@ -72,9 +72,19 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 - `HydrationController` — in-process controller. Constructor takes `ControllerOptions`
   (`invoker`, `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`,
   `maxConcurrentCalls?`, `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`,
-  `inputDrift?`, `argumentHook?`, `reshapers?`, `providers?`, `captureSample?`). Methods: `load(exp)`,
+  `inputDrift?`, `argumentHook?`, `contentRefArgs?`, `acceptContentRefParam?`, `reshapers?`, `providers?`,
+  `captureSample?`). Methods: `load(exp)`,
   `recompose(next)`, `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`,
   `inFlight()`, `dispose()` — each returns `{ findings: Finding[] }` where relevant.
+- **Content-reference arguments (U9b).** Hand `contentRefArgs` (the table `contentRefArgsFrom(capabilities)` builds from
+  the capabilities' `x-content-ref` markers) to the controller, `executeProvider` or `serveHandle(s)`. Before ANY call a step's
+  marked argument must be a `{{steps.…}}` reference, absent, or a param the host accepted; a literal (a model-authored one
+  that skipped validation) refuses the step with `media-arg-literal` and the call is NOT made. A param that fills a marked
+  argument (in-process `setParams`, or a split client's params, which are client input) is refused unless
+  `acceptContentRefParam({ handle, stepId, toolName, kind?, param, value }) => boolean` returns `true`: thread
+  `acceptMediaAttach` through it, e.g. keep the `MediaRef`s it accepted for this principal and return
+  `accepted.has(value.address)`. The `argumentHook` runs after the check and is the host's own word. A tool whose
+  schema was unreadable (`"unknown"`) refuses any wholly address-shaped string argument. No table = no check.
 - `executeProvider` — runs one `ProviderSpec`'s execution graph and reshaping; what both
   controllers and `serveHandle`/`serveHandles` call underneath.
 - `ExecuteOptions`, `ProviderOutcome`, `DriftRecord`, `InputDriftMode` — the execution options and

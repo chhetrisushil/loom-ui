@@ -164,9 +164,19 @@ export function applyParams(
   node: MCPToolNode,
   params: LoadParams
 ): { args: Record<string, unknown>; findings: Finding[] } {
+  const { args, findings } = applyParamsDetailed(node, params);
+  return { args, findings };
+}
+
+/** {@link applyParams}, plus which top-level arguments a param actually replaced (U9b needs them). */
+function applyParamsDetailed(
+  node: MCPToolNode,
+  params: LoadParams
+): { args: Record<string, unknown>; findings: Finding[]; replaced: string[] } {
   const names = node.overridable ?? [];
   const findings: Finding[] = [];
-  if (names.length === 0) return { args: node.arguments, findings };
+  const replaced: string[] = [];
+  if (names.length === 0) return { args: node.arguments, findings, replaced };
   // A Map, then `Object.fromEntries`: every write is CreateDataProperty, so an argument named
   // `__proto__` lands as an own key instead of setting a prototype.
   const args = new Map(Object.entries(node.arguments));
@@ -192,8 +202,9 @@ export function applyParams(
       continue;
     }
     args.set(name, value);
+    replaced.push(name);
   }
-  return { args: Object.fromEntries(args), findings };
+  return { args: Object.fromEntries(args), findings, replaced };
 }
 
 export interface ArgumentHookContext {
@@ -225,6 +236,15 @@ export interface PrepareContext {
   readonly params: LoadParams;
   readonly now: number;
   readonly hook?: ArgumentHook;
+  /**
+   * Runs after params are applied and before time tokens, templates or the hook (U9b's content-reference
+   * guard, `contentRefs.ts`, is the one user); a returned finding refuses the step. `replaced` names the
+   * top-level arguments a param actually replaced.
+   */
+  readonly guard?: (
+    node: MCPToolNode,
+    applied: { readonly args: Record<string, unknown>; readonly replaced: readonly string[] }
+  ) => Finding | undefined;
 }
 
 export function prepareArguments(
@@ -234,7 +254,9 @@ export function prepareArguments(
 ):
   | { ok: true; args: Record<string, unknown>; findings: Finding[] }
   | { ok: false; finding: Finding } {
-  const applied = applyParams(node, ctx.params);
+  const applied = applyParamsDetailed(node, ctx.params);
+  const refused = ctx.guard?.(node, applied);
+  if (refused !== undefined) return { ok: false, finding: refused };
   const timed = resolveTimeTokens(applied.args, ctx.now, `step "${node.stepId}"`);
   if (!timed.ok) return timed;
   const templated = resolveArguments(

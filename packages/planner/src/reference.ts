@@ -18,6 +18,7 @@ import {
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
 import { declaredToolClassesFrom } from "./capabilityClass";
+import { contentRefArgsFrom } from "./contentRefs";
 import {
   type DraftEntry,
   draftEntrySchema,
@@ -406,7 +407,9 @@ export class ReferencePlanner implements Planner {
             const found = [
               ...m.findings,
               ...(applied.ok
-                ? validateExperience(applied.value, input.catalog, surface).findings
+                ? validateExperience(applied.value, input.catalog, surface, {
+                    contentRefArgs: contentRefArgsFrom(input.capabilities),
+                  }).findings
                 : [applied.finding]),
             ];
             // The same bar as a final plan: a partial with any error is not shown.
@@ -488,7 +491,11 @@ export class ReferencePlanner implements Planner {
       const applied = replay(base, m.ops);
       if (!applied.ok) findings.push(applied.finding);
       else {
-        findings.push(...validateExperience(applied.value, input.catalog, surface).findings);
+        findings.push(
+          ...validateExperience(applied.value, input.catalog, surface, {
+            contentRefArgs: contentRefArgsFrom(input.capabilities),
+          }).findings
+        );
         // Containers whose role needs a shape (a tab set's panels): judged on the BUILT tree, so a
         // revise that leaves a planner container in a shape its role cannot draw is refused too.
         if (roles.length > 0)
