@@ -4,16 +4,24 @@
 # Without it the checkout step fails and so does the run — loudly, rather than testing against
 # nothing. That is the intended behaviour.
 name: build + typecheck + lint + test
+# Actions minutes are a budget: CI runs once per READY pull request. Drafts don't run (iterate fix
+# rounds as a draft against the full local verify) and there is no post-merge `push: main` run (a
+# rebase-merge of a green PR onto an unchanged main is the tree CI already tested);
+# `workflow_dispatch` runs main by hand.
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 env:
   # the loom commit this repo is built and tested against; bump deliberately after rebuilding
   # ../loom at that commit and re-running the suite
   LOOM_REF: f20be4fe74b4f7a4bc991ee9103d197956b65f3f
 jobs:
   ci:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
