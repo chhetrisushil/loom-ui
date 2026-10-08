@@ -14,6 +14,8 @@ import { describe, expect, it } from "vitest";
 import { type EventSourceLike, connectConversation, publishChat } from "./chatSource";
 import { HydrationController } from "./controller";
 import { HydrationStore } from "./projection";
+import { SplitHydrationController } from "./split/client";
+import { serveHandle } from "./split/index";
 import { FakeInvoker, flush, mcpStep, providerSpec } from "./testing.test-support";
 
 // ── U8: a Chat-bound handle is contract-checked whatever its provider declared, and never a stream ──
@@ -178,7 +180,7 @@ describe("connectConversation", () => {
     });
     await h.conn.start();
     expect(h.urls[0]).toBe("/conversations/c1/history?direction=backward&limit=50");
-    expect(h.published.at(-1)?.value.entries.map((e) => e.id)).toEqual(["t1.user", "t1.assistant"]);
+    expect(h.published.at(-1)?.value.entries.map((e) => e.id)).toEqual(["u0.2", "t1.assistant"]);
     expect(h.sources).toHaveLength(1);
     expect(h.sources[0]?.url).toBe("/conversations/c1/events?cursor=0.3");
     const es = h.sources[0] as FakeSource;
@@ -255,13 +257,269 @@ describe("connectConversation", () => {
     (h.sources[1] as FakeSource).emit("message", wire(3, "user"));
     expect(h.published.length).toBe(before);
   });
+});
 
-  it("publishChat writes the handle: pending while a reply streams, ready once durable", () => {
-    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
-    const publish = publishChat(store, "chat");
+// ── fix round 1 ───────────────────────────────────────────────────────────────────────────────────
+
+describe("P2-1: publishChat goes through the controller's gate, never straight to the store", () => {
+  const expWith = (sensitivity?: "secret") => {
+    const e = exp(shapeSpec());
+    const root = e.root as ContainerNode;
+    const chat = root.children[0] as SemanticNode & { binding: { handle: string; priority: "P0" } };
+    return {
+      ...e,
+      root: {
+        ...root,
+        children: [{ ...chat, binding: { ...chat.binding, ...(sensitivity && { sensitivity }) } }],
+      },
+    } as Experience;
+  };
+  const ctlFor = (e: Experience, viewer?: { clearance?: "internal" | "secret" }) => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
+      invoker: new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => GOOD),
+      store,
+      outputKinds: { catalog, surface: "web" },
+      ...(viewer !== undefined && { viewer }),
+    });
+    ctl.load(e);
+    return { store, ctl };
+  };
+
+  it("writes a valid transcript to a bound handle: pending while a reply streams, ready once durable", async () => {
+    const { store, ctl } = ctlFor(expWith());
+    await flush();
+    const publish = publishChat(ctl, "h");
     publish(GOOD, { streaming: true });
-    expect(store.status("chat")?.state).toBe("pending");
+    expect(store.status("h")?.state).toBe("pending");
     publish(GOOD, { streaming: false });
-    expect(store.status("chat")?.state).toBe("ready");
+    expect(store.status("h")?.state).toBe("ready");
+  });
+
+  it("a SECRET-bound Chat for an internal viewer is refused: nothing is written, the finding names nothing", async () => {
+    const { store, ctl } = ctlFor(expWith("secret"), { clearance: "internal" });
+    await flush();
+    const seen: string[] = [];
+    publishChat(ctl, "h", (f) => seen.push(`${f.code}: ${f.message}`))(
+      {
+        entries: [
+          {
+            id: "t1.assistant",
+            turn: 1,
+            role: "assistant",
+            status: "complete",
+            parts: [{ type: "text", text: "LEAK" }],
+          },
+        ],
+      },
+      { streaming: false }
+    );
+    expect(store.value("h")).toBeUndefined();
+    expect(store.status("h")).toBeUndefined();
+    expect(JSON.stringify(store.state())).not.toContain("LEAK");
+    expect(seen).toEqual(["restricted: this data is restricted for the current viewer"]);
+    // a cleared viewer may
+    const ok = ctlFor(expWith("secret"), { clearance: "secret" });
+    await flush();
+    publishChat(ok.ctl, "h")(GOOD, { streaming: false });
+    expect(ok.store.value("h")).toEqual(GOOD);
+  });
+
+  it("an unbound handle, a reserved handle and a handle of another kind are refused", async () => {
+    const { store, ctl } = ctlFor(expWith());
+    await flush();
+    const seen: string[] = [];
+    for (const h of ["ghost", "__proto__", "constructor"])
+      publishChat(ctl, h, (f) => seen.push(f.code))(GOOD, { streaming: false });
+    expect(seen).toEqual(["publish-unbound", "publish-unbound", "publish-unbound"]);
+    expect(store.handles().filter((h) => h !== "h")).toEqual([]);
+    // a handle whose widget is not a Chat
+    const media = ctlFor({
+      ...expWith(),
+      root: {
+        ...(expWith().root as ContainerNode),
+        children: [
+          { ...(expWith().root as ContainerNode).children[0], type: "Image" } as SemanticNode,
+        ],
+      },
+    } as Experience);
+    await flush();
+    expect(media.ctl.publishValue("h", GOOD, { kind: "Chat" })).toMatchObject({
+      ok: false,
+      finding: { code: "publish-kind-mismatch" },
+    });
+  });
+
+  it("a value that fails the ChatValue contract is refused, not published", async () => {
+    const { store, ctl } = ctlFor(expWith());
+    await flush();
+    const before = store.value("h");
+    for (const bad of [
+      "plain string",
+      { entries: [], classes: ["x"] },
+      {
+        entries: [
+          {
+            id: "t1.assistant",
+            turn: 1,
+            role: "assistant",
+            status: "restricted",
+            parts: [{ type: "text", text: "SECRET" }],
+          },
+        ],
+      },
+    ]) {
+      const r = ctl.publishValue("h", bad, { state: "ready", kind: "Chat" });
+      expect(r.ok).toBe(false);
+    }
+    expect(store.value("h")).toEqual(before);
+    expect(JSON.stringify(store.state())).not.toContain("SECRET");
+  });
+
+  it("the split (browser) controller only publishes to a handle the server LISTED, and checks the contract", () => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const ctl = new SplitHydrationController({
+      store,
+      loader: { load: async () => ({ state: "pending" }) as never, loadMany: async () => [] },
+    });
+    ctl.load({
+      experienceId: "exp-1",
+      versionHash: "sha256:v1",
+      handles: [{ handle: "h", priority: "P2", params: [], revision: "r1" }],
+    });
+    expect(ctl.publishValue("ghost", GOOD, { kind: "Chat" })).toMatchObject({
+      ok: false,
+      finding: { code: "publish-unbound" },
+    });
+    expect(ctl.publishValue("h", "bad", { kind: "Chat" }).ok).toBe(false);
+    expect(ctl.publishValue("h", GOOD, { kind: "Nope" }).ok).toBe(false);
+    expect(ctl.publishValue("h", GOOD, { kind: "Chat", state: "pending" })).toEqual({ ok: true });
+    expect(store.status("h")?.state).toBe("pending");
+    ctl.dispose();
+    expect(ctl.publishValue("h", GOOD, { kind: "Chat" }).ok).toBe(false);
+  });
+});
+
+describe("P3-4: the split server forces the Chat contract whatever the provider declared", () => {
+  const serveChat = (value: unknown, withKinds: boolean) => {
+    const e = exp(shapeSpec());
+    return serveHandle(
+      e,
+      { experienceId: e.experienceId, versionHash: e.versionHash, handle: "h", params: {} },
+      {
+        contentRefArgs: "none" as const,
+        invoker: new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => value),
+        now: 1,
+        ...(withKinds && { outputKinds: { catalog, surface: "web" as const } }),
+      }
+    );
+  };
+  for (const withKinds of [true, false]) {
+    it(`never serves a shape-mode value that breaks the contract (outputKinds ${withKinds ? "given" : "ABSENT: by node type"})`, async () => {
+      for (const bad of [
+        "a string",
+        { entries: [], classes: ["secret"] },
+        {
+          entries: [
+            {
+              id: "t1.assistant",
+              turn: 1,
+              role: "assistant",
+              status: "restricted",
+              parts: [{ type: "text", text: "LEAKED" }],
+            },
+          ],
+        },
+      ]) {
+        const r = await serveChat(bad, withKinds);
+        expect(r.state).not.toBe("ready");
+        expect(JSON.stringify(r)).not.toContain("LEAKED");
+      }
+      expect((await serveChat(GOOD, withKinds)).state).toBe("ready");
+    });
+  }
+});
+
+describe("P3-11: reconnecting and the first page", () => {
+  const pageOf = { "direction=backward": { entries: [wire(1, "user")], done: true } };
+  function timed(pages: Record<string, unknown>, failFirst = 0) {
+    const calls = 0;
+    const h = harness(pages);
+    return { calls: () => calls, h, failFirst };
+  }
+
+  it("a `reconnect` event never reopens at 0 ms, and a server that recycles right after opening is backed off", async () => {
+    const delays: number[] = [];
+    const feed = new ChatFeed();
+    const sources: FakeSource[] = [];
+    const pending: Array<() => void> = [];
+    const conn = connectConversation({
+      baseUrl: "/c",
+      feed,
+      fetch: async () => ({ ok: true, json: async () => pageOf["direction=backward"] }),
+      openStream: (u) => {
+        const s = new FakeSource(u);
+        sources.push(s);
+        return s;
+      },
+      publish: () => {},
+      now: () => 1000, // frozen: every reconnect is "right after opening"
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        pending.push(fn);
+        return () => {};
+      },
+    });
+    await conn.start();
+    for (let i = 0; i < 4; i++) {
+      (sources.at(-1) as FakeSource).emit("reconnect", {});
+      pending.shift()?.();
+    }
+    expect(delays.every((d) => d >= 250)).toBe(true);
+    expect(delays[0]).toBeGreaterThanOrEqual(250);
+    expect(delays[3]).toBeGreaterThan(delays[0] as number); // a loop backs off
+    expect(Math.max(...delays)).toBeLessThanOrEqual(30_000);
+  });
+
+  it("a failed first page is RETRIED with backoff instead of giving up, and the stream opens once it loads", async () => {
+    const delays: number[] = [];
+    const timers: Array<() => void> = [];
+    let n = 0;
+    const sources: FakeSource[] = [];
+    const feed = new ChatFeed();
+    const conn = connectConversation({
+      baseUrl: "/c",
+      feed,
+      fetch: async () => {
+        n++;
+        return n < 3
+          ? { ok: false, json: async () => ({}) }
+          : { ok: true, json: async () => pageOf["direction=backward"] };
+      },
+      openStream: (u) => {
+        const s = new FakeSource(u);
+        sources.push(s);
+        return s;
+      },
+      publish: () => {},
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        timers.push(fn);
+        return () => {};
+      },
+    });
+    await conn.start();
+    expect(sources).toHaveLength(0);
+    expect(delays).toEqual([4000]); // first failure: base 2 000 doubled once failures counted
+    timers.shift()?.();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(delays.length).toBe(2);
+    expect(delays[1]).toBeGreaterThan(delays[0] as number);
+    timers.shift()?.();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sources).toHaveLength(1);
+    expect(feed.value().entries).toHaveLength(1);
+    conn.close();
   });
 });

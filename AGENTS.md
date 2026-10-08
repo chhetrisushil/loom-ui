@@ -231,3 +231,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   mutation. Entries: `@loom-ui/core/chat` (host/folding) vs `@loom-ui/core/chat-ui` (what a widget needs: core is CommonJS, so
   a barrel cannot be tree-shaken), widgets in the opt-in `@loom-ui/renderer-lit/chat`; a handle feeding `Chat` is
   contract-checked and never a stream.
+  Fix round 1 (review): a user entry is keyed by its log position (never the turn number: loom records REJECTED envelopes under
+  the next turn number without consuming it), a missing `asker` is "You" only when the value says `mode: "owner"`, a person is
+  always `User "name"` (role words are reserved), the window reserves a slot for the live reply (500 max), the page publishes
+  through `controller.publishValue` (viewer/inventory gate + contract), the ledger distinguishes in-flight from landed, and
+  all authority checks (principal, head) run on the SERVER (the browser only forwards the stamped action).

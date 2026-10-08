@@ -107,6 +107,13 @@ export interface ChatValue {
   readonly state?: "open" | "closed";
   /** A reply is on its way (the last user turn is unanswered). */
   readonly running?: boolean;
+  /**
+   * What the source KNOWS about whose turns these are. `owner`: an owner-only conversation, so a user
+   * turn with no `asker` is the viewer's own. `shared`: attribution is on every user turn, and one with
+   * none is nobody in particular. Absent (unknown): a user turn with no `asker` is NEUTRAL ("User"),
+   * never "You" and never editable.
+   */
+  readonly mode?: "owner" | "shared";
 }
 
 export const MAX_CHAT_ENTRIES = 500;
@@ -180,7 +187,14 @@ const ENTRY_KEYS: ReadonlySet<string> = new Set([
   "tools",
 ]);
 const TOOL_STATUSES: readonly string[] = ["running", "done", "failed"];
-const VALUE_KEYS: ReadonlySet<string> = new Set(["entries", "viewer", "older", "state", "running"]);
+const VALUE_KEYS: ReadonlySet<string> = new Set([
+  "entries",
+  "viewer",
+  "older",
+  "state",
+  "running",
+  "mode",
+]);
 const MAX_ISSUES = 20;
 
 function partIssues(part: unknown, path: (string | number)[], out: ChatIssue[]): void {
@@ -328,6 +342,9 @@ export function chatValueIssues(value: unknown): ChatIssue[] {
   const state = own(value, "state");
   if (state !== undefined && state !== "open" && state !== "closed")
     out.push({ path: ["state"], message: "state must be open or closed" });
+  const mode = own(value, "mode");
+  if (mode !== undefined && mode !== "owner" && mode !== "shared")
+    out.push({ path: ["mode"], message: "mode must be owner or shared" });
   const running = own(value, "running");
   if (running !== undefined && typeof running !== "boolean")
     out.push({ path: ["running"], message: "running must be true or false" });

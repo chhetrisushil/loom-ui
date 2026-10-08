@@ -381,6 +381,13 @@ function backs the zod and the zod-free checker; its messages never echo the val
   tools?: { name, status }[] }     // optional one-line tool activity
 ```
 
+`mode` says what the source KNOWS about whose turns these are: `owner` (an owner-only conversation: a user turn with no
+`asker` is the viewer's own, drawn "You" and editable), `shared`, or absent (unknown: a turn with no `asker` is neutral "User",
+never "You", never editable). A person is always introduced as `User "name"` so a name cannot pass itself off as `Assistant`,
+`Notice` or `You`. `ChatFeed` keys a user entry by its log position (`cursor`; or the source's record id `ord` when it has
+one) and never by turn number: loom records a REJECTED envelope under the next turn number without consuming it, so several
+rejected entries and the accepted turn can share a number. A reply keeps the `t<turn>.assistant` slot.
+
 A **restricted** entry is a bare placeholder: `parts`, `tools`, `reason`, `errorId` and `editOf` are refused on it
 by the CONTRACT, so a value that leaks content through a placeholder never reaches a store. A field outside the
 list (loom's `classes`, `turnExecutionId`...) is refused too.
@@ -422,30 +429,49 @@ and `connectConversation` takes over in the browser.
 `key` is an idempotency key the widget minted when the draft began (`newSubmitKey`). The widget keeps the draft until
 the host answers `ok: true` (an `onAction` handler may return `{ ok, reason? }` or a promise of it; none = success), so
 a failed send leaves the text and the key in place and the user's retry carries the SAME key. Everything a widget
-checked was checked in a browser the user controls, so the HOST re-validates:
+checked was checked in a browser the user controls, so the HOST re-validates, and the authority checks run on the
+SERVER, never in the page:
 
 ```ts
+// BROWSER: forward the stamped action to your server and hand its answer back. Nothing here decides anything.
+renderBlueprintDom(host, blueprint, {
+  registry: createChatLitRegistry({ media }),
+  onAction: (action) => {
+    if (action.type === "LOAD_OLDER") return void connection.loadOlder();   // a READ the page makes itself
+    return fetch("/api/ui-action", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(action) })
+      .then((r) => (r.ok ? r.json() : { ok: false, reason: "failed" }));   // -> an ActionOutcome
+  },
+});
+
+// SERVER: the principal comes from ITS session, `current` from ITS own head; the body is only the action.
 const specs = inputSpecsOf(experience, catalog, "web");       // widget id -> spec, from the host's OWN experience
 const writeBack = createWriteBack({
   specOf: (id) => specs.get(id),
   ledger: new SubmitLedger(),                                  // at-most-once per (principal, widget, key); bounded in size and time
-  canEdit: (turn, principal) => ownsTurn(principal, turn),     // required for EDIT_TURN; absent = every edit refused
+  canEdit: (turn, principal, { widgetId }) => ownsTurn(principal, widgetId, turn),   // required for EDIT_TURN; absent = every edit refused
   routes: {
     composer: conversationTarget((text, { messageId }) => conversations.sendTurn(id, text, { principal, messageId })),
     rollbackForm: resumeTarget((payload, { idempotencyKey }) => runtime.resume(execId, "rollback", payload, { idempotencyKey })),
     regionPicker: paramsTarget((p) => controller.setParams(p), "region"),
   },
 });
-renderBlueprintDom(host, blueprint, { registry, onAction: (a) => writeBack.handle(a, { principal: key, current: head() }) });
+app.post("/api/ui-action", async (req, res) => {
+  const session = await authenticate(req);                      // 401 without one
+  res.json(await writeBack.handle(req.body, { principal: principalKey(session), current: headOf(experienceId) }));
+});
 ```
+
+`LOAD_OLDER` is not a write: the widget emits it so the page can call `connection.loadOlder()` (the cursor is the
+feed's own). Routed to a `conversationTarget` anyway it is refused with the reason `browser-side`.
 
 `acceptChatSubmit` (what `handle` runs first) is total and returns a typed refusal: `not-a-submit`, `not-an-input`,
 `wrong-input`, `bad-key`, `invalid` (with fixed per-field codes), `stale` (not `fresh` against the head, U5; do NOT pass
 `bindingSeq` for a chat or input widget: a transcript moves by design, it is the COMPOSITION that must not have),
-`duplicate`, `edit-not-allowed`. Text is sanitised and bounded; a form's values are rebuilt from DECLARED fields only; a
+`duplicate`, `in-flight`, `edit-not-allowed`. Text is sanitised and bounded; a form's values are rebuilt from DECLARED fields only; a
 select value must be a declared option; the idempotency key is claimed last so a refusal never burns one, and
-`release()` gives it back when the write fails (so the retry is accepted). `createWriteBack` answers a duplicate
-`{ ok: true, reason: "duplicate" }` (the first one counts), a failed write `{ ok: false, reason: "failed" }` with NO error
+`release()` gives it back when the write fails (so the retry is accepted) and `commit()` marks it landed. A repeat while the
+first write is still IN FLIGHT is `in-flight` (it may yet fail, so it is never told it landed); `createWriteBack` answers
+it `{ ok: false, reason: "pending" }`, and a repeat of a committed one `{ ok: true, reason: "duplicate" }` (the first one counts), a failed write `{ ok: false, reason: "failed" }` with NO error
 text, and a widget with no route `no-route`. The three targets are structural (core imports nothing from loom): a
 conversation's `sendTurn`, a flow's resume gate (typed gates still parse the payload, ADR 0077), `setParams`.
 

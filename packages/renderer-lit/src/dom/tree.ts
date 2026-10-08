@@ -531,7 +531,9 @@ export function renderInto(
         // A widget that outlives its entry (a 3P renderer calling back after dispose, or after a
         // remount gave the entry a new render) must not speak for it: its actions are dropped.
         onAction: (a: WidgetAction) => {
-          if (entry.token !== token) return;
+          // A widget that outlived its entry speaks for nothing: its action is dropped, and it is told so
+          // (an input waiting on the host's answer must not read silence as success).
+          if (entry.token !== token) return { ok: false, reason: "stale" };
           // The host's answer (U8: an input widget waits for it) goes back to the widget.
           return ctx.onAction?.(stampAction(a, entry, ctx));
         },

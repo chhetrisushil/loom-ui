@@ -28,25 +28,37 @@ export function chatReasonText(reason: string | undefined): string {
     : GENERIC_REASON;
 }
 
-/** Is this user entry the viewer's own? (No `asker` = an owner-only conversation: the viewer is the owner.) */
-export function isOwnChatEntry(entry: ChatEntry, viewer: ChatValue["viewer"]): boolean {
+/** What a reader needs to tell whose turn a user entry is. */
+export type ChatWho = Pick<ChatValue, "viewer" | "mode">;
+
+/**
+ * Is this user entry the viewer's own? With an `asker` it is when that identity equals the viewer's.
+ * WITHOUT one it is only when the value is KNOWN owner-only (`mode: "owner"`): in a shared or unknown
+ * conversation a turn nobody is named on is nobody's in particular, never "yours".
+ */
+export function isOwnChatEntry(entry: ChatEntry, who: ChatWho): boolean {
   if (entry.role !== "user") return false;
-  if (entry.asker === undefined) return true;
-  return sameChatActor(entry.asker, viewer);
+  if (entry.asker === undefined) return who.mode === "owner";
+  return sameChatActor(entry.asker, who.viewer);
 }
 
-/** `Alice`, from an actor; never the tenant. Untrusted text, cleaned and bounded. */
+/** `alice`, from an actor; never the tenant. Untrusted text, cleaned and bounded; quotes cannot close the quoting around it. */
 export function chatActorLabel(entry: ChatEntry): string {
   const a = entry.asker?.actor;
-  return a === undefined ? "" : oneLineChatText(a, 60);
+  return a === undefined ? "" : oneLineChatText(a, 60).replace(/"/g, "'");
 }
 
-/** Who is speaking, in words: `You`, `Alice`, `Assistant`, `Notice`. */
-export function chatSpeaker(entry: ChatEntry, viewer: ChatValue["viewer"]): string {
+/**
+ * Who is speaking, in words: `You`, `User "alice"`, `User`, `Assistant`, `Notice`. A PERSON is always
+ * introduced by the word `User` and their name in quotes, so a name cannot pass itself off as a role
+ * (`Assistant`, `Notice`, `You`): the role words are reserved to the roles.
+ */
+export function chatSpeaker(entry: ChatEntry, who: ChatWho): string {
   if (entry.role === "assistant") return "Assistant";
   if (entry.role === "system") return "Notice";
-  if (isOwnChatEntry(entry, viewer)) return "You";
-  return chatActorLabel(entry) || "User";
+  if (isOwnChatEntry(entry, who)) return "You";
+  const name = chatActorLabel(entry);
+  return name === "" ? "User" : `User "${name}"`;
 }
 
 /** The status note, in words (`interrupted`, `replying`, ...), or `""` for a plain complete entry. */
@@ -83,7 +95,7 @@ export function chatTranscriptLines(
       continue;
     }
     const note = chatStatusNote(e);
-    const head = `${chatSpeaker(e, value.viewer)}${note === "" ? "" : ` (${note})`}`;
+    const head = `${chatSpeaker(e, value)}${note === "" ? "" : ` (${note})`}`;
     const body: string[] = [];
     for (const p of e.parts ?? []) {
       if (p.type === "text") {

@@ -1,4 +1,5 @@
 import type { Finding, Priority } from "@loom-ui/core";
+import { checkKindValue, hasKindContract } from "@loom-ui/core/browser";
 import { type LoadParams, checkParams, paramsKey, pickParams } from "../params";
 import { type HydrationStore, isReservedHandle } from "../projection";
 import {
@@ -195,6 +196,45 @@ export class SplitHydrationController {
       opts.setTimer ?? defaultTimer,
       opts.batchWindowMs ?? 50
     );
+  }
+
+  /**
+   * Publish a value for a handle that no loader serves (a live transcript this page folds), through
+   * the inventory's gate: only a handle the server LISTED is accepted (a restricted or unknown one is
+   * absent from it, so it is refused), and the value must pass the contract of `kind`, which the caller
+   * names (this side holds no catalogue). Refused = a finding and nothing written.
+   */
+  publishValue(
+    handle: string,
+    value: unknown,
+    options: { readonly state?: "ready" | "pending"; readonly kind: string }
+  ): { ok: true } | { ok: false; finding: Finding } {
+    const listed =
+      !this.sched.isDisposed &&
+      !isReservedHandle(handle) &&
+      this.current?.handles.some((r) => r.handle === handle && r.finding === undefined) === true;
+    if (!listed)
+      return {
+        ok: false,
+        finding: {
+          code: "publish-unbound",
+          severity: "error",
+          message: "the handle is not in the current inventory; the value was refused",
+        },
+      };
+    if (!hasKindContract(options.kind))
+      return {
+        ok: false,
+        finding: {
+          code: "publish-uncontracted",
+          severity: "error",
+          message: "the named kind has no value contract; refused",
+        },
+      };
+    const check = checkKindValue(options.kind, value);
+    if (!check.ok) return { ok: false, finding: check.finding };
+    this.opts.store.setValue(handle, value, { state: options.state ?? "ready" });
+    return { ok: true };
   }
 
   /** Bind an inventory; a second `load` IS a recompose. */

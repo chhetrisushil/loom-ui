@@ -74,6 +74,7 @@ export function parseChatActor(raw: unknown): ChatActor | undefined {
 }
 
 const ROLE_RANK = { user: 0, assistant: 1, system: 2 } as const;
+/** The slot of a turn's REPLY: the live text and its durable successor share it, so nothing remounts. */
 const entryId = (turn: number, role: ChatEntry["role"]): string => `t${turn}.${role}`;
 const KNOWN_STATUS = new Set(["complete", "interrupted", "failed", "rejected", "restricted"]);
 
@@ -99,8 +100,22 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
   const reason = own(raw, "reason");
   const errorId = own(raw, "errorId");
   const text = bare || status === "rejected" ? "" : sanitizeChatText(own(raw, "text"));
+  // loom's rejected envelopes are recorded under the NEXT turn number without consuming it (ADR 0122 D8),
+  // so the turn number is NOT a key: a user entry is keyed by its record id (`ord`, when the source
+  // provides one) or its log position (`cursor`, unique), and the next accepted turn can share a number
+  // with any number of rejected ones. A reply is the one entry per accepted turn: it keeps the turn slot.
+  const ord = own(raw, "ord");
+  const id =
+    role === "assistant"
+      ? entryId(turn, role)
+      : typeof ord === "number" && Number.isSafeInteger(ord) && ord >= 0
+        ? `m${ord}`
+        : isChatCursor(cursor)
+          ? `u${cursor}`
+          : entryId(turn, role);
+  const editOf = own(raw, "editOf");
   return {
-    id: entryId(turn, role),
+    id,
     turn,
     role,
     status,
@@ -110,6 +125,13 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
     ...(typeof at === "number" && Number.isFinite(at) && at >= 0 && { at }),
     ...(!bare && isChatReason(reason) && { reason }),
     ...(!bare && isChatErrorId(errorId) && { errorId }),
+    // A source that records the link (loom's follow-up) is believed; the host's `annotate` is the interim.
+    ...(!bare &&
+      role === "user" &&
+      typeof editOf === "number" &&
+      Number.isSafeInteger(editOf) &&
+      editOf >= 1 &&
+      editOf < turn && { editOf }),
   };
 }
 
@@ -132,6 +154,8 @@ export interface ChatFeedOptions {
   readonly viewer?: ChatActor;
   /** The most entries held (default and ceiling {@link MAX_CHAT_ENTRIES}). */
   readonly maxEntries?: number;
+  /** What the source knows about whose turns these are (see `ChatValue.mode`); set `owner` for an owner-only conversation. */
+  readonly mode?: "owner" | "shared";
 }
 
 interface Live {
@@ -141,10 +165,16 @@ interface Live {
 
 export class ChatFeed {
   private readonly viewer: ChatActor | undefined;
+  private readonly mode: "owner" | "shared" | undefined;
+  /** The most entries the VALUE holds (the live reply included). */
   private readonly max: number;
-  /** Durable entries, sorted by (turn, role). */
+  /** The most DURABLE entries: one slot is always left for the live reply. */
+  private readonly cap: number;
+  /** Durable entries, in log order (by cursor; by turn and role for a source with none). */
   private list: ChatEntry[] = [];
   private index = new Map<string, number>();
+  /** turn -> id of that turn's ACCEPTED user entry (a rejected envelope never binds a turn). */
+  private acceptedUser = new Map<number, string>();
   private live: Live | undefined;
   private older: string | undefined;
   private startReached = false;
@@ -155,7 +185,9 @@ export class ChatFeed {
 
   constructor(options: ChatFeedOptions = {}) {
     this.viewer = options.viewer;
-    this.max = Math.max(1, Math.min(options.maxEntries ?? MAX_CHAT_ENTRIES, MAX_CHAT_ENTRIES));
+    this.mode = options.mode;
+    this.max = Math.max(2, Math.min(options.maxEntries ?? MAX_CHAT_ENTRIES, MAX_CHAT_ENTRIES));
+    this.cap = this.max - 1;
   }
 
   // ── reading ────────────────────────────────────────────────────────────────────────────────
@@ -165,19 +197,25 @@ export class ChatFeed {
     if (this.snapshot !== undefined) return this.snapshot;
     const entries: ChatEntry[] = this.list.map((e) => {
       const editOf = this.edits.get(e.turn);
-      return e.role === "user" && editOf !== undefined && e.editOf === undefined
+      // Only the turn's ACCEPTED user entry, and never a placeholder (the contract refuses `editOf` on one).
+      return e.role === "user" &&
+        e.status !== "restricted" &&
+        editOf !== undefined &&
+        e.editOf === undefined &&
+        this.acceptedUser.get(e.turn) === e.id
         ? { ...e, editOf }
         : e;
     });
     const live = this.liveEntry();
     if (live !== undefined) insertSorted(entries, live);
-    const older = this.startReached || entries.length >= this.max ? undefined : this.older;
+    const older = this.startReached || this.list.length >= this.cap ? undefined : this.older;
     this.snapshot = {
       entries,
       ...(this.viewer !== undefined && { viewer: this.viewer }),
       ...(older !== undefined && { older }),
       state: this.state,
       running: this.running || live !== undefined,
+      ...(this.mode !== undefined && { mode: this.mode }),
     };
     return this.snapshot;
   }
@@ -344,7 +382,7 @@ export class ChatFeed {
   }
 
   private hasRoomFor(entry: ChatEntry): boolean {
-    return this.index.has(entry.id) || this.list.length < this.max;
+    return this.index.has(entry.id) || this.list.length < this.cap;
   }
 
   private liveEntry(): ChatEntry | undefined {
@@ -369,7 +407,9 @@ export class ChatFeed {
   /** May live text for `turn` be shown to THIS viewer? Fail closed on what the client can see. */
   private mayShowLive(turn: number): boolean {
     if (this.index.has(entryId(turn, "assistant"))) return false; // the durable reply won
-    const q = this.list[this.index.get(entryId(turn, "user")) ?? -1];
+    // Bound to the turn's ACCEPTED question: a rejected envelope on the same number is not the asker.
+    const qid = this.acceptedUser.get(turn);
+    const q = qid === undefined ? undefined : this.list[this.index.get(qid) ?? -1];
     if (q === undefined) return true; // the question has not arrived yet; the server only sends it to the asker
     if (q.status === "restricted") return false;
     if (this.viewer !== undefined && q.asker !== undefined && !sameChatActor(q.asker, this.viewer))
@@ -407,7 +447,7 @@ export class ChatFeed {
       if (have.status !== "restricted" || entry.status === "restricted") return false;
       this.list[at] = entry;
     } else {
-      if (this.list.length >= this.max && !this.makeRoomForTail(entry)) return false;
+      if (this.list.length >= this.cap && !this.makeRoomForTail(entry)) return false;
       insertSorted(this.list, entry);
       this.reindex();
     }
@@ -431,16 +471,30 @@ export class ChatFeed {
 
   private reindex(): void {
     this.index = new Map(this.list.map((e, i) => [e.id, i] as const));
+    this.acceptedUser = new Map(
+      this.list
+        .filter((e) => e.role === "user" && e.status !== "rejected")
+        .map((e) => [e.turn, e.id] as const)
+    );
   }
 
   private afterDurable(entry: ChatEntry): void {
     if (entry.role === "assistant" && this.live?.turn === entry.turn) this.live = undefined;
+    // Live text shown before its question arrived (or was upgraded) is retracted if the question says it
+    // is not this viewer's to see: a restricted question, or another asker's.
+    if (entry.role === "user" && this.live?.turn === entry.turn && !this.mayShowLive(entry.turn))
+      this.live = undefined;
     if (entry.role === "assistant") this.running = false;
     else if (entry.status === "complete") this.running = true;
   }
 }
 
+/** Log order: by cursor when both have one; by turn and role otherwise (the live reply has no cursor). */
 function compareEntries(a: ChatEntry, b: ChatEntry): number {
+  if (a.cursor !== undefined && b.cursor !== undefined) {
+    const c = compareChatCursors(a.cursor, b.cursor);
+    if (c !== 0) return c;
+  }
   return a.turn - b.turn || ROLE_RANK[a.role] - ROLE_RANK[b.role];
 }
 

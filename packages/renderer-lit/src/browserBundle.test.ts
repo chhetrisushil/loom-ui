@@ -75,7 +75,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     ["dom/index.js", 172 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
-    ["dom/containers.js", 80 * 1000],
+    // U8 fix round 1: 80 -> 81 kB (the contract grew by `mode`: +130 bytes put it 26 over).
+    ["dom/containers.js", 81 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 180 * 1000],
