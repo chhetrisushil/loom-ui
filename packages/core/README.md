@@ -322,7 +322,7 @@ cycle-safe walk (`MAX_SCHEMA_NODES` 5000, depth 24, 256 paths; only local `$ref`
 (never "no marked arguments") for a schema it cannot read (not an object, an external or dangling `$ref`, a malformed
 marker, over a budget, recursive AND carrying the marker, a `$dynamicRef` / `$recursiveRef` AND carrying the marker), and
 a BACKSTOP counts the `x-content-ref: true` objects in the raw schema against those the walk reached: any marker the walk
-did not reach (under `propertyNames`, `contentSchema`, a keyword added tomorrow) makes the whole schema `unknown`.
+did not reach (under `propertyNames`, `contentSchema`, a keyword added tomorrow) makes the whole schema `unknown`. The count is over schema DATA too: an `x-content-ref: true` object inside a `default` / `enum` / `examples` value, or a marker nested somewhere the walk does not read, is also `unknown`, which is a `media-arg-schema-unknown` composition error: such a schema fails closed and is unbindable until it is cleaned.
 
 *The table.* `ContentRefTable = { args, produces? }` (plain JSON; persist it with the capability set and re-read it with
 `parseContentRefTable`, which returns `undefined` for anything that is not exactly a table). `args[toolKey]` is the marked input
@@ -339,7 +339,7 @@ Independent of the table, a string that looks like an address or embeds one (`co
 budget past which the arguments are refused, a 256 KiB budget for the suspect scan). Findings are value-free: they name
 the path, never the value.
 
-*Residuals.* A schema without the marker is not guarded (the host must mark it; the suspect hint is the net). A top-level
+*Residuals.* A declared producer is trusted as a whole, including what it does with its own unmarked inputs (an address-shaped literal in a producer's own arguments is only a `media-arg-suspect` hint); the invoker authorises each call as the viewer. A schema without the marker is not guarded (the host must mark it; the suspect hint is the net). A top-level
 `additionalProperties` marker (path `[null]`) names no key, so a gated param can never fill it: fail closed. The argument hook
 runs after the check and is trusted host code. Strings over 4096 characters are not scanned for the suspect hint.
 

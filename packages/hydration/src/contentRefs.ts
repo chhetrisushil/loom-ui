@@ -6,6 +6,7 @@ import {
   contentRefArgFindings,
   contentRefEntry,
   markedTopLevelKeys,
+  parseContentRefTable,
   provenIn,
   stripNullContentRefs,
   toolKey,
@@ -174,4 +175,21 @@ export function principalScoped(spec: ProviderSpec): ProviderSpec {
     PRINCIPAL_SCOPED.set(spec, s);
   }
   return s;
+}
+
+/** `contentRefArgs` is missing or malformed: a configuration error, never read as "nothing is guarded". */
+export class ContentRefConfigError extends Error {
+  readonly code = "content-ref-config";
+  constructor(where: string) {
+    super(
+      `${where}: contentRefArgs is required: pass the table contentRefArgsFrom(capabilities) builds (a malformed or missing one is refused, never read as "none"), or the explicit opt-out "none"`
+    );
+    this.name = "ContentRefConfigError";
+  }
+}
+
+/** Throws {@link ContentRefConfigError} unless `value` is `"none"` or exactly a well-formed table. */
+export function assertContentRefConfig(value: unknown, where: string): void {
+  if (value === "none") return;
+  if (parseContentRefTable(value) === undefined) throw new ContentRefConfigError(where);
 }

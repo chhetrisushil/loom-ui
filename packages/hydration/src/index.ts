@@ -18,6 +18,7 @@ export { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
 export { defineReshapers, jsonPathSelect, outputShapeHashOf } from "./reshape";
 export type { ReshapeFailureKind, ReshapeResult, Reshaper, ReshaperRegistry } from "./reshape";
 export { DEFAULT_TIME_RANGE, checkParams } from "./params";
+export { ContentRefConfigError } from "./contentRefs";
 export type { ContentRefParamGate } from "./contentRefs";
 export type {
   ArgumentHook,

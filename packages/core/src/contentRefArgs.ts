@@ -345,6 +345,8 @@ export interface ContentRefArgOptions {
    * proven (fail closed): every step reference at a marked position is `media-arg-unproven-ref`.
    */
   readonly proven?: (stepId: string, path: ArgPath) => boolean;
+  /** Called with the id of each step whose reference was ACCEPTED at a marked position. */
+  readonly onProvenRef?: (stepId: string) => void;
 }
 
 const warnF = (code: string, message: string): Finding => ({ code, severity: "warn", message });
@@ -401,7 +403,9 @@ export function contentRefArgFindings(
           "media-arg-literal",
           `${label()} is a content-reference argument: bind it to a step reference or leave it out; a literal value is never accepted`
         );
-      else if (ref.path === undefined || opts.proven?.(ref.stepId, ref.path) !== true)
+      else if (ref.path !== undefined && opts.proven?.(ref.stepId, ref.path) === true)
+        opts.onProvenRef?.(ref.stepId);
+      else
         refuse(
           "media-arg-unproven-ref",
           `${label()} is a content-reference argument and its step reference does not name an output its tool declares to be a content reference`

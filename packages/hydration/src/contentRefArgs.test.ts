@@ -12,12 +12,13 @@ import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { HydrationCache } from "./cache";
 import { checkContentRefs, contentRefEnv } from "./contentRefs";
+import { ContentRefConfigError } from "./contentRefs";
 import { HydrationController } from "./controller";
 import { prepareArguments } from "./params";
 import { STEP_TEMPLATE } from "./plan";
 import { HydrationStore } from "./projection";
 import { type ExecuteOptions, executeProvider } from "./provider";
-import { serveHandle } from "./split/index";
+import { serveHandle, serveHandles } from "./split/index";
 import { FakeInvoker, flush, mcpStep, providerSpec } from "./testing.test-support";
 
 // U9b. A marked content-reference argument must be a PROVEN reference (a step reference to an output its
@@ -148,6 +149,7 @@ describe("runtime refusal of a literal content reference", () => {
     ])("%s: refused at run time, the marked tool is not called", async (_l, tool, ref) => {
       const { r, inv } = await go(graph(tool, { image: ref }));
       expect(r.ok).toBe(false);
+      expect((r.ok ? [] : r.findings).map((f) => f.code)).toContain("media-arg-unproven-ref");
       expect(
         inv.calls.every((c) => (c.input as { toolName: string }).toolName !== "describe")
       ).toBe(true);
@@ -450,5 +452,49 @@ describe("the cache and the content-reference gate (P1)", () => {
     expect(c2.store.status("h")?.state).not.toBe("ready");
     expect(c2.store.value("h")).toBeUndefined();
     expect(inv.calls).toHaveLength(1);
+  });
+});
+
+// ── F1: a missing or malformed contentRefArgs is a configuration error, never "none" ─────────────
+
+describe("contentRefArgs is required at every entry point", () => {
+  const bads: Array<[string, unknown]> = [
+    ["omitted", undefined],
+    ["null", null],
+    ["a bare object without args", {}],
+    ["parseContentRefTable()'s undefined", undefined],
+    ["a table with a malformed entry", { args: { describe: "nope" } }],
+    ["an array", []],
+  ];
+  it.each(bads)("HydrationController throws when it is %s", (_l, v) => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    expect(
+      () => new HydrationController({ invoker: reply(), store, contentRefArgs: v as never })
+    ).toThrow(ContentRefConfigError);
+  });
+
+  it.each(bads)(
+    "serveHandle and serveHandles reject when it is %s, and make no call",
+    async (_l, v) => {
+      const e = exp(providerSpec("h", [mcpStep("s1", "describe")]));
+      const inv = reply();
+      const opts = { invoker: inv, now: 1, contentRefArgs: v as never };
+      await expect(serveHandle(e, req(e), opts)).rejects.toThrow(ContentRefConfigError);
+      await expect(serveHandles(e, [req(e)], opts)).rejects.toThrow(ContentRefConfigError);
+      expect(inv.calls).toHaveLength(0);
+    }
+  );
+
+  it("'none' and a well-formed table are accepted", async () => {
+    const e = exp(providerSpec("h", [mcpStep("s1", "describe")]));
+    for (const v of ["none", { args: {} }, table] as const) {
+      const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+      expect(
+        () => new HydrationController({ invoker: reply(), store, contentRefArgs: v })
+      ).not.toThrow();
+      expect(
+        (await serveHandle(e, req(e), { invoker: reply(), now: 1, contentRefArgs: v })).state
+      ).toBe("ready");
+    }
   });
 });

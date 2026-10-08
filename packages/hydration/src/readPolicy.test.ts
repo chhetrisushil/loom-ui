@@ -113,6 +113,7 @@ describe("createServeSurface: the policy is bound once", () => {
       const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
       const r = await surface.serveHandle(e, req(e, "pay"), {
         invoker: inv,
+        contentRefArgs: "none",
         now: 0,
         viewer: low,
         ...perCall,
