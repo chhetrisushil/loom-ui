@@ -86,6 +86,7 @@ export {
   validateExperience,
 } from "./catalog";
 export type {
+  ValidateOptions,
   ExperienceValidation,
   KindContract,
   Resolution,
@@ -148,6 +149,28 @@ export type {
   MediaUploadResult,
   UploadCandidate,
 } from "./media";
+export {
+  CONTENT_REF_KEYWORD,
+  MAX_ARG_DEPTH,
+  MAX_ARG_VALUES,
+  MAX_CONTENT_REF_PATHS,
+  MAX_SCHEMA_NODES,
+  MAX_SCHEMA_PATH_DEPTH,
+  STEP_TEMPLATE_SOURCE,
+  contentRefArgFindings,
+  contentRefEntry,
+  contentRefPaths,
+  formatArgPath,
+  isLegitimateContentRef,
+  markedTopLevelKeys,
+  mergeContentRefEntries,
+} from "./contentRefArgs";
+export type {
+  ArgPath,
+  ContentRefArgOptions,
+  ContentRefPaths,
+  ContentRefTable,
+} from "./contentRefArgs";
 export { loomCatalogFor } from "./loomCatalog";
 export {
   DELTA_FORMAT,

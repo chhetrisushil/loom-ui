@@ -1,3 +1,4 @@
+import { type ContentRefTable, contentRefArgFindings, contentRefEntry } from "./contentRefArgs";
 import type { Experience, Finding, VocabularyFloor } from "./experience";
 import { type ContractRegistry, hasKindContract, isFrameworkContractKind } from "./kindValues";
 import { embeddedRefWarnings, mediaPropFindings } from "./media";
@@ -14,6 +15,7 @@ import {
   treeDepth,
   walk,
 } from "./node";
+import { toolKey } from "./steps";
 
 // ── The semantic catalogue ────────────────────────────────────────────────────
 // An entry is what a planner may NAME. It declares the props it accepts (an allow-list — `[]` is
@@ -220,10 +222,20 @@ export interface ExperienceValidation {
   readonly nodes: number;
 }
 
+export interface ValidateOptions {
+  /**
+   * The marked content-reference argument paths per tool (`toolKey`), from the capabilities' input
+   * schemas (planner `contentRefArgsFrom`). A literal at a marked path is `media-arg-literal`
+   * (U9b). Absent = nothing is marked: only the `media-arg-suspect` hint runs.
+   */
+  readonly contentRefArgs?: ContentRefTable;
+}
+
 export function validateExperience(
   exp: Experience,
   catalog: SemanticCatalog,
-  surface: Surface
+  surface: Surface,
+  options: ValidateOptions = {}
 ): ExperienceValidation {
   const findings: Finding[] = [];
   // `walk` is recursive; a tree past the cap would throw a `RangeError` out of a function whose
@@ -257,6 +269,7 @@ export function validateExperience(
   });
   findings.push(...checkFloor(exp, exp.vocabularyFloor));
   findings.push(...catalogContractFindings(catalog));
+  findings.push(...contentRefArgumentFindings(exp, options.contentRefArgs));
   return { ok: findings.every((f) => f.severity !== "error"), findings, nodes };
 }
 
@@ -458,4 +471,34 @@ function checkSemantic(
         n.id
       )
     );
+}
+
+/**
+ * U9b: every step's `arguments` against the tool's marked content-reference paths (a literal there
+ * is `media-arg-literal`, an error), plus the `media-arg-suspect` hint for address-shaped text
+ * elsewhere. A tool whose schema could not be read is `"unknown"`: warned, and any wholly
+ * address-shaped string is refused. Linear in the providers' arguments.
+ */
+function contentRefArgumentFindings(
+  exp: Experience,
+  table: ContentRefTable | undefined
+): Finding[] {
+  const out: Finding[] = [];
+  for (const [handle, spec] of Object.entries(exp.providers))
+    for (const step of spec.executionGraph) {
+      const marked = contentRefEntry(table, toolKey(step));
+      const where = `provider "${handle}" step "${step.stepId}"`;
+      if (marked === "unknown")
+        out.push({
+          code: "media-arg-schema-unknown",
+          severity: "warn",
+          message: `${where}: the input schema of "${step.toolName}" could not be read, so its content-reference arguments are unknown; a URL or content address in its arguments is refused`,
+        });
+      out.push(
+        ...contentRefArgFindings(step.arguments, marked ?? [], where, {
+          suspect: marked !== "unknown",
+        })
+      );
+    }
+  return out;
 }

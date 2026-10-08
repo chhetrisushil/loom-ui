@@ -349,7 +349,7 @@ export const MEDIA_TEXT_PROPS: Readonly<Record<string, readonly string[]>> = Obj
 // A whole string that IS a locator or an address, wherever the model put it.
 const LITERAL_REF =
   /^(?:[a-z][a-z0-9+.-]*:\/\/\S*|(?:data|blob|javascript|file|vbscript):\S*|[a-z0-9_-]{3,16}:[0-9a-f]{16,}|\/\/\S+)$/i;
-const looksLikeLiteralRef = (s: string): boolean => LITERAL_REF.test(s.trim());
+export const looksLikeLiteralRef = (s: string): boolean => LITERAL_REF.test(s.trim());
 
 const INVISIBLE = /[\u00ad\u200b-\u200f\u2060\ufeff]/g;
 /** Longest text `containsEmbeddedRef` scans; anything longer is reported by its callers, not scanned. */

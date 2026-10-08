@@ -297,6 +297,41 @@ warnings elsewhere. The scan is linear and bounded (`MAX_EMBEDDED_SCAN`, 4096 ch
 before a slash (`Node.js/React`) reads as `host.tld/path`. That scan is a hint for review, NOT a security boundary: the boundary is that a reference only
 comes from a binding and the host's resolver.
 
+**Content references as tool arguments (U9b).** The one door U9 left open: a capability whose INPUT is a
+content reference (`describe_image({ image })`). The grammar of an argument value (`MCPToolNode.arguments`, JSON) is
+exactly: (1) a *literal*, written by whoever composed the step; (2) a relative-time token (`$now`, `$now-7d`; units
+`smhdw`); (3) a *step reference*, a WHOLE string `{{steps.<id>.output[.<path>]}}` naming a step of the same graph in an
+earlier wave (a template embedded in a longer string is not substituted: it is a literal); (4) a *param*: a top-level
+key listed in the step's `overridable`, replaced per load by the host's `setParams` / `defaultParams` (or a split
+client's params). A content-reference position may hold ONLY a step reference (the hydrated output of another
+binding, which the data boundary already gates), a param the HOST accepted (below), or nothing (absent or JSON
+`null`). Everything else there, a literal address or URL, a time token, a number, an object, is FORBIDDEN, because it
+is the model naming an address.
+
+*The marker* is a JSON Schema extension keyword on the capability's input schema, `"x-content-ref": true`, at any
+depth (object properties, array items, `additionalProperties`, `allOf` / `anyOf` / `oneOf`, local `$ref`). It is
+`x-` rather than `format` because it annotates any value (an object shaped like a `MediaRef` as well as a string),
+does not collide with `format`'s assertion semantics, and names the concept, not a consumer. Nothing is needed from
+loom: the host adds the keyword to the schema it already hands the planner (`CapabilityRef.inputSchema`).
+`contentRefPaths(schema)` reads the marked paths (`ArgPath`: string = key, `null` = any index / key) with a bounded,
+cycle-safe walk (`MAX_SCHEMA_NODES` 5000, depth 24, 256 paths; only local `$ref`s resolve) and is total. A schema it
+cannot read (not an object, an external or dangling `$ref`, a malformed marker, over a budget, or recursive AND
+carrying the marker) is `unknown`, which is NOT "no marked arguments": it fails closed (below).
+
+*The guard.* `validateExperience(exp, catalog, surface, { contentRefArgs })` takes the table of marked paths per tool
+(`toolKey`; the planner builds it with `contentRefArgsFrom(capabilities)`). A literal at a marked path is
+`media-arg-literal` (error, so `ok` is false). A tool whose schema is `unknown` is `media-arg-schema-unknown` (warn)
+and any string that is wholly a URL / locator / content address anywhere in its arguments is `media-arg-literal`.
+Independent of any table, a string argument that looks like an address or embeds one (`containsEmbeddedRef`, whole-string
+locator shapes) is `media-arg-suspect` (warn): a hint, never a boundary. Checks are linear (one pass, a trie of the marked
+paths, a 100,000-value and 64-level budget past which the arguments are refused, a 256 KiB budget for the suspect scan).
+Findings are value-free: they name the path, never the value.
+
+*Residuals.* A schema without the marker is not guarded (the host must mark it; the suspect hint is the net). A step
+reference resolves to whatever the upstream tool returned, and an untrusted tool's output can hold a hostile address:
+the host's invoker still authorises the call as the viewer, which is the boundary. The argument hook runs after the
+check and is trusted host code. Strings over 4096 characters are not scanned for the suspect hint.
+
 **Trust.** Media is untrusted unless the host vouches (`MediaResolution.trusted`); `origin` on the ref
 never grants it, and `origin: "user"` is never trusted. Surfaces mark untrusted media (`data-untrusted`
 on the web, `[untrusted]` in the terminal) or, under `untrusted: "block"`, draw a placeholder.

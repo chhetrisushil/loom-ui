@@ -509,6 +509,10 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     ...(opts.concurrency !== undefined && { concurrency: opts.concurrency }),
     ...(opts.captureSample !== undefined && { captureSample: opts.captureSample }),
     ...(opts.argumentHook !== undefined && { argumentHook: opts.argumentHook }),
+    ...(opts.contentRefArgs !== undefined && { contentRefArgs: opts.contentRefArgs }),
+    ...(opts.acceptContentRefParam !== undefined && {
+      acceptContentRefParam: opts.acceptContentRefParam,
+    }),
     ...(opts.inputDrift !== undefined && { inputDrift: opts.inputDrift }),
     ...(opts.reshapers !== undefined && { reshapers: opts.reshapers }),
     ...(opts.providers !== undefined && { providers: opts.providers }),

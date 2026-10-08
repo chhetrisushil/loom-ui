@@ -338,11 +338,17 @@ const repaired = await reviseForDrift(planner, {
   reference planner feeds those findings back like any validation finding, and the conformance kit
   reports them as `compose-invalid:<code>` for any planner. Text props that merely EMBED a URL or address are `media-embedded-ref` (media nodes) /
   `embedded-ref` warnings (other nodes): a hint for review, not a boundary. The prompt's raw capability samples are
-  redacted of address-shaped strings (`redactAddresses`). Not covered: an address a model writes into a capability's
-  `arguments`; that is the tool's input, authorised by the host's invoker. FOLLOW-UP: an optional `inputSchema`
-  marker for content-ref arguments, so a literal address there can be refused at composition, needs the tool-argument
-  template syntax settled first.
-
+  redacted of address-shaped strings (`redactAddresses`). Content references as tool ARGUMENTS (U9b) are guarded too:
+  mark the field `"x-content-ref": true` in the capability's `inputSchema` (any depth; grammar, marker choice and residuals
+  in core's README, "Content references as tool arguments"). `contentRefArgsFrom(capabilities)` turns the offered schemas
+  into the table of marked paths per tool; the reference planner and the conformance kit hand it to `validateExperience`, so
+  a literal at a marked path is `media-arg-literal` (fed back to the model; `compose-invalid:media-arg-literal` in the kit).
+  The model is told never to write one (leave it out, or keep an existing `{{steps.<id>.output…}}`): the compose rules say so
+  and each capability's DATA block lists its `contentRefArguments` (or says the schema is unreadable, which is treated as
+  "every argument may be one"). The capability details (description, `inputSchema`, so its `examples` / `default` / `enum`
+  too) are redacted of address-shaped strings like the samples. An UNMARKED string argument that looks like an address warns
+  (`media-arg-suspect`); a hint. Pass the SAME table to hydration (`contentRefArgs`) and see its README for the run-time
+  re-check. Residual: an unmarked schema is unguarded.
 
 - **Error semantics: refusals propagate, model failures become findings.** A plain model failure
   (provider error, unparseable or invalid output, `TypedFailure`) becomes a `model-error` /

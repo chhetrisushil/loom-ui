@@ -1,3 +1,4 @@
+export { contentRefArgsFrom } from "./contentRefs";
 export { declaredToolClassesFrom, requiredClass } from "./capabilityClass";
 export { checkPlannerConformance } from "./conformance";
 export type { ConformanceFixture, DenialProbe, StreamProbe } from "./conformance";
