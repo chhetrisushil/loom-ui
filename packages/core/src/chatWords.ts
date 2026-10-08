@@ -18,6 +18,7 @@ const REASON_TEXT: Readonly<Record<string, string>> = Object.freeze({
   replayed: "The message was already received.",
   stale: "The message arrived too late.",
   "not-a-participant": "You are not a participant in this conversation.",
+  "edit-invalid": "That edit could not be applied to the earlier message.",
 });
 const GENERIC_REASON = "The message was not processed.";
 

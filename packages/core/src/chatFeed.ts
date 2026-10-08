@@ -87,9 +87,16 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
   if (!isRecord(raw)) return undefined;
   const turn = own(raw, "turn");
   const role = own(raw, "role");
-  if (typeof turn !== "number" || !Number.isSafeInteger(turn) || turn < 1) return undefined;
   if (role !== "user" && role !== "assistant") return undefined;
   const rawStatus = own(raw, "status");
+  // A rejected user message is recorded under turn 0 by loom (ADR 0122 R17b): keep it, so the user
+  // sees why it was refused. Every other entry needs a real, 1-based turn.
+  if (
+    typeof turn !== "number" ||
+    !Number.isSafeInteger(turn) ||
+    turn < (role === "user" && rawStatus === "rejected" ? 0 : 1)
+  )
+    return undefined;
   const status = (
     typeof rawStatus === "string" && KNOWN_STATUS.has(rawStatus) ? rawStatus : "restricted"
   ) as ChatEntry["status"];
@@ -117,7 +124,9 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
             status === "rejected"
             ? `t${turn}.rejected`
             : entryId(turn, role);
-  const editOf = own(raw, "editOf");
+  // loom's `editOf` is the edited RECORD's `ord`; the edited TURN number (what this value calls
+  // `editOf` and draws as "edit of turn N") is `editOfTurn` (ADR 0122 R17b). Only the turn number is used.
+  const editOf = own(raw, "editOfTurn");
   return {
     id,
     turn,

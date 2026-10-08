@@ -238,9 +238,12 @@ function entryIssues(e: unknown, index: number, ids: Set<string>, out: ChatIssue
   else if (ids.has(id)) at("id appears more than once", ["id"]);
   else ids.add(id);
   const turn = own(e, "turn");
-  if (typeof turn !== "number" || !Number.isSafeInteger(turn) || turn < 1)
-    at("turn must be a positive integer", ["turn"]);
   const role = own(e, "role");
+  // loom records a REJECTED user message under turn 0 (it never took a turn — ADR 0122 R17b); every
+  // other entry is on a real, 1-based turn.
+  const rejectedUser = role === "user" && own(e, "status") === "rejected";
+  if (typeof turn !== "number" || !Number.isSafeInteger(turn) || turn < (rejectedUser ? 0 : 1))
+    at("turn must be a positive integer (0 only for a rejected user message)", ["turn"]);
   if (typeof role !== "string" || !ROLES.includes(role))
     at("role must be user, assistant or system", ["role"]);
   const status = own(e, "status");
