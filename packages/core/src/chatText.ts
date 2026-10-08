@@ -20,6 +20,7 @@ import { MAX_CHAT_TEXT } from "./chatValue";
 
 const UNSAFE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping controls is the point
+  // biome-ignore lint/suspicious/noMisleadingCharacterClass: the class lists the invisible code points to REMOVE, each on its own
   /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u00ad\u115f\u1160\u2060-\u2069\u3164\ufe00-\ufe0e\ufeff\uffa0\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/gu;
 // VS16 (emoji presentation) is kept only after a symbol or emoji; after an ASCII character it is an
 // invisible mark with nothing to select (and VS1-15 / the supplement select glyphs invisibly: removed above).
