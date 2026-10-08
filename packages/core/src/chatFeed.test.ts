@@ -534,3 +534,58 @@ describe("P3: smaller guards", () => {
     expect(new ChatFeed().value().mode).toBeUndefined();
   });
 });
+
+describe("fix round 2: the accepted-turn binding and cursorless sources", () => {
+  it("alice accepted at 0.2, bob rejected at 0.3 on the same turn, viewer alice: alice's live text SHOWS", () => {
+    const f = new ChatFeed({ viewer: { actor: "alice" }, mode: "shared" });
+    f.applyEvent("message", wire(1, "user", { cursor: "0.2", asker: { actor: "alice" } }));
+    f.applyEvent(
+      "message",
+      wire(1, "user", { cursor: "0.3", status: "rejected", asker: { actor: "bob" }, text: "" })
+    );
+    expect(f.applyEvent("delta", { turn: 1, text: "for alice" })).toMatchObject({ changed: true });
+    // and in the other arrival order (rejected first), the first accepted one still wins
+    const g = new ChatFeed({ viewer: { actor: "alice" }, mode: "shared" });
+    g.applyEvent(
+      "message",
+      wire(1, "user", { cursor: "0.1", status: "rejected", asker: { actor: "bob" }, text: "" })
+    );
+    g.applyEvent("message", wire(1, "user", { cursor: "0.2", asker: { actor: "alice" } }));
+    expect(g.applyEvent("delta", { turn: 1, text: "for alice" })).toMatchObject({ changed: true });
+  });
+
+  it("a source with neither cursor nor ord: a rejected entry has its own slot and never takes the accepted turn's", () => {
+    const f = new ChatFeed();
+    f.applyEvent("message", {
+      turn: 1,
+      role: "user",
+      status: "rejected",
+      reason: "stale",
+      text: "x",
+    });
+    f.applyEvent("message", { turn: 1, role: "user", status: "complete", text: "the real one" });
+    expect(f.value().entries.map((e) => [e.id, e.status])).toEqual([
+      ["t1.rejected", "rejected"],
+      ["t1.user", "complete"],
+    ]);
+    expect(isChatValue(f.value())).toBe(true);
+  });
+
+  it("one log position is one entry: seen without and then with a record id (or the reverse) does not duplicate", () => {
+    const f = new ChatFeed();
+    f.applyEvent("message", wire(1, "user", { cursor: "0.2" }));
+    expect(f.applyEvent("message", wire(1, "user", { cursor: "0.2", ord: 5 }))).toMatchObject({
+      changed: false,
+    });
+    const g = new ChatFeed();
+    g.applyEvent("message", wire(1, "user", { cursor: "0.2", ord: 5 }));
+    g.applyEvent("message", wire(1, "user", { cursor: "0.2" }));
+    g.applyHistory(page([wire(1, "user", { cursor: "0.2" })]), "backward");
+    expect(g.value().entries.map((e) => e.id)).toEqual(["m5"]);
+    // a placeholder seen by position is still upgraded when the real entry arrives with an ord
+    const h = new ChatFeed();
+    h.applyEvent("message", wire(1, "user", { cursor: "0.2", status: "restricted" }));
+    h.applyEvent("message", wire(1, "user", { cursor: "0.2", ord: 5 }));
+    expect(h.value().entries.map((e) => [e.id, e.status])).toEqual([["u0.2", "complete"]]);
+  });
+});

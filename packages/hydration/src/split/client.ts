@@ -202,7 +202,10 @@ export class SplitHydrationController {
    * Publish a value for a handle that no loader serves (a live transcript this page folds), through
    * the inventory's gate: only a handle the server LISTED is accepted (a restricted or unknown one is
    * absent from it, so it is refused), and the value must pass the contract of `kind`, which the caller
-   * names (this side holds no catalogue). Refused = a finding and nothing written.
+   * names (this side holds no catalogue). Refused = a finding and nothing written. NOTE: the inventory
+   * does not say what KIND a listed handle feeds, so this cannot verify that `kind` is the handle's
+   * widget: that is the page author's code naming its own handle, the viewer gate (listed or not) is
+   * the part that is enforced here.
    */
   publishValue(
     handle: string,

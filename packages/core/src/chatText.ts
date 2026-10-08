@@ -22,9 +22,22 @@ const UNSAFE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping controls is the point
   // biome-ignore lint/suspicious/noMisleadingCharacterClass: the class lists the invisible code points to REMOVE, each on its own
   /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u00ad\u115f\u1160\u2060-\u2069\u3164\ufe00-\ufe0e\ufeff\uffa0\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/gu;
-// VS16 (emoji presentation) is kept only after a symbol or emoji; after an ASCII character it is an
-// invisible mark with nothing to select (and VS1-15 / the supplement select glyphs invisibly: removed above).
-const STRAY_VS16 = /(?<![\u2000-\u{10ffff}])\ufe0f/gu;
+// VS16 (U+FE0F, emoji presentation) is kept ONLY where it selects something: directly after a
+// pictographic character, or between a keycap base (`#`, `*`, a digit) and U+20E3. Everywhere else
+// (after text, whitespace, a line break, another VS16) it is an invisible mark that carries nothing but
+// a side channel, and a run of them is a way to smuggle bytes behind one emoji. The decision looks only
+// at the character before (and for a keycap, the one after), so the pass is linear, and applying it to
+// its own output changes nothing (a kept VS16 still has its pictograph before it).
+const PICTOGRAPHIC = /^\p{Extended_Pictographic}$/u;
+const STRAY_VS16 = /\ufe0f/g;
+function keepsVs16(whole: string, at: number): boolean {
+  if (at === 0) return false;
+  const lo = whole.charCodeAt(at - 1);
+  const before =
+    lo >= 0xdc00 && lo <= 0xdfff && at >= 2 ? whole.slice(at - 2, at) : whole.slice(at - 1, at);
+  if (PICTOGRAPHIC.test(before)) return true;
+  return /^[#*0-9]$/.test(before) && whole.charCodeAt(at + 1) === 0x20e3;
+}
 const LINE_BREAKS = /\r\n?|\u2028|\u2029/g;
 const BLANK_RUNS = /\n{3,}/g;
 
@@ -42,7 +55,7 @@ export function sanitizeChatText(text: unknown, max: number = MAX_CHAT_TEXT): st
   const head = text.length > limit * 2 ? text.slice(0, limit * 2) : text;
   const clean = head
     .replace(UNSAFE, "")
-    .replace(STRAY_VS16, "")
+    .replace(STRAY_VS16, (m, at: number, whole: string) => (keepsVs16(whole, at) ? m : ""))
     .replace(LINE_BREAKS, "\n")
     .replace(BLANK_RUNS, "\n\n");
   if (head.length === text.length && clean.length <= limit) return clean;

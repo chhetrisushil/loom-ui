@@ -275,11 +275,11 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 - **`connectConversation` (U8, `@loom-ui/hydration/client`)** is the browser's read half over loom's conversation routes
   (`GET {base}/history`, `GET {base}/events`, ADR 0122 D6). The transport is injected (`fetch`; `openStream(url)` so the host
   builds the `EventSource` with its credentials), it imports no loom package, and it folds history pages and SSE frames into
-  a `ChatFeed`, publishing the result through `publish` (`publishChat(controller, handle)` writes the handle THROUGH the controller's gate: `publishValue` refuses a handle the experience
+  a `ChatFeed`, publishing the result through `publish` (`SplitHydrationController.publishValue` can check only that the handle is one the server LISTED; it cannot know the listed handle is a `Chat`, so the `kind` it checks against is the page author's own claim). (`publishChat(controller, handle)` writes the handle THROUGH the controller's gate: `publishValue` refuses a handle the experience
   does not bind or the server did not list, a restricted one, one that is not a `Chat`, and a value that fails the `ChatValue` contract;
   `pending` while a reply streams, `ready` once durable). `start()` loads the newest page then opens the stream after its cursor;
   `loadOlder()` follows the feed's cursor, one load at a time; a `reconnect` event reopens from the feed's resume cursor after at least 250 ms (never 0), consecutive failures back off
-  (2 s doubling to 30 s), and a failed first page is retried the same way instead of giving up.
+  (the first wait is `reconnectMs`, 2 s, then doubling to 30 s; a stream that stayed up 5 s or more starts the streak afresh), and a failed first page is retried the same way instead of giving up.
   Failures are FIXED findings (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`): no status code,
   response body or exception text is carried, and an `error` event's body is not read. Sending is NOT here: it is the host's
   authenticated write-back (`createWriteBack`, `@loom-ui/core` "Chat and inputs").

@@ -112,7 +112,11 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
         ? `m${ord}`
         : isChatCursor(cursor)
           ? `u${cursor}`
-          : entryId(turn, role);
+          : // No position and no record id (a source without either): a rejected envelope still gets a slot
+            // of its own, so it can never take the accepted turn's.
+            status === "rejected"
+            ? `t${turn}.rejected`
+            : entryId(turn, role);
   const editOf = own(raw, "editOf");
   return {
     id,
@@ -175,6 +179,8 @@ export class ChatFeed {
   private index = new Map<string, number>();
   /** turn -> id of that turn's ACCEPTED user entry (a rejected envelope never binds a turn). */
   private acceptedUser = new Map<number, string>();
+  /** cursor -> id of the entry at that log position. */
+  private byCursor = new Map<string, string>();
   private live: Live | undefined;
   private older: string | undefined;
   private startReached = false;
@@ -439,7 +445,12 @@ export class ChatFeed {
   }
 
   /** Insert or (rarely) replace a durable entry. Returns whether the value changed. */
-  private upsert(entry: ChatEntry): boolean {
+  private upsert(incoming: ChatEntry): boolean {
+    // One log position is one entry, however the source keyed it: an entry seen first by position and
+    // later with a record id (or the reverse) is the SAME entry and keeps the id it was first seen under.
+    const known = incoming.cursor === undefined ? undefined : this.byCursor.get(incoming.cursor);
+    const entry =
+      known !== undefined && known !== incoming.id ? { ...incoming, id: known } : incoming;
     const at = this.index.get(entry.id);
     if (at !== undefined) {
       const have = this.list[at] as ChatEntry;
@@ -471,6 +482,9 @@ export class ChatFeed {
 
   private reindex(): void {
     this.index = new Map(this.list.map((e, i) => [e.id, i] as const));
+    this.byCursor = new Map(
+      this.list.flatMap((e) => (e.cursor === undefined ? [] : [[e.cursor, e.id] as const]))
+    );
     this.acceptedUser = new Map(
       this.list
         .filter((e) => e.role === "user" && e.status !== "rejected")
@@ -495,7 +509,10 @@ function compareEntries(a: ChatEntry, b: ChatEntry): number {
     const c = compareChatCursors(a.cursor, b.cursor);
     if (c !== 0) return c;
   }
-  return a.turn - b.turn || ROLE_RANK[a.role] - ROLE_RANK[b.role];
+  // Without positions a refused envelope sorts before the turn it shares a number with (that is
+  // the order loom records them in).
+  const refused = (e: ChatEntry): number => (e.status === "rejected" ? 0 : 1);
+  return a.turn - b.turn || ROLE_RANK[a.role] - ROLE_RANK[b.role] || refused(a) - refused(b);
 }
 
 /** Insert into a (turn, role)-sorted list by binary search. Replaces nothing. */
