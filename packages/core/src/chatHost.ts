@@ -87,7 +87,8 @@ export type ChatSubmitRefusal =
   | "bad-key" // the idempotency key is missing or malformed
   | "invalid" // the value fails the widget's spec (`errors` says which field, in fixed codes)
   | "stale" // the action was not taken on the current view
-  | "duplicate" // this (principal, widget, key) was already accepted
+  | "duplicate" // this (principal, widget, key) was already accepted AND acted on
+  | "in-flight" // this (principal, widget, key) was accepted and its write has not finished: it may still fail
   | "edit-not-allowed"; // the host does not allow this edit (no policy, not the user's, not editable)
 
 export type ChatSubmitResult =
@@ -96,6 +97,8 @@ export type ChatSubmitResult =
       readonly submission: Submission;
       /** Give the idempotency key back: the write-back failed, so a retry with the same key must be accepted. */
       readonly release: () => void;
+      /** The write succeeded: from now on a repeat is a plain `duplicate`. Until then a repeat is `in-flight`. */
+      readonly commit: () => void;
     }
   | {
       readonly ok: false;
@@ -120,7 +123,7 @@ export interface SubmitLedgerOptions {
  * the turn's `messageId` (loom dedupes again, within its own window).
  */
 export class SubmitLedger {
-  private readonly seen = new Map<string, number>();
+  private readonly seen = new Map<string, { at: number; done: boolean }>();
   private readonly max: number;
   private readonly ttl: number;
   private readonly now: () => number;
@@ -136,19 +139,28 @@ export class SubmitLedger {
     return `${principal}\u0000${widgetId}\u0000${key}`;
   }
 
-  /** True the FIRST time a (principal, widget, key) is claimed; false for a duplicate. */
-  claim(principal: string, widgetId: string, key: string): boolean {
+  /**
+   * `new` the first time a (principal, widget, key) is claimed. A repeat is `pending` while the first
+   * write is IN FLIGHT (it may still fail, so a repeat must not be told it landed) and `done` once
+   * {@link commit} says it did. A claim nobody commits or releases stays `pending` until it ages out.
+   */
+  claim(principal: string, widgetId: string, key: string): "new" | "pending" | "done" {
     const t = this.now();
-    for (const [slot, at] of this.seen) {
-      if (this.seen.size <= this.max - 1 && t - at <= this.ttl) break;
+    for (const [slot, v] of this.seen) {
+      if (this.seen.size <= this.max - 1 && t - v.at <= this.ttl) break;
       this.seen.delete(slot);
     }
     const slot = SubmitLedger.slot(principal, widgetId, key);
-    const at = this.seen.get(slot);
-    if (at !== undefined && t - at <= this.ttl) return false;
+    const have = this.seen.get(slot);
+    if (have !== undefined && t - have.at <= this.ttl) return have.done ? "done" : "pending";
     this.seen.delete(slot);
-    this.seen.set(slot, t);
-    return true;
+    this.seen.set(slot, { at: t, done: false });
+    return "new";
+  }
+
+  commit(principal: string, widgetId: string, key: string): void {
+    const v = this.seen.get(SubmitLedger.slot(principal, widgetId, key));
+    if (v !== undefined) v.done = true;
   }
 
   release(principal: string, widgetId: string, key: string): void {
@@ -174,7 +186,11 @@ export interface AcceptChatOptions {
   readonly current: CurrentHead;
   readonly ledger: SubmitLedger;
   /** May `principal` edit this turn? Required for `EDIT_TURN`: absent, every edit is refused. */
-  readonly canEdit?: (turn: number, principal: string) => boolean;
+  readonly canEdit?: (
+    turn: number,
+    principal: string,
+    context: { readonly widgetId: string }
+  ) => boolean;
   /** Longest accepted text (default and ceiling {@link MAX_INPUT_CHARS}); a TextInput's own `maxChars` also applies. */
   readonly maxTextChars?: number;
 }
@@ -230,7 +246,12 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
     if (type === LOAD_OLDER_ACTION) {
       const cursor = own(payload, "cursor");
       if (!isChatCursor(cursor)) return refuse("invalid");
-      return { ok: true, submission: { kind: "older", widgetId, cursor }, release: () => {} };
+      return {
+        ok: true,
+        submission: { kind: "older", widgetId, cursor },
+        release: () => {},
+        commit: () => {},
+      };
     }
 
     const key = own(payload, "key");
@@ -267,7 +288,7 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
         if (!v.ok) return refuse("invalid", { text: v.error });
         let allowed = false;
         try {
-          allowed = options.canEdit(turn, options.principal) === true;
+          allowed = options.canEdit(turn, options.principal, { widgetId }) === true;
         } catch {
           allowed = false;
         }
@@ -276,11 +297,14 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
         break;
       }
     }
-    if (!options.ledger.claim(options.principal, widgetId, key)) return refuse("duplicate");
+    const claim = options.ledger.claim(options.principal, widgetId, key);
+    if (claim === "done") return refuse("duplicate");
+    if (claim === "pending") return refuse("in-flight");
     return {
       ok: true,
       submission,
       release: () => options.ledger.release(options.principal, widgetId, key),
+      commit: () => options.ledger.commit(options.principal, widgetId, key),
     };
   } catch {
     return refuse("not-a-submit");
@@ -291,6 +315,8 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
 
 /** HOST CODE that acts on an accepted submission. May throw / reject: that reads as a failed write, and the key is released. */
 export type SubmissionHandler = (submission: Submission) => unknown;
+/** A handler may REFUSE by returning `{ ok: false, reason }` (a short token) instead of throwing: the key is released and the reason is the outcome's. */
+const REFUSAL_REASON = /^[a-z][a-z0-9-]{0,31}$/;
 
 export interface WriteBackOptions extends Omit<AcceptChatOptions, "principal" | "current"> {
   /** The handler per widget id. A widget with none is `no-route`: accepted nothing, claimed nothing. */
@@ -324,9 +350,11 @@ export function createWriteBack(options: WriteBackOptions): {
       const accepted = acceptChatSubmit(action, { ...options, ...context });
       if (!accepted.ok) {
         if (accepted.reason === "duplicate") return { ok: true, reason: "duplicate" };
+        // The first submission may still fail: a repeat is told to wait, never that it landed.
+        if (accepted.reason === "in-flight") return { ok: false, reason: "pending" };
         return { ok: false, reason: accepted.reason };
       }
-      const { submission, release } = accepted;
+      const { submission, release, commit } = accepted;
       const route = Object.hasOwn(options.routes, submission.widgetId)
         ? options.routes[submission.widgetId]
         : undefined;
@@ -335,11 +363,24 @@ export function createWriteBack(options: WriteBackOptions): {
         return { ok: false, reason: "no-route" };
       }
       try {
-        await route(submission);
+        const answer = await route(submission);
+        if (
+          typeof answer === "object" &&
+          answer !== null &&
+          (answer as { ok?: unknown }).ok === false
+        ) {
+          release();
+          const r = (answer as { reason?: unknown }).reason;
+          return {
+            ok: false,
+            reason: typeof r === "string" && REFUSAL_REASON.test(r) ? r : "failed",
+          };
+        }
       } catch {
         release();
         return { ok: false, reason: "failed" };
       }
+      commit();
       return { ok: true, submission };
     },
   };
@@ -362,6 +403,9 @@ export function conversationTarget(
     if (s.kind === "text") return sendTurn(s.text, { messageId: s.key });
     if (s.kind === "edit")
       return options.edit !== undefined ? options.edit(s) : sendTurn(s.text, { messageId: s.key });
+    // LOAD_OLDER is a READ the browser makes itself (`connection.loadOlder()`); routed here by mistake it
+    // is refused with a reason, not a TypeError.
+    if (s.kind === "older") return { ok: false, reason: "browser-side" };
     throw new TypeError("a conversation target takes text and edits");
   };
 }

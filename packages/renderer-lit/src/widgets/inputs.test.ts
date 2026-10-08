@@ -379,3 +379,31 @@ describe("lu-select-input", () => {
     expect(q(el, "#status")?.textContent).toBe("Not sent. Try again.");
   });
 });
+
+describe("fix round 1: labels are untrusted text", () => {
+  it("field labels and option labels are cleaned to one line, like the terminal's (no escapes, no bidi, no line breaks)", async () => {
+    const dirty = `Re\u202eason\u001b[2J\nline2`;
+    const form = await mount(
+      "lu-form-input",
+      "FormInput",
+      {
+        fields: [
+          { name: "a", label: dirty, type: "select", options: [{ value: "x", label: dirty }] },
+        ],
+      },
+      () => undefined
+    );
+    const text = [...root(form).querySelectorAll("label, option")].map((n) => n.textContent);
+    expect(text.join("|")).not.toMatch(/\u202e|\u001b|\n/);
+    expect(text).toContain("Reason[2J line2");
+    const sel = await mount(
+      "lu-select-input",
+      "SelectInput",
+      { options: [{ value: "x", label: dirty }] },
+      () => undefined
+    );
+    expect([...root(sel).querySelectorAll("option")].map((n) => n.textContent)).toContain(
+      "Reason[2J line2"
+    );
+  });
+});

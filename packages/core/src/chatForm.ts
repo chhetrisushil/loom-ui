@@ -186,7 +186,10 @@ export function validateFormValues(fields: readonly FormField[], raw: unknown): 
           flag(f.name, "too-long");
           break;
         }
-        const text = sanitizeChatText(f.type === "text" ? v.replace(/\n/g, " ") : v, max);
+        // Sanitise FIRST: it is what turns CR / U+2028 / U+2029 into newlines, so a single-line field
+        // flattens them AFTER, never before (a replace-then-sanitise leaves a line break in a one-liner).
+        const clean = sanitizeChatText(v, max);
+        const text = f.type === "text" ? clean.replace(/\n/g, " ") : clean;
         if (text.trim() === "") {
           if (f.required === true) flag(f.name, "required");
           break;

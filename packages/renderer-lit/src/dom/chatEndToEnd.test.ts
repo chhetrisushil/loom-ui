@@ -12,7 +12,12 @@ import {
   genesis,
   inputSpecsOf,
 } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore, publishChat } from "@loom-ui/hydration";
+import {
+  HYDRATION_PROJECTION_ID,
+  HydrationStore,
+  SplitHydrationController,
+  publishChat,
+} from "@loom-ui/hydration";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createChatLitRegistry } from "../chat";
@@ -101,8 +106,18 @@ function rig(headHash: string, renderedHash = headHash) {
   expect(r.findings.filter((f) => f.severity === "error")).toEqual([]);
   const runtime = new InMemoryProjectionRuntime();
   const store = new HydrationStore(runtime, { experienceId: "u8" });
-  const feed = new ChatFeed({ viewer: { actor: "alice" } });
-  const publish = publishChat(store, "h_chat");
+  const feed = new ChatFeed({ viewer: { actor: "alice" }, mode: "owner" });
+  // The page publishes THROUGH a controller's gate: only a handle the server listed, only a valid transcript.
+  const controller = new SplitHydrationController({
+    store,
+    loader: { load: async () => ({ state: "pending" }) as never, loadMany: async () => [] },
+  });
+  controller.load({
+    experienceId: "u8",
+    versionHash: headHash,
+    handles: [{ handle: "h_chat", priority: "P2", params: [], revision: "r1" }],
+  });
+  const publish = publishChat(controller, "h_chat");
   const sendTurn = vi.fn(async (_text: string, _o: { messageId: string }) => undefined);
   const specs = inputSpecsOf(mkExp(headHash), catalog, "web");
   const ledger = new SubmitLedger();
@@ -130,7 +145,7 @@ function rig(headHash: string, renderedHash = headHash) {
     const res = feed.applyEvent(name, data);
     if (res.ok && res.changed) publish(feed.value(), { streaming: feed.streaming });
   };
-  return { host, handle, store, feed, publish, apply, sendTurn, outcomes, r };
+  return { host, handle, store, feed, publish, apply, sendTurn, outcomes, r, controller };
 }
 
 describe("U8: chat through compile, hydration and the DOM", () => {
@@ -279,6 +294,55 @@ describe("U8: chat through compile, hydration and the DOM", () => {
     await tick();
     expect(t.sendTurn).not.toHaveBeenCalled();
     expect(t.outcomes.at(-1)).toEqual({ ok: false, reason: "edit-not-allowed" });
+    t.handle.dispose();
+  });
+});
+
+describe("fix round 1", () => {
+  it("rejected envelopes on the accepted turn's number do not hide the real turn, and its reply streams (loom's actual sequence)", async () => {
+    const t = rig("sha256:v1");
+    const rej = (cursor: string) =>
+      wire(1, "user", {
+        cursor,
+        status: "rejected",
+        reason: "unauthenticated",
+        text: "FORGED TEXT",
+      });
+    t.apply("message", rej("0.2"));
+    t.apply("message", rej("0.3"));
+    t.apply("message", rej("0.4"));
+    t.apply("message", wire(1, "user", { cursor: "0.5", text: "the real question" }));
+    t.apply("delta", { turn: 1, text: "streaming answer" });
+    await tick();
+    const root = shadow(t.host, "chat");
+    expect([...root.querySelectorAll("article")].map((a) => a.getAttribute("data-status"))).toEqual(
+      ["rejected", "rejected", "rejected", "complete", "streaming"]
+    );
+    expect(root.textContent).toContain("the real question");
+    expect(root.textContent).toContain("streaming answer");
+    expect(root.innerHTML).not.toContain("FORGED TEXT");
+    t.handle.dispose();
+  });
+
+  it("an action from a widget whose entry is gone is dropped AND answered stale (an input must not read silence as success)", async () => {
+    const t = rig("sha256:v1");
+    await tick();
+    const el = t.host.querySelector("[data-widget-id='composer']")
+      ?.firstElementChild as unknown as { onAction: (a: unknown) => unknown };
+    const call = el.onAction;
+    t.handle.dispose();
+    expect(await call({ type: "SUBMIT_TEXT", widgetId: "composer", payload: {} })).toEqual({
+      ok: false,
+      reason: "stale",
+    });
+  });
+
+  it("the page's publish is refused for a handle the server did not list", async () => {
+    const t = rig("sha256:v1");
+    const seen: string[] = [];
+    const ghost = publishChat(t.controller, "ghost", (f) => seen.push(f.code));
+    ghost(t.feed.value(), { streaming: false });
+    expect(seen).toEqual(["publish-unbound"]);
     t.handle.dispose();
   });
 });

@@ -47,8 +47,9 @@ const e = (turn: number, role: "user" | "assistant", over: Record<string, unknow
   parts: text(`${role} ${turn}`),
   ...over,
 });
+// An owner-only conversation unless a test says otherwise: a user turn with no asker is the viewer's own.
 const value = (entries: unknown[], more: Record<string, unknown> = {}) =>
-  ({ entries, ...more }) as ChatValue;
+  ({ entries, mode: "owner", ...more }) as ChatValue;
 
 beforeEach(() => vi.stubGlobal("IntersectionObserver", undefined));
 afterEach(() => {
@@ -254,7 +255,7 @@ describe("lu-chat: drawing a transcript", () => {
     const shared = await mount(
       value([e(1, "user", { asker: { actor: "alice" } })], { viewer: { actor: "bob" } })
     );
-    expect(q(shared, "article")?.getAttribute("aria-label")).toBe("alice");
+    expect(q(shared, "article")?.getAttribute("aria-label")).toBe('User "alice"');
     expect(q(shared, "article[data-own]")).toBeNull();
     const bad = await mount({ entries: [{ nope: 1 }] });
     expect(q(bad, "[data-state='error']")).not.toBeNull();

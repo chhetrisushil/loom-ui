@@ -130,3 +130,28 @@ describe("oneLineChatText", () => {
     expect(oneLineChatText("x".repeat(500), 20).length).toBe(20);
   });
 });
+
+describe("invisible glyph carriers (fix round 1)", () => {
+  const cp = (...c: number[]) => String.fromCodePoint(...c);
+  it("strips variation selectors, the soft hyphen and Hangul fillers (a blank-looking name)", () => {
+    expect(sanitizeChatText(`a${cp(0xfe00)}b${cp(0xfe0e)}c${cp(0xe0100)}d${cp(0xe01ef)}e`)).toBe(
+      "abcde"
+    );
+    expect(
+      sanitizeChatText(`x${cp(0xad)}y${cp(0x3164)}z${cp(0x115f)}${cp(0x1160)}${cp(0xffa0)}w`)
+    ).toBe("xyzw");
+    // a name made only of fillers becomes empty, so it cannot pass for a blank / lookalike speaker
+    expect(sanitizeChatText(`${cp(0x3164)}${cp(0x115f)}${cp(0xffa0)}`)).toBe("");
+  });
+  it("keeps VS16 after an emoji or symbol, drops it after ASCII", () => {
+    expect(sanitizeChatText(`${cp(0x2764, 0xfe0f)}`)).toBe(cp(0x2764, 0xfe0f));
+    expect(sanitizeChatText(`${cp(0x1f600, 0xfe0f)}`)).toBe(cp(0x1f600, 0xfe0f));
+    expect(sanitizeChatText(`a${cp(0xfe0f)}b`)).toBe("ab");
+  });
+  it("stays linear with 100 KB of them", () => {
+    const t0 = performance.now();
+    sanitizeChatText(cp(0xfe0f).repeat(100_000));
+    sanitizeChatText(`a${cp(0xfe0f)}`.repeat(50_000));
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});

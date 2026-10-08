@@ -8,6 +8,7 @@ import {
   SUBMIT_TEXT_ACTION,
   fieldsProblem,
   newSubmitKey,
+  oneLineChatText,
   optionsProblem,
   validateFormValues,
   validateSelectValue,
@@ -274,7 +275,7 @@ export class LuFormInput extends LuInput {
           .value=${typeof val === "string" ? val : ""}
           @change=${(e: Event) => this.set(f.name, (e.target as HTMLSelectElement).value)}>
           <option value="">${t("Choose…")}</option>
-          ${(f.options ?? []).map((o) => html`<option value=${o.value} ?selected=${val === o.value}>${o.label}</option>`)}
+          ${(f.options ?? []).map((o) => html`<option value=${o.value} ?selected=${val === o.value}>${oneLineChatText(o.label, 200)}</option>`)}
         </select>`;
       default:
         return html`<input id=${id} data-name=${f.name} type="text" maxlength=${f.maxLength ?? MAX_INPUT_CHARS}
@@ -312,7 +313,7 @@ export class LuFormInput extends LuInput {
           ? (this.errors[f.name] as FieldError)
           : undefined;
         return html`<div class="row" data-field-row=${f.name}>
-          <label for=${id}>${f.label}${f.required === true ? html`<span aria-hidden="true"> *</span>` : nothing}</label>
+          <label for=${id}>${oneLineChatText(f.label, 200)}${f.required === true ? html`<span aria-hidden="true"> *</span>` : nothing}</label>
           ${this.control(f, id, err !== undefined, err !== undefined ? `${id}-err` : "")}
           ${err !== undefined ? html`<div class="error" id="${id}-err">${this.errorText(err)}</div>` : nothing}
         </div>`;
@@ -383,7 +384,7 @@ export class LuSelectInput extends LuInput {
       <label for="pick">${name}</label>
       <select id="pick" aria-describedby="status" .value=${this.picked} ?aria-busy=${this.phase === "sending"} @change=${this.onChange}>
         <option value="" disabled ?selected=${this.picked === ""}>${placeholder}</option>
-        ${options.map((o) => html`<option value=${o.value} ?selected=${this.picked === o.value}>${o.label}</option>`)}
+        ${options.map((o) => html`<option value=${o.value} ?selected=${this.picked === o.value}>${oneLineChatText(o.label, 200)}</option>`)}
       </select>
       <div class="status" id="status" role=${failed ? "alert" : "status"} aria-live=${failed ? "assertive" : "polite"} ?data-error=${failed}>${text}</div>
     </div>`;

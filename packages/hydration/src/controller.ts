@@ -10,8 +10,10 @@ import {
   type Surface,
   type UndeclaredToolPolicy,
   type Viewer,
+  checkKindValue,
   experienceHandles,
   handleKindsWithMedia,
+  hasKindContract,
   hasMediaTypeNodes,
   isChatKind,
   isMediaKind,
@@ -357,6 +359,46 @@ export class HydrationController {
     chunk: unknown
   ): { ok: true; applied: boolean } | { ok: false; finding: Finding } {
     return this.opts.store.append(handle, chunk);
+  }
+
+  /**
+   * Publish a value for a handle that is NOT loaded by a provider (a live transcript a browser
+   * connection folds, ...), through the same gates as a load: the handle must be bound by the current
+   * experience, must not be restricted for the viewer (`restricted`, the fixed text that names
+   * nothing), must resolve to the kind the caller names (when it names one), and the value must pass
+   * EVERY bound kind's contract (a kind with none is refused: nothing is published unchecked).
+   * Refused = a finding and nothing written.
+   */
+  publishValue(
+    handle: string,
+    value: unknown,
+    options: { readonly state?: "ready" | "pending"; readonly kind?: string } = {}
+  ): { ok: true } | { ok: false; finding: Finding } {
+    const refuse = (code: string, message: string): { ok: false; finding: Finding } => ({
+      ok: false,
+      finding: { code, severity: "error", message },
+    });
+    if (this.sched.isDisposed || isReservedHandle(handle) || !this.bound.has(handle))
+      return refuse(
+        "publish-unbound",
+        "the handle is not bound by the current experience; the value was refused"
+      );
+    if (this.restrictedHandles.has(handle)) return { ok: false, finding: restrictedFinding() };
+    const kinds = this.kinds.get(handle) ?? [];
+    if (kinds.length === 0 || (options.kind !== undefined && !kinds.includes(options.kind)))
+      return refuse(
+        "publish-kind-mismatch",
+        "the handle's widget does not take this value; refused"
+      );
+    const contracts = this.opts.outputKinds?.catalog.valueContracts;
+    for (const kind of kinds) {
+      if (!hasKindContract(kind, contracts))
+        return refuse("publish-uncontracted", "the handle's widget has no value contract; refused");
+      const check = checkKindValue(kind, value, contracts);
+      if (!check.ok) return { ok: false, finding: check.finding };
+    }
+    this.opts.store.setValue(handle, value, { state: options.state ?? "ready" });
+    return { ok: true };
   }
 
   private appendRefusal(handle: string): Finding | undefined {

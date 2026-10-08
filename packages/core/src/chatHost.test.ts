@@ -114,10 +114,14 @@ describe("acceptChatSubmit", () => {
     ).toEqual({ ok: false, reason: "stale" });
   });
 
-  it("a DUPLICATE (same principal, widget, key) is refused once; a different principal or widget is independent", () => {
+  it("a repeat of a key is IN-FLIGHT until the write is committed, then a DUPLICATE; other principals and widgets are independent", () => {
     const o = opts();
     const a = act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: KEY });
-    expect(acceptChatSubmit(a, o).ok).toBe(true);
+    const first = acceptChatSubmit(a, o);
+    expect(first.ok).toBe(true);
+    // the first write may still fail: a repeat is NOT told it landed
+    expect(acceptChatSubmit(a, o)).toEqual({ ok: false, reason: "in-flight" });
+    first.ok && first.commit();
     expect(acceptChatSubmit(a, o)).toEqual({ ok: false, reason: "duplicate" });
     expect(acceptChatSubmit(a, { ...o, principal: "t/bob" }).ok).toBe(true);
     expect(acceptChatSubmit(act(SELECT_ACTION, "pick", { value: "a", key: KEY }), o).ok).toBe(true);
@@ -134,12 +138,14 @@ describe("acceptChatSubmit", () => {
   it("the ledger is bounded in size and time", () => {
     let now = 0;
     const l = new SubmitLedger({ max: 3, ttlMs: 100, now: () => now });
-    for (const k of ["k1", "k2", "k3", "k4"]) expect(l.claim("p", "w", k)).toBe(true);
+    for (const k of ["k1", "k2", "k3", "k4"]) expect(l.claim("p", "w", k)).toBe("new");
     expect(l.size).toBe(3);
-    expect(l.claim("p", "w", "k1")).toBe(true); // evicted: the oldest is forgotten first
-    expect(l.claim("p", "w", "k4")).toBe(false);
+    expect(l.claim("p", "w", "k1")).toBe("new"); // evicted: the oldest is forgotten first
+    expect(l.claim("p", "w", "k4")).toBe("pending");
+    l.commit("p", "w", "k4");
+    expect(l.claim("p", "w", "k4")).toBe("done");
     now = 500;
-    expect(l.claim("p", "w", "k4")).toBe(true); // aged out
+    expect(l.claim("p", "w", "k4")).toBe("new"); // aged out
   });
 
   it("refuses malformed idempotency keys, unknown widgets, mismatched widgets, junk actions", () => {
@@ -438,5 +444,68 @@ describe("createWriteBack and the targets", () => {
       await wb.handle(act(SUBMIT_TEXT_ACTION, "composer", { text: "  ", key: newSubmitKey() }), ctx)
     ).toMatchObject({ ok: false, reason: "invalid" });
     expect(sendTurn).not.toHaveBeenCalled();
+  });
+});
+
+describe("fix round 1: host-side guards", () => {
+  const ctx = { principal: "t/alice", current: head };
+  it("a repeat while the first write is IN FLIGHT is told to wait, never that it landed; if the first fails, the retry is accepted", async () => {
+    let release: (v?: unknown) => void = () => {};
+    let calls = 0;
+    const route = () => {
+      calls++;
+      return calls === 1
+        ? new Promise((_r, rej) => {
+            release = rej;
+          })
+        : undefined;
+    };
+    const wb = createWriteBack({ ...opts(), routes: { composer: route } });
+    const a = act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: newSubmitKey() });
+    const first = wb.handle(a, ctx);
+    expect(await wb.handle(a, ctx)).toEqual({ ok: false, reason: "pending" });
+    release(new Error("boom"));
+    expect(await first).toEqual({ ok: false, reason: "failed" });
+    expect(await wb.handle(a, ctx)).toMatchObject({ ok: true }); // the failure released the key
+    expect(await wb.handle(a, ctx)).toEqual({ ok: true, reason: "duplicate" }); // now it really landed
+  });
+
+  it("LOAD_OLDER routed to a conversation target is refused with a reason, not a TypeError", async () => {
+    const wb = createWriteBack({ ...opts(), routes: { chat: conversationTarget(vi.fn()) } });
+    expect(await wb.handle(act(LOAD_OLDER_ACTION, "chat", { cursor: "0.12" }), ctx)).toEqual({
+      ok: false,
+      reason: "browser-side",
+    });
+  });
+
+  it("canEdit is told which widget the edit came from", () => {
+    const seen: unknown[] = [];
+    acceptChatSubmit(
+      act(EDIT_TURN_ACTION, "chat", { turn: 1, text: "t", key: newSubmitKey() }),
+      opts({
+        canEdit: (...a: unknown[]) => {
+          seen.push(a);
+          return true;
+        },
+      })
+    );
+    expect(seen).toEqual([[1, "t/alice", { widgetId: "chat" }]]);
+  });
+
+  it("a single-line form field is ONE line: CR / U+2028 become newlines in the sanitiser and are flattened after it", () => {
+    const one = [{ name: "title", label: "Title", type: "text" as const }];
+    const r = acceptChatSubmit(
+      act(SUBMIT_FORM_ACTION, "form", {
+        values: { reason: "r", title: "a\r\nb\u2028c\u2029d\ne" },
+        key: newSubmitKey(),
+      }),
+      opts({
+        specOf: (id: string) =>
+          id === "form"
+            ? ({ kind: "FormInput", fields: [...FIELDS, ...one] } as InputSpec)
+            : SPECS[id],
+      })
+    );
+    expect(r.ok && r.submission.kind === "form" && r.submission.values.title).toBe("a b c d e");
   });
 });

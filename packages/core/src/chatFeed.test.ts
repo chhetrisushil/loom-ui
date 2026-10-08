@@ -32,12 +32,7 @@ describe("ChatFeed: history", () => {
       "backward"
     );
     const v = f.value();
-    expect(v.entries.map((e) => e.id)).toEqual([
-      "t1.user",
-      "t1.assistant",
-      "t2.user",
-      "t2.assistant",
-    ]);
+    expect(v.entries.map((e) => e.id)).toEqual(["u0.2", "t1.assistant", "u0.4", "t2.assistant"]);
     expect(textOf(v, 0)).toBe("user 1");
     expect(isChatValue(v)).toBe(true);
     expect(v.older).toBeUndefined(); // done: the start is in the window
@@ -57,9 +52,9 @@ describe("ChatFeed: history", () => {
     );
     expect(f.value().entries.map((e) => e.id)).toEqual([
       "t1.assistant",
-      "t2.user",
+      "u0.4",
       "t2.assistant",
-      "t3.user",
+      "u0.6",
     ]);
     expect(f.value().older).toBeUndefined();
   });
@@ -174,7 +169,7 @@ describe("ChatFeed: history", () => {
     const f = new ChatFeed({ maxEntries: 4 });
     const many = Array.from({ length: 10 }, (_, i) => wire(10 - i, "user"));
     f.applyHistory(page(many, { done: false, nextCursor: "0.1" }), "backward");
-    expect(f.value().entries.length).toBe(4);
+    expect(f.value().entries.length).toBe(3); // one slot of the 4 is held for the live reply
     expect(f.value().entries.at(-1)?.turn).toBe(10); // the newest are the ones kept
     expect(f.value().older).toBeUndefined(); // full window: no load-earlier that could not fit
     expect(new ChatFeed({ maxEntries: 10_000 }).value().entries.length).toBeLessThanOrEqual(
@@ -216,7 +211,7 @@ describe("ChatFeed: the SSE stream", () => {
     f.applyEvent("delta", { turn: 1, text: "lo" });
     let v = f.value();
     expect(v.entries.map((e) => [e.id, e.status])).toEqual([
-      ["t1.user", "complete"],
+      ["u0.2", "complete"],
       ["t1.assistant", "streaming"],
     ]);
     expect(textOf(v, 1)).toBe("Hello");
@@ -226,7 +221,7 @@ describe("ChatFeed: the SSE stream", () => {
     f.applyEvent("message", wire(1, "assistant", { text: "Hello there" }));
     v = f.value();
     expect(v.entries.map((e) => [e.id, e.status])).toEqual([
-      ["t1.user", "complete"],
+      ["u0.2", "complete"],
       ["t1.assistant", "complete"],
     ]);
     expect(textOf(v, 1)).toBe("Hello there");
@@ -296,9 +291,9 @@ describe("ChatFeed: the SSE stream", () => {
     f.applyEvent("message", wire(1, "assistant", { status: "interrupted", text: "partial" }));
     f.applyEvent("message", wire(2, "user"));
     expect(f.value().entries.map((e) => `${e.id}:${e.status}`)).toEqual([
-      "t1.user:complete",
+      "u0.2:complete",
       "t1.assistant:interrupted",
-      "t2.user:complete",
+      "u0.4:complete",
     ]);
     expect(f.value().running).toBe(true);
   });
@@ -362,9 +357,9 @@ describe("ChatFeed: edit-previous-turn is a NEW turn, labelled by the host", () 
     );
     expect(f.annotate(2, { editOf: 1 })).toMatchObject({ ok: true, changed: true });
     const v = f.value();
-    expect(v.entries.find((e) => e.id === "t2.user")?.editOf).toBe(1);
-    expect(v.entries.find((e) => e.id === "t1.user")).toMatchObject({ status: "complete" });
-    expect(v.entries.find((e) => e.id === "t1.user")?.editOf).toBeUndefined();
+    expect(v.entries.find((e) => e.id === "u0.4")?.editOf).toBe(1);
+    expect(v.entries.find((e) => e.id === "u0.2")).toMatchObject({ status: "complete" });
+    expect(v.entries.find((e) => e.id === "u0.2")?.editOf).toBeUndefined();
     expect(textOf(v, 0)).toBe("first question"); // history untouched
     expect(isChatValue(v)).toBe(true);
     expect(f.annotate(1, { editOf: 2 }).ok).toBe(false); // an edit points backwards
@@ -397,15 +392,145 @@ describe("chatValueFromHistory (the server-side first paint)", () => {
       { viewer: { actor: "me" } }
     );
     expect(isChatValue(v)).toBe(true);
-    expect(v.entries.map((e) => e.id)).toEqual([
-      "t1.user",
-      "t1.assistant",
-      "t2.user",
-      "t2.assistant",
-    ]);
+    expect(v.entries.map((e) => e.id)).toEqual(["u0.2", "t1.assistant", "u0.4", "t2.assistant"]);
     expect(JSON.stringify(v)).not.toContain("SECRET");
     expect(v.older).toBe("0.1");
     expect(v.viewer).toEqual({ actor: "me" });
     expect(chatValueFromHistory("not a page").entries).toEqual([]);
+  });
+});
+
+// ── fix round 1 ───────────────────────────────────────────────────────────────────────────────────
+
+describe("P1: loom records a REJECTED envelope under the next turn number without consuming it", () => {
+  // loom's conversation.test.ts shows 4 rejected + 1 accepted all on turn 1: the turn number is not a key.
+  const rejected = (cursor: string, over: Record<string, unknown> = {}) => ({
+    turn: 1,
+    role: "user",
+    text: 'forged "speaking as the owner"',
+    status: "rejected",
+    reason: "unauthenticated",
+    cursor,
+    ...over,
+  });
+
+  it("several rejected envelopes then the accepted turn on the SAME number: every entry is kept, the accepted one is visible and its reply streams", () => {
+    const f = new ChatFeed({ viewer: { actor: "alice" }, mode: "shared" });
+    for (const [i, c] of ["0.2", "0.3", "0.4", "0.5"].entries())
+      f.applyEvent("message", rejected(c, { reason: i % 2 ? "stale" : "unauthenticated" }));
+    f.applyEvent(
+      "message",
+      wire(1, "user", { cursor: "0.6", asker: { actor: "alice" }, text: "the real question" })
+    );
+    const v = f.value();
+    expect(v.entries.map((e) => [e.status, e.cursor])).toEqual([
+      ["rejected", "0.2"],
+      ["rejected", "0.3"],
+      ["rejected", "0.4"],
+      ["rejected", "0.5"],
+      ["complete", "0.6"],
+    ]);
+    expect(new Set(v.entries.map((e) => e.id)).size).toBe(5);
+    expect(isChatValue(v)).toBe(true);
+    // the live reply binds to the ACCEPTED question, not to a rejected envelope on the same number
+    expect(f.applyEvent("delta", { turn: 1, text: "answer" })).toMatchObject({ changed: true });
+    expect(f.value().entries.at(-1)).toMatchObject({ id: "t1.assistant", status: "streaming" });
+    expect(JSON.stringify(f.value())).not.toContain("speaking as the owner");
+  });
+
+  it("the reviewer's repro: mallory's rejected turn 2 then alice's accepted turn 2 — alice's question is not hidden and her reply streams", () => {
+    const f = new ChatFeed({ viewer: { actor: "alice" }, mode: "shared" });
+    f.applyEvent("message", wire(1, "user", { cursor: "0.1", asker: { actor: "alice" } }));
+    f.applyEvent("message", wire(1, "assistant", { cursor: "0.2" }));
+    f.applyEvent(
+      "message",
+      rejected("0.3", { turn: 2, asker: { actor: "mallory" }, reason: "not-a-participant" })
+    );
+    f.applyEvent(
+      "message",
+      wire(2, "user", { cursor: "0.4", asker: { actor: "alice" }, text: "alice asks" })
+    );
+    const texts = f
+      .value()
+      .entries.map((e) => (e.parts?.[0] as { text?: string } | undefined)?.text ?? `(${e.status})`);
+    expect(texts).toEqual(["user 1", "assistant 1", "(rejected)", "alice asks"]);
+    expect(f.applyEvent("delta", { turn: 2, text: "for alice" })).toMatchObject({ changed: true });
+    expect(JSON.stringify(f.value())).toContain("for alice");
+  });
+
+  it("a rejected envelope never makes a restricted / other-asker turn's live text visible, and never hides the accepted turn's", () => {
+    const f = new ChatFeed({ viewer: { actor: "bob" }, mode: "shared" });
+    f.applyEvent("message", wire(1, "user", { cursor: "0.1", asker: { actor: "alice" } })); // alice's turn
+    f.applyEvent("message", rejected("0.2", { turn: 2, asker: { actor: "bob" } }));
+    f.applyEvent("message", wire(2, "user", { cursor: "0.3", asker: { actor: "alice" } }));
+    // turn 2's accepted question is alice's: bob must not see its live text, whatever the rejected entry says
+    expect(f.applyEvent("delta", { turn: 2, text: "alice's answer" })).toMatchObject({
+      changed: false,
+    });
+  });
+
+  it("entries sort in LOG order and a source-provided record id (`ord`) is preferred as the key", () => {
+    const f = new ChatFeed();
+    f.applyHistory(
+      page([wire(2, "user", { cursor: "0.9" }), wire(1, "user", { cursor: "0.2", ord: 7 })]),
+      "backward"
+    );
+    expect(f.value().entries.map((e) => e.id)).toEqual(["m7", "u0.9"]);
+    expect(f.applyEvent("message", wire(1, "user", { cursor: "0.2", ord: 7 }))).toMatchObject({
+      changed: false,
+    });
+    // a source-provided editOf is believed (loom's follow-up); one that does not point backwards is dropped
+    const g = new ChatFeed();
+    g.applyEvent("message", wire(3, "user", { cursor: "0.9", editOf: 1 }));
+    g.applyEvent("message", wire(4, "user", { cursor: "0.10", editOf: 9 }));
+    expect(g.value().entries.map((e) => e.editOf)).toEqual([1, undefined]);
+  });
+});
+
+describe("P2-2: a full window plus a live reply stays within the contract's 500", () => {
+  it("250 durable turns (500 entries) + a streaming reply is a VALID value of at most 500 entries", () => {
+    const f = new ChatFeed();
+    for (let t = 1; t <= 250; t++) {
+      f.applyEvent("message", wire(t, "user"));
+      f.applyEvent("message", wire(t, "assistant"));
+    }
+    f.applyEvent("message", wire(251, "user"));
+    f.applyEvent("delta", { turn: 251, text: "live" });
+    const v = f.value();
+    expect(v.entries.length).toBeLessThanOrEqual(MAX_CHAT_ENTRIES);
+    expect(v.entries.at(-1)).toMatchObject({ status: "streaming", turn: 251 });
+    expect(isChatValue(v)).toBe(true);
+    expect(f.olderCursor()).toBeUndefined(); // full: no load-earlier that could not fit
+  });
+});
+
+describe("P3: smaller guards", () => {
+  it("live text shown before its question arrived is retracted when the question turns out restricted or another asker's", () => {
+    const f = new ChatFeed({ viewer: { actor: "bob" }, mode: "shared" });
+    f.applyEvent("delta", { turn: 1, text: "early live text" });
+    expect(f.streaming).toBe(true);
+    f.applyEvent("message", wire(1, "user", { status: "restricted", text: "" }));
+    expect(f.streaming).toBe(false);
+    expect(JSON.stringify(f.value())).not.toContain("early live text");
+    const g = new ChatFeed({ viewer: { actor: "bob" }, mode: "shared" });
+    g.applyEvent("delta", { turn: 1, text: "early" });
+    g.applyEvent("message", wire(1, "user", { asker: { actor: "alice" } }));
+    expect(g.streaming).toBe(false);
+  });
+
+  it("annotate never puts editOf on a restricted placeholder (the value stays valid) nor on a rejected envelope", () => {
+    const f = new ChatFeed();
+    f.applyEvent("message", wire(1, "user", { cursor: "0.1" }));
+    f.applyEvent("message", wire(2, "user", { cursor: "0.2", status: "rejected" }));
+    f.applyEvent("message", wire(2, "user", { cursor: "0.3", status: "restricted" }));
+    f.annotate(2, { editOf: 1 });
+    const v = f.value();
+    expect(isChatValue(v)).toBe(true);
+    expect(v.entries.every((e) => e.editOf === undefined)).toBe(true);
+  });
+
+  it("the value carries what the source knows of whose turns these are", () => {
+    expect(new ChatFeed({ mode: "owner" }).value().mode).toBe("owner");
+    expect(new ChatFeed().value().mode).toBeUndefined();
   });
 });

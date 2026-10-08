@@ -356,14 +356,14 @@ export class LuChat extends LuWidget {
   }
 
   private entry(e: ChatEntry, v: ChatValue): TemplateResult {
-    const speaker = chatSpeaker(e, v.viewer);
+    const speaker = chatSpeaker(e, v);
     const note = chatStatusNote(e);
-    const own = isOwnChatEntry(e, v.viewer);
+    const own = isOwnChatEntry(e, v);
     if (e.status === "restricted") {
       // A bare placeholder: who and which turn, nothing the viewer is not cleared for.
       const by = chatActorLabel(e);
       return html`<article data-role=${e.role} data-status="restricted" data-turn=${e.turn} aria-label=${t("Restricted message")}>
-        <header><span class="who">${e.role === "assistant" ? t("Assistant") : by === "" ? t("User") : by}</span></header>
+        <header><span class="who">${e.role === "assistant" ? t("Assistant") : by === "" ? t("User") : `${t("User")} "${by}"`}</span></header>
         <p class="fixed" role="note">${t("Restricted")}</p>
       </article>`;
     }

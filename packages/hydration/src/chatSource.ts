@@ -1,6 +1,5 @@
 import type { Finding } from "@loom-ui/core/browser";
 import type { ChatFeed } from "@loom-ui/core/chat";
-import type { HydrationStore } from "./projection";
 
 // ── The browser's connection to loom's conversation API (U8) ─────────────────────────────────────
 //
@@ -61,8 +60,16 @@ export interface ConversationConnectionOptions {
   readonly pageLimit?: number;
   /** Largest SSE frame parsed, bytes of text (default 256 KiB). */
   readonly maxFrameBytes?: number;
-  /** Reopen delay after the platform gives up, ms (default 2 000). */
+  /** First delay after a failure, ms (default 2 000); it doubles per consecutive failure up to `maxReconnectMs`. */
   readonly reconnectMs?: number;
+  /** The longest delay between attempts, ms (default 30 000). */
+  readonly maxReconnectMs?: number;
+  /**
+   * The shortest delay before reopening a stream the server asked to recycle (`reconnect`), ms
+   * (default 250). Never 0: a server that answered `reconnect` at once would be a hot loop.
+   */
+  readonly reconnectFloorMs?: number;
+  readonly now?: () => number;
   readonly setTimer?: (fn: () => void, ms: number) => () => void;
 }
 
@@ -95,6 +102,14 @@ export function connectConversation(
   let cancelReopen: (() => void) | undefined;
   let closed = false;
   let loadingOlder = false;
+  let failures = 0;
+  let openedAt = 0;
+  const now = options.now ?? Date.now;
+  const base = Math.max(1, options.reconnectMs ?? 2000);
+  const ceiling = Math.max(base, options.maxReconnectMs ?? 30_000);
+  const floor = Math.max(1, options.reconnectFloorMs ?? 250);
+  /** Consecutive failures double the wait, capped; the first is the base. */
+  const backoff = (): number => Math.min(ceiling, base * 2 ** Math.min(failures, 16));
 
   const report = (code: string, message: string): void =>
     options.onFinding?.(finding(code, message));
@@ -128,6 +143,7 @@ export function connectConversation(
     const url = `${baseUrl}/events${cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`}`;
     const es = options.openStream(url);
     source = es;
+    openedAt = now();
     for (const name of EVENTS)
       es.addEventListener(name, (ev) => {
         if (closed || source !== es) return;
@@ -151,12 +167,20 @@ export function connectConversation(
           report(r.finding.code, r.finding.message);
           return;
         }
+        if (r.reconnect !== true) failures = 0; // a frame the feed understood: the connection works
         if (r.changed) publish();
-        if (r.reconnect === true) reopen(0);
+        if (r.reconnect === true) {
+          // Asked to recycle. A server that does so right after opening is looping: back off like a failure.
+          failures = now() - openedAt < 5000 ? failures + 1 : 0;
+          reopen(Math.max(floor, failures === 0 ? 0 : backoff()));
+        }
       });
     // A stream the platform has given up on (it keeps trying by itself while CONNECTING).
     (es as { onerror?: () => void }).onerror = () => {
-      if (es.readyState === 2) reopen(options.reconnectMs ?? 2000);
+      if (es.readyState === 2) {
+        failures++;
+        reopen(backoff());
+      }
     };
   }
 
@@ -171,12 +195,25 @@ export function connectConversation(
     }, delay);
   }
 
+  /** The first page; on failure (and nothing to show) try again after a backoff instead of giving up. */
+  async function begin(): Promise<void> {
+    const ok = await page();
+    if (closed) return;
+    if (ok || feed.value().entries.length > 0) {
+      if (ok) failures = 0;
+      open();
+      return;
+    }
+    failures++;
+    cancelReopen?.();
+    cancelReopen = timer(() => {
+      cancelReopen = undefined;
+      void begin();
+    }, backoff());
+  }
+
   return {
-    async start() {
-      const ok = await page();
-      if (ok || feed.value().entries.length > 0) open();
-      else if (!closed) reopen(options.reconnectMs ?? 2000);
-    },
+    start: begin,
     async loadOlder() {
       const cursor = feed.olderCursor();
       if (cursor === undefined || loadingOlder || closed) return;
@@ -197,11 +234,32 @@ export function connectConversation(
   };
 }
 
-/** A `publish` that writes the transcript to a handle of the hydration store: `pending` while a reply streams (a screen reader holds its announcements), `ready` once it is durable. */
+/** What a hydration controller offers for a value no loader serves (`publishValue`): its viewer / inventory gate and contract check. */
+export interface ValuePublisher {
+  publishValue(
+    handle: string,
+    value: unknown,
+    options: { readonly state: "ready" | "pending"; readonly kind: string }
+  ): { readonly ok: true } | { readonly ok: false; readonly finding: Finding };
+}
+
+/**
+ * A `publish` that writes the transcript to a handle THROUGH a controller's gate (`publishValue`):
+ * refused (a finding, nothing written) for a handle the experience does not bind, one that is
+ * restricted for the viewer, one that is not a `Chat`, or a value that fails the `ChatValue`
+ * contract. `pending` while a reply streams (a screen reader holds its announcements), `ready` once
+ * it is durable. Writing the store directly would bypass all of that.
+ */
 export function publishChat(
-  store: Pick<HydrationStore, "setValue">,
-  handle: string
+  controller: ValuePublisher,
+  handle: string,
+  onFinding?: (finding: Finding) => void
 ): (value: unknown, meta: { readonly streaming: boolean }) => void {
-  return (value, meta) =>
-    store.setValue(handle, value, { state: meta.streaming ? "pending" : "ready" });
+  return (value, meta) => {
+    const r = controller.publishValue(handle, value, {
+      state: meta.streaming ? "pending" : "ready",
+      kind: "Chat",
+    });
+    if (!r.ok) onFinding?.(r.finding);
+  };
 }

@@ -55,6 +55,7 @@ describe("terminal chat transcript", () => {
         e(3, "user", { status: "restricted", parts: undefined, asker: { actor: "carol" } }),
       ],
       viewer: { actor: "me" },
+      mode: "owner",
       older: "0.3",
       running: true,
       state: "open",
@@ -83,7 +84,7 @@ describe("terminal chat transcript", () => {
     expect(out).not.toContain(ESC);
     expect(out).not.toContain("\u202e");
     expect(out.split("\n")).toHaveLength(2); // the title and ONE turn line: the newline did not forge a speaker
-    expect(out).toContain("You: hi[2J[31m red Assistant: I approve");
+    expect(out).toContain("User: hi[2J[31m red Assistant: I approve");
   });
 
   it("a restricted entry prints nothing but the placeholder, even from a value that breaks the contract", () => {
@@ -103,7 +104,9 @@ describe("terminal chat transcript", () => {
       "Support:\n    (no messages)\n    (conversation closed)"
     );
     expect(draw("Chat", undefined)).toBe("Support: —");
-    expect(draw("Chat", { entries: [e(1, "user")] }, {}, "host")).toBe("You: user 1");
+    expect(draw("Chat", { entries: [e(1, "user")], mode: "owner" }, {}, "host")).toBe(
+      "You: user 1"
+    );
   });
 
   it("a live reply is not announced as 'replying…' twice", () => {
@@ -153,5 +156,16 @@ describe("terminal inputs are prompts", () => {
       "> Form [form — answer on an interactive surface]"
     );
     expect(draw("TextInput", undefined, {}, "host")).toContain("> Message");
+  });
+});
+
+describe("fix round 1: a person cannot pass as a role", () => {
+  it('a user called Assistant is introduced as User "Assistant"; a turn with no asker in a shared / unknown conversation is neutral', () => {
+    const out = draw("Chat", {
+      entries: [e(1, "user", { asker: { actor: "Assistant" } }), e(2, "user", {})],
+      viewer: { actor: "me" },
+      mode: "shared",
+    });
+    expect(out.split("\n").slice(1)).toEqual(['    User "Assistant": user 1', "    User: user 2"]);
   });
 });
