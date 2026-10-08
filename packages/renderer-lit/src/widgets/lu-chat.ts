@@ -200,6 +200,8 @@ export class LuChat extends LuWidget {
   @state() private draft = "";
   @state() private editPhase: "idle" | "sending" | "invalid" | DispatchResult = "idle";
   @state() private loadingOlder = false;
+  /** The cursor the in-flight "load earlier" asked for: it ends when the value stops offering that cursor. */
+  private loadingCursor: string | undefined;
   private stick = true;
   private anchor: { height: number; top: number; first: string | undefined } | undefined;
 
@@ -223,8 +225,9 @@ export class LuChat extends LuWidget {
     const log = this.log;
     if (log !== null)
       this.stick = log.scrollHeight - log.scrollTop - log.clientHeight <= NEAR_BOTTOM;
-    // New data while "load earlier" was in flight: the load landed (or changed nothing).
-    this.loadingOlder = false;
+    // The load landed (the value no longer offers the cursor it asked for). A live delta in the
+    // meantime changes the value too and must NOT re-enable the button.
+    if (this.loadingOlder && this.chat?.older !== this.loadingCursor) this.loadingOlder = false;
     // An entry the editor was open on that is gone, or no longer the viewer's own, closes it.
     const v = this.chat;
     if (this.editing !== undefined && v !== undefined) {
@@ -252,6 +255,7 @@ export class LuChat extends LuWidget {
     const log = this.log;
     if (v?.older === undefined || this.loadingOlder) return;
     this.loadingOlder = true;
+    this.loadingCursor = v.older;
     if (log !== null)
       this.anchor = { height: log.scrollHeight, top: log.scrollTop, first: v.entries[0]?.id };
     const r = await dispatch(this.onAction, {
