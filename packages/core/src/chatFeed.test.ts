@@ -479,10 +479,11 @@ describe("P1: loom records a REJECTED envelope under the next turn number withou
     expect(f.applyEvent("message", wire(1, "user", { cursor: "0.2", ord: 7 }))).toMatchObject({
       changed: false,
     });
-    // a source-provided editOf is believed (loom's follow-up); one that does not point backwards is dropped
+    // loom's edited TURN number (`editOfTurn`) is believed; one that does not point backwards is dropped,
+    // and loom's `editOf` (the edited record's ord) is never read as a turn number (ADR 0122 R17b)
     const g = new ChatFeed();
-    g.applyEvent("message", wire(3, "user", { cursor: "0.9", editOf: 1 }));
-    g.applyEvent("message", wire(4, "user", { cursor: "0.10", editOf: 9 }));
+    g.applyEvent("message", wire(3, "user", { cursor: "0.9", editOf: 7, editOfTurn: 1 }));
+    g.applyEvent("message", wire(4, "user", { cursor: "0.10", editOfTurn: 9 }));
     expect(g.value().entries.map((e) => e.editOf)).toEqual([1, undefined]);
   });
 });
@@ -587,5 +588,83 @@ describe("fix round 2: the accepted-turn binding and cursorless sources", () => 
     h.applyEvent("message", wire(1, "user", { cursor: "0.2", status: "restricted" }));
     h.applyEvent("message", wire(1, "user", { cursor: "0.2", ord: 5 }));
     expect(h.value().entries.map((e) => [e.id, e.status])).toEqual([["u0.2", "complete"]]);
+  });
+});
+
+describe("loom R17b wire: rejected user messages on turn 0, `ord` ids, `editOfTurn`", () => {
+  it("a rejected user message recorded on turn 0 is KEPT (keyed by ord) so the user sees why, and the value stays valid", () => {
+    const f = new ChatFeed({ viewer: { actor: "alice" }, mode: "owner" });
+    f.applyEvent("message", {
+      turn: 1,
+      role: "user",
+      text: "first",
+      status: "complete",
+      ord: 1,
+      cursor: "0.1",
+    });
+    f.applyEvent("message", {
+      turn: 1,
+      role: "assistant",
+      text: "ok",
+      status: "complete",
+      ord: 2,
+      cursor: "0.2",
+    });
+    f.applyEvent("message", {
+      turn: 0,
+      role: "user",
+      text: "x",
+      status: "rejected",
+      reason: "edit-invalid",
+      ord: 3,
+      cursor: "0.3",
+    });
+    const v = f.value();
+    const rejected = v.entries.find((e) => e.id === "m3");
+    expect(rejected).toMatchObject({
+      turn: 0,
+      role: "user",
+      status: "rejected",
+      reason: "edit-invalid",
+    });
+    expect(rejected?.parts).toBeUndefined(); // a rejected message's text is never shown
+    expect(isChatValue(v)).toBe(true);
+  });
+
+  it("turn 0 is accepted ONLY for a rejected user message", () => {
+    expect(
+      chatEntryFromWire({ turn: 0, role: "user", status: "complete", text: "x", ord: 1 })
+    ).toBeUndefined();
+    expect(
+      chatEntryFromWire({ turn: 0, role: "assistant", status: "rejected", ord: 1 })
+    ).toBeUndefined();
+    expect(
+      chatEntryFromWire({ turn: -1, role: "user", status: "rejected", ord: 1 })
+    ).toBeUndefined();
+    expect(chatEntryFromWire({ turn: 0, role: "user", status: "rejected", ord: 1 })).toMatchObject({
+      turn: 0,
+    });
+  });
+
+  it("the edit label is the edited TURN (`editOfTurn`), never loom's record ord (`editOf`)", () => {
+    const e = chatEntryFromWire({
+      turn: 3,
+      role: "user",
+      status: "complete",
+      text: "fixed",
+      ord: 5,
+      editOf: 3,
+      editOfTurn: 2,
+    });
+    expect(e?.editOf).toBe(2);
+    const onlyOrd = chatEntryFromWire({
+      turn: 10,
+      role: "user",
+      status: "complete",
+      text: "fixed",
+      ord: 20,
+      editOf: 3,
+    });
+    expect(onlyOrd?.editOf).toBeUndefined();
   });
 });
