@@ -336,8 +336,12 @@ const repaired = await reviseForDrift(planner, {
   `media-prop-forbidden`, a URL or content address as a prop's whole value is `media-literal-ref`, an
   unbound display node is `media-unbound` — even for a catalogue that DECLARES such a prop. The
   reference planner feeds those findings back like any validation finding, and the conformance kit
-  reports them as `compose-invalid:<code>` for any planner. Not covered: an address a model writes into a
-  capability's `arguments`; that is the tool's input, authorised by the host's invoker like any other.
+  reports them as `compose-invalid:<code>` for any planner. Text props that merely EMBED a URL or address are `media-embedded-ref` (media nodes) /
+  `embedded-ref` warnings (other nodes): a hint for review, not a boundary. The prompt's raw capability samples are
+  redacted of address-shaped strings (`redactAddresses`). Not covered: an address a model writes into a capability's
+  `arguments`; that is the tool's input, authorised by the host's invoker. FOLLOW-UP: an optional `inputSchema`
+  marker for content-ref arguments, so a literal address there can be refused at composition, needs the tool-argument
+  template syntax settled first.
 
 
 - **Error semantics: refusals propagate, model failures become findings.** A plain model failure

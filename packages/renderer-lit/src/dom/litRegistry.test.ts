@@ -29,7 +29,8 @@ describe("litRegistry parity", () => {
     const defaultKinds = FRAMEWORK_KINDS.filter((k) => !MEDIA.has(k));
     expect([...LIT_ONLY_KINDS].sort()).toEqual([...defaultKinds].sort());
     for (const k of defaultKinds) expect(litRegistry.has(k)).toBe(true);
-    for (const k of MEDIA) expect(litRegistry.has(k)).toBe(false);
+    // ...but it draws a fixed "not loaded" placeholder for them, never a hole.
+    for (const k of MEDIA) expect(litRegistry.has(k)).toBe(true);
     expect(frameworkKindContracts.map((c) => c.kind).sort()).toEqual([...defaultKinds].sort());
     // A Note is static text from props; every other framework kind renders bound data.
     for (const c of frameworkKindContracts)
@@ -37,7 +38,7 @@ describe("litRegistry parity", () => {
   });
   it("the registry's extras beyond the catalogue are exactly the Lit-only kinds", () => {
     const report = catalogCoverage(builtinCatalog, litRegistry);
-    expect([...report.extra].sort()).toEqual([...LIT_ONLY_KINDS].sort());
+    expect([...report.extra].sort()).toEqual([...LIT_ONLY_KINDS, ...MEDIA].sort());
   });
   it("elementRenderer's handle patches the widget: the element's reactive `widget` property is replaced and it re-renders with the new title", async () => {
     const host = document.createElement("div");

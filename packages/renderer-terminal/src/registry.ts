@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type BarChartValue,
   DELTA_FORMAT,
@@ -18,6 +19,8 @@ import {
   describeMedia,
   effectiveFormat,
   formatSemanticNumber,
+  isActiveMediaType,
+  isSameOriginMediaUrl,
   maxBytesFor,
   tableColumnFormat,
   tableColumnLabel,
@@ -46,7 +49,7 @@ export interface TerminalMediaOptions {
   /**
    * A SYNCHRONOUS viewer-scoped link for a ref (e.g. a short-lived signed URL the host minted for
    * this session), or `undefined` for none. It is re-checked with `checkMediaUrl` before printing;
-   * a refused link prints nothing. Without one the line carries a short handle only, never the full
+   * a refused link prints nothing. Without one the line carries a non-reversible tag only, never any part of the
    * address (an address is a capability, and terminal output is copied and logged).
    */
   readonly link?: (ref: MediaRef, kind: MediaKind) => string | undefined;
@@ -299,20 +302,31 @@ const sandboxView = (host: boolean) =>
   guarded(host, "SandboxView", (w, _v, l) => l(w, "[sandboxed component — rendered on the web]"));
 
 // ── Media (U9) ─────────────────────────────────────────────────────────────────
-// `Image 'chart.png' (image/png, 1 KiB) [untrusted] ref:sha256:0123456789…` — the SAME one-line
-// description the web surface speaks (`describeMedia`), a trust marker, and a link or short handle.
+// `Image 'chart.png' (image/png, 1 KiB) [untrusted] ref#1a2b3c4d` — the SAME one-line
+// description the web surface speaks (`describeMedia`), a trust marker, and a link or a non-reversible tag.
 const mediaLine = (host: boolean, kind: MediaKind, media: TerminalMediaOptions | undefined) =>
   guarded(host, kind, (w, v, l) => {
     const ref = v as MediaRef;
     const policy = media?.policy;
     const tooLarge = ref.size !== undefined && ref.size > maxBytesFor(kind, policy);
     const trusted = ref.origin !== "user" && media?.trusted?.(ref, kind) === true;
-    const checked = tooLarge ? undefined : checkMediaUrl(media?.link?.(ref, kind), policy);
+    // Untrusted active content (HTML, SVG, XML, script types) is never offered: no link, no handle.
+    const active = !trusted && isActiveMediaType(ref.mediaType);
+    const sameOrigin = (u: string): boolean => !trusted && isSameOriginMediaUrl(u);
+    const link = tooLarge || active ? undefined : media?.link?.(ref, kind);
+    const checked = checkMediaUrl(link, policy);
+    const offered =
+      checked.ok && !(sameOrigin(checked.url) && policy?.allowSameOriginUntrusted !== true)
+        ? checked.url
+        : undefined;
+    // A NON-REVERSIBLE tag, never any part of the address (a prefix of a capability is a partial
+    // capability, and terminal output is copied and logged). A usable link is the host's `media.link`.
+    const tag = `ref#${createHash("sha256").update(ref.address).digest("hex").slice(0, 8)}`;
     const where = tooLarge
       ? "too large to open"
-      : checked?.ok === true
-        ? checked.url
-        : `ref:${ref.address.slice(0, 16)}${ref.address.length > 16 ? "…" : ""}`;
+      : active
+        ? "blocked (active content type)"
+        : (offered ?? tag);
     const alt = kind === "Image" ? cleanMediaText(ref.alt, 200) : "";
     return l(
       w,

@@ -1,6 +1,6 @@
 import type { Experience, Finding, VocabularyFloor } from "./experience";
 import { type ContractRegistry, hasKindContract, isFrameworkContractKind } from "./kindValues";
-import { mediaPropFindings } from "./media";
+import { embeddedRefWarnings, mediaPropFindings } from "./media";
 import { isMediaKind } from "./mediaRef";
 import {
   type ContainerNode,
@@ -431,6 +431,8 @@ function checkSemantic(
   // nothing bound has no reference to draw at all.
   if (r.ok) {
     findings.push(...mediaPropFindings(r.kind, n.id, n.props));
+    if (!isMediaKind(r.kind) && r.kind !== "MediaInput")
+      findings.push(...embeddedRefWarnings(n.id, n.props));
     if (isMediaKind(r.kind) && !bound)
       findings.push(
         finding(

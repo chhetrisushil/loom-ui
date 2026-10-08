@@ -10,7 +10,8 @@ import {
   type UndeclaredToolPolicy,
   type Viewer,
   experienceHandles,
-  handleKinds,
+  handleKindsWithMedia,
+  hasMediaTypeNodes,
   isMediaKind,
   mergeReadPolicy,
   treeDepth,
@@ -417,10 +418,12 @@ export class HydrationController {
     if (treeDepth(exp.root) > MAX_TREE_DEPTH)
       return { findings: [tooDeep(exp.experienceId, MAX_TREE_DEPTH)] };
     this.current = exp;
-    this.kinds =
-      this.opts.outputKinds === undefined
-        ? new Map()
-        : handleKinds(exp, this.opts.outputKinds.catalog, this.opts.outputKinds.surface);
+    // U9: media-typed nodes mark their handle as media even with NO `outputKinds` (fail closed).
+    this.kinds = handleKindsWithMedia(
+      exp,
+      this.opts.outputKinds?.catalog,
+      this.opts.outputKinds?.surface
+    );
     // Scoped params outlive a bind only for handles it binds (set before a load, or kept across
     // a recompose); the rest are forgotten, so they never resurface on a later experience.
     // Handle-id collection only (which handles are bound at all): no class is read, so the declared
@@ -454,7 +457,18 @@ export class HydrationController {
       this.opts.store.remove(r.handle);
     }
     this.sched.schedule(jobs);
-    return { findings: [...findings, ...advisory] };
+    const mediaAdvice: Finding[] =
+      this.opts.outputKinds === undefined && hasMediaTypeNodes(exp)
+        ? [
+            {
+              code: "media-output-kinds-missing",
+              severity: "warn",
+              message:
+                "the experience has media nodes and the controller has no outputKinds: media handles are contract-checked by node type, but pass outputKinds so kinds resolve through the catalogue",
+            },
+          ]
+        : [];
+    return { findings: [...findings, ...advisory, ...mediaAdvice] };
   }
 
   /** Pure: the jobs `exp` asks for right now, and the handles that cannot load (with why). */

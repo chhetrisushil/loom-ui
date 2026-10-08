@@ -181,10 +181,29 @@ function retryNote(previous?: PreviousError): string {
   return `\n\nYour previous reply was invalid:\n${previous.error}${previous.raw ? `\nIt began: ${previous.raw.slice(0, 1500)}` : ""}\nFix every listed problem and reply again with ONLY valid JSON per the contract.`;
 }
 
+const ADDRESS_SHAPED =
+  /\b[a-z0-9]{3,10}:[0-9a-f]{16,}\b|\bbaf[a-z2-7]{20,}|\bQm[1-9A-HJ-NP-Za-km-z]{40,}/gi;
+const MAX_REDACT_DEPTH = 16;
+
+/**
+ * U9: a capability's raw sample can carry content addresses (a media tool's output IS one). An
+ * address is a capability, and the model has no need of the real one to bind a path to it, so every
+ * address-shaped string in a sample becomes `[address]` before the sample enters the prompt. The
+ * string stays a string, so the shape the planner reads is unchanged. Bounded in depth.
+ */
+export function redactAddresses(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return value.replace(ADDRESS_SHAPED, "[address]");
+  if (depth >= MAX_REDACT_DEPTH || typeof value !== "object" || value === null) return value;
+  if (Array.isArray(value)) return value.map((v) => redactAddresses(v, depth + 1));
+  return Object.fromEntries(
+    Object.entries(value).map(([k, v]) => [k, redactAddresses(v, depth + 1)])
+  );
+}
+
 function sampleBlocks(caps: readonly CapabilityRef[]): string[] {
   return caps
     .filter((c) => c.sampleOutput !== undefined)
-    .map((c) => fenceData(`RAW OUTPUT SAMPLE for ${c.handle}`, c.sampleOutput));
+    .map((c) => fenceData(`RAW OUTPUT SAMPLE for ${c.handle}`, redactAddresses(c.sampleOutput)));
 }
 
 export function composeMessages(

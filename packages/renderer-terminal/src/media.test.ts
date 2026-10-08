@@ -23,12 +23,13 @@ const draw = (
   );
 
 describe("terminal media", () => {
-  it("prints the shared one-line description, an untrusted marker and a SHORT handle — never the full address", () => {
+  it("prints the shared one-line description, an untrusted marker and a non-reversible tag — never any part of the address", () => {
     const out = draw("Image", ref());
     expect(out).toContain(describeMedia("Image", ref() as never));
     expect(out).toContain("[untrusted]");
-    expect(out).toContain("ref:sha256:012345678…");
+    expect(out).toMatch(/ ref#[0-9a-f]{8}$/);
     expect(out).not.toContain(ADDR);
+    expect(out).not.toContain("0123456789"); // no part of the address, not even a prefix
     expect(out.startsWith("Pic: ")).toBe(true);
   });
 
@@ -62,8 +63,31 @@ describe("terminal media", () => {
     ]) {
       const out = draw("Image", ref(), link(bad));
       expect(out).not.toContain(bad);
-      expect(out).toContain("ref:");
+      expect(out).toMatch(/ref#[0-9a-f]{8}/);
     }
+  });
+
+  it("the tag is the same for short and long addresses and reveals no part of either", () => {
+    for (const address of ["a1", "sha256:ab", ADDR]) {
+      const out = draw("Image", ref({ address }));
+      expect(out).toMatch(/ref#[0-9a-f]{8}$/);
+      expect(out.slice(out.indexOf("[untrusted]"))).not.toContain(address);
+    }
+  });
+
+  it("untrusted active content is blocked: no link, no tag; a same-origin link is refused for untrusted media", () => {
+    const media = { link: () => "https://cdn.example.com/x" };
+    const out = draw("File", ref({ mediaType: "text/html" }), { media });
+    expect(out).toContain("blocked (active content type)");
+    expect(out).not.toContain("cdn.example.com");
+    expect(draw("Image", ref(), { media: { link: () => "/media/1" } })).toMatch(/ref#/);
+    expect(
+      draw("Image", ref(), { media: { link: () => "/media/1", trusted: () => true } })
+    ).toContain("/media/1");
+    // trusted active types are the host's call
+    expect(
+      draw("File", ref({ mediaType: "image/svg+xml" }), { media: { trusted: () => true } })
+    ).not.toContain("blocked");
   });
 
   it("a declared size over the limit prints no link or handle to open", () => {

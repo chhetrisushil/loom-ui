@@ -425,3 +425,85 @@ describe("lu-media-input", () => {
     expect(q(el, '[data-state="error"]')).not.toBeNull();
   });
 });
+
+describe("fix round 1: active content and same-origin untrusted media", () => {
+  it("user-origin active content is blocked without asking the resolver", async () => {
+    const resolver = resolverOf(ok());
+    const el = await mount("lu-file", {
+      widget: widget("File"),
+      value: ref({ mediaType: "text/html", origin: "user", name: "x.html" }),
+      media: { resolver },
+    });
+    expect(resolver.calls).toHaveLength(0);
+    expect(q(el, '[data-media-state="blocked"]')).not.toBeNull();
+    expect(q(el, "a")).toBeNull();
+  });
+
+  it.each([
+    ["File", "text/html"],
+    ["File", "application/xhtml+xml"],
+    ["File", "text/xml"],
+    ["Image", "image/svg+xml"],
+  ])(
+    "an UNTRUSTED %s of active type %s is blocked even from a safe cross-origin URL",
+    async (kind, type) => {
+      const tag = kind === "File" ? "lu-file" : "lu-image";
+      const el = await mount(tag, {
+        widget: widget(kind),
+        value: ref({ mediaType: type }),
+        media: { resolver: resolverOf(ok()) },
+      });
+      expect(q(el, '[data-media-state="blocked"]')).not.toBeNull();
+      expect(q(el, "a, img")).toBeNull();
+      expect(html(el)).not.toContain("cdn.example.com");
+    }
+  );
+
+  it("the host vouching lets an SVG draw (in an <img> it cannot script)", async () => {
+    const el = await mount("lu-image", {
+      widget: widget("Image"),
+      value: ref({ mediaType: "image/svg+xml" }),
+      media: { resolver: resolverOf(ok(undefined, { trusted: true })) },
+    });
+    expect(q(el, "img")).not.toBeNull();
+  });
+
+  it.each(["/media/abc?sig=1", "blob:https://app.example.com/1-2-3"])(
+    "untrusted media on a same-origin URL (%s) is blocked unless the policy allows it",
+    async (url) => {
+      const blocked = await mount("lu-image", {
+        widget: widget("Image"),
+        value: ref(),
+        media: { resolver: resolverOf(ok(url)) },
+      });
+      expect(q(blocked, "img")).toBeNull();
+      expect(q(blocked, '[data-media-state="blocked"]')).not.toBeNull();
+      const allowed = await mount("lu-image", {
+        widget: widget("Image"),
+        value: ref(),
+        media: { resolver: resolverOf(ok(url)), policy: { allowSameOriginUntrusted: true } },
+      });
+      expect(q(allowed, "img")).not.toBeNull();
+      const trusted = await mount("lu-image", {
+        widget: widget("Image"),
+        value: ref(),
+        media: { resolver: resolverOf(ok(url, { trusted: true })) },
+      });
+      expect(q(trusted, "img")).not.toBeNull();
+    }
+  );
+});
+
+describe("fix round 1: a file name cannot disguise its type", () => {
+  it("shows the type next to a disguised name and drops the misleading extension from the download name", async () => {
+    const el = await mount("lu-file", {
+      widget: widget("File"),
+      value: ref({ mediaType: "application/pdf", name: "invoice.pdf.exe" }),
+      media: { resolver: resolverOf(ok()) },
+    });
+    const a = q<HTMLAnchorElement>(el, "a");
+    expect(a?.textContent?.trim()).toBe("invoice.pdf.exe (application/pdf)");
+    expect(a?.getAttribute("download")).toBe("invoice.pdf");
+    expect(a?.hasAttribute("data-type-mismatch")).toBe(true);
+  });
+});

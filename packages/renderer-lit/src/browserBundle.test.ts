@@ -54,7 +54,7 @@ async function bundle(entry: string) {
 
 describe("renderer-lit's browser entries carry no zod", () => {
   for (const [entry, budget] of [
-    // U9 raised these from 160 kB by 4 kB (index measured 157_537 -> 160_857): the MediaRef value
+    // U9 raised these from 160 kB by 4 kB (index measured 157_537 -> 162_143): the MediaRef value
     // contract (~3 kB) has to ride in `checkKindValue` for every page, because a media widget's
     // value is checked wherever a value is checked. The widgets themselves are NOT here: they are the
     // opt-in `media.js` entry below.

@@ -2,6 +2,7 @@ import type { DataClass } from "@loom/classify";
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
 import { type DeclaredToolClasses, type UndeclaredToolPolicy, effectiveClasses } from "./classes";
 import type { Experience } from "./experience";
+import { isMediaKind } from "./mediaRef";
 import { type Priority, walk } from "./node";
 import { strictestClass } from "./viewer";
 
@@ -99,4 +100,41 @@ export function handleKinds(
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([handle, set]) => [handle, [...set].sort()])
   );
+}
+
+/**
+ * U9: `handleKinds`, plus the media kinds implied by a node's TYPE NAME alone. A node whose `type` is
+ * a framework media kind (`Image`, `Audio`, `Video`, `File`) marks its handle as media-bound even
+ * when no catalogue was supplied (or the catalogue cannot resolve it), so a host that forgot
+ * `outputKinds` still gets the `MediaRef` contract enforced at the data boundary, never a vacuous
+ * pass. Same shape and ordering as `handleKinds`.
+ */
+export function handleKindsWithMedia(
+  exp: Experience,
+  catalog?: SemanticCatalog,
+  surface?: Surface
+): Map<string, string[]> {
+  const kinds = new Map<string, Set<string>>();
+  if (catalog !== undefined && surface !== undefined)
+    for (const [h, ks] of handleKinds(exp, catalog, surface)) kinds.set(h, new Set(ks));
+  walk(exp.root, (n) => {
+    if (n.kind !== "semantic" || n.binding === undefined || !isMediaKind(n.type)) return;
+    const set = kinds.get(n.binding.handle);
+    if (set === undefined) kinds.set(n.binding.handle, new Set([n.type]));
+    else set.add(n.type);
+  });
+  return new Map(
+    [...kinds.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([handle, set]) => [handle, [...set].sort()])
+  );
+}
+
+/** Does this experience have a node whose type names a framework media kind? */
+export function hasMediaTypeNodes(exp: Experience): boolean {
+  let found = false;
+  walk(exp.root, (n) => {
+    if (n.kind === "semantic" && isMediaKind(n.type)) found = true;
+  });
+  return found;
 }

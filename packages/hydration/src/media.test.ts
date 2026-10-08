@@ -97,3 +97,83 @@ describe("U9 hydration of media handles", () => {
     expect(JSON.stringify(ok.store.state())).toContain(GOOD.address);
   });
 });
+
+// ── fix round 1 (P2-1): the split server and the no-outputKinds path ────────────────────────────
+import { serveHandle } from "./split/index";
+
+const BAD = {
+  address: "sha256:00ff11",
+  mediaType: "image/png",
+  data: "A".repeat(5000),
+  url: "https://internal.corp/x",
+};
+const serve = (value: unknown, withKinds: boolean, spec = shapeSpec()) => {
+  const e = exp(spec);
+  const inv = replying(value);
+  return serveHandle(
+    e,
+    { experienceId: e.experienceId, versionHash: e.versionHash, handle: "h", params: {} },
+    {
+      invoker: inv,
+      now: 1,
+      ...(withKinds && { outputKinds: { catalog, surface: "web" as const } }),
+    }
+  );
+};
+
+describe("U9 split server: a media handle is contract-checked whatever the provider declared", () => {
+  for (const withKinds of [true, false]) {
+    it(`never serves a shape-mode value carrying bytes or a locator (outputKinds ${withKinds ? "given" : "ABSENT: fail closed by node type"})`, async () => {
+      const r = await serve(BAD, withKinds);
+      expect(r.state).not.toBe("ready");
+      expect(JSON.stringify(r)).not.toContain("AAAA");
+      expect(JSON.stringify(r)).not.toContain("internal.corp");
+    });
+    it(`serves a well-formed ref (outputKinds ${withKinds ? "given" : "absent"})`, async () => {
+      const r = await serve(GOOD, withKinds);
+      expect(r).toMatchObject({ state: "ready", value: GOOD });
+    });
+  }
+  it("the forced contract does not leak through the cache: a bad value is not cached as ready", async () => {
+    const { HydrationCache } = await import("./cache");
+    const cache = new HydrationCache(() => 0);
+    const e = exp(shapeSpec());
+    const base = {
+      experienceId: e.experienceId,
+      versionHash: e.versionHash,
+      handle: "h",
+      params: {},
+    };
+    await serveHandle(e, base, {
+      invoker: replying(BAD),
+      now: 1,
+      cache,
+      outputKinds: { catalog, surface: "web" },
+    });
+    const again = await serveHandle(e, base, {
+      invoker: replying(GOOD),
+      now: 1,
+      cache,
+      outputKinds: { catalog, surface: "web" },
+    });
+    expect(again).toMatchObject({ state: "ready", value: GOOD });
+  });
+});
+
+describe("U9 controller without outputKinds: fail closed by node type, with a dev warning", () => {
+  it("never publishes a bad media value and warns that outputKinds is missing", async () => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const ctl = new HydrationController({ invoker: replying(BAD), store });
+    const { findings } = ctl.load(exp(shapeSpec()));
+    await flush();
+    expect(store.status("h")?.state).not.toBe("ready");
+    expect(store.value("h")).toBeUndefined();
+    expect(findings.map((f) => f.code)).toContain("media-output-kinds-missing");
+    const ok = new HydrationController({
+      invoker: replying(GOOD),
+      store: new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" }),
+    });
+    ok.load(exp(shapeSpec()));
+    await flush();
+  });
+});

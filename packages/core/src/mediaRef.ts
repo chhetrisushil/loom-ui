@@ -72,7 +72,8 @@ export function addressProblem(address: string): string | undefined {
     !ADDRESS_ALPHABET.test(address) ||
     LOCATOR.test(address) ||
     address.includes("//") ||
-    address.startsWith("/")
+    address.startsWith("/") ||
+    address.split("/").some((seg) => seg === "." || seg === "..")
   )
     return `address must be an opaque content address (not a URL), at most ${MAX_ADDRESS_LENGTH} characters`;
   return undefined;

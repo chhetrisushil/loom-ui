@@ -93,23 +93,31 @@ export interface LitRegistryOptions {
 /** The widget registry, configured. A NEW registry each call; `litRegistry` is `createLitRegistry()`. */
 export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
   const el = (tag: string): DomWidgetRenderer => elementRenderer(tag, opts);
-  return new RendererRegistry<DomWidgetRenderer>()
-    .register("MetricCard", el("lu-metric-card"))
-    .register("StatusBadge", el("lu-status-badge"))
-    .register("DataTable", el("lu-data-table"))
-    .register("TimeSeries", el("lu-timeseries"))
-    .register("BarChart", el("lu-bar-chart"))
-    .register("Kpi", el("lu-kpi"))
-    .register("Table", el("lu-table"))
-    .register("StatusCard", el("lu-status-card"))
-    .register("Note", el("lu-note"))
-    .register("A2UIView", el("lu-a2ui-widget"))
-    .register("SandboxView", el("lu-sandbox-widget"))
-    .register("ProgressBar", el("lu-progress"))
-    .register("AlertCard", el("lu-alert"))
-    .register("StreamingText", el("lu-text"))
-    .register("Timeline", el("lu-list"))
-    .register("ApprovalCard", el("lu-approval"));
+  return (
+    new RendererRegistry<DomWidgetRenderer>()
+      .register("MetricCard", el("lu-metric-card"))
+      .register("StatusBadge", el("lu-status-badge"))
+      .register("DataTable", el("lu-data-table"))
+      .register("TimeSeries", el("lu-timeseries"))
+      .register("BarChart", el("lu-bar-chart"))
+      .register("Kpi", el("lu-kpi"))
+      .register("Table", el("lu-table"))
+      .register("StatusCard", el("lu-status-card"))
+      .register("Note", el("lu-note"))
+      .register("A2UIView", el("lu-a2ui-widget"))
+      .register("SandboxView", el("lu-sandbox-widget"))
+      // The media kinds draw one fixed placeholder here; `@loom-ui/renderer-lit/media` replaces them.
+      .register("Image", el("lu-media-missing"))
+      .register("Audio", el("lu-media-missing"))
+      .register("Video", el("lu-media-missing"))
+      .register("File", el("lu-media-missing"))
+      .register("MediaInput", el("lu-media-missing"))
+      .register("ProgressBar", el("lu-progress"))
+      .register("AlertCard", el("lu-alert"))
+      .register("StreamingText", el("lu-text"))
+      .register("Timeline", el("lu-list"))
+      .register("ApprovalCard", el("lu-approval"))
+  );
 }
 
 export const litRegistry: DomRegistry = createLitRegistry();

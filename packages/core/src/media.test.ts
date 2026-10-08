@@ -5,11 +5,17 @@ import { checkKindValue } from "./kindValues";
 import { loomCatalogFor } from "./loomCatalog";
 import {
   MEDIA_ALLOWED_PROPS,
+  acceptMediaAttach,
   addressProblem,
+  checkFileName,
   checkMediaUrl,
   cleanMediaText,
+  containsEmbeddedRef,
   describeMedia,
+  embeddedRefWarnings,
   formatBytes,
+  isActiveMediaType,
+  isSameOriginMediaUrl,
   matchesAccept,
   mediaCatalogEntries,
   mediaPropFindings,
@@ -256,5 +262,204 @@ describe("display helpers", () => {
     expect(matchesAccept("application/pdf", ["image/*"])).toBe(false);
     expect(matchesAccept("application/pdf", ["application/pdf"])).toBe(true);
     expect(matchesAccept("anything/x", undefined)).toBe(true);
+  });
+});
+
+describe("fix round 1: URL host denylist", () => {
+  it.each([
+    "https://localhost./x",
+    "https://foo.internal./x",
+    "https://metadata.google.internal./x",
+    "https://intranet./x",
+    "https://localhost.localdomain/x",
+    "https://[::7f00:1]/x", // IPv4-compatible loopback
+    "https://[::a00:1]/x", // IPv4-compatible 10.0.0.1
+    "https://[64:ff9b::7f00:1]/x", // NAT64 -> 127.0.0.1
+    "https://[64:ff9b::a9fe:a9fe]/x", // NAT64 -> 169.254.169.254
+    "https://[64:ff9b:1::1]/x", // local-use NAT64
+    "https://[2002:7f00:1::]/x", // 6to4 -> 127.0.0.1
+    "https://[2002:a9fe:a9fe::1]/x", // 6to4 -> metadata
+    "https://[ff02::1]/x", // multicast
+    "https://[fe80::1]/x",
+    "https://0.0.0.1/x", // 0.0.0.0/8
+    "https://198.18.0.1/x",
+    "https://198.19.255.255/x",
+    "https://224.0.0.1/x", // multicast
+    "https://240.0.0.1/x", // reserved
+    "https://255.255.255.255/x",
+    "https://192.0.0.8/x",
+  ])("refuses %s", (u) => expect(checkMediaUrl(u).ok).toBe(false));
+
+  it.each([
+    "https://cdn.example.com./x", // a public host with a root dot is still public
+    "https://8.8.8.8/x",
+    "https://[2001:4860:4860::8888]/x",
+    "https://[64:ff9b::808:808]/x", // NAT64 -> 8.8.8.8
+    "https://[2002:808:808::1]/x", // 6to4 -> 8.8.8.8
+  ])("still accepts %s", (u) => expect(checkMediaUrl(u).ok).toBe(true));
+});
+
+describe("fix round 1: addresses are not paths", () => {
+  it.each(["../../etc/passwd", "a/../b", "a/./b", "..", ".", "a/.."])("refuses %s", (a) =>
+    expect(addressProblem(a)).toBeDefined()
+  );
+  it("keeps dotted hash-style handles", () => {
+    expect(addressProblem("v1.2/blob.bin")).toBeUndefined();
+    expect(addressProblem("sha256:ab.cd")).toBeUndefined();
+  });
+});
+
+describe("fix round 1: active media types", () => {
+  it.each([
+    "text/html",
+    "application/xhtml+xml",
+    "image/svg+xml",
+    "text/xml",
+    "application/xml",
+    "text/javascript",
+    "application/ecmascript",
+    "application/x-shockwave-flash",
+    "application/atom+xml",
+  ])("%s is active", (t) => expect(isActiveMediaType(t)).toBe(true));
+  it.each(["image/png", "application/pdf", "audio/mpeg", "text/plain", "video/mp4"])(
+    "%s is passive",
+    (t) => expect(isActiveMediaType(t)).toBe(false)
+  );
+  it("same-origin spellings", () => {
+    expect(isSameOriginMediaUrl("/m/1")).toBe(true);
+    expect(isSameOriginMediaUrl("blob:https://a/1")).toBe(true);
+    expect(isSameOriginMediaUrl("https://a/1")).toBe(false);
+  });
+});
+
+describe("fix round 1: acceptMediaAttach (host-side)", () => {
+  const head = { experienceId: "e", versionHash: "sha256:v" };
+  const stamp = { blueprintId: "e@sha256:v", experienceId: "e", versionHash: "sha256:v" };
+  const good = {
+    address: "sha256:mine0001",
+    mediaType: "application/pdf",
+    size: 10,
+    name: "a.pdf",
+  };
+  const act = (ref: unknown, over: Record<string, unknown> = {}) => ({
+    type: "MEDIA_ATTACH",
+    widgetId: "up",
+    payload: { ref },
+    viewedVersion: stamp,
+    ...over,
+  });
+  const opts = (
+    issued: (a: string, p: string) => boolean = (a, p) => a === "sha256:mine0001" && p === "alice"
+  ) => ({
+    issued,
+    principal: "alice",
+    current: head,
+  });
+
+  it("accepts an issued, fresh, well-formed attach and forces origin=user", () => {
+    const r = acceptMediaAttach(act({ ...good, origin: "host" }), opts());
+    expect(r).toEqual({ ok: true, ref: { ...good, origin: "user" }, widgetId: "up" });
+  });
+  it("refuses someone else's address (never issued to this principal)", () => {
+    expect(acceptMediaAttach(act({ ...good, address: "sha256:bobs0002" }), opts())).toEqual({
+      ok: false,
+      reason: "not-issued",
+    });
+    expect(acceptMediaAttach(act(good), { ...opts(), principal: "mallory" })).toEqual({
+      ok: false,
+      reason: "not-issued",
+    });
+  });
+  it("refuses a stale or unstamped action", () => {
+    expect(
+      acceptMediaAttach(
+        act(good, { viewedVersion: { ...stamp, versionHash: "sha256:old" } }),
+        opts()
+      )
+    ).toEqual({ ok: false, reason: "stale" });
+    expect(acceptMediaAttach(act(good, { viewedVersion: undefined }), opts())).toEqual({
+      ok: false,
+      reason: "stale",
+    });
+  });
+  it.each([
+    ["bytes riding along", { ...good, data: "AAAA" }],
+    ["a URL address", { ...good, address: "https://x/y" }],
+    ["a string", "sha256:mine0001"],
+  ])("refuses a malformed ref (%s)", (_l, ref) =>
+    expect(acceptMediaAttach(act(ref), opts())).toEqual({ ok: false, reason: "bad-ref" })
+  );
+  it("enforces accept / maxBytes again", () => {
+    expect(acceptMediaAttach(act(good), { ...opts(), accept: ["image/*"] })).toEqual({
+      ok: false,
+      reason: "bad-ref",
+    });
+    expect(acceptMediaAttach(act(good), { ...opts(), maxBytes: 5 })).toEqual({
+      ok: false,
+      reason: "bad-ref",
+    });
+  });
+  it("refuses other actions and throwing hosts without throwing", () => {
+    expect(acceptMediaAttach(act(good, { type: "APPROVE" }), opts())).toEqual({
+      ok: false,
+      reason: "not-an-attach",
+    });
+    expect(acceptMediaAttach(null, opts()).ok).toBe(false);
+    expect(
+      acceptMediaAttach(
+        act(good),
+        opts(() => {
+          throw new Error("x");
+        })
+      ).ok
+    ).toBe(false);
+  });
+});
+
+describe("fix round 1: embedded references in text props", () => {
+  it.each([
+    "see https://evil.example/x.png",
+    "ｈｔｔｐｓ：／／ｅｖｉｌ", // fullwidth
+    "ht\u200btps://evil.example/x",
+    "www.evil.example",
+    "evil.example/a.png",
+    "ref sha256:0123456789abcdef0123 here",
+    "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+    "javascript:alert(1)",
+    "java\u200bscript:alert(1)", // zero-width splitter
+  ])("detects %s", (t) => expect(containsEmbeddedRef(t)).toBe(true));
+  it.each(["Q3 revenue by region", "Profile: complete", "v1.2 release notes", "ratio 3:4"])(
+    "leaves %s alone",
+    (t) => expect(containsEmbeddedRef(t)).toBe(false)
+  );
+  it("media nodes: embedded refs are errors; non-media nodes: warnings", () => {
+    expect(
+      mediaPropFindings("Image", "n", { caption: "from https://evil.example/x" }).map((f) => f.code)
+    ).toContain("media-embedded-ref");
+    expect(embeddedRefWarnings("n", { text: "see https://docs.example.com" })[0]?.severity).toBe(
+      "warn"
+    );
+  });
+});
+
+describe("fix round 1: file names vs media type", () => {
+  it("a disguised executable is exposed and its misleading extension is dropped from the download name", () => {
+    const r = checkFileName("invoice.pdf.exe", "application/pdf");
+    expect(r.mismatch).toBe(true);
+    expect(r.display).toBe("invoice.pdf.exe (application/pdf)");
+    expect(r.download).toBe("invoice.pdf");
+  });
+  it("an honest or harmless name is untouched", () => {
+    expect(checkFileName("report.pdf", "application/pdf").mismatch).toBe(false);
+    expect(checkFileName("setup.exe", "application/x-msdownload").mismatch).toBe(false);
+    expect(checkFileName("page.html", "text/html").mismatch).toBe(false);
+    expect(checkFileName("photo", "image/png")).toMatchObject({
+      mismatch: false,
+      download: "photo",
+    });
+  });
+  it("page.html declared as a PDF is a mismatch", () => {
+    expect(checkFileName("page.html", "application/pdf").mismatch).toBe(true);
   });
 });
