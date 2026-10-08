@@ -50,6 +50,7 @@ const rig = (value: unknown, viewer?: { clearance?: "secret" }) => {
   const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
   const inv = replying(value);
   const ctl = new HydrationController({
+    contentRefArgs: "none" as const,
     invoker: inv,
     store,
     outputKinds: { catalog, surface: "web" },
@@ -114,6 +115,7 @@ const serve = (value: unknown, withKinds: boolean, spec = shapeSpec()) => {
     e,
     { experienceId: e.experienceId, versionHash: e.versionHash, handle: "h", params: {} },
     {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: 1,
       ...(withKinds && { outputKinds: { catalog, surface: "web" as const } }),
@@ -145,12 +147,14 @@ describe("U9 split server: a media handle is contract-checked whatever the provi
       params: {},
     };
     await serveHandle(e, base, {
+      contentRefArgs: "none" as const,
       invoker: replying(BAD),
       now: 1,
       cache,
       outputKinds: { catalog, surface: "web" },
     });
     const again = await serveHandle(e, base, {
+      contentRefArgs: "none" as const,
       invoker: replying(GOOD),
       now: 1,
       cache,
@@ -163,13 +167,18 @@ describe("U9 split server: a media handle is contract-checked whatever the provi
 describe("U9 controller without outputKinds: fail closed by node type, with a dev warning", () => {
   it("never publishes a bad media value and warns that outputKinds is missing", async () => {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
-    const ctl = new HydrationController({ invoker: replying(BAD), store });
+    const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
+      invoker: replying(BAD),
+      store,
+    });
     const { findings } = ctl.load(exp(shapeSpec()));
     await flush();
     expect(store.status("h")?.state).not.toBe("ready");
     expect(store.value("h")).toBeUndefined();
     expect(findings.map((f) => f.code)).toContain("media-output-kinds-missing");
     const ok = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: replying(GOOD),
       store: new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" }),
     });
@@ -183,6 +192,7 @@ describe("fix round 2: a streamed chunk cannot overwrite a media handle", () => 
     for (const withKinds of [true, false]) {
       const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
       const ctl = new HydrationController({
+        contentRefArgs: "none" as const,
         invoker: replying(GOOD),
         store,
         ...(withKinds && { outputKinds: { catalog, surface: "web" as const } }),
@@ -195,5 +205,41 @@ describe("fix round 2: a streamed chunk cannot overwrite a media handle", () => 
       expect(JSON.stringify(store.value("h"))).not.toContain("TEXT-CHUNK");
       expect(store.value("h")).toEqual(GOOD);
     }
+  });
+});
+
+describe("U9b: running media without the content-reference guard is advised against (P2-4)", () => {
+  it("the controller warns on contentRefArgs 'none' and stays quiet with a table", () => {
+    for (const [refs, warned] of [
+      ["none", true],
+      [{ args: {} }, false],
+    ] as const) {
+      const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+      const ctl = new HydrationController({
+        invoker: replying(GOOD),
+        store,
+        contentRefArgs: refs,
+        outputKinds: { catalog, surface: "web" },
+      });
+      const codes = ctl.load(exp(shapeSpec())).findings.map((f) => f.code);
+      expect(codes.includes("media-content-refs-unguarded")).toBe(warned);
+    }
+  });
+
+  it("serve reports it per media handle", async () => {
+    const seen: string[] = [];
+    const e = exp(shapeSpec());
+    await serveHandle(
+      e,
+      { experienceId: e.experienceId, versionHash: e.versionHash, handle: "h", params: {} },
+      {
+        invoker: replying(GOOD),
+        now: 1,
+        contentRefArgs: "none",
+        outputKinds: { catalog, surface: "web" },
+        onFinding: (_h, f) => seen.push(f.code),
+      }
+    );
+    expect(seen).toContain("media-content-refs-unguarded");
   });
 });

@@ -5,16 +5,19 @@ import {
   type MCPToolNode,
   type ProviderSpec,
   checkKindValue,
-  contentRefEntry,
   hasKindContract,
   stepKind,
-  toolKey,
 } from "@loom-ui/core";
 import { type TaintedValue, tainted } from "@loom/classify";
 import { TypedFailure } from "@loom/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { type Shape, shapeOf } from "@loom/plugin-sandbox";
-import { type ContentRefParamGate, checkContentRefs } from "./contentRefs";
+import {
+  type ContentRefParamGate,
+  checkContentRefs,
+  contentRefEnv,
+  finishContentRefArgs,
+} from "./contentRefs";
 import {
   DEFAULT_DATA_PROVIDERS,
   type DataProvider,
@@ -159,6 +162,8 @@ export interface ExecuteOptions {
    * call not made) when a marked argument holds a literal. Absent = nothing is marked.
    */
   readonly contentRefArgs?: ContentRefTable;
+  /** Who the load runs for, as the gate's `principalId` (the controller's `principal.id`, serve's `principalId`). */
+  readonly principalId?: string;
   /** The host's gate on a param that fills a marked argument; absent = every such param is refused. */
   readonly acceptContentRefParam?: ContentRefParamGate;
   /** On an input-schema drift. Default `"report"`. */
@@ -335,6 +340,14 @@ export async function executeProvider(
     ...(opts.principal && { principal: opts.principal }),
   };
 
+  const refEnv =
+    opts.contentRefArgs === undefined
+      ? undefined
+      : contentRefEnv(opts.contentRefArgs, spec, opts.acceptContentRefParam, {
+          principalId: opts.principalId,
+          principal: opts.principal,
+        });
+
   for (const wave of waves) {
     await mapLimit(wave, opts.concurrency ?? 4, async (node: MCPToolNode) => {
       if (opts.signal?.aborted) {
@@ -348,21 +361,14 @@ export async function executeProvider(
         );
         return;
       }
-      const contentRefs = contentRefEntry(opts.contentRefArgs, toolKey(node));
       const args = prepareArguments(node, outputs, {
         handle: spec.handle,
         params,
         now,
         ...(opts.argumentHook && { hook: opts.argumentHook }),
-        ...(contentRefs !== undefined && {
-          guard: (n, applied) =>
-            checkContentRefs(n, applied, {
-              handle: spec.handle,
-              contentRefs,
-              ...(opts.acceptContentRefParam && {
-                acceptContentRefParam: opts.acceptContentRefParam,
-              }),
-            }),
+        ...(refEnv !== undefined && {
+          guard: (n, applied) => checkContentRefs(n, applied, refEnv).finding,
+          finish: (a) => finishContentRefArgs(node, a, refEnv.table),
         }),
       });
       if (!args.ok) {

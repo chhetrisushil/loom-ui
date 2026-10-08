@@ -56,6 +56,7 @@ function rig(handler: (input: unknown) => unknown, over: Partial<ControllerOptio
   const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, handler);
   const drifts: DriftReport[] = [];
   const ctl = new HydrationController({
+    contentRefArgs: "none" as const,
     invoker: inv,
     store,
     clock: clock.now,
@@ -263,6 +264,7 @@ describe("HydrationController passes, the cap and principals", () => {
     const runtime = new InMemoryProjectionRuntime();
     const viewer = (id: string) =>
       new HydrationController({
+        contentRefArgs: "none" as const,
         invoker: inv,
         store: new HydrationStore(runtime, { experienceId: "exp-1", principalId: id }),
         cache,
@@ -456,11 +458,23 @@ describe("HydrationController params: edges", () => {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     const invoker = new FakeInvoker();
     expect(
-      () => new HydrationController({ invoker, store, defaultParams: { from: Number.NaN } })
+      () =>
+        new HydrationController({
+          contentRefArgs: "none" as const,
+          invoker,
+          store,
+          defaultParams: { from: Number.NaN },
+        })
     ).toThrow(RangeError);
-    expect(() => new HydrationController({ invoker, store, maxConcurrentCalls: 0 })).toThrow(
-      RangeError
-    );
+    expect(
+      () =>
+        new HydrationController({
+          contentRefArgs: "none" as const,
+          invoker,
+          store,
+          maxConcurrentCalls: 0,
+        })
+    ).toThrow(RangeError);
   });
 
   it("a pass reads the clock once: every handle in it resolves $now to the same instant", async () => {

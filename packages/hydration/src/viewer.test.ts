@@ -46,6 +46,7 @@ const rig = (viewer?: { clearance?: "secret" | "sensitive" | "internal" }) => {
   }));
   const cache = new HydrationCache(clock.now);
   const ctl = new HydrationController({
+    contentRefArgs: "none" as const,
     invoker: inv,
     store,
     clock: clock.now,
@@ -161,6 +162,7 @@ describe("restricted handles leave no trace; class changes mid-flight (U10 fix r
     });
     const mk = (viewer?: { clearance?: "secret" | "sensitive" | "internal" }) =>
       new HydrationController({
+        contentRefArgs: "none" as const,
         invoker: inv,
         store,
         clock: clock.now,
@@ -244,6 +246,7 @@ describe("restricted handles leave no trace; class changes mid-flight (U10 fix r
       e,
       { experienceId: e.experienceId, versionHash: e.versionHash, handle: "audit", params: {} },
       {
+        contentRefArgs: "none" as const,
         invoker: inv,
         now: 0,
         viewer: { clearance: "internal" },
@@ -290,6 +293,7 @@ describe("split hydration with a viewer (U10)", () => {
       e,
       [req(e, "open"), req(e, "pay"), req(e, "nope")],
       {
+        contentRefArgs: "none" as const,
         invoker: inv,
         now: 0,
         cache,
@@ -313,12 +317,29 @@ describe("split hydration with a viewer (U10)", () => {
   it("serveHandle with no viewer refuses classified handles (fail-closed), serves unclassified", async () => {
     const e = exp();
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
-    expect((await serveHandle(e, req(e, "audit"), { invoker: inv, now: 0 })).state).toBe("error");
-    expect(inv.calls).toHaveLength(0);
-    expect((await serveHandle(e, req(e, "open"), { invoker: inv, now: 0 })).state).toBe("ready");
     expect(
       (
         await serveHandle(e, req(e, "audit"), {
+          contentRefArgs: "none" as const,
+          invoker: inv,
+          now: 0,
+        })
+      ).state
+    ).toBe("error");
+    expect(inv.calls).toHaveLength(0);
+    expect(
+      (
+        await serveHandle(e, req(e, "open"), {
+          contentRefArgs: "none" as const,
+          invoker: inv,
+          now: 0,
+        })
+      ).state
+    ).toBe("ready");
+    expect(
+      (
+        await serveHandle(e, req(e, "audit"), {
+          contentRefArgs: "none" as const,
           invoker: inv,
           now: 0,
           viewer: { clearance: "secret" },
@@ -345,6 +366,7 @@ describe("split hydration with a viewer (U10)", () => {
     const e = exp();
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
     const rs = await serveHandles(e, [req(e, "audit"), req(e, "pay")], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: 0,
       viewer: flipping(),

@@ -340,15 +340,22 @@ const repaired = await reviseForDrift(planner, {
   `embedded-ref` warnings (other nodes): a hint for review, not a boundary. The prompt's raw capability samples are
   redacted of address-shaped strings (`redactAddresses`). Content references as tool ARGUMENTS (U9b) are guarded too:
   mark the field `"x-content-ref": true` in the capability's `inputSchema` (any depth; grammar, marker choice and residuals
-  in core's README, "Content references as tool arguments"). `contentRefArgsFrom(capabilities)` turns the offered schemas
-  into the table of marked paths per tool; the reference planner and the conformance kit hand it to `validateExperience`, so
-  a literal at a marked path is `media-arg-literal` (fed back to the model; `compose-invalid:media-arg-literal` in the kit).
-  The model is told never to write one (leave it out, or keep an existing `{{steps.<id>.output…}}`): the compose rules say so
-  and each capability's DATA block lists its `contentRefArguments` (or says the schema is unreadable, which is treated as
-  "every argument may be one"). The capability details (description, `inputSchema`, so its `examples` / `default` / `enum`
-  too) are redacted of address-shaped strings like the samples. An UNMARKED string argument that looks like an address warns
-  (`media-arg-suspect`); a hint. Pass the SAME table to hydration (`contentRefArgs`) and see its README for the run-time
-  re-check. Residual: an unmarked schema is unguarded.
+  in core's README, "Content references as tool arguments"), and mark a producer's `outputSchema` the same way to declare
+  that its output is a content reference. `contentRefArgsFrom(capabilities)` turns the offered schemas into the table
+  (`{ args, produces }`, plain JSON, persistable); the reference planner and the conformance kit hand it to
+  `validateExperience`, so a literal at a marked path is `media-arg-literal`, and a reference to an output its tool does not
+  declare is `media-arg-unproven-ref` (both fed back to the model; `compose-invalid:…` in the kit). A schema that mentions the
+  marker but cannot be read is a `media-arg-schema-unknown` ERROR. The model is told never to write one (leave it out, or
+  keep an existing `{{steps.<id>.output…}}` that points at a `producesContentRefs` output): the compose rules say so and each
+  capability's DATA block lists its `contentRefArguments` and `producesContentRefs`. The capability details (description,
+  `inputSchema`, `outputSchema`, so their `examples` / `default` / `enum` too) are redacted of address-shaped strings like the
+  samples: a string that is wholly a URL / locator / address goes whole, and the `algo:hex` class matches
+  `looksLikeLiteralRef` (`content_ref:`, `blake3-256:`). The revise prompt's CURRENT EXPERIENCE keeps a step's arguments
+  verbatim on purpose: the model must echo them byte-identical, so redacting them would silently rebind the call; they passed
+  validation, which refuses a literal at a marked path and warns on address-shaped text elsewhere. An UNMARKED string
+  argument that looks like an address warns (`media-arg-suspect`); a hint. Hand the SAME table to hydration's required
+  `contentRefArgs` (its README has the run-time re-check, the cache rule and the param gate). Residual: an unmarked schema is
+  unguarded.
 
 - **Error semantics: refusals propagate, model failures become findings.** A plain model failure
   (provider error, unparseable or invalid output, `TypedFailure`) becomes a `model-error` /

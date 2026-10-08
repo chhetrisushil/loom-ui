@@ -19,7 +19,12 @@ import {
 } from "@loom-ui/core";
 import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
-import type { ContentRefParamGate } from "./contentRefs";
+import {
+  type ContentRefParamGate,
+  contentRefEnv,
+  inspectContentRefs,
+  principalScoped,
+} from "./contentRefs";
 import type { DataProviderRegistry } from "./dataProvider";
 import type { TransientInvoker } from "./invoker";
 import { limitInvoker, memoInvoker, signalInvoker } from "./invokers";
@@ -130,11 +135,15 @@ export interface ControllerOptions {
   /** The host's last word on each step's arguments (after params, time tokens, templates). */
   readonly argumentHook?: ArgumentHook;
   /**
-   * U9b: the marked content-reference argument paths per tool (planner `contentRefArgsFrom`). A step
-   * whose tool is listed and whose marked argument holds a literal is refused (`media-arg-literal`)
-   * and its call is NOT made, whatever validation did or did not run.
+   * REQUIRED (U9b): the marked content-reference argument paths per tool, derived from the offered
+   * capabilities with the planner's `contentRefArgsFrom(capabilities)` (persist it with the capability
+   * set; `parseContentRefTable` re-reads it). A step whose marked argument holds a literal, or a
+   * reference to an output its tool does not declare to be one, is refused (`media-arg-literal` /
+   * `media-arg-unproven-ref`) and its call is NOT made, whatever validation did or did not run. `"none"`
+   * is the explicit opt-out: nothing is guarded, and loading an experience with media nodes then returns
+   * a `media-content-refs-unguarded` warning.
    */
-  readonly contentRefArgs?: ContentRefTable;
+  readonly contentRefArgs: ContentRefTable | "none";
   /**
    * U9b: the host's gate on a PARAM that fills a marked argument. Return `true` only for a reference
    * the host vouches for, i.e. one that `acceptMediaAttach` accepted for this principal. Absent =
@@ -252,7 +261,20 @@ export class HydrationController {
       {
         newGroup: () => ({ now: this.clock(), invoker: memoInvoker(calls) }),
         run: (job, signal, pass) => this.run(job, signal, pass),
-        cached: (job) => this.cache.get(job.spec, principalId, variant(job)),
+        // U9b: the content-reference guard (gate included) runs BEFORE the cache is read: a cached value
+        // was produced for an argument some principal's gate accepted once; serving it to another
+        // principal, or after the host revoked it, would skip the gate. A refusal is a miss (the load
+        // refuses it); a param that fills a guarded argument is cached per principal only.
+        cached: (job) => {
+          const verdict = this.refsVerdict(job);
+          return verdict?.refusal !== undefined
+            ? undefined
+            : this.cache.get(
+                verdict?.paramFilled ? principalScoped(job.spec) : job.spec,
+                principalId,
+                variant(job)
+              );
+        },
         commit: (job, r) => {
           // Only `ready` is cached — an `empty` answer has no value (loom ADR 0100), so nothing
           // is stored. The scheduler still treats it as ANSWERED for the same question: it is
@@ -260,8 +282,16 @@ export class HydrationController {
           // never served from the cache). A result that proceeded past an input drift (`report-and-proceed`) is never cached:
           // the key does not carry the drift mode, so a controller sharing the cache under the
           // default (`report`) would be served it as a clean `ready` — no stale, no `onDrift`.
-          if (r.state === "ready" && r.drift.length === 0)
-            this.cache.set(job.spec, principalId, r.value, variant(job));
+          if (r.state === "ready" && r.drift.length === 0) {
+            const verdict = this.refsVerdict(job);
+            if (verdict?.refusal === undefined)
+              this.cache.set(
+                verdict?.paramFilled ? principalScoped(job.spec) : job.spec,
+                principalId,
+                r.value,
+                variant(job)
+              );
+          }
         },
         published: (job, r) => {
           if (r.drift.length === 0) return;
@@ -485,7 +515,18 @@ export class HydrationController {
             },
           ]
         : [];
-    return { findings: [...findings, ...advisory, ...mediaAdvice] };
+    const refsAdvice: Finding[] =
+      this.opts.contentRefArgs === "none" && hasMediaTypeNodes(exp)
+        ? [
+            {
+              code: "media-content-refs-unguarded",
+              severity: "warn",
+              message:
+                'the experience has media nodes and the controller runs with contentRefArgs: "none": a content-reference tool argument is not checked; derive the table with contentRefArgsFrom(capabilities)',
+            },
+          ]
+        : [];
+    return { findings: [...findings, ...advisory, ...mediaAdvice, ...refsAdvice] };
   }
 
   /** Pure: the jobs `exp` asks for right now, and the handles that cannot load (with why). */
@@ -554,6 +595,20 @@ export class HydrationController {
     return { jobs, findings, missing };
   }
 
+  /** The content-reference guard over a whole job (asks the host's gate now); `undefined` when nothing is guarded. */
+  private refsVerdict(job: ProviderJob): ReturnType<typeof inspectContentRefs> | undefined {
+    const table = this.opts.contentRefArgs;
+    if (table === "none") return undefined;
+    return inspectContentRefs(
+      job.spec,
+      job.params,
+      contentRefEnv(table, job.spec, this.opts.acceptContentRefParam, {
+        principalId: this.opts.principal?.id,
+        principal: this.opts.principal?.chain,
+      })
+    );
+  }
+
   private async run(job: ProviderJob, signal: AbortSignal, pass: Pass): Promise<ProviderResult> {
     const outcome = await executeProvider(job.spec, {
       invoker: pass.invoker,
@@ -568,9 +623,8 @@ export class HydrationController {
       ...(this.opts.concurrency !== undefined && { concurrency: this.opts.concurrency }),
       ...(this.opts.inputDrift !== undefined && { inputDrift: this.opts.inputDrift }),
       ...(this.opts.argumentHook !== undefined && { argumentHook: this.opts.argumentHook }),
-      ...(this.opts.contentRefArgs !== undefined && {
-        contentRefArgs: this.opts.contentRefArgs,
-      }),
+      ...(this.opts.contentRefArgs !== "none" && { contentRefArgs: this.opts.contentRefArgs }),
+      ...(this.opts.principal?.id !== undefined && { principalId: this.opts.principal.id }),
       ...(this.opts.acceptContentRefParam !== undefined && {
         acceptContentRefParam: this.opts.acceptContentRefParam,
       }),

@@ -1,4 +1,5 @@
 import {
+  type ContentRefTable,
   type DeclaredToolClasses,
   type Experience,
   type Finding,
@@ -19,6 +20,7 @@ import {
 import { MCP_INVOKE_ERRORS } from "@loom/plugin-mcp";
 import { SANDBOX_ERRORS } from "@loom/plugin-sandbox";
 import { type HydrationCache, specFingerprint } from "../cache";
+import { contentRefEnv, inspectContentRefs, principalScoped } from "../contentRefs";
 import type { DriftReport } from "../controller";
 import type { TransientInvoker } from "../invoker";
 import { limitInvoker, memoInvoker } from "../invokers";
@@ -150,7 +152,14 @@ export const DEFAULT_MAX_BATCH = 256;
  */
 export const DEFAULT_MAX_CONCURRENT_CALLS = 32;
 
-export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds"> {
+export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds" | "contentRefArgs"> {
+  /**
+   * REQUIRED (U9b): the marked content-reference argument paths per tool, derived from the offered
+   * capabilities with the planner's `contentRefArgsFrom(capabilities)` (persist it with the capability
+   * set; `parseContentRefTable` re-reads it). `"none"` is the explicit opt-out: nothing is guarded,
+   * and serving a media-bound handle then reports `media-content-refs-unguarded` (warn).
+   */
+  readonly contentRefArgs: ContentRefTable | "none";
   /** Kinds for `"contract"` providers: the nodes binding the handle, resolved on this surface. */
   readonly outputKinds?: { readonly catalog: SemanticCatalog; readonly surface: Surface };
   readonly cache?: HydrationCache;
@@ -386,6 +395,8 @@ interface ServePass {
   readonly kinds: ReadonlyMap<string, readonly string[]>;
   /** Media nodes exist but the host gave no `outputKinds` (a dev warning, reported when a media handle is served). */
   readonly mediaWithoutKinds: boolean;
+  /** Media nodes exist and the host opted out of the content-reference guard (`contentRefArgs: "none"`). */
+  readonly refsUnguarded: boolean;
 }
 
 /**
@@ -509,7 +520,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     ...(opts.concurrency !== undefined && { concurrency: opts.concurrency }),
     ...(opts.captureSample !== undefined && { captureSample: opts.captureSample }),
     ...(opts.argumentHook !== undefined && { argumentHook: opts.argumentHook }),
-    ...(opts.contentRefArgs !== undefined && { contentRefArgs: opts.contentRefArgs }),
+    ...(opts.contentRefArgs !== "none" && { contentRefArgs: opts.contentRefArgs }),
     ...(opts.acceptContentRefParam !== undefined && {
       acceptContentRefParam: opts.acceptContentRefParam,
     }),
@@ -533,6 +544,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     // U9: media-typed nodes mark their handle as media even with NO `outputKinds` (fail closed).
     kinds: handleKindsWithMedia(exp, outputKinds?.catalog, outputKinds?.surface),
     mediaWithoutKinds: outputKinds === undefined && hasMediaTypeNodes(exp),
+    refsUnguarded: opts.contentRefArgs === "none" && hasMediaTypeNodes(exp),
   };
 }
 
@@ -584,6 +596,13 @@ async function serveOne(
         message:
           "the experience has media nodes and serve has no outputKinds: media handles are contract-checked by node type, but pass outputKinds so kinds resolve through the catalogue",
       });
+    if (mediaBound && pass.refsUnguarded)
+      report({
+        code: "media-content-refs-unguarded",
+        severity: "warn",
+        message:
+          'the experience has media nodes and serve runs with contentRefArgs: "none": a content-reference tool argument is not checked; derive the table with contentRefArgsFrom(capabilities)',
+      });
     // ONE deep-copy-and-validate pass over the request's params (`snapshotParams`): the result is
     // plain, detached data with no accessor of its own, so `relevantParams`/`pickParams` below can
     // never re-trigger a caller-supplied getter that answered differently than the check just did.
@@ -600,11 +619,32 @@ async function serveOne(
             kinds,
             ...(pass.exec.contracts !== undefined && { contracts: pass.exec.contracts }),
           };
-    const hit = opts.cache?.get(spec, opts.principalId, variant);
+    // U9b: the content-reference guard (gate included) runs BEFORE the cache is consulted: a cached
+    // value was produced for an argument some principal's gate accepted once, and serving it to another
+    // principal, or after the host revoked it, would skip the gate. A refusal is not served from the
+    // cache (the load below refuses it); a param that fills a guarded argument is cached per principal.
+    const refs = pass.exec.contentRefArgs;
+    const verdict =
+      refs === undefined
+        ? undefined
+        : inspectContentRefs(
+            spec,
+            params,
+            contentRefEnv(refs, spec, pass.exec.acceptContentRefParam, {
+              principalId: opts.principalId,
+              principal: pass.exec.principal,
+            })
+          );
+    const cacheSpec = verdict?.paramFilled ? principalScoped(spec) : spec;
+    const hit =
+      verdict?.refusal === undefined
+        ? opts.cache?.get(cacheSpec, opts.principalId, variant)
+        : undefined;
     if (hit) return { state: "ready", value: hit.value };
     const outcome = await executeProvider(spec, {
       ...pass.exec,
       params,
+      ...(opts.principalId !== undefined && { principalId: opts.principalId }),
       ...(kinds !== undefined && { kinds }),
     });
     for (const f of outcome.findings) report(f);
@@ -614,7 +654,7 @@ async function serveOne(
     // does not carry the drift mode, so a later request served under the default (`report`)
     // would get it as a clean `ready` — no stale, no `onDrift`, no `onFinding`.
     if (outcome.ok && drift.length === 0)
-      opts.cache?.set(spec, opts.principalId, outcome.value, variant);
+      opts.cache?.set(cacheSpec, opts.principalId, outcome.value, variant);
     if (drift.length > 0)
       opts.onDrift?.({
         experienceId: exp.experienceId,

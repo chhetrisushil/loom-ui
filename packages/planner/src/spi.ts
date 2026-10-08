@@ -32,6 +32,13 @@ export interface CapabilityRef {
   readonly toolSchemaHash: string;
   readonly description?: string;
   readonly inputSchema?: Record<string, unknown>;
+  /**
+   * The JSON Schema of what the tool returns (U9b). Optional. Mark a field `"x-content-ref": true` (the
+   * root too, for a tool whose whole output is a reference) to declare that the output at that path is
+   * a content reference: ONLY a step reference to such an output may be bound to a content-reference
+   * argument of another tool. Absent or unreadable = the tool proves nothing.
+   */
+  readonly outputSchema?: Record<string, unknown>;
   /** A raw tool output the planner reshapes to pin `outputShapeHash`. Absent ⇒ unbindable. */
   readonly sampleOutput?: unknown;
   /**

@@ -260,6 +260,7 @@ describe("a failed reshaping: split and in-process report the same drift (G11)",
     const local: DriftReport[] = [];
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
     new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv(),
       store,
       clock: () => 0,
@@ -272,7 +273,13 @@ describe("a failed reshaping: split and in-process report the same drift (G11)",
     const served = await serveHandle(
       e,
       { experienceId: "e", versionHash: "v1", handle: "h", params: {} },
-      { invoker: inv(), now: 0, captureSample: true, onDrift: (r) => remote.push(r) }
+      {
+        contentRefArgs: "none" as const,
+        invoker: inv(),
+        now: 0,
+        captureSample: true,
+        onDrift: (r) => remote.push(r),
+      }
     );
     return { local, remote, served, status: store.state().status.h };
   };
@@ -303,6 +310,7 @@ describe("a failed reshaping: split and in-process report the same drift (G11)",
     const local: DriftReport[] = [];
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: crashing(),
       store,
       clock: () => 0,
@@ -317,7 +325,13 @@ describe("a failed reshaping: split and in-process report the same drift (G11)",
     const served = await serveHandle(
       e,
       { experienceId: "e", versionHash: "v1", handle: "h", params: {} },
-      { invoker: crashing(), now: 0, captureSample: true, onDrift: (r) => remote.push(r) }
+      {
+        contentRefArgs: "none" as const,
+        invoker: crashing(),
+        now: 0,
+        captureSample: true,
+        onDrift: (r) => remote.push(r),
+      }
     );
     const wire = JSON.stringify(served);
     expect(wire).not.toContain("RAW-SECRET-412");

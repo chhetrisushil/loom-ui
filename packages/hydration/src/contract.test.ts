@@ -199,6 +199,7 @@ describe("HydrationController with output kinds", () => {
   const rig = (value: unknown, withKinds: boolean) => {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: replying(value),
       store,
       ...(withKinds && { outputKinds: { catalog, surface: "web" as const } }),
@@ -282,6 +283,7 @@ describe("the cache key includes the checked kinds", () => {
     const inv = replying({ value: 3 });
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv,
       store,
       outputKinds: { catalog, surface: "web" },
@@ -305,12 +307,14 @@ describe("the cache key includes the checked kinds", () => {
     const inv = replying({ value: 3 }); // satisfies Kpi (web), fails MetricCard (terminal)
     const cache = new HydrationCache(() => 0);
     const web = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv,
       store: new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" }),
       outputKinds: { catalog, surface: "web" },
       cache,
     });
     const terminal = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv,
       store: new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" }),
       outputKinds: { catalog, surface: "terminal" },
@@ -379,6 +383,7 @@ describe("a shape provider's fingerprint ignores kind changes", () => {
     const inv = replying({ anything: 1 });
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv,
       store,
       outputKinds: { catalog, surface: "web" },
@@ -493,6 +498,7 @@ describe("HydrationController with a host kind (U13)", () => {
     };
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: replying(value),
       store,
       outputKinds: { catalog, surface: "voice" },

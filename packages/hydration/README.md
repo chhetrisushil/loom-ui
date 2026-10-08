@@ -72,19 +72,24 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 - `HydrationController` — in-process controller. Constructor takes `ControllerOptions`
   (`invoker`, `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`,
   `maxConcurrentCalls?`, `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`,
-  `inputDrift?`, `argumentHook?`, `contentRefArgs?`, `acceptContentRefParam?`, `reshapers?`, `providers?`,
+  `inputDrift?`, `argumentHook?`, `contentRefArgs` (required), `acceptContentRefParam?`, `reshapers?`, `providers?`,
   `captureSample?`). Methods: `load(exp)`,
   `recompose(next)`, `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`,
   `inFlight()`, `dispose()` — each returns `{ findings: Finding[] }` where relevant.
-- **Content-reference arguments (U9b).** Hand `contentRefArgs` (the table `contentRefArgsFrom(capabilities)` builds from
-  the capabilities' `x-content-ref` markers) to the controller, `executeProvider` or `serveHandle(s)`. Before ANY call a step's
-  marked argument must be a `{{steps.…}}` reference, absent, or a param the host accepted; a literal (a model-authored one
-  that skipped validation) refuses the step with `media-arg-literal` and the call is NOT made. A param that fills a marked
-  argument (in-process `setParams`, or a split client's params, which are client input) is refused unless
-  `acceptContentRefParam({ handle, stepId, toolName, kind?, param, value }) => boolean` returns `true`: thread
-  `acceptMediaAttach` through it, e.g. keep the `MediaRef`s it accepted for this principal and return
-  `accepted.has(value.address)`. The `argumentHook` runs after the check and is the host's own word. A tool whose
-  schema was unreadable (`"unknown"`) refuses any wholly address-shaped string argument. No table = no check.
+- **Content-reference arguments (U9b).** `contentRefArgs` is REQUIRED on `ControllerOptions` and `ServeOptions`: the table
+  `contentRefArgsFrom(capabilities)` builds (persist it with the capability set; `parseContentRefTable` re-reads it), or the
+  explicit opt-out `"none"` (an experience with media nodes then reports `media-content-refs-unguarded`). Before ANY call a
+  step's marked argument must be absent / null, a `{{steps.…}}` reference to an output its tool declares to be a content
+  reference, or a param the host accepted; otherwise the step is refused (`media-arg-literal` / `media-arg-unproven-ref`) and
+  the call is NOT made. The same check runs BEFORE every cache lookup (in-process and split), asking the gate again: a cached
+  value is never served to a principal whose gate refuses, nor after a revocation, and a result a param filled is cached per
+  principal only, never globally. A param that fills a marked argument (in-process `setParams`, or a split client's params,
+  which are client input) is refused unless `acceptContentRefParam({ handle, stepId, toolName, kind?, param, value,
+  principalId?, principal? }) => boolean` returns `true`. The gate MUST check that the value was ISSUED TO `principalId`
+  (e.g. keep the `MediaRef`s `acceptMediaAttach` accepted for each principal and return `issued.get(principalId)?.has(value.address)`)
+  and is still current (a revoked share answers `false`). `null` at a marked path is stripped before the call. The
+  `argumentHook` runs after the check and is the host's own word. A tool whose schema mentions the marker but was unreadable
+  (`"unknown"`) has every replaced param gated and every literal string refused.
 - `executeProvider` — runs one `ProviderSpec`'s execution graph and reshaping; what both
   controllers and `serveHandle`/`serveHandles` call underneath.
 - `ExecuteOptions`, `ProviderOutcome`, `DriftRecord`, `InputDriftMode` — the execution options and

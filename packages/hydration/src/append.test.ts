@@ -146,6 +146,7 @@ describe("appends go through the viewer gate (U10) — a controller fronts the s
     const clock = new ManualClock();
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({})),
       store,
       clock: clock.now,

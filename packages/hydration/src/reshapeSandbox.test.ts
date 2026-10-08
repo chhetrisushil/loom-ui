@@ -193,6 +193,7 @@ describe("a script error's text never rides a finding (G11)", () => {
     const local: DriftReport[] = [];
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
     const loaded = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv(),
       store,
       clock: () => 0,
@@ -214,6 +215,7 @@ describe("a script error's text never rides a finding (G11)", () => {
       e,
       { experienceId: "e", versionHash: "v1", handle: "h", params: {} },
       {
+        contentRefArgs: "none" as const,
         invoker: inv(),
         now: 0,
         captureSample: true,
