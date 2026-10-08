@@ -300,37 +300,48 @@ comes from a binding and the host's resolver.
 **Content references as tool arguments (U9b).** The one door U9 left open: a capability whose INPUT is a
 content reference (`describe_image({ image })`). The grammar of an argument value (`MCPToolNode.arguments`, JSON) is
 exactly: (1) a *literal*, written by whoever composed the step; (2) a relative-time token (`$now`, `$now-7d`; units
-`smhdw`); (3) a *step reference*, a WHOLE string `{{steps.<id>.output[.<path>]}}` naming a step of the same graph in an
-earlier wave (a template embedded in a longer string is not substituted: it is a literal); (4) a *param*: a top-level
-key listed in the step's `overridable`, replaced per load by the host's `setParams` / `defaultParams` (or a split
-client's params). A content-reference position may hold ONLY a step reference (the hydrated output of another
-binding, which the data boundary already gates), a param the HOST accepted (below), or nothing (absent or JSON
-`null`). Everything else there, a literal address or URL, a time token, a number, an object, is FORBIDDEN, because it
-is the model naming an address.
+`smhdw`); (3) a *step reference*, a WHOLE string `{{steps.<id>.output[.<path>]}}` (`<id>` is `[A-Za-z0-9_-]+`) naming a
+step of the same graph in an earlier wave (a template embedded in a longer string is not substituted: it is a literal);
+(4) a *param*: a top-level key listed in the step's `overridable`, replaced per load by the host's `setParams` /
+`defaultParams` (or a split client's params). A content-reference position may hold ONLY: a step reference whose
+REFERENCED output the producing tool *declares* to be a content reference (its `outputSchema` carries the marker at that
+path, the root included; a tool that merely echoes or concatenates text proves nothing, and a reference to it is
+`media-arg-unproven-ref`, as is one to a dangling step or the step itself); a param the HOST accepted
+(`acceptContentRefParam`, below); or nothing (absent or JSON `null`; `null` is stripped before the call). Everything
+else there, a literal address or URL, a time token, a number, an object, is FORBIDDEN, because it is the model naming an
+address. What this does not prove: that a declared producer's output is trustworthy (an untrusted tool can return a
+hostile address; the host's invoker still authorises the call as the viewer).
 
-*The marker* is a JSON Schema extension keyword on the capability's input schema, `"x-content-ref": true`, at any
-depth (object properties, array items, `additionalProperties`, `allOf` / `anyOf` / `oneOf`, local `$ref`). It is
-`x-` rather than `format` because it annotates any value (an object shaped like a `MediaRef` as well as a string),
-does not collide with `format`'s assertion semantics, and names the concept, not a consumer. Nothing is needed from
-loom: the host adds the keyword to the schema it already hands the planner (`CapabilityRef.inputSchema`).
+*The marker* is a JSON Schema extension keyword on the capability's input (or output) schema, `"x-content-ref": true`, at any
+depth (object properties, array items, `additionalProperties`, `allOf` / `anyOf` / `oneOf`, `dependencies`, local `$ref`).
+It is `x-` rather than `format` because it annotates any value (an object shaped like a `MediaRef` as well as a string),
+does not collide with `format`'s assertion semantics, and names the concept, not a consumer. Nothing is needed from loom:
+the host adds the keyword to the schema it already hands the planner (`CapabilityRef.inputSchema` / `outputSchema`).
 `contentRefPaths(schema)` reads the marked paths (`ArgPath`: string = key, `null` = any index / key) with a bounded,
-cycle-safe walk (`MAX_SCHEMA_NODES` 5000, depth 24, 256 paths; only local `$ref`s resolve) and is total. A schema it
-cannot read (not an object, an external or dangling `$ref`, a malformed marker, over a budget, or recursive AND
-carrying the marker) is `unknown`, which is NOT "no marked arguments": it fails closed (below).
+cycle-safe walk (`MAX_SCHEMA_NODES` 5000, depth 24, 256 paths; only local `$ref`s resolve) and is total. It is `unknown`
+(never "no marked arguments") for a schema it cannot read (not an object, an external or dangling `$ref`, a malformed
+marker, over a budget, recursive AND carrying the marker, a `$dynamicRef` / `$recursiveRef` AND carrying the marker), and
+a BACKSTOP counts the `x-content-ref: true` objects in the raw schema against those the walk reached: any marker the walk
+did not reach (under `propertyNames`, `contentSchema`, a keyword added tomorrow) makes the whole schema `unknown`.
 
-*The guard.* `validateExperience(exp, catalog, surface, { contentRefArgs })` takes the table of marked paths per tool
-(`toolKey`; the planner builds it with `contentRefArgsFrom(capabilities)`). A literal at a marked path is
-`media-arg-literal` (error, so `ok` is false). A tool whose schema is `unknown` is `media-arg-schema-unknown` (warn)
-and any string that is wholly a URL / locator / content address anywhere in its arguments is `media-arg-literal`.
-Independent of any table, a string argument that looks like an address or embeds one (`containsEmbeddedRef`, whole-string
-locator shapes) is `media-arg-suspect` (warn): a hint, never a boundary. Checks are linear (one pass, a trie of the marked
-paths, a 100,000-value and 64-level budget past which the arguments are refused, a 256 KiB budget for the suspect scan).
-Findings are value-free: they name the path, never the value.
+*The table.* `ContentRefTable = { args, produces? }` (plain JSON; persist it with the capability set and re-read it with
+`parseContentRefTable`, which returns `undefined` for anything that is not exactly a table). `args[toolKey]` is the marked input
+paths, or `"unknown"` (the schema MENTIONS the marker but cannot be fully read: strict) or `"unreadable"` (unreadable, no marker
+mentioned). `produces[toolKey]` is the declared output paths. The planner derives it: `contentRefArgsFrom(capabilities)`.
 
-*Residuals.* A schema without the marker is not guarded (the host must mark it; the suspect hint is the net). A step
-reference resolves to whatever the upstream tool returned, and an untrusted tool's output can hold a hostile address:
-the host's invoker still authorises the call as the viewer, which is the boundary. The argument hook runs after the
-check and is trusted host code. Strings over 4096 characters are not scanned for the suspect hint.
+*The guard.* `validateExperience(exp, catalog, surface, { contentRefArgs })`: a literal at a marked path is
+`media-arg-literal` (error, so `ok` is false; at most 8 are listed per step, then "and N more"); an unproven reference is
+`media-arg-unproven-ref` (error). `"unknown"` is `media-arg-schema-unknown` as an ERROR (the binding is refused), and at run
+time every string that is not a step reference or a time token is refused and every replaced param is gated.
+`"unreadable"` is the same code as a warning, and any wholly URL / address-shaped string is `media-arg-literal`.
+Independent of the table, a string that looks like an address or embeds one (`containsEmbeddedRef`) is `media-arg-suspect`
+(warn): a hint, never a boundary. Checks are linear (one pass, a trie of the marked paths, a 100,000-value and 64-level
+budget past which the arguments are refused, a 256 KiB budget for the suspect scan). Findings are value-free: they name
+the path, never the value.
+
+*Residuals.* A schema without the marker is not guarded (the host must mark it; the suspect hint is the net). A top-level
+`additionalProperties` marker (path `[null]`) names no key, so a gated param can never fill it: fail closed. The argument hook
+runs after the check and is trusted host code. Strings over 4096 characters are not scanned for the suspect hint.
 
 **Trust.** Media is untrusted unless the host vouches (`MediaResolution.trusted`); `origin` on the ref
 never grants it, and `origin: "user"` is never trusted. Surfaces mark untrusted media (`data-untrusted`

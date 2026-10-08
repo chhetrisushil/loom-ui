@@ -2,13 +2,20 @@ import { describe, expect, it } from "vitest";
 import { validateExperience } from "./catalog";
 import {
   CONTENT_REF_KEYWORD,
+  type ContentRefTable,
   MAX_ARG_DEPTH,
+  MAX_LITERAL_FINDINGS,
   MAX_SCHEMA_NODES,
   contentRefArgFindings,
   contentRefPaths,
   mergeContentRefEntries,
+  parseContentRefTable,
+  parseStepReference,
+  pathCovers,
+  stripNullContentRefs,
 } from "./contentRefArgs";
 import { type Experience, genesis } from "./experience";
+import { toolKey } from "./steps";
 import { testCatalog } from "./testCatalog.test-support";
 
 const M = { type: "string", [CONTENT_REF_KEYWORD]: true };
@@ -82,6 +89,69 @@ describe("contentRefPaths: reading the marker from a JSON Schema", () => {
     expect(contentRefPaths(marked).status).toBe("unknown");
   });
 
+  it.each([
+    [
+      "Draft-07 object-form dependencies",
+      {
+        type: "object",
+        dependencies: { a: { properties: { pic: M } } },
+        properties: { a: { type: "string" } },
+      },
+      "ok",
+    ],
+    [
+      "a $dynamicRef",
+      { type: "object", properties: { a: { $dynamicRef: "#node" }, pic: M } },
+      "unknown",
+    ],
+    [
+      "a $recursiveRef",
+      { type: "object", properties: { a: { $recursiveRef: "#" }, pic: M } },
+      "unknown",
+    ],
+    [
+      "a marker under propertyNames (a keyword the walker does not read)",
+      { type: "object", propertyNames: M },
+      "unknown",
+    ],
+    [
+      "a marker under contentSchema",
+      { type: "object", properties: { a: { type: "string", contentSchema: M } } },
+      "unknown",
+    ],
+    [
+      "a marker in an unreferenced definition",
+      { type: "object", $defs: { Unused: M }, properties: {} },
+      "unknown",
+    ],
+  ])("P2-1: %s", (_l, schema, status) => {
+    const r = contentRefPaths(schema);
+    expect(r.status).toBe(status);
+    if (r.status === "ok") expect(r.paths).toEqual([["pic"]]);
+  });
+
+  it("P2-1: a dynamic-ref keyword WITHOUT the marker anywhere is harmless", () => {
+    expect(contentRefPaths({ type: "object", properties: { a: { $dynamicRef: "#n" } } })).toEqual({
+      status: "ok",
+      paths: [],
+    });
+  });
+
+  it("P2-3: unknown reports whether the marker was mentioned", () => {
+    expect(contentRefPaths({ $ref: "#/nope" })).toMatchObject({
+      status: "unknown",
+      markerMentioned: false,
+    });
+    expect(
+      contentRefPaths({ type: "object", properties: { a: M, b: { $ref: "https://x.example/s" } } })
+    ).toMatchObject({ status: "unknown", markerMentioned: true });
+  });
+
+  it("an output schema may mark its root (allowRoot), an input schema may not", () => {
+    expect(contentRefPaths(M, { allowRoot: true })).toEqual({ status: "ok", paths: [[]] });
+    expect(contentRefPaths(M).status).toBe("unknown");
+  });
+
   it("is bounded: a huge or very deep schema is unknown, not a hang or a stack overflow", () => {
     const wide = { type: "object", properties: {} as Record<string, unknown> };
     for (let i = 0; i < MAX_SCHEMA_NODES + 10; i++) wide.properties[`k${i}`] = { type: "string" };
@@ -102,7 +172,9 @@ describe("contentRefPaths: reading the marker from a JSON Schema", () => {
 
 describe("contentRefArgFindings: the argument grammar", () => {
   const marked = [["image"], ["meta", "cover"], ["gallery", null], ["rows", null, "pic"]] as const;
-  const f = (args: unknown) => contentRefArgFindings(args, marked, "step s1");
+  // a producer proof: only `s0`'s output (any path) is a declared content reference here
+  const proven = (id: string) => id === "s0";
+  const f = (args: unknown) => contentRefArgFindings(args, marked, "step s1", { proven });
 
   it.each([
     ["a literal address at a top-level path", { image: ADDR }],
@@ -113,6 +185,7 @@ describe("contentRefArgFindings: the argument grammar", () => {
     ["an object", { image: { address: ADDR } }],
     ["a template EMBEDDED in a longer string", { image: "x{{steps.s0.output.a}}" }],
     ["a template with trailing text", { image: "{{steps.s0.output.a}} " }],
+    ["a template with an id outside [A-Za-z0-9_-]", { image: "{{steps.s 0.output}}" }],
     ["a literal in a nested object", { meta: { cover: ADDR } }],
     ["a literal in an array element", { gallery: ["{{steps.s0.output.a}}", ADDR] }],
     [
@@ -130,8 +203,8 @@ describe("contentRefArgFindings: the argument grammar", () => {
   it.each([
     ["absent", {}],
     ["null", { image: null }],
-    ["a whole-string step reference", { image: "{{steps.s0.output}}" }],
-    ["a step reference with a path", { image: "{{steps.s0.output.items[0].addr}}" }],
+    ["a whole-string reference to a proven step", { image: "{{steps.s0.output}}" }],
+    ["a reference with a path", { image: "{{steps.s0.output.items[0].addr}}" }],
     [
       "references in every nested position",
       {
@@ -143,6 +216,31 @@ describe("contentRefArgFindings: the argument grammar", () => {
     ["unmarked text next to a marked path", { image: "{{steps.s0.output}}", q: "show cats" }],
   ])("accepts %s", (_l, args) => {
     expect(f(args)).toEqual([]);
+  });
+
+  it("P2-2: a reference the producer table does not prove is media-arg-unproven-ref; with no `proven` nothing is", () => {
+    const out = contentRefArgFindings({ image: "{{steps.echo.output.text}}" }, marked, "s", {
+      proven,
+    });
+    expect(codes(out)).toEqual(["media-arg-unproven-ref"]);
+    expect(codes(contentRefArgFindings({ image: "{{steps.s0.output}}" }, marked, "s"))).toEqual([
+      "media-arg-unproven-ref",
+    ]);
+    // a malformed path proves nothing even for a proven step
+    expect(
+      codes(
+        contentRefArgFindings({ image: "{{steps.s0.output.a[}}" }, marked, "s", {
+          proven: () => true,
+        })
+      )
+    ).toEqual(["media-arg-unproven-ref"]);
+  });
+
+  it("P3-2: findings are capped per step and the rest are counted", () => {
+    const many = { gallery: Array.from({ length: 500 }, () => ADDR) };
+    const out = f(many);
+    expect(out).toHaveLength(MAX_LITERAL_FINDINGS + 1);
+    expect(out.at(-1)?.message).toContain(`and ${500 - MAX_LITERAL_FINDINGS} more`);
   });
 
   it("a prototype-named key is a plain key, never a lookup through the prototype", () => {
@@ -162,10 +260,29 @@ describe("contentRefArgFindings: the argument grammar", () => {
     expect(contentRefArgFindings({ q: ADDR }, [], "s")).toEqual([]); // opt-in
   });
 
-  it("an unknown schema refuses a wholly address-shaped string anywhere (fail closed) and nothing else", () => {
-    const bad = contentRefArgFindings({ a: { b: [ADDR] } }, "unknown", "s");
+  it("an unreadable schema (no marker mentioned) refuses a wholly address-shaped string anywhere and nothing else", () => {
+    const bad = contentRefArgFindings({ a: { b: [ADDR] } }, "unreadable", "s");
     expect(codes(bad)).toEqual(["media-arg-literal"]);
-    expect(contentRefArgFindings({ q: "show cats", t: "$now" }, "unknown", "s")).toEqual([]);
+    expect(contentRefArgFindings({ q: "show cats", t: "$now" }, "unreadable", "s")).toEqual([]);
+  });
+
+  it.each([
+    ["a path-shaped key", { key: "uploads/other-user/secret.png" }],
+    ["an object locator", { loc: { store: "s3", key: "u/1" } }],
+    ["plain text", { q: "cats" }],
+    ["a string deep in an array", { a: [[["x"]]] }],
+  ])("P2-3: a marker-mentioning unreadable schema refuses %s", (_l, args) => {
+    expect(codes(contentRefArgFindings(args, "unknown", "s"))).toContain("media-arg-literal");
+  });
+
+  it("P2-3: ... but lets references, time tokens, numbers, booleans and null through", () => {
+    expect(
+      contentRefArgFindings(
+        { r: "{{steps.s0.output}}", t: "$now-7d", n: 3, b: true, z: null, e: [1, 2] },
+        "unknown",
+        "s"
+      )
+    ).toEqual([]);
   });
 
   it("is bounded in depth and size: refused, not a stack overflow", () => {
@@ -190,31 +307,112 @@ describe("contentRefArgFindings: the argument grammar", () => {
       `${"a://".repeat(25_000)}`,
       `{{steps.${"x".repeat(100_000)}`,
       `{{steps.s.output.${"{}".repeat(50_000)}`,
+      `{{steps.s.output.${"a[".repeat(50_000)}`,
       "$now".repeat(25_000),
       `${"a".repeat(100_000)}:${"0".repeat(10)}`,
     ];
     for (const s of evil) {
       contentRefArgFindings({ image: s, q: s, gallery: [s] }, marked, "s", { suspect: true });
       contentRefArgFindings({ q: s }, "unknown", "s");
+      contentRefArgFindings({ q: s }, "unreadable", "s");
+      parseStepReference(s);
     }
     expect(Date.now() - t0).toBeLessThan(5000);
   });
 });
 
-describe("mergeContentRefEntries", () => {
-  it("unions paths and lets unknown absorb", () => {
-    expect(mergeContentRefEntries([["a"]], [["a"], ["b"]])).toEqual([["a"], ["b"]]);
-    expect(mergeContentRefEntries([["a"]], "unknown")).toBe("unknown");
-    expect(mergeContentRefEntries("unknown", [["a"]])).toBe("unknown");
+describe("references and paths", () => {
+  it("parseStepReference reads the id and the output path (indices are null)", () => {
+    expect(parseStepReference("{{steps.a.output}}")).toEqual({ stepId: "a", path: [] });
+    expect(parseStepReference("{{steps.a.output.items[0].addr}}")).toEqual({
+      stepId: "a",
+      path: ["items", null, "addr"],
+    });
+    expect(parseStepReference("{{steps.a.output.m[0][1]}}")?.path).toEqual(["m", null, null]);
+    expect(parseStepReference("{{steps.a.output.x[}}")?.path).toBeUndefined();
+    expect(parseStepReference("x{{steps.a.output}}")).toBeUndefined();
+    expect(parseStepReference(7)).toBeUndefined();
+  });
+  it("pathCovers: a null marked segment covers any key or index; lengths must match", () => {
+    expect(pathCovers([], [])).toBe(true);
+    expect(pathCovers(["a", null, "b"], ["a", null, "b"])).toBe(true);
+    expect(pathCovers(["a", null], ["a", "anykey"])).toBe(true);
+    expect(pathCovers(["a", "b"], ["a", null])).toBe(false);
+    expect(pathCovers(["a"], ["a", "b"])).toBe(false);
   });
 });
 
-describe("validateExperience: media-arg-literal / media-arg-suspect / schema-unknown", () => {
-  const exp = (args: Record<string, unknown>, overridable?: string[]): Experience => {
+describe("stripNullContentRefs (Q2)", () => {
+  it("drops JSON null at marked paths only, leaving the input untouched", () => {
+    const input = {
+      image: null,
+      other: null,
+      gallery: [null, "x", null],
+      meta: { cover: null, k: 1 },
+    };
+    const out = stripNullContentRefs(input, [["image"], ["gallery", null], ["meta", "cover"]]);
+    expect(out).toEqual({ other: null, gallery: ["x"], meta: { k: 1 } });
+    expect(input.image).toBeNull();
+  });
+});
+
+describe("mergeContentRefEntries", () => {
+  it("unions paths; unreadable absorbs paths; unknown absorbs everything", () => {
+    expect(mergeContentRefEntries([["a"]], [["a"], ["b"]])).toEqual([["a"], ["b"]]);
+    expect(mergeContentRefEntries([["a"]], "unknown")).toBe("unknown");
+    expect(mergeContentRefEntries("unknown", [["a"]])).toBe("unknown");
+    expect(mergeContentRefEntries("unreadable", [["a"]])).toBe("unreadable");
+    expect(mergeContentRefEntries("unreadable", "unknown")).toBe("unknown");
+  });
+});
+
+describe("parseContentRefTable", () => {
+  it("round-trips JSON and rejects anything that is not exactly a table", () => {
+    const t: ContentRefTable = {
+      args: { a: [["x", null]], b: "unknown", c: "unreadable" },
+      produces: { p: [[]] },
+    };
+    expect(parseContentRefTable(JSON.parse(JSON.stringify(t)))).toEqual(t);
+    for (const bad of [
+      null,
+      [],
+      "x",
+      {},
+      { args: [] },
+      { args: { a: "nope" } },
+      { args: { a: [[1]] } },
+      { args: {}, produces: 3 },
+      { args: {}, produces: { p: "unknown" } },
+    ])
+      expect(parseContentRefTable(bad)).toBeUndefined();
+  });
+});
+
+describe("validateExperience: media-arg-literal / unproven-ref / suspect / schema-unknown", () => {
+  const exp = (
+    args: Record<string, unknown>,
+    overridable?: string[],
+    upstream?: string
+  ): Experience => {
     const g = genesis({
       experienceId: "e",
       intent: { objective: "x", source: "user" },
       meta: { author: "a", createdAt: "2026-10-08T00:00:00Z", sourceKind: "test" },
+    });
+    const step = (
+      stepId: string,
+      toolName: string,
+      a: Record<string, unknown>,
+      deps: string[]
+    ) => ({
+      stepId,
+      toolName,
+      toolVersion: "1",
+      toolSchemaHash: "x",
+      arguments: a,
+      dependsOn: deps,
+      idempotent: true,
+      ...(overridable && stepId === "s1" && { overridable }),
     });
     return {
       ...g,
@@ -222,16 +420,8 @@ describe("validateExperience: media-arg-literal / media-arg-suspect / schema-unk
         h: {
           handle: "h",
           executionGraph: [
-            {
-              stepId: "s1",
-              toolName: "describe_image",
-              toolVersion: "1",
-              toolSchemaHash: "x",
-              arguments: args,
-              dependsOn: [],
-              idempotent: true,
-              ...(overridable && { overridable }),
-            },
+            ...(upstream ? [step("up", upstream, {}, [])] : []),
+            step("s1", "describe_image", args, upstream ? ["up"] : []),
           ],
           reshaping: { engine: "JSONPath", scriptRef: "" },
           outputShapeHash: "",
@@ -240,12 +430,12 @@ describe("validateExperience: media-arg-literal / media-arg-suspect / schema-unk
       },
     };
   };
-  const table = { describe_image: [["image"]] as const };
-  const run = (
-    e: Experience,
-    contentRefArgs?: Record<string, never> | typeof table | { describe_image: "unknown" }
-  ) =>
-    validateExperience(e, testCatalog, "web", contentRefArgs ? ({ contentRefArgs } as never) : {});
+  const table: ContentRefTable = {
+    args: { describe_image: [["image"]] },
+    produces: { producer: [["addr"]] },
+  };
+  const run = (e: Experience, contentRefArgs?: ContentRefTable) =>
+    validateExperience(e, testCatalog, "web", contentRefArgs ? { contentRefArgs } : {});
 
   it("refuses a literal at a marked path (error; ok=false)", () => {
     const v = run(exp({ image: ADDR }), table);
@@ -253,8 +443,24 @@ describe("validateExperience: media-arg-literal / media-arg-suspect / schema-unk
     expect(codes(v.findings)).toContain("media-arg-literal");
   });
 
-  it("accepts a step reference, an absent argument and an overridable param slot", () => {
-    for (const e of [exp({ image: "{{steps.s1.output}}" }), exp({}), exp({ q: "x" }, ["image"])])
+  it("P2-2: accepts a reference to a declared producer's declared path; refuses echo / wrong path / dangling / self", () => {
+    const ok = run(exp({ image: "{{steps.up.output.addr}}" }, undefined, "producer"), table);
+    expect(ok.findings.filter((f) => f.code.startsWith("media-arg"))).toEqual([]);
+    for (const [args, up] of [
+      [{ image: "{{steps.up.output.addr}}" }, "echo"],
+      [{ image: "{{steps.up.output.text}}" }, "producer"],
+      [{ image: "{{steps.up.output}}" }, "producer"],
+      [{ image: "{{steps.nope.output.addr}}" }, "producer"],
+      [{ image: "{{steps.s1.output.addr}}" }, "producer"],
+    ] as const) {
+      const v = run(exp({ ...args }, undefined, up), table);
+      expect(v.ok).toBe(false);
+      expect(codes(v.findings)).toContain("media-arg-unproven-ref");
+    }
+  });
+
+  it("accepts an absent argument and an overridable param slot", () => {
+    for (const e of [exp({}), exp({ q: "x" }, ["image"])])
       expect(run(e, table).findings.filter((f) => f.code.startsWith("media-arg"))).toEqual([]);
   });
 
@@ -264,17 +470,31 @@ describe("validateExperience: media-arg-literal / media-arg-suspect / schema-unk
     expect(codes(v.findings)).toContain("media-arg-suspect");
   });
 
-  it("an unreadable schema warns and refuses an address-shaped literal anywhere", () => {
-    const unknown = { describe_image: "unknown" as const };
-    const v = run(exp({ q: ADDR }), unknown);
+  it("P2-3: an unreadable schema WITHOUT the marker warns and refuses an address-shaped literal anywhere", () => {
+    const t: ContentRefTable = { args: { describe_image: "unreadable" } };
+    const v = run(exp({ q: ADDR }), t);
     expect(codes(v.findings)).toEqual(
       expect.arrayContaining(["media-arg-schema-unknown", "media-arg-literal"])
     );
     expect(v.findings.find((f) => f.code === "media-arg-schema-unknown")?.severity).toBe("warn");
-    expect(run(exp({ q: "cats" }), unknown).ok).toBe(true);
+    expect(run(exp({ q: "cats" }), t).ok).toBe(true);
+  });
+
+  it("P2-3: a schema that MENTIONS the marker but is unreadable is an ERROR: the binding is refused, even with no arguments", () => {
+    const t: ContentRefTable = { args: { describe_image: "unknown" } };
+    const v = run(exp({}), t);
+    expect(v.ok).toBe(false);
+    expect(v.findings.find((f) => f.code === "media-arg-schema-unknown")?.severity).toBe("error");
+    expect(codes(run(exp({ key: "uploads/other-user/secret.png" }), t).findings)).toContain(
+      "media-arg-literal"
+    );
   });
 
   it("a table entry is looked up by own key only (no prototype lookups)", () => {
-    expect(run(exp({ image: ADDR }), {} as never).ok).toBe(true);
+    expect(run(exp({ image: ADDR }), { args: {} }).ok).toBe(true);
+    expect(toolKey({ toolName: "toString" })).toBe("toString");
+    expect(
+      run(exp({ image: ADDR }), { args: Object.create({ describe_image: [["image"]] }) }).ok
+    ).toBe(true);
   });
 });

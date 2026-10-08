@@ -169,7 +169,7 @@ export function applyParams(
 }
 
 /** {@link applyParams}, plus which top-level arguments a param actually replaced (U9b needs them). */
-function applyParamsDetailed(
+export function applyParamsDetailed(
   node: MCPToolNode,
   params: LoadParams
 ): { args: Record<string, unknown>; findings: Finding[]; replaced: string[] } {
@@ -245,6 +245,8 @@ export interface PrepareContext {
     node: MCPToolNode,
     applied: { readonly args: Record<string, unknown>; readonly replaced: readonly string[] }
   ) => Finding | undefined;
+  /** Rewrites the arguments after templates resolve and before the hook (U9b strips JSON null at marked paths). */
+  readonly finish?: (args: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export function prepareArguments(
@@ -264,10 +266,11 @@ export function prepareArguments(
     outputs
   );
   if (!templated.ok) return templated;
-  if (ctx.hook === undefined) return { ok: true, args: templated.args, findings: applied.findings };
+  const finished = ctx.finish ? ctx.finish(templated.args) : templated.args;
+  if (ctx.hook === undefined) return { ok: true, args: finished, findings: applied.findings };
   let hooked: unknown;
   try {
-    hooked = ctx.hook(templated.args, {
+    hooked = ctx.hook(finished, {
       handle: ctx.handle,
       stepId: node.stepId,
       toolName: node.toolName,

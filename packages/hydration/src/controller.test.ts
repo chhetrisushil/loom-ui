@@ -50,6 +50,7 @@ function rig(
   );
   const drifts: unknown[] = [];
   const ctl = new HydrationController({
+    contentRefArgs: "none" as const,
     invoker: inv,
     store,
     clock: clock.now,
@@ -447,6 +448,7 @@ describe("HydrationController principals", () => {
     const mk = (id: string) => {
       const store = new HydrationStore(runtime, { experienceId: "exp-1", principalId: id });
       const ctl = new HydrationController({
+        contentRefArgs: "none" as const,
         invoker: inv,
         store,
         cache,

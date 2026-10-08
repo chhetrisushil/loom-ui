@@ -1,4 +1,9 @@
-import { type ContentRefTable, contentRefArgFindings, contentRefEntry } from "./contentRefArgs";
+import {
+  type ContentRefTable,
+  contentRefArgFindings,
+  contentRefEntry,
+  provenIn,
+} from "./contentRefArgs";
 import type { Experience, Finding, VocabularyFloor } from "./experience";
 import { type ContractRegistry, hasKindContract, isFrameworkContractKind } from "./kindValues";
 import { embeddedRefWarnings, mediaPropFindings } from "./media";
@@ -474,31 +479,39 @@ function checkSemantic(
 }
 
 /**
- * U9b: every step's `arguments` against the tool's marked content-reference paths (a literal there
- * is `media-arg-literal`, an error), plus the `media-arg-suspect` hint for address-shaped text
- * elsewhere. A tool whose schema could not be read is `"unknown"`: warned, and any wholly
- * address-shaped string is refused. Linear in the providers' arguments.
+ * U9b: every step's `arguments` against the tool's marked content-reference paths. A literal there is
+ * `media-arg-literal`, a step reference to an output its tool does not declare a content reference is
+ * `media-arg-unproven-ref` (errors); address-shaped text elsewhere is the `media-arg-suspect` hint.
+ * A tool whose schema mentions the marker but cannot be read is `media-arg-schema-unknown` (an ERROR:
+ * the binding is refused); one that is unreadable without mentioning it is the same code as a warning.
+ * Linear in the providers' arguments.
  */
 function contentRefArgumentFindings(
   exp: Experience,
   table: ContentRefTable | undefined
 ): Finding[] {
   const out: Finding[] = [];
-  for (const [handle, spec] of Object.entries(exp.providers))
+  for (const [handle, spec] of Object.entries(exp.providers)) {
+    const steps = new Map(spec.executionGraph.map((s) => [s.stepId, s] as const));
     for (const step of spec.executionGraph) {
       const marked = contentRefEntry(table, toolKey(step));
       const where = `provider "${handle}" step "${step.stepId}"`;
-      if (marked === "unknown")
+      if (marked === "unknown" || marked === "unreadable")
         out.push({
           code: "media-arg-schema-unknown",
-          severity: "warn",
-          message: `${where}: the input schema of "${step.toolName}" could not be read, so its content-reference arguments are unknown; a URL or content address in its arguments is refused`,
+          severity: marked === "unknown" ? "error" : "warn",
+          message:
+            marked === "unknown"
+              ? `${where}: the input schema of "${step.toolName}" mentions a content-reference marker but cannot be fully read, so its content-reference arguments are unknown and the binding is refused`
+              : `${where}: the input schema of "${step.toolName}" could not be read, so its content-reference arguments are unknown; a URL or content address in its arguments is refused`,
         });
       out.push(
         ...contentRefArgFindings(step.arguments, marked ?? [], where, {
-          suspect: marked !== "unknown",
+          suspect: typeof marked !== "string",
+          proven: provenIn(table, steps, step.stepId, toolKey),
         })
       );
     }
+  }
   return out;
 }

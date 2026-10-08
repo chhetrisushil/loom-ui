@@ -46,6 +46,7 @@ const rig = (extra: {
     v: (i as { toolName: string }).toolName,
   }));
   const ctl = new HydrationController({
+    contentRefArgs: "none" as const,
     invoker: inv,
     store,
     clock: clock.now,
@@ -155,6 +156,7 @@ describe("declaredToolClasses on the hydration read paths", () => {
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
     const logged: string[] = [];
     const [open, pay] = await serveHandles(e, [req(e, "open"), req(e, "pay")], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: 0,
       viewer: low,
@@ -169,6 +171,7 @@ describe("declaredToolClasses on the hydration read paths", () => {
     expect(
       (
         await serveHandle(e, req(e, "pay"), {
+          contentRefArgs: "none" as const,
           invoker: one,
           now: 0,
           viewer: low,
@@ -177,8 +180,15 @@ describe("declaredToolClasses on the hydration read paths", () => {
       ).state
     ).toBe("error");
     expect(one.calls).toHaveLength(0);
-    expect((await serveHandle(e, req(e, "pay"), { invoker: one, now: 0, viewer: low })).state).toBe(
-      "ready"
-    );
+    expect(
+      (
+        await serveHandle(e, req(e, "pay"), {
+          contentRefArgs: "none" as const,
+          invoker: one,
+          now: 0,
+          viewer: low,
+        })
+      ).state
+    ).toBe("ready");
   });
 });

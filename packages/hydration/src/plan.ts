@@ -116,7 +116,7 @@ export function resolvePath(obj: unknown, dotted: string): unknown {
   return r.ok ? r.value : undefined;
 }
 
-export const STEP_TEMPLATE = /^\{\{steps\.([^.}]+)\.output(?:\.(.+))?\}\}$/;
+export const STEP_TEMPLATE = /^\{\{steps\.([A-Za-z0-9_-]+)\.output(?:\.(.+))?\}\}$/;
 
 /**
  * Every step id `arguments` references through a `{{steps.<id>.output…}}` template, in first-seen

@@ -60,10 +60,18 @@ describe("createServeSurface: the policy is bound once", () => {
     ]);
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
     expect(
-      (await surface.serveHandle(e, req(e, "pay"), { invoker: inv, now: 0, viewer: low })).state
+      (
+        await surface.serveHandle(e, req(e, "pay"), {
+          contentRefArgs: "none" as const,
+          invoker: inv,
+          now: 0,
+          viewer: low,
+        })
+      ).state
     ).toBe("error");
     expect(inv.calls).toHaveLength(0);
     const [open] = await surface.serveHandles(e, [req(e, "open")], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: 0,
       viewer: low,
@@ -77,9 +85,16 @@ describe("createServeSurface: the policy is bound once", () => {
     ]);
     // ... while the LOW-LEVEL free functions without the table do not (the documented footgun)
     expect(names(handleInventory(e, { revisionOf, viewer: low }))).toContain("pay");
-    expect((await serveHandle(e, req(e, "pay"), { invoker: inv, now: 0, viewer: low })).state).toBe(
-      "ready"
-    );
+    expect(
+      (
+        await serveHandle(e, req(e, "pay"), {
+          contentRefArgs: "none" as const,
+          invoker: inv,
+          now: 0,
+          viewer: low,
+        })
+      ).state
+    ).toBe("ready");
   });
 
   it("per-call {} / undefined / a lower table cannot lower it", async () => {
@@ -124,7 +139,14 @@ describe("createServeSurface: the policy is bound once", () => {
       expect(names(strict.handleInventory(e, { revisionOf, viewer }))).not.toContain("fresh");
       const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
       expect(
-        (await strict.serveHandle(e, req(e, "fresh"), { invoker: inv, now: 0, viewer })).state
+        (
+          await strict.serveHandle(e, req(e, "fresh"), {
+            contentRefArgs: "none" as const,
+            invoker: inv,
+            now: 0,
+            viewer,
+          })
+        ).state
       ).toBe("error");
       expect(inv.calls).toHaveLength(0);
     }
@@ -147,6 +169,7 @@ describe("createServeSurface: the policy is bound once", () => {
     ]);
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
     const r = await strict.serveHandle(e, req(e, "fresh"), {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: 0,
       viewer: high,
@@ -180,6 +203,7 @@ describe("HydrationController: undeclared", () => {
       v: (i as { toolName: string }).toolName,
     }));
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv,
       store,
       clock: clock.now,

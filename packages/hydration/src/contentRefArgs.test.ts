@@ -1,29 +1,38 @@
-import { type ContentRefTable, STEP_TEMPLATE_SOURCE, genesis } from "@loom-ui/core";
-import type { ContainerNode, Experience, ProviderSpec, SemanticNode } from "@loom-ui/core";
+import {
+  type ContainerNode,
+  type ContentRefTable,
+  type Experience,
+  type ProviderSpec,
+  STEP_TEMPLATE_SOURCE,
+  type SemanticNode,
+  genesis,
+} from "@loom-ui/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
-import { checkContentRefs } from "./contentRefs";
+import { HydrationCache } from "./cache";
+import { checkContentRefs, contentRefEnv } from "./contentRefs";
 import { HydrationController } from "./controller";
 import { prepareArguments } from "./params";
 import { STEP_TEMPLATE } from "./plan";
 import { HydrationStore } from "./projection";
-import { executeProvider } from "./provider";
+import { type ExecuteOptions, executeProvider } from "./provider";
 import { serveHandle } from "./split/index";
 import { FakeInvoker, flush, mcpStep, providerSpec } from "./testing.test-support";
 
-// U9b. A marked content-reference argument must be a resolved reference (a step template, a
-// host-accepted param) or absent, NEVER a literal the composer wrote. The check runs before the
-// call, so a refused step costs no invocation. Defence in depth behind validateExperience.
+// U9b. A marked content-reference argument must be a PROVEN reference (a step reference to an output its
+// tool declares a content reference, a host-gated param) or absent, NEVER a literal the composer wrote.
+// The check runs before the call AND before any cache lookup, so a refused step costs no invocation and
+// a cached value is never served around the gate.
 
 const ADDR = "sha256:00112233445566778899aabbccddeeff";
-const table: ContentRefTable = { describe: [["image"], ["gallery", null]] };
+const table: ContentRefTable = {
+  args: { describe: [["image"], ["gallery", null]] },
+  produces: { up: [["addr"]] },
+};
 const reply = () => new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: true }));
-const run = (
-  args: Record<string, unknown>,
-  extra: Partial<Parameters<typeof executeProvider>[1]> = {},
-  overridable?: string[]
-) => {
+type Extra = Partial<ExecuteOptions>;
+const run = (args: Record<string, unknown>, extra: Extra = {}, overridable?: string[]) => {
   const inv = reply();
   const step = { ...mcpStep("s1", "describe", args), ...(overridable && { overridable }) };
   return executeProvider(providerSpec("h", [step]), {
@@ -32,22 +41,29 @@ const run = (
     ...extra,
   }).then((r) => ({ r, inv }));
 };
+const codesOf = (r: Awaited<ReturnType<typeof run>>["r"]) =>
+  (r.ok ? [] : r.findings).map((f) => f.code);
 
 describe("runtime refusal of a literal content reference", () => {
   it("the template grammar is the same one core checks against", () => {
     expect(STEP_TEMPLATE.source).toBe(new RegExp(STEP_TEMPLATE_SOURCE).source);
   });
 
+  it("a step id outside [A-Za-z0-9_-] is not a reference at all (P3-6)", () => {
+    expect(STEP_TEMPLATE.test("{{steps.a b.output}}")).toBe(false);
+    expect(STEP_TEMPLATE.test("{{steps.a.b.output}}")).toBe(false);
+    expect(STEP_TEMPLATE.test("{{steps.a_b-1.output.x}}")).toBe(true);
+  });
+
   it.each([
     ["a literal address", { image: ADDR }],
     ["a URL", { image: "https://evil.example/x" }],
     ["a time token", { image: "$now" }],
-    ["an address in an array element", { gallery: ["{{steps.s0.output}}", ADDR] }],
+    ["an address in an array element", { gallery: [ADDR] }],
   ])("%s at a marked path: refused, the call is not made", async (_l, args) => {
     const { r, inv } = await run(args);
     expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.findings.map((f) => f.code)).toContain("media-arg-literal");
+    expect(codesOf(r)).toContain("media-arg-literal");
     expect(inv.calls).toHaveLength(0);
     expect(JSON.stringify(r)).not.toContain("00112233");
     expect(JSON.stringify(r)).not.toContain("evil.example");
@@ -65,28 +81,77 @@ describe("runtime refusal of a literal content reference", () => {
     expect(inv.calls).toHaveLength(1);
   });
 
-  it("an unreadable schema refuses an address-shaped literal anywhere and lets other text through", async () => {
-    const bad = await run({ q: ADDR }, { contentRefArgs: { describe: "unknown" } });
-    expect(bad.r.ok).toBe(false);
-    expect(bad.inv.calls).toHaveLength(0);
-    const fine = await run({ q: "cats" }, { contentRefArgs: { describe: "unknown" } });
-    expect(fine.r.ok).toBe(true);
+  describe("an unreadable schema", () => {
+    it("without the marker mentioned: refuses an address-shaped string anywhere, lets other text through", async () => {
+      const t: ContentRefTable = { args: { describe: "unreadable" } };
+      const bad = await run({ q: ADDR }, { contentRefArgs: t });
+      expect(bad.r.ok).toBe(false);
+      expect(bad.inv.calls).toHaveLength(0);
+      expect((await run({ q: "cats" }, { contentRefArgs: t })).r.ok).toBe(true);
+    });
+
+    it.each([
+      ["a path-shaped string", { key: "uploads/other-user/secret.png" }],
+      ["a nested object", { loc: { store: "s3", key: "u/1" } }],
+      ["plain text", { q: "cats" }],
+    ])("with the marker mentioned: %s is refused, nothing is called", async (_l, args) => {
+      const t: ContentRefTable = { args: { describe: "unknown" } };
+      const { r, inv } = await run(args, { contentRefArgs: t });
+      expect(r.ok).toBe(false);
+      expect(inv.calls).toHaveLength(0);
+    });
+
+    it("with the marker mentioned: references, time tokens and numbers pass; EVERY replaced param is gated", async () => {
+      const t: ContentRefTable = { args: { describe: "unknown" } };
+      const ok = await run(
+        { n: 3, from: "$now-7d", up: "{{steps.s0.output}}" },
+        { contentRefArgs: t }
+      );
+      expect(ok.r.ok).toBe(false); // s0 is not in the graph -> unresolved at run time, but NOT a literal refusal
+      expect(codesOf(ok.r)).not.toContain("media-arg-literal");
+      const gated = await run({}, { contentRefArgs: t, params: { anything: "x" } }, ["anything"]);
+      expect(gated.r.ok).toBe(false);
+      expect(gated.inv.calls).toHaveLength(0);
+      const allowed = await run(
+        {},
+        { contentRefArgs: t, params: { anything: "x" }, acceptContentRefParam: () => true },
+        ["anything"]
+      );
+      expect(allowed.r.ok).toBe(true);
+    });
   });
 
-  it("a step reference resolved from an upstream step is accepted and called", async () => {
-    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) =>
-      (input as { toolName: string }).toolName === "up" ? { addr: ADDR } : { ok: true }
-    );
-    const r = await executeProvider(
-      providerSpec("h", [
-        mcpStep("up", "up"),
-        mcpStep("s1", "describe", { image: "{{steps.up.output.addr}}" }, ["up"]),
-      ]),
-      { invoker: inv, contentRefArgs: table }
-    );
-    expect(r.ok).toBe(true);
-    expect(inv.calls).toHaveLength(2);
-    expect((inv.calls[1]?.input as { args: unknown }).args).toEqual({ image: ADDR });
+  describe("step references must be PROVEN (P2-2)", () => {
+    const graph = (upTool: string, args: Record<string, unknown>) =>
+      providerSpec("h", [mcpStep("up", upTool), mcpStep("s1", "describe", args, ["up"])]);
+    const go = async (spec: ProviderSpec) => {
+      const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+        const i = input as { toolName: string; args: Record<string, unknown> };
+        return i.toolName === "describe" ? { ok: true } : { addr: ADDR, text: ADDR };
+      });
+      const r = await executeProvider(spec, { invoker: inv, contentRefArgs: table });
+      return { r, inv };
+    };
+
+    it("a reference to a declared producer's declared output path is accepted and called", async () => {
+      const { r, inv } = await go(graph("up", { image: "{{steps.up.output.addr}}" }));
+      expect(r.ok).toBe(true);
+      expect((inv.calls[1]?.input as { args: unknown }).args).toEqual({ image: ADDR });
+    });
+
+    it.each([
+      ["an undeclared path of a declared producer (echo)", "up", "{{steps.up.output.text}}"],
+      ["the whole output of a producer that declares a sub-path", "up", "{{steps.up.output}}"],
+      ["an undeclared tool (concat/echo)", "echo", "{{steps.up.output.addr}}"],
+      ["a dangling step", "up", "{{steps.nope.output.addr}}"],
+      ["itself", "up", "{{steps.s1.output.addr}}"],
+    ])("%s: refused at run time, the marked tool is not called", async (_l, tool, ref) => {
+      const { r, inv } = await go(graph(tool, { image: ref }));
+      expect(r.ok).toBe(false);
+      expect(
+        inv.calls.every((c) => (c.input as { toolName: string }).toolName !== "describe")
+      ).toBe(true);
+    });
   });
 
   describe("params", () => {
@@ -112,12 +177,13 @@ describe("runtime refusal of a literal content reference", () => {
       }
     });
 
-    it("a host-accepted param is called, and the gate sees the param, step and value", async () => {
+    it("a host-accepted param is called; the gate sees the param, step, value AND the principal (P3-3)", async () => {
       const seen: unknown[] = [];
       const { r, inv } = await run(
         {},
         {
           params: { image: ADDR },
+          principalId: "alice",
           acceptContentRefParam: (c) => {
             seen.push(c);
             return true;
@@ -128,7 +194,14 @@ describe("runtime refusal of a literal content reference", () => {
       expect(r.ok).toBe(true);
       expect(inv.calls).toHaveLength(1);
       expect(seen).toEqual([
-        { handle: "h", stepId: "s1", toolName: "describe", param: "image", value: ADDR },
+        {
+          handle: "h",
+          stepId: "s1",
+          toolName: "describe",
+          param: "image",
+          value: ADDR,
+          principalId: "alice",
+        },
       ]);
     });
 
@@ -144,6 +217,19 @@ describe("runtime refusal of a literal content reference", () => {
       const { r } = await run({}, { params: { q: "cats" } }, ["q"]);
       expect(r.ok).toBe(true);
     });
+
+    it("P3-5: a top-level additionalProperties marker (path [null]) cannot be filled by a gated param: fail closed", async () => {
+      const t: ContentRefTable = { args: { describe: [[null]] } };
+      const { r, inv } = await run(
+        {},
+        { contentRefArgs: t, params: { k: ADDR }, acceptContentRefParam: () => true },
+        ["k"]
+      );
+      // The gate is never asked for a [null] path (no named top-level key), so the replaced value is
+      // judged as a literal at a marked position.
+      expect(r.ok).toBe(false);
+      expect(inv.calls).toHaveLength(0);
+    });
   });
 
   it("the argument hook runs after the check and is the host's own word", async () => {
@@ -152,15 +238,25 @@ describe("runtime refusal of a literal content reference", () => {
     expect((inv.calls[0]?.input as { args: unknown }).args).toEqual({ image: ADDR });
   });
 
+  it("JSON null at a marked position is stripped before the call (Q2)", async () => {
+    const { r, inv } = await run({ image: null, q: "x", gallery: [null, "{{steps.s0.output}}"] });
+    // gallery's second element is an unproven reference: refused; use a clean case for the strip
+    expect(r.ok).toBe(false);
+    const clean = await run({ image: null, q: "x", gallery: [null] });
+    expect(clean.r.ok).toBe(true);
+    expect((clean.inv.calls[0]?.input as { args: unknown }).args).toEqual({ q: "x", gallery: [] });
+    expect(inv.calls).toHaveLength(0);
+  });
+
   it("prepareArguments is linear on a 100 KB adversarial argument (generous absolute bound)", () => {
     const t0 = Date.now();
     const node = mcpStep("s1", "describe", { q: "a.".repeat(50_000), image: "x".repeat(100_000) });
+    const env = contentRefEnv(table, providerSpec("h", [node]), undefined, {});
     const out = prepareArguments(node, new Map(), {
       handle: "h",
       params: {},
       now: 0,
-      guard: (n, applied) =>
-        checkContentRefs(n, applied, { handle: "h", contentRefs: [["image"]] }),
+      guard: (n, applied) => checkContentRefs(n, applied, env).finding,
     });
     expect(out.ok).toBe(false);
     expect(Date.now() - t0).toBeLessThan(3000);
@@ -193,6 +289,16 @@ const exp = (spec: ProviderSpec): Experience => {
   };
 };
 const literalSpec = () => providerSpec("h", [mcpStep("s1", "describe", { image: ADDR })]);
+const paramSpec = (scope: "global" | "principal") =>
+  providerSpec("h", [{ ...mcpStep("s1", "describe", {}), overridable: ["image"] }], {
+    cachePolicy: { ttlSeconds: 600, scope },
+  });
+const req = (e: Experience, params: Record<string, unknown> = {}) => ({
+  experienceId: e.experienceId,
+  versionHash: e.versionHash,
+  handle: "h",
+  params,
+});
 
 describe("threading", () => {
   it("HydrationController: a literal is refused, the handle is not ready, no call", async () => {
@@ -209,46 +315,140 @@ describe("threading", () => {
   it("serveHandle: same refusal, and a client-supplied param cannot fill a marked argument", async () => {
     const inv = reply();
     const e = exp(literalSpec());
-    const out = await serveHandle(
-      e,
-      { experienceId: e.experienceId, versionHash: e.versionHash, handle: "h", params: {} },
-      { invoker: inv, now: 1, contentRefArgs: table }
-    );
+    const out = await serveHandle(e, req(e), { invoker: inv, now: 1, contentRefArgs: table });
     expect(out.state).toBe("error");
     expect(inv.calls).toHaveLength(0);
 
-    const spec = providerSpec("h", [{ ...mcpStep("s1", "describe", {}), overridable: ["image"] }]);
-    const e2 = exp(spec);
+    const e2 = exp(paramSpec("global"));
     const inv2 = reply();
-    const out2 = await serveHandle(
-      e2,
-      {
-        experienceId: e2.experienceId,
-        versionHash: e2.versionHash,
-        handle: "h",
-        params: { image: ADDR },
-      },
-      { invoker: inv2, now: 1, contentRefArgs: table }
-    );
+    const out2 = await serveHandle(e2, req(e2, { image: ADDR }), {
+      invoker: inv2,
+      now: 1,
+      contentRefArgs: table,
+    });
     expect(out2.state).toBe("error");
     expect(inv2.calls).toHaveLength(0);
-    // ...and the host's gate lets exactly the value it vouches for through.
     const inv3 = reply();
-    await serveHandle(
-      e2,
-      {
-        experienceId: e2.experienceId,
-        versionHash: e2.versionHash,
-        handle: "h",
-        params: { image: ADDR },
-      },
-      {
-        invoker: inv3,
-        now: 1,
-        contentRefArgs: table,
-        acceptContentRefParam: (c) => c.value === ADDR,
-      }
-    );
+    await serveHandle(e2, req(e2, { image: ADDR }), {
+      invoker: inv3,
+      now: 1,
+      contentRefArgs: table,
+      acceptContentRefParam: (c) => c.value === ADDR,
+    });
     expect(inv3.calls).toHaveLength(1);
+  });
+});
+
+// ── P1: the cache never serves around the gate ─────────────────────────────────────────────────
+
+describe("the cache and the content-reference gate (P1)", () => {
+  const serve = (
+    e: Experience,
+    inv: FakeInvoker,
+    cache: HydrationCache,
+    principalId: string,
+    allow: () => boolean
+  ) =>
+    serveHandle(e, req(e, { image: ADDR }), {
+      invoker: inv,
+      now: 1,
+      cache,
+      principalId,
+      contentRefArgs: table,
+      acceptContentRefParam: allow,
+    });
+
+  it.each(["global", "principal"] as const)(
+    "scope %s: principal B, whose gate refuses, is NOT served principal A's cached value",
+    async (scope) => {
+      const e = exp(paramSpec(scope));
+      const cache = new HydrationCache(() => 0);
+      const inv = reply();
+      const a = await serve(e, inv, cache, "alice", () => true);
+      expect(a.state).toBe("ready");
+      const b = await serve(e, inv, cache, "bob", () => false);
+      expect(b.state).toBe("error");
+      expect(inv.calls).toHaveLength(1); // B made no call and got no cached value
+    }
+  );
+
+  it("the same principal after revocation is refused, not served from the cache", async () => {
+    const e = exp(paramSpec("principal"));
+    const cache = new HydrationCache(() => 0);
+    const inv = reply();
+    let allowed = true;
+    expect((await serve(e, inv, cache, "alice", () => allowed)).state).toBe("ready");
+    expect((await serve(e, inv, cache, "alice", () => allowed)).state).toBe("ready"); // cache hit
+    expect(inv.calls).toHaveLength(1);
+    allowed = false;
+    expect((await serve(e, inv, cache, "alice", () => allowed)).state).toBe("error");
+    expect(inv.calls).toHaveLength(1);
+  });
+
+  it("a param-filled result is cached per principal even when the spec says global", async () => {
+    const e = exp(paramSpec("global"));
+    const cache = new HydrationCache(() => 0);
+    const inv = reply();
+    await serve(e, inv, cache, "alice", () => true);
+    // bob's gate accepts too, but alice's entry must not answer him: he runs his own call.
+    await serve(e, inv, cache, "bob", () => true);
+    expect(inv.calls).toHaveLength(2);
+  });
+
+  it("without a param filling a guarded argument, global caching is unchanged", async () => {
+    const spec = providerSpec("h", [mcpStep("s1", "describe", { q: "x" })], {
+      cachePolicy: { ttlSeconds: 600, scope: "global" },
+    });
+    const e = exp(spec);
+    const cache = new HydrationCache(() => 0);
+    const inv = reply();
+    const go = (p: string) =>
+      serveHandle(e, req(e), {
+        invoker: inv,
+        now: 1,
+        cache,
+        principalId: p,
+        contentRefArgs: table,
+      });
+    await go("alice");
+    await go("bob");
+    expect(inv.calls).toHaveLength(1);
+  });
+
+  it("controller: the in-process path asks the gate before its cache too (revocation)", async () => {
+    const e = exp(paramSpec("principal"));
+    const cache = new HydrationCache(() => 0);
+    const inv = reply();
+    let allowed = true;
+    const mk = () => {
+      const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+      const ctl = new HydrationController({
+        invoker: inv,
+        store,
+        cache,
+        principal: { id: "alice" },
+        contentRefArgs: table,
+        defaultParams: { image: ADDR },
+        acceptContentRefParam: () => allowed,
+      });
+      return { store, ctl };
+    };
+    const c1 = mk();
+    c1.ctl.load(e);
+    await flush();
+    expect(c1.store.status("h")?.state).toBe("ready");
+    expect(inv.calls).toHaveLength(1);
+    const c1b = mk(); // a second controller sharing the cache: served from it while the gate allows
+    c1b.ctl.load(e);
+    await flush();
+    expect(c1b.store.status("h")?.state).toBe("ready");
+    expect(inv.calls).toHaveLength(1);
+    allowed = false; // revoked
+    const c2 = mk();
+    c2.ctl.load(e);
+    await flush();
+    expect(c2.store.status("h")?.state).not.toBe("ready");
+    expect(c2.store.value("h")).toBeUndefined();
+    expect(inv.calls).toHaveLength(1);
   });
 });

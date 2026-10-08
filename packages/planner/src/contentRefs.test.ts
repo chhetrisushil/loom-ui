@@ -59,16 +59,83 @@ const attemptCodes = (r: Awaited<ReturnType<ReferencePlanner["compose"]>>) =>
 describe("contentRefArgsFrom", () => {
   it("derives marked paths per tool, nothing for unmarked or schema-less capabilities", () => {
     expect(contentRefArgsFrom(caps)).toEqual({
-      "media.describe": [["image"], ["more", null], ["opts", "cover"]],
+      args: { "media.describe": [["image"], ["more", null], ["opts", "cover"]] },
     });
   });
-  it("an unreadable schema is unknown and absorbs a readable one for the same tool", () => {
-    const bad: CapabilityRef = { ...describeImage, handle: "d2", inputSchema: { $ref: "#/nope" } };
-    expect(contentRefArgsFrom([describeImage, bad])).toEqual({ "media.describe": "unknown" });
-    expect(contentRefArgsFrom([bad, describeImage])).toEqual({ "media.describe": "unknown" });
+  it("derives declared OUTPUT paths (the root counts) as `produces`", () => {
+    const producer: CapabilityRef = {
+      ...capabilitiesFixture[0],
+      handle: "upload",
+      toolName: "media.upload",
+      outputSchema: {
+        type: "object",
+        properties: {
+          ref: { type: "string", [CONTENT_REF_KEYWORD]: true },
+          name: { type: "string" },
+        },
+      },
+    } as CapabilityRef;
+    const whole: CapabilityRef = {
+      ...producer,
+      handle: "mk",
+      toolName: "media.mk",
+      outputSchema: { type: "string", [CONTENT_REF_KEYWORD]: true },
+    };
+    expect(contentRefArgsFrom([producer, whole]).produces).toEqual({
+      "media.upload": [["ref"]],
+      "media.mk": [[]],
+    });
+    // an unreadable OUTPUT schema proves nothing, and does not poison the input side
+    const bad: CapabilityRef = {
+      ...producer,
+      toolName: "media.bad",
+      outputSchema: { $ref: "#/x" },
+    };
+    expect(contentRefArgsFrom([bad]).produces).toBeUndefined();
+  });
+  it("P2-3: unknown when the marker is mentioned, unreadable when it is not; unknown absorbs the rest", () => {
+    const mention: CapabilityRef = {
+      ...describeImage,
+      handle: "d2",
+      inputSchema: {
+        type: "object",
+        properties: { a: { [CONTENT_REF_KEYWORD]: true }, b: { $ref: "#/nope" } },
+      },
+    };
+    const silent: CapabilityRef = {
+      ...describeImage,
+      handle: "d3",
+      toolName: "other",
+      inputSchema: { $ref: "#/nope" },
+    };
+    expect(contentRefArgsFrom([describeImage, mention]).args).toEqual({
+      "media.describe": "unknown",
+    });
+    expect(contentRefArgsFrom([mention, describeImage]).args).toEqual({
+      "media.describe": "unknown",
+    });
+    expect(contentRefArgsFrom([silent]).args).toEqual({ other: "unreadable" });
   });
   it("is keyed by own property (no prototype keys leak)", () => {
-    expect(Object.hasOwn(contentRefArgsFrom(caps), "toString")).toBe(false);
+    expect(Object.hasOwn(contentRefArgsFrom(caps).args, "toString")).toBe(false);
+  });
+  it("P3-4: memoised on content, so editing a schema in place is seen", () => {
+    const cap: CapabilityRef = JSON.parse(JSON.stringify(describeImage));
+    const list = [cap];
+    const first = contentRefArgsFrom(list);
+    expect(contentRefArgsFrom(list)).toBe(first); // unchanged -> the same table
+    (cap.inputSchema as { properties: Record<string, unknown> }).properties.extra = {
+      type: "string",
+      [CONTENT_REF_KEYWORD]: true,
+    };
+    const second = contentRefArgsFrom(list);
+    expect(second).not.toBe(first);
+    expect(second.args["media.describe"]).toContainEqual(["extra"]);
+  });
+  it("the table is plain JSON and survives persistence", async () => {
+    const { parseContentRefTable } = await import("@loom-ui/core");
+    const t = contentRefArgsFrom(caps);
+    expect(parseContentRefTable(JSON.parse(JSON.stringify(t)))).toEqual(t);
   });
 });
 
@@ -107,6 +174,34 @@ describe("the reference planner refuses a literal content reference", () => {
     expect(r.ops.length).toBeGreaterThan(0);
     const hint = r.findings.find((f) => f.code === "media-arg-suspect");
     expect(hint?.severity).toBe("warn");
+  });
+
+  it("a marker-mentioning unreadable schema is an ERROR (the binding is refused); a silent one only warns", async () => {
+    const mention: CapabilityRef = {
+      ...describeImage,
+      inputSchema: {
+        type: "object",
+        properties: { a: { [CONTENT_REF_KEYWORD]: true }, b: { $ref: "#/nope" } },
+      },
+    };
+    const model = scriptedModel([draft({ q: "cats" })]);
+    const r = await new ReferencePlanner({ model, modelId: "m", maxAttempts: 2 }).compose(
+      { ...input, capabilities: [...capabilitiesFixture, mention] },
+      recordingContext()
+    );
+    expect(r.ops).toEqual([]);
+    expect(attemptCodes(r)).toContain("media-arg-schema-unknown");
+  });
+
+  it("a reference to an output that the producer does not declare is refused (echo); a declared one is accepted", async () => {
+    // (the upstream step is part of the OBSERVED call graph; here the model cannot create one, so the
+    // draft's own template is refused as dangling: still never a silent accept)
+    const model = scriptedModel([draft({ image: "{{steps.up.output.addr}}" })]);
+    const r = await new ReferencePlanner({ model, modelId: "m", maxAttempts: 2 }).compose(
+      input,
+      recordingContext()
+    );
+    expect(r.ops).toEqual([]);
   });
 
   it("an unreadable schema warns and refuses an address-shaped literal anywhere", async () => {
@@ -177,6 +272,47 @@ describe("the prompt", () => {
     expect(msg).toContain("[address]");
     expect(msg).toContain("x-content-ref");
   });
+  it("P3-1: whole address-shaped strings and non-hex-class schemes redact whole in schemas and samples", async () => {
+    const { redactAddresses } = await import("./prompt");
+    const hex = "0011223344556677889900aabbccddee";
+    const cases = [
+      `content_ref:${hex}`,
+      `blake3-256:${hex}`,
+      `sha256:${hex}`,
+      "https://evil.example/x.png",
+      "data:image/png;base64,AAAA",
+      "//evil.example/x",
+      "file:///etc/passwd",
+    ];
+    for (const c of cases) {
+      const out = JSON.stringify(redactAddresses({ default: c, examples: [c] }));
+      expect(out).not.toContain(hex);
+      expect(out).not.toContain("evil.example");
+      expect(out).not.toContain("etc/passwd");
+      expect(out).not.toContain("AAAA");
+      // embedded in prose the address-shaped TAIL is still redacted (URLs in prose are a hint, not a boundary)
+      expect(JSON.stringify(redactAddresses(`see ${c} now`))).not.toContain(hex);
+    }
+    expect(redactAddresses("plain text, no address")).toBe("plain text, no address");
+    expect(redactAddresses("ratio 3:4")).toBe("ratio 3:4");
+  });
+
+  it("an output schema's declared content references are listed, and its examples are redacted", () => {
+    const cap: CapabilityRef = {
+      ...describeImage,
+      handle: "up",
+      toolName: "media.up",
+      outputSchema: {
+        type: "object",
+        properties: { ref: { type: "string", [CONTENT_REF_KEYWORD]: true, examples: [ADDR] } },
+      },
+    };
+    const blocks = capabilityDetailBlocks([cap]).join("\n");
+    expect(blocks).toContain("producesContentRefs");
+    expect(blocks).toContain('output.\\"ref\\"');
+    expect(blocks).not.toContain("00112233");
+  });
+
   it("an unreadable schema is said to be unknown, and a schema past the redaction depth is dropped, not leaked", () => {
     let deep: unknown = { examples: [ADDR] };
     for (let i = 0; i < 40; i++) deep = { properties: { a: deep } };

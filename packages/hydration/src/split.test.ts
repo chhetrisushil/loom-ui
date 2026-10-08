@@ -174,6 +174,7 @@ const boundary = (
   const requests: HandleLoadRequest[] = [];
   const batches: string[][] = [];
   const serveOpts: ServeOptions = {
+    contentRefArgs: "none",
     invoker: inv,
     now: NOW,
     outputKinds,
@@ -281,6 +282,7 @@ describe("serveHandle with a non-MCP data provider kind (U3)", () => {
     const e = exp();
     const inv = new FakeInvoker().on("stations.latest", () => ({ kpi: { value: 3, unit: "C" } }));
     const r = await serveHandle(e, req(e, "latest"), {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
       outputKinds,
@@ -293,7 +295,12 @@ describe("serveHandle with a non-MCP data provider kind (U3)", () => {
   it("without the kind registered the client gets a fixed public finding and nothing runs", async () => {
     const e = exp();
     const inv = new FakeInvoker();
-    const r = await serveHandle(e, req(e, "latest"), { invoker: inv, now: NOW, outputKinds });
+    const r = await serveHandle(e, req(e, "latest"), {
+      contentRefArgs: "none" as const,
+      invoker: inv,
+      now: NOW,
+      outputKinds,
+    });
     expect(r).toMatchObject({ state: "error", finding: { code: "provider-kind-unregistered" } });
     expect(inv.calls).toHaveLength(0);
   });
@@ -304,6 +311,7 @@ describe("serveHandle", () => {
     const exp = board();
     const inv = toolServer();
     const r = await serveHandle(exp, req(exp, "latest", { station: "harbour" }), {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
       outputKinds,
@@ -319,6 +327,7 @@ describe("serveHandle", () => {
     const exp = board();
     const drifts: DriftReport[] = [];
     const r = await serveHandle(exp, req(exp, "alerts"), {
+      contentRefArgs: "none" as const,
       invoker: toolServer(),
       now: NOW,
       outputKinds,
@@ -332,6 +341,7 @@ describe("serveHandle", () => {
     const exp = board();
     const inv = toolServer();
     await serveHandle(exp, req(exp, "alerts", { station: "harbour", colour: "red" }), {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
       outputKinds,
@@ -342,7 +352,7 @@ describe("serveHandle", () => {
   it("refuses a request for another version, an unknown or reserved handle, or bad params — without a call", async () => {
     const exp = board();
     const inv = toolServer();
-    const opts = { invoker: inv, now: NOW, outputKinds };
+    const opts = { invoker: inv, now: NOW, outputKinds, contentRefArgs: "none" as const };
     const codes = [
       await serveHandle(exp, { ...req(exp, "latest"), versionHash: "sha256:other" }, opts),
       await serveHandle(exp, req(exp, "nope"), opts),
@@ -378,6 +388,7 @@ describe("serveHandle", () => {
     });
     const drifts: DriftReport[] = [];
     const head = await serveHandle(exp, req(exp, "latest"), {
+      contentRefArgs: "none" as const,
       invoker: drifting,
       now: NOW,
       outputKinds,
@@ -385,6 +396,7 @@ describe("serveHandle", () => {
     });
     expect(head.state).toBe("stale");
     const viewer = await serveHandle(exp, req(exp, "latest"), {
+      contentRefArgs: "none" as const,
       invoker: drifting,
       now: NOW,
       outputKinds,
@@ -413,6 +425,7 @@ describe("serveHandle", () => {
       });
     });
     const head = await serveHandle(exp, req(exp, "latest"), {
+      contentRefArgs: "none" as const,
       invoker: drifting,
       now: NOW,
       outputKinds,
@@ -456,6 +469,7 @@ describe("serveHandle(s): a proceeded result is never cached", () => {
       const drifts: DriftReport[] = [];
       const findings: string[][] = [[], []];
       const viewer = await serve(exp, req(exp, "latest"), {
+        contentRefArgs: "none" as const,
         invoker: drifting,
         now: NOW,
         outputKinds,
@@ -466,6 +480,7 @@ describe("serveHandle(s): a proceeded result is never cached", () => {
       });
       expect(viewer.state).toBe("ready");
       const head = await serve(exp, req(exp, "latest"), {
+        contentRefArgs: "none" as const,
         invoker: drifting,
         now: NOW,
         outputKinds,
@@ -589,6 +604,7 @@ describe("split vs in-process hydration", () => {
     const inProc = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "board" });
     const clockA = new ManualClock();
     const local = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: toolServer(),
       store: inProc,
       clock: () => NOW,
@@ -673,7 +689,12 @@ describe("serveHandle trusts nothing in the request", () => {
   it("refuses a handle that has a provider but no bound node, without a call", async () => {
     const exp = board({ hidden: contract("hidden", step("secret", {}, []), "kpi") });
     const inv = toolServer();
-    const r = await serveHandle(exp, req(exp, "hidden"), { invoker: inv, now: NOW, outputKinds });
+    const r = await serveHandle(exp, req(exp, "hidden"), {
+      contentRefArgs: "none" as const,
+      invoker: inv,
+      now: NOW,
+      outputKinds,
+    });
     expect(r.state === "error" && r.finding.code).toBe("unknown-handle");
     expect(inv.calls).toHaveLength(0);
   });
@@ -683,11 +704,7 @@ describe("serveHandle trusts nothing in the request", () => {
     const r = await serveHandle(
       exp,
       { ...req(exp, "latest"), experienceId: "other" },
-      {
-        invoker: toolServer(),
-        now: NOW,
-        outputKinds,
-      }
+      { contentRefArgs: "none" as const, invoker: toolServer(), now: NOW, outputKinds }
     );
     expect(r.state === "error" && r.finding.code).toBe("version-mismatch");
   });
@@ -708,7 +725,7 @@ describe("serveHandle trusts nothing in the request", () => {
     const r = await serveHandle(
       exp,
       { ...req(exp, "latest"), params } as unknown as HandleLoadRequest,
-      { invoker: inv, now: NOW, outputKinds }
+      { contentRefArgs: "none" as const, invoker: inv, now: NOW, outputKinds }
     );
     expect(r.state).toBe("ready");
     // The count is incidental (canonicalJson's own reads); the load-bearing check is the tool input above.
@@ -730,7 +747,7 @@ describe("serveHandle trusts nothing in the request", () => {
     const r = await serveHandle(
       exp,
       { ...req(exp, "latest"), params } as unknown as HandleLoadRequest,
-      { invoker: inv, now: NOW, outputKinds }
+      { contentRefArgs: "none" as const, invoker: inv, now: NOW, outputKinds }
     );
     expect(r.state === "error" && r.finding.code).toBe("invalid-params");
     expect(inv.calls).toHaveLength(0);
@@ -748,10 +765,7 @@ describe("serveHandles: one server pass per batch", () => {
     const out = await serveHandles(
       exp,
       [req(exp, "third"), req(exp, "first"), req(exp, "second")],
-      {
-        invoker: inv,
-        now: NOW,
-      }
+      { contentRefArgs: "none" as const, invoker: inv, now: NOW }
     );
     expect(toolsCalled(inv)).toEqual(["feed"]);
     expect(out.map((r) => r.state === "ready" && r.value)).toEqual([1, [["mon", 1]], ["day", "n"]]);
@@ -766,6 +780,7 @@ describe("serveHandles: one server pass per batch", () => {
     const exp = board();
     const inv = toolServer();
     await serveHandles(exp, [req(exp, "latest"), req(exp, "latest", { station: "harbour" })], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       outputKinds,
     });
@@ -783,6 +798,7 @@ describe("serveHandles: one server pass per batch", () => {
         new Promise((resolve) => release.push(() => resolve({ table: { columns: [], rows: [] } })))
     );
     const done = serveHandles(exp, [req(exp, "alerts"), req(exp, "archive")], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
       outputKinds,
@@ -825,7 +841,7 @@ describe("serveHandles: one server pass per batch", () => {
     const done = serveHandles(
       exp,
       handles.map((h) => req(exp, h)),
-      { invoker: inv, now: NOW }
+      { contentRefArgs: "none" as const, invoker: inv, now: NOW }
     );
     await flush();
     expect(inv.calls).toHaveLength(32);
@@ -844,6 +860,7 @@ describe("serveHandles: one server pass per batch", () => {
     const exp = pair();
     const inv = feedServer();
     const out = await serveHandles(exp, [req(exp, "first"), req(exp, "nope"), req(exp, "second")], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
     });
@@ -858,11 +875,13 @@ describe("serveHandles: one server pass per batch", () => {
     const exp = pair();
     const inv = feedServer();
     const notList = await serveHandles(exp, { handle: "first" } as unknown as HandleLoadRequest[], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
     });
     expect(notList.map((r) => r.state === "error" && r.finding.code)).toEqual(["invalid-request"]);
     const big = await serveHandles(exp, [req(exp, "first"), req(exp, "second")], {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
       maxBatch: 1,
@@ -883,6 +902,7 @@ describe("serveHandles: one server pass per batch", () => {
     );
     const as = (actor: string) =>
       serveHandles(exp, [req(exp, "first")], {
+        contentRefArgs: "none" as const,
         invoker: inv,
         now: NOW,
         principal: { tenant: "t", actor },
@@ -908,7 +928,12 @@ describe("SplitHydrationController across a server-side recompose", () => {
     const gate = new Promise<void>((resolve) => {
       open = resolve;
     });
-    const serveOpts: ServeOptions = { invoker: toolServer(), now: NOW, outputKinds };
+    const serveOpts: ServeOptions = {
+      invoker: toolServer(),
+      now: NOW,
+      outputKinds,
+      contentRefArgs: "none",
+    };
     const wire = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
     const loader: HandleLoader = {
       async load(r) {
@@ -1188,6 +1213,7 @@ describe("served findings are public: provider internals stay on the server", ()
   const serve = async (exp: Experience, inv: FakeInvoker, extra: Partial<ServeOptions> = {}) => {
     const internal: Array<[string, Finding]> = [];
     const r = await serveHandle(exp, req(exp, "h"), {
+      contentRefArgs: "none" as const,
       invoker: inv,
       now: NOW,
       onFinding: (h, f) => internal.push([h, f]),
@@ -1352,6 +1378,7 @@ describe("served findings are public: provider internals stay on the server", ()
     try {
       const exp = one();
       const r = await serveHandle(exp, req(exp, "nope"), {
+        contentRefArgs: "none" as const,
         invoker: answering(() => ({ n: 1 })),
         now: NOW,
         onFinding: async () => {
@@ -1378,6 +1405,7 @@ describe("served findings are public: provider internals stay on the server", ()
       }
     ) as HandleLoadRequest;
     const out = await serveHandles(exp, [hostile, req(exp, "h")], {
+      contentRefArgs: "none" as const,
       invoker: answering(() => ({ n: 1 })),
       now: NOW,
     });
@@ -1391,6 +1419,7 @@ describe("served findings are public: provider internals stay on the server", ()
   it("a request refusal is public too, and a throwing onFinding changes nothing", async () => {
     const exp = one();
     const r = await serveHandle(exp, req(exp, "nope"), {
+      contentRefArgs: "none" as const,
       invoker: answering(() => ({ n: 1 })),
       now: NOW,
       onFinding: () => {
@@ -1405,7 +1434,7 @@ describe("served findings are public: provider internals stay on the server", ()
     const out = await serveHandles(
       exp,
       ["latest", "alerts", "archive"].map((h) => req(exp, h)),
-      { invoker: toolServer(), now: NOW, outputKinds }
+      { contentRefArgs: "none" as const, invoker: toolServer(), now: NOW, outputKinds }
     );
     const wire = JSON.stringify(out);
     for (const secret of [
@@ -1431,7 +1460,11 @@ describe("minor guards", () => {
     const exp = pair();
     for (const maxConcurrentCalls of [Number.NaN, -1, 0, 1.5])
       await expect(
-        serveHandles(exp, [req(exp, "first")], { invoker: feedServer(), maxConcurrentCalls })
+        serveHandles(exp, [req(exp, "first")], {
+          contentRefArgs: "none" as const,
+          invoker: feedServer(),
+          maxConcurrentCalls,
+        })
       ).rejects.toThrow(TypeError);
   });
 
@@ -1439,7 +1472,11 @@ describe("minor guards", () => {
     const exp = pair();
     for (const maxBatch of [Number.NaN, -1, 0, 1.5])
       await expect(
-        serveHandles(exp, [req(exp, "first")], { invoker: feedServer(), maxBatch })
+        serveHandles(exp, [req(exp, "first")], {
+          contentRefArgs: "none" as const,
+          invoker: feedServer(),
+          maxBatch,
+        })
       ).rejects.toThrow(TypeError);
   });
 
@@ -1460,6 +1497,7 @@ describe("minor guards", () => {
     const cache = new HydrationCacheImpl(() => NOW);
     const as = async (actor: string) =>
       serveHandle(scoped, req(scoped, "first"), {
+        contentRefArgs: "none" as const,
         invoker: inv,
         now: NOW,
         cache,
@@ -1483,6 +1521,7 @@ describe("split vs in-process parity when things go wrong", () => {
       experienceId: exp.experienceId,
     });
     const local = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv(),
       store: inProc,
       clock: () => NOW,
@@ -1577,7 +1616,13 @@ describe("split vs in-process parity when things go wrong", () => {
       serveHandle(
         exp,
         { experienceId: exp.experienceId, versionHash: exp.versionHash, handle: "h", params: {} },
-        { invoker: inv, now: NOW, cache, onDrift: (d) => drifts.push(d) }
+        {
+          contentRefArgs: "none" as const,
+          invoker: inv,
+          now: NOW,
+          cache,
+          onDrift: (d) => drifts.push(d),
+        }
       );
     const r = await ask();
     expect(r).toEqual({

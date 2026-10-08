@@ -16,10 +16,15 @@
 //   4. a PARAM: a top-level key the step lists in `overridable` may be replaced, per load, by the
 //      host's `setParams` / `defaultParams` (or a split client's params) value.
 // A content-reference position (the {@link CONTENT_REF_KEYWORD} marker below) may legitimately hold
-// ONLY (3) a step reference, or (4) a param the HOST accepted (`acceptContentRefParam`: the value
-// came out of `acceptMediaAttach`), or nothing (absent, or JSON null). Anything else at a marked
-// position is a LITERAL, and is refused: a literal address, a time token, a number, an object. The
-// argument hook is the host's own code and runs after the check; it may set whatever it likes.
+// ONLY (3) a step reference whose REFERENCED output is itself declared to be a content reference (the
+// producing tool's OUTPUT schema carries the same marker at that path: an echo or concat tool that
+// merely passes text through proves nothing and is `media-arg-unproven-ref`), or (4) a param the HOST
+// accepted (`acceptContentRefParam`: the value came out of `acceptMediaAttach` for THIS principal), or
+// nothing (absent, or JSON null; null is stripped before the call). Anything else at a marked position
+// is a LITERAL, and is refused: a literal address, a time token, a number, an object. The argument
+// hook is the host's own code and runs after the check; it may set whatever it likes. What this does
+// NOT prove: that a declared producer's output is trustworthy (an untrusted tool can still return a
+// hostile address; the host's invoker authorises the call).
 //
 // Zod-free and DOM-free. Every message is value-free (an address never appears in a finding).
 
@@ -43,10 +48,38 @@ export type ArgPath = readonly (string | null)[];
 
 export type ContentRefPaths =
   | { readonly status: "ok"; readonly paths: readonly ArgPath[] }
-  | { readonly status: "unknown"; readonly reason: string };
+  | {
+      readonly status: "unknown";
+      readonly reason: string;
+      /** The schema (or an unreadable part of it) mentions the marker: the strict case. */
+      readonly markerMentioned: boolean;
+    };
 
-/** Marked paths per tool (`toolKey`); `"unknown"` = the schema could not be read (fail closed). */
-export type ContentRefTable = Readonly<Record<string, readonly ArgPath[] | "unknown">>;
+/**
+ * One tool's marked INPUT paths. `"unknown"`: the schema mentions the marker but cannot be fully
+ * read: strict (composition refuses the binding; run time refuses every literal string and gates every
+ * param). `"unreadable"`: unreadable and no marker is mentioned: a warning, plus any wholly
+ * address-shaped string is refused.
+ */
+export type ContentRefEntry = readonly ArgPath[] | "unknown" | "unreadable";
+
+/**
+ * What a host derives from its capabilities (planner `contentRefArgsFrom`) and hands to BOTH
+ * composition and hydration. Plain JSON: persist it with the capability set and re-read it with
+ * {@link parseContentRefTable}.
+ */
+export interface ContentRefTable {
+  /** Marked input paths per tool (`toolKey`). */
+  readonly args: Readonly<Record<string, ContentRefEntry>>;
+  /**
+   * Marked OUTPUT paths per tool: where a tool declares that its output is a content reference
+   * (`[]` = the whole output). Only a step reference to such a path may stand at a marked argument.
+   */
+  readonly produces?: Readonly<Record<string, readonly ArgPath[]>>;
+}
+
+/** An empty table: nothing marked, nothing produced. */
+export const EMPTY_CONTENT_REF_TABLE: ContentRefTable = Object.freeze({ args: Object.freeze({}) });
 
 export const MAX_SCHEMA_NODES = 5000;
 export const MAX_SCHEMA_PATH_DEPTH = 24;
@@ -57,6 +90,8 @@ export const MAX_ARG_DEPTH = 64;
 export const MAX_ARG_VALUES = 100_000;
 const MAX_SUSPECT_SCAN_CHARS = 262_144;
 const MAX_SUSPECT_FINDINGS = 8;
+/** Most `media-arg-literal` findings reported per step; the rest are counted ("and N more"). */
+export const MAX_LITERAL_FINDINGS = 8;
 
 class Unreadable extends Error {}
 
@@ -85,19 +120,30 @@ function resolveLocalRef(root: unknown, ref: string): unknown {
   return cur;
 }
 
-/** Does the keyword occur anywhere in `v`? Bounded: past the budget, assume it does (fail closed). */
-function mentionsKeyword(v: unknown): boolean {
+/**
+ * Unique objects in `v` carrying `x-content-ref: true` (a bounded pass; over budget => Infinity, which
+ * reads as "unreachable markers" and so fails closed), and whether the keyword is mentioned at all.
+ */
+function rawMarkers(v: unknown): { count: number; mentioned: boolean } {
+  const seen = new Set<object>();
+  let count = 0;
+  let mentioned = false;
   const stack: unknown[] = [v];
   for (let n = 0; stack.length > 0; ) {
-    if (++n > MAX_SCHEMA_NODES) return true;
+    if (++n > MAX_SCHEMA_NODES) return { count: Number.POSITIVE_INFINITY, mentioned: true };
     const cur = stack.pop();
+    if (typeof cur !== "object" || cur === null || seen.has(cur)) continue;
+    seen.add(cur);
     if (Array.isArray(cur)) for (const x of cur) stack.push(x);
-    else if (isObj(cur)) {
-      if (Object.hasOwn(cur, CONTENT_REF_KEYWORD)) return true;
+    else {
+      if (Object.hasOwn(cur, CONTENT_REF_KEYWORD)) {
+        mentioned = true;
+        if ((cur as Record<string, unknown>)[CONTENT_REF_KEYWORD] === true) count++;
+      }
       for (const x of Object.values(cur)) stack.push(x);
     }
   }
-  return false;
+  return { count, mentioned };
 }
 
 /**
@@ -109,10 +155,20 @@ function mentionsKeyword(v: unknown): boolean {
  * or dangling `$ref`, a malformed marker, a walk budget exceeded): callers must NOT read it as "no
  * marked arguments". A schema with no marker is `{ status: "ok", paths: [] }`.
  */
-export function contentRefPaths(schema: unknown): ContentRefPaths {
+export function contentRefPaths(
+  schema: unknown,
+  opts: { readonly allowRoot?: boolean } = {}
+): ContentRefPaths {
   if (schema === undefined) return { status: "ok", paths: [] };
   if (!isObj(schema) && typeof schema !== "boolean")
-    return { status: "unknown", reason: "the input schema is not a JSON Schema object" };
+    return {
+      status: "unknown",
+      reason: "the input schema is not a JSON Schema object",
+      markerMentioned: false,
+    };
+  const raw = rawMarkers(schema);
+  const reached = new Set<object>();
+  let opaque = false;
   const found = new Map<string, ArgPath>();
   let nodes = 0;
   let cyclic = false;
@@ -125,7 +181,9 @@ export function contentRefPaths(schema: unknown): ContentRefPaths {
     if (Object.hasOwn(s, CONTENT_REF_KEYWORD)) {
       const m = s[CONTENT_REF_KEYWORD];
       if (m === true) {
-        if (path.length === 0) throw new Unreadable("the marker is on the arguments object itself");
+        if (path.length === 0 && opts.allowRoot !== true)
+          throw new Unreadable("the marker is on the arguments object itself");
+        reached.add(s);
         if (found.size >= MAX_CONTENT_REF_PATHS && !found.has(JSON.stringify(path)))
           throw new Unreadable("the input schema marks too many content references");
         found.set(JSON.stringify(path), path);
@@ -133,6 +191,8 @@ export function contentRefPaths(schema: unknown): ContentRefPaths {
       }
       if (m !== false) throw new Unreadable(`"${CONTENT_REF_KEYWORD}" must be true or false`);
     }
+    for (const k of ["$dynamicRef", "$recursiveRef", "$dynamicAnchor", "$recursiveAnchor"] as const)
+      if (Object.hasOwn(s, k)) opaque = true;
     if (Object.hasOwn(s, "$ref")) {
       const ref = s.$ref;
       if (typeof ref !== "string") throw new Unreadable("a $ref is not a string");
@@ -167,8 +227,12 @@ export function contentRefPaths(schema: unknown): ContentRefPaths {
     }
     for (const key of ["not", "if", "then", "else"] as const)
       if (Object.hasOwn(s, key)) visit(s[key], path, stack);
-    if (isObj(s.dependentSchemas))
-      for (const v of Object.values(s.dependentSchemas)) visit(v, path, stack);
+    for (const key of ["dependentSchemas", "dependencies"] as const) {
+      const dep = s[key];
+      if (!isObj(dep)) continue;
+      // Draft-07 `dependencies` maps to a schema OR a list of property names (no schema there).
+      for (const v of Object.values(dep)) if (!Array.isArray(v)) visit(v, path, stack);
+    }
   };
   try {
     visit(schema, [], []);
@@ -176,28 +240,74 @@ export function contentRefPaths(schema: unknown): ContentRefPaths {
     return {
       status: "unknown",
       reason: e instanceof Unreadable ? e.message : "the input schema could not be read",
+      markerMentioned: raw.mentioned,
     };
   }
-  if (cyclic && (found.size > 0 || mentionsKeyword(schema)))
-    return { status: "unknown", reason: "the input schema is recursive and carries the marker" };
+  const unknown = (reason: string): ContentRefPaths => ({
+    status: "unknown",
+    reason,
+    markerMentioned: true,
+  });
+  if (cyclic && raw.mentioned) return unknown("the schema is recursive and carries the marker");
+  if (opaque && raw.mentioned)
+    return unknown("the schema uses a dynamic reference keyword and carries the marker");
+  // BACKSTOP: a marker the walk never reached (under propertyNames, contentSchema, an unreferenced
+  // definition, a keyword this walker does not know) is a reference the guard would not see.
+  if (raw.count > reached.size) return unknown("the schema carries a marker the walk cannot reach");
   return { status: "ok", paths: [...found.values()] };
 }
 
 /** `arguments."a"[]."c"` — keys are tool-server text, so a key is shown only as a JSON string literal. */
-export function formatArgPath(path: ArgPath): string {
-  return `arguments${path.map((s) => (s === null ? "[]" : `.${JSON.stringify(s)}`)).join("")}`;
+export function formatArgPath(path: ArgPath, root = "arguments"): string {
+  return `${root}${path.map((s) => (s === null ? "[]" : `.${JSON.stringify(s)}`)).join("")}`;
 }
 
 // ── Reading arguments ────────────────────────────────────────────────────────────
 
-/** `{{steps.<id>.output[.<path>]}}` as a WHOLE string: the only step-reference form. Mirrors hydration's `STEP_TEMPLATE` (a hydration test pins them equal). */
-export const STEP_TEMPLATE_SOURCE = "^\\{\\{steps\\.([^.}]+)\\.output(?:\\.(.+))?\\}\\}$";
+/** `{{steps.<id>.output[.<path>]}}` as a WHOLE string: the only step-reference form. Mirrors hydration's `STEP_TEMPLATE` (a hydration test pins them equal). The id is `[A-Za-z0-9_-]+`. */
+export const STEP_TEMPLATE_SOURCE = "^\\{\\{steps\\.([A-Za-z0-9_-]+)\\.output(?:\\.(.+))?\\}\\}$";
 const STEP_TEMPLATE = new RegExp(STEP_TEMPLATE_SOURCE);
 const TIME_TOKEN_LIKE = /^\$now(?![A-Za-z0-9_])/;
+const TIME_TOKEN = /^\$now(?:[+-]\d{1,9}[smhdw])?$/;
+const PATH_SEGMENT = /^([^[\]]+)((?:\[\d+\])*)$/;
 
-/** May a value stand at a content-reference position? A whole-string step reference, or nothing (absent / null). */
-export const isLegitimateContentRef = (v: unknown): boolean =>
-  v === undefined || v === null || (typeof v === "string" && STEP_TEMPLATE.test(v));
+/** A parsed step reference: the step id and the path into its output (`null` = an array index). */
+export interface StepReference {
+  readonly stepId: string;
+  /** `undefined` = the path is malformed (it resolves to nothing; never proven). */
+  readonly path: ArgPath | undefined;
+}
+
+/** Parse a whole-string step reference; `undefined` when the string is not one. */
+export function parseStepReference(v: unknown): StepReference | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = STEP_TEMPLATE.exec(v);
+  if (m === null) return undefined;
+  const stepId = m[1] as string;
+  const dotted = m[2];
+  if (dotted === undefined) return { stepId, path: [] };
+  const path: (string | null)[] = [];
+  for (const part of dotted.split(".")) {
+    const seg = PATH_SEGMENT.exec(part);
+    if (seg === null) return { stepId, path: undefined };
+    path.push(seg[1] as string);
+    for (const _ of (seg[2] ?? "").match(/\[\d+\]/g) ?? []) path.push(null);
+  }
+  return { stepId, path };
+}
+
+/** Does a marked OUTPUT path cover a referenced output path? A `null` marked segment covers any key or index. */
+export function pathCovers(marked: ArgPath, ref: ArgPath): boolean {
+  if (marked.length !== ref.length) return false;
+  for (let i = 0; i < marked.length; i++) {
+    const m = marked[i];
+    if (m !== null && m !== ref[i]) return false;
+  }
+  return true;
+}
+
+/** May a value stand at a content-reference position without a proof? Only nothing: absent or null. */
+export const isLegitimateContentRef = (v: unknown): boolean => v === undefined || v === null;
 
 interface Trie {
   mark: boolean;
@@ -229,59 +339,86 @@ export interface ContentRefArgOptions {
   readonly suspect?: boolean;
   /** Top-level keys to skip entirely (a key a host-accepted param replaced). */
   readonly skipKeys?: ReadonlySet<string>;
+  /**
+   * Is a step reference PROVEN to be a content reference: does `stepId` name a step of the graph
+   * (not the step itself) whose tool declares its output at `path` to be one? Absent = nothing is
+   * proven (fail closed): every step reference at a marked position is `media-arg-unproven-ref`.
+   */
+  readonly proven?: (stepId: string, path: ArgPath) => boolean;
 }
 
 const warnF = (code: string, message: string): Finding => ({ code, severity: "warn", message });
 const errF = (code: string, message: string): Finding => ({ code, severity: "error", message });
 
 /**
- * Check one step's `arguments`. `marked` is the tool's marked paths ({@link contentRefPaths}), or
- * `"unknown"` when its schema could not be read: then the marker positions are unknown too, so
- * (fail closed) ANY string that is wholly a URL / locator / content address is refused as
- * `media-arg-literal`, wherever it sits. Findings are value-free and never throw.
+ * Check one step's `arguments` against the tool's {@link ContentRefEntry}.
  *
- *  - `media-arg-literal` (error): a literal at a marked position (see the grammar at the top of this
- *    file), or arguments too large / deep to check.
- *  - `media-arg-suspect` (warn, `suspect` only): an UNMARKED string that looks like an address or
- *    embeds one. A review hint, not a boundary (the host's invoker authorises the call).
+ *  - marked paths: a value at one must be absent / null, or a step reference that `opts.proven`
+ *    accepts. A literal is `media-arg-literal`; an unproven reference (an echo / concat / dangling /
+ *    self reference) is `media-arg-unproven-ref`. Both errors.
+ *  - `"unknown"` (the schema mentions the marker but cannot be read): ANY string that is not a step
+ *    reference or a relative-time token is `media-arg-literal`, wherever it sits.
+ *  - `"unreadable"` (no marker mentioned): a string that is wholly a URL / locator / content address
+ *    is `media-arg-literal`.
+ *  - `suspect` (marked or unreadable entries only): an UNMARKED string that looks like an address or
+ *    embeds one is `media-arg-suspect` (warn): a review hint, not a boundary.
  *
- * LINEAR in the arguments: one pass, a trie of the marked paths, a value budget, and a scan budget
- * for the suspect heuristic.
+ * At most {@link MAX_LITERAL_FINDINGS} errors are listed; the rest are counted in a final "and N
+ * more". Findings are value-free and never throw. LINEAR in the arguments: one pass, a trie of the
+ * marked paths, a value budget, and a scan budget for the suspect heuristic.
  */
 export function contentRefArgFindings(
   args: unknown,
-  marked: readonly ArgPath[] | "unknown",
+  entry: ContentRefEntry,
   where: string,
   opts: ContentRefArgOptions = {}
 ): Finding[] {
   const out: Finding[] = [];
-  const trie = marked === "unknown" ? undefined : buildTrie(marked);
+  const trie = typeof entry === "string" ? undefined : buildTrie(entry);
   let visited = 0;
   let scanned = 0;
   let suspects = 0;
+  let errors = 0;
   let aborted = false;
-  const refuse = (msg: string): void => {
-    out.push(errF("media-arg-literal", `${where}: ${msg}`));
+  const refuse = (code: string, msg: string): void => {
+    if (++errors <= MAX_LITERAL_FINDINGS) out.push(errF(code, `${where}: ${msg}`));
   };
   const walk = (v: unknown, nodes: readonly Trie[], depth: number, label: () => string): void => {
     if (aborted) return;
     if (++visited > MAX_ARG_VALUES || depth > MAX_ARG_DEPTH) {
       aborted = true;
-      refuse("the arguments are too large or too deeply nested to check for content references");
+      refuse(
+        "media-arg-literal",
+        "the arguments are too large or too deeply nested to check for content references"
+      );
       return;
     }
     if (nodes.some((n) => n.mark)) {
-      if (!isLegitimateContentRef(v))
+      if (isLegitimateContentRef(v)) return;
+      const ref = parseStepReference(v);
+      if (ref === undefined)
         refuse(
+          "media-arg-literal",
           `${label()} is a content-reference argument: bind it to a step reference or leave it out; a literal value is never accepted`
+        );
+      else if (ref.path === undefined || opts.proven?.(ref.stepId, ref.path) !== true)
+        refuse(
+          "media-arg-unproven-ref",
+          `${label()} is a content-reference argument and its step reference does not name an output its tool declares to be a content reference`
         );
       return;
     }
     if (typeof v === "string") {
-      if (STEP_TEMPLATE.test(v) || (TIME_TOKEN_LIKE.test(v) && v.length <= 32)) return;
-      if (trie === undefined) {
+      if (STEP_TEMPLATE.test(v) || (v.length <= 32 && TIME_TOKEN.test(v))) return;
+      if (entry === "unknown")
+        refuse(
+          "media-arg-literal",
+          `${label()} is text and the tool's input schema mentions a content-reference marker but could not be fully read, so only step references are accepted`
+        );
+      else if (entry === "unreadable") {
         if (looksLikeLiteralRef(v))
           refuse(
+            "media-arg-literal",
             `${label()} is a URL or content address and the tool's input schema could not be read, so it cannot be told apart from a content-reference argument`
           );
       } else if (
@@ -329,7 +466,54 @@ export function contentRefArgFindings(
     }
   };
   walk(args, trie ? [trie] : [], 0, () => "arguments");
+  if (errors > MAX_LITERAL_FINDINGS)
+    out.push(
+      errF(
+        "media-arg-literal",
+        `${where}: and ${errors - MAX_LITERAL_FINDINGS} more content-reference problems`
+      )
+    );
   return out;
+}
+
+/**
+ * A copy of `args` with every JSON `null` at a marked path removed (an object key deleted, an array
+ * element dropped), so a tool never receives `null` where a reference belongs. Pure; the input is
+ * untouched. Past the depth / value budgets the arguments are returned as they are (the check
+ * already refused them).
+ */
+export function stripNullContentRefs(
+  args: Record<string, unknown>,
+  marked: readonly ArgPath[]
+): Record<string, unknown> {
+  if (marked.length === 0) return args;
+  const trie = buildTrie(marked);
+  let budget = MAX_ARG_VALUES;
+  const go = (v: unknown, nodes: readonly Trie[], depth: number): unknown => {
+    if (--budget < 0 || depth > MAX_ARG_DEPTH || nodes.length === 0) return v;
+    if (Array.isArray(v)) {
+      const next = nodes.flatMap((n) => (n.any ? [n.any] : []));
+      if (next.length === 0) return v;
+      const marked = next.some((n) => n.mark);
+      return v.filter((x) => !(marked && x === null)).map((x) => go(x, next, depth + 1));
+    }
+    if (typeof v === "object" && v !== null) {
+      const out: [string, unknown][] = [];
+      for (const [k, x] of Object.entries(v)) {
+        const next: Trie[] = [];
+        for (const n of nodes) {
+          const byKey = n.keys.get(k);
+          if (byKey !== undefined) next.push(byKey);
+          if (n.any !== undefined) next.push(n.any);
+        }
+        if (x === null && next.some((n) => n.mark)) continue;
+        out.push([k, go(x, next, depth + 1)]);
+      }
+      return Object.fromEntries(out);
+    }
+    return v;
+  };
+  return go(args, [trie], 0) as Record<string, unknown>;
 }
 
 /** Marked top-level keys: the first segment of every marked path (a param replaces a whole top-level key). */
@@ -339,21 +523,84 @@ export function markedTopLevelKeys(marked: readonly ArgPath[]): Set<string> {
   return out;
 }
 
-/** Union of two tool entries (the same tool offered twice): `"unknown"` absorbs. */
+const RANK: Record<"unreadable" | "unknown", number> = { unreadable: 1, unknown: 2 };
+
+/** Union of two entries (the same tool offered twice): `"unknown"` absorbs `"unreadable"`, which absorbs paths. */
 export function mergeContentRefEntries(
-  a: readonly ArgPath[] | "unknown" | undefined,
-  b: readonly ArgPath[] | "unknown"
-): readonly ArgPath[] | "unknown" {
+  a: ContentRefEntry | undefined,
+  b: ContentRefEntry
+): ContentRefEntry {
   if (a === undefined) return b;
-  if (a === "unknown" || b === "unknown") return "unknown";
+  if (typeof a === "string" || typeof b === "string") {
+    const ra = typeof a === "string" ? RANK[a] : 0;
+    const rb = typeof b === "string" ? RANK[b] : 0;
+    return ra >= rb ? (a as ContentRefEntry) : b;
+  }
   const seen = new Map(a.map((p) => [JSON.stringify(p), p] as const));
   for (const p of b) seen.set(JSON.stringify(p), p);
   return [...seen.values()];
 }
 
-/** The table entry for a tool, own keys only. */
+/** The table's input entry for a tool, own keys only. */
 export const contentRefEntry = (
   table: ContentRefTable | undefined,
   key: string
-): readonly ArgPath[] | "unknown" | undefined =>
-  table !== undefined && Object.hasOwn(table, key) ? table[key] : undefined;
+): ContentRefEntry | undefined =>
+  table !== undefined && Object.hasOwn(table.args, key) ? table.args[key] : undefined;
+
+/** The table's declared output paths for a tool, own keys only. */
+export const contentRefProduces = (
+  table: ContentRefTable | undefined,
+  key: string
+): readonly ArgPath[] | undefined =>
+  table?.produces !== undefined && Object.hasOwn(table.produces, key)
+    ? table.produces[key]
+    : undefined;
+
+/** The `proven` predicate for one provider graph: the step exists, is not `selfId`, and its tool produces a ref at the path. */
+export function provenIn(
+  table: ContentRefTable | undefined,
+  steps: ReadonlyMap<string, { readonly kind?: string | undefined; readonly toolName: string }>,
+  selfId: string,
+  toolKeyOf: (s: { readonly kind?: string | undefined; readonly toolName: string }) => string
+): (stepId: string, path: ArgPath) => boolean {
+  return (stepId, path) => {
+    if (stepId === selfId) return false;
+    const step = steps.get(stepId);
+    if (step === undefined) return false;
+    const produced = contentRefProduces(table, toolKeyOf(step));
+    return produced?.some((p) => pathCovers(p, path)) === true;
+  };
+}
+
+const isPath = (p: unknown): p is ArgPath =>
+  Array.isArray(p) &&
+  p.length <= MAX_SCHEMA_PATH_DEPTH + 1 &&
+  p.every((s) => s === null || typeof s === "string");
+
+/**
+ * Re-read a persisted {@link ContentRefTable} (`JSON.parse` of what a host stored). Strict and total:
+ * anything that is not exactly a table is `undefined`, never a partly-trusted one (a host must treat
+ * `undefined` as an error, not as "nothing marked").
+ */
+export function parseContentRefTable(json: unknown): ContentRefTable | undefined {
+  if (!isObj(json) || !isObj(json.args)) return undefined;
+  const args: Record<string, ContentRefEntry> = Object.create(null);
+  for (const [k, v] of Object.entries(json.args)) {
+    if (v === "unknown" || v === "unreadable") args[k] = v;
+    else if (Array.isArray(v) && v.length <= MAX_CONTENT_REF_PATHS && v.every(isPath))
+      args[k] = v as ArgPath[];
+    else return undefined;
+  }
+  let produces: Record<string, readonly ArgPath[]> | undefined;
+  if (json.produces !== undefined) {
+    if (!isObj(json.produces)) return undefined;
+    produces = Object.create(null);
+    for (const [k, v] of Object.entries(json.produces)) {
+      if (Array.isArray(v) && v.length <= MAX_CONTENT_REF_PATHS && v.every(isPath))
+        (produces as Record<string, readonly ArgPath[]>)[k] = v as ArgPath[];
+      else return undefined;
+    }
+  }
+  return { args, ...(produces !== undefined && { produces }) };
+}

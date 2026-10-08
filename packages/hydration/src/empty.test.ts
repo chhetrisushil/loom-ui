@@ -116,6 +116,7 @@ const rig = (rows: () => unknown) => {
   const drifts: DriftReport[] = [];
   const inv = server(rows);
   const ctl = new HydrationController({
+    contentRefArgs: "none" as const,
     invoker: inv,
     store,
     cache,
@@ -192,6 +193,7 @@ describe("empty beside a proceeded input drift", () => {
       return i.toolName === "db.top" ? { rows: [] } : { ok: 1 };
     });
     const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
       invoker: inv,
       store,
       setTimer: new ManualClock().setTimer,
