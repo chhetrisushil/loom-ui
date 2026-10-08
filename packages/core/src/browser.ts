@@ -15,6 +15,7 @@ export {
 } from "./action";
 export type {
   ActionFreshness,
+  ActionOutcome,
   CompileFingerprintInput,
   CurrentHead,
   StampedAction,

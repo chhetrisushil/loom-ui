@@ -60,6 +60,38 @@ const VALID: Readonly<Record<string, unknown>> = {
   Video: { address: "sha256:abc123", mediaType: "video/mp4", size: 0 },
   File: { address: "sha256:abc123", mediaType: "application/pdf", name: "r.pdf" },
   MediaInput: undefined,
+  Chat: {
+    entries: [
+      {
+        id: "t1.user",
+        turn: 1,
+        role: "user",
+        status: "complete",
+        parts: [{ type: "text", text: "hi" }],
+        asker: { actor: "a", tenant: "t" },
+        cursor: "0.3",
+        at: 5,
+      },
+      {
+        id: "t1.assistant",
+        turn: 1,
+        role: "assistant",
+        status: "failed",
+        reason: "model-error",
+        errorId: "e-1",
+        parts: [{ type: "media", ref: { address: "sha256:abc123", mediaType: "image/png" } }],
+        tools: [{ name: "search", status: "done" }],
+      },
+      { id: "t2.user", turn: 2, role: "user", status: "restricted", editOf: undefined },
+    ],
+    viewer: { actor: "a", tenant: "t" },
+    older: "0.1",
+    state: "open",
+    running: false,
+  },
+  TextInput: undefined,
+  FormInput: undefined,
+  SelectInput: undefined,
 };
 
 const JUNK: readonly unknown[] = [

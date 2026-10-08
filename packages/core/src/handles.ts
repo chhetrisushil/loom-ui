@@ -1,5 +1,6 @@
 import type { DataClass } from "@loom/classify";
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
+import { isChatKind } from "./chatValue";
 import { type DeclaredToolClasses, type UndeclaredToolPolicy, effectiveClasses } from "./classes";
 import type { Experience } from "./experience";
 import { isMediaKind } from "./mediaRef";
@@ -103,7 +104,7 @@ export function handleKinds(
 }
 
 /**
- * U9: `handleKinds`, plus the media kinds implied by a node's TYPE NAME alone. A node whose `type` is
+ * U9/U8: `handleKinds`, plus the media kinds (and `Chat`) implied by a node's TYPE NAME alone. A node whose `type` is
  * a framework media kind (`Image`, `Audio`, `Video`, `File`) marks its handle as media-bound even
  * when no catalogue was supplied (or the catalogue cannot resolve it), so a host that forgot
  * `outputKinds` still gets the `MediaRef` contract enforced at the data boundary, never a vacuous
@@ -118,7 +119,12 @@ export function handleKindsWithMedia(
   if (catalog !== undefined && surface !== undefined)
     for (const [h, ks] of handleKinds(exp, catalog, surface)) kinds.set(h, new Set(ks));
   walk(exp.root, (n) => {
-    if (n.kind !== "semantic" || n.binding === undefined || !isMediaKind(n.type)) return;
+    if (
+      n.kind !== "semantic" ||
+      n.binding === undefined ||
+      !(isMediaKind(n.type) || isChatKind(n.type))
+    )
+      return;
     const set = kinds.get(n.binding.handle);
     if (set === undefined) kinds.set(n.binding.handle, new Set([n.type]));
     else set.add(n.type);

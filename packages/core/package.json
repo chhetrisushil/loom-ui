@@ -9,13 +9,15 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./browser": { "types": "./dist/browser.d.ts", "default": "./dist/browser.js" },
     "./log": { "types": "./dist/log.d.ts", "default": "./dist/log.js" },
-    "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" }
+    "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
+    "./chat": { "types": "./dist/chat.d.ts", "default": "./dist/chat.js" }
   },
   "typesVersions": {
     "*": {
       "browser": ["./dist/browser.d.ts"],
       "log": ["./dist/log.d.ts"],
-      "media": ["./dist/media.d.ts"]
+      "media": ["./dist/media.d.ts"],
+      "chat": ["./dist/chat.d.ts"]
     }
   },
   "scripts": {

@@ -24,6 +24,10 @@ describe("kindValueContracts", () => {
         "Image",
         "Kpi",
         "MediaInput",
+        "Chat",
+        "TextInput",
+        "FormInput",
+        "SelectInput",
         "MetricCard",
         "Note",
         "ProgressBar",
@@ -51,6 +55,10 @@ describe("kindValueContracts", () => {
       "Video",
       "File",
       "MediaInput",
+      "Chat",
+      "TextInput",
+      "FormInput",
+      "SelectInput",
     ]);
     expect(kindValueContract("Nope")).toBeUndefined();
   });
