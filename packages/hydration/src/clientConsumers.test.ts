@@ -21,6 +21,8 @@ const FORBIDDEN_PACKAGES = new Set([
   "@loom-ui/lineage",
   // U7 — change delivery sits on the lineage and content stores; server-side only.
   "@loom-ui/changes",
+  // U11 — reward ingestion/settlement runs on the host (recordOutcome, the event log); a client sends signals, never settles them.
+  "@loom-ui/learning",
   "@loom/plugin-mcp",
   "@loom/effect-runtime",
   "@loom/agent",

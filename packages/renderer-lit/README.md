@@ -184,6 +184,19 @@ listening to both would act twice); without `onAction` it still fires, **depreca
 - `buildSandboxSrcdoc()`, `hostMessage(message)`, `parseFrameMessage(raw)`, `SANDBOX_ALLOW` — the
   sandboxed-iframe protocol `lu-sandbox`/`lu-sandbox-widget` speak to the untrusted frame.
 
+## Interaction signals (U11)
+
+`@loom-ui/renderer-lit/signals` (opt-in entry; not in `index`/`dom`, so the bundle budgets are
+untouched) is `observeSignals(handle, collector, { placeholders, compile })`: one IntersectionObserver,
+one click listener and one `toggle` listener over the handle's element, driving a
+`@loom-ui/core/signals` `SignalCollector`. Exposure = a widget at least half visible while the page is
+visible (no IntersectionObserver means no exposure is claimed); dwell is accumulated and sent as a
+bucket; a click anywhere in a widget, or a `<details>` opening, is an engagement on it. It reads only
+`data-widget-id` — never text or values. Call `refresh()` after `handle.update(next)`: a new Blueprint
+id starts a new view. Hide/`pagehide` flushes by default. An explicit rating or outcome comes from an
+action: `collector.observeAction(action)` in `onAction` maps `feedback` (`{ rating }`) and `outcome`
+(`{ name, success }`) and never copies the rest of the payload.
+
 ## Examples
 
 Mounting a compiled Blueprint (illustrative — not a compiling snippet):

@@ -656,6 +656,25 @@ widget's stamped seq must equal the current one (else `data-moved`; unknown is `
 `compile` the view fingerprint must match. The renderer's `handle.head()` fills all of it. Also on
 `@loom-ui/core/browser` (no zod). See the renderer-lit README for the flow.
 
+## Interaction signals (U11)
+
+`@loom-ui/core/signals` (opt-in subpath, no zod, no DOM) is the client half of the learning loop: a
+`SignalCollector` that turns what a viewer did with a surface into bounded, content-free
+`InteractionSignal`s, and `validateSignalBatch`, the shared total validator a host runs on untrusted
+batches. Four facts only: `exposure` (a node was rendered and visible), `engagement` (a click/expand
+**count**, capped at 255, or a **dwell bucket** 0-3 at 1 s / 5 s / 30 s — raw timing never leaves the
+client), `feedback` (a 1-5 rating, on a node or the surface) and `outcome` (a token and a boolean). Every
+string is a bounded token; there is no text field. A node drawn as a restricted placeholder is reported
+`restricted: true` under the alias it already has (`CompileResult.fingerprint.placeholderNodes`, new in
+U11 — the aliases of the placeholders that survived into the Blueprint). The collector is bounded
+(512 tracked nodes per view, 64 signals per batch, 16 queued batches; a bound drops and counts) and
+re-sends a failed batch under the same `batchId`. See `@loom-ui/learning` for the host half and
+`@loom-ui/renderer-lit/signals` for the DOM driver.
+
+`Provenance.policyDecisionId` (U11, optional, outside the content address) names the *learnable* loom
+decision behind an op — the planner variant choice — so a reward attributes to it; `decisionId` still
+names the model call.
+
 ## Examples
 
 Composing and compiling an Experience (illustrative — not a compiling snippet: it elides a real

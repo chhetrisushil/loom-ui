@@ -55,6 +55,8 @@ export interface DecideOptionsLike {
   readonly rationale?: unknown;
   readonly source?: string;
   readonly context?: Record<string, unknown>;
+  /** The action set a policy chose FROM (U11): recorded so a counterfactual has something to range over. */
+  readonly alternatives?: unknown;
   readonly policy?: { readonly id: string; readonly version: string; readonly propensity?: number };
 }
 /**
@@ -189,6 +191,13 @@ export interface ComposeInput {
    * A reply naming a role not listed here is refused. Part of a decision's id when present.
    */
   readonly containers?: readonly ContainerRoleSpec[];
+  /**
+   * The stable UNIT a planner with `variants` assigns a variant by (U11): an opaque id of a user,
+   * tenant or cohort, `[A-Za-z0-9_.:-]{1,128}` — never a name or an email. It is recorded in the
+   * variant decision's context. Not part of the plan decision's id. Required when the planner has
+   * variants (a missing or malformed unit is refused, no model call); ignored otherwise.
+   */
+  readonly unit?: string;
 }
 export interface ReviseInput {
   readonly experience: Experience;
@@ -211,6 +220,8 @@ export interface ReviseInput {
   readonly observed?: Readonly<Record<string, TaintedValue<unknown>>>;
   /** As on {@link ComposeInput.containers}. */
   readonly containers?: readonly ContainerRoleSpec[];
+  /** As on {@link ComposeInput.unit}. */
+  readonly unit?: string;
 }
 
 export interface AttemptTrace {
@@ -234,6 +245,25 @@ export interface PlanReport {
    * per-plan token total that survives replay.
    */
   readonly usage?: PlannerUsage;
+  /**
+   * The variant this plan was made under (U11); present only on a planner with `variants`. Set on
+   * the result OUTSIDE the plan decision (the variant has its own, earlier, decision), so it is the
+   * same on a replay. `decisionId` is the LEARNABLE decision a reward is attributed to.
+   */
+  readonly variant?: PlanVariantReport;
+}
+export interface PlanVariantReport {
+  /** The `decideWithPolicy` decision that chose the variant: stamp it with `plannerProvenance`. */
+  readonly decisionId: string;
+  /** The chosen variant id. */
+  readonly id: string;
+  readonly policy: { readonly id: string; readonly version: string };
+  /**
+   * The probability the policy gave the choice, when this run's policy produced the recorded
+   * choice. Absent when a replay served a choice the CURRENT policy would not make (the recorded
+   * stamp on the decision remains the truth).
+   */
+  readonly propensity?: number;
 }
 export interface PlanResult {
   readonly ops: readonly Operation[];

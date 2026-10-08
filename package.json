@@ -21,18 +21,22 @@
   "pnpm": {
     "overrides": {
       "@loom/agent": "link:../loom/packages/agent",
+      "@loom/analytics": "link:../loom/packages/analytics",
       "@loom/blueprint-runtime": "link:../loom/packages/blueprint-runtime",
       "@loom/classify": "link:../loom/packages/classify",
       "@loom/core": "link:../loom/packages/core",
       "@loom/effect-runtime": "link:../loom/packages/effect-runtime",
       "@loom/event-runtime": "link:../loom/packages/event-runtime",
+      "@loom/learning": "link:../loom/packages/learning",
       "@loom/plugin-content": "link:../loom/plugins/content",
       "@loom/plugin-mcp": "link:../loom/plugins/mcp",
       "@loom/plugin-renderer-terminal": "link:../loom/plugins/renderer-terminal",
       "@loom/plugin-sandbox": "link:../loom/plugins/sandbox",
       "@loom/projection-runtime": "link:../loom/packages/projection-runtime",
       "@loom/replay-vm": "link:../loom/packages/replay-vm",
-      "@loom/scheduler": "link:../loom/packages/scheduler"
+      "@loom/scheduler": "link:../loom/packages/scheduler",
+      "@loom/snapshot-runtime": "link:../loom/packages/snapshot-runtime",
+      "@loom/workflow-runtime": "link:../loom/packages/workflow-runtime"
     }
   }
 }

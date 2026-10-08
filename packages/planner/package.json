@@ -24,6 +24,7 @@
     "@loom/blueprint-runtime": "*",
     "@loom/classify": "*",
     "@loom/core": "*",
+    "@loom/learning": "*",
     "@loom/plugin-content": "*",
     "zod": "catalog:"
   },
