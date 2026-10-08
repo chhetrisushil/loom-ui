@@ -1,17 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EDIT_TURN_ACTION,
-  type InputSpec,
   LOAD_OLDER_ACTION,
   SELECT_ACTION,
   SUBMIT_FORM_ACTION,
   SUBMIT_TEXT_ACTION,
+  isSubmitKey,
+  newSubmitKey,
+} from "./chatActions";
+import {
+  type InputSpec,
   SubmitLedger,
   acceptChatSubmit,
   conversationTarget,
   createWriteBack,
-  isSubmitKey,
-  newSubmitKey,
   paramsTarget,
   resumeTarget,
 } from "./chatHost";

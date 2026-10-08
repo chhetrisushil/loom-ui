@@ -15,7 +15,18 @@ import {
   litRegistry,
 } from "./litRegistry";
 
-const MEDIA = new Set<string>(["Image", "Audio", "Video", "File", "MediaInput"]);
+// The opt-in entries' kinds (`@loom-ui/renderer-lit/media`, `/chat`): the default registry draws a fixed placeholder for them.
+const MEDIA = new Set<string>([
+  "Image",
+  "Audio",
+  "Video",
+  "File",
+  "MediaInput",
+  "Chat",
+  "TextInput",
+  "FormInput",
+  "SelectInput",
+]);
 
 describe("litRegistry parity", () => {
   it("covers every kind in loom's built-in catalogue, so one web compile renders on React or Lit", () => {

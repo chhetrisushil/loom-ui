@@ -1,4 +1,4 @@
-import { type StampedAction, viewedVersionOf } from "@loom-ui/core/browser";
+import { type ActionOutcome, type StampedAction, viewedVersionOf } from "@loom-ui/core/browser";
 import {
   type BindingStatus,
   type Layout,
@@ -42,7 +42,9 @@ export interface MountContext {
    * `StampedAction` (a `WidgetAction` plus `viewedVersion`), which a plain `(a: WidgetAction)`
    * handler accepts unchanged.
    */
-  readonly onAction?: (action: StampedAction & WidgetAction) => void;
+  readonly onAction?: (
+    action: StampedAction & WidgetAction
+  ) => void | PromiseLike<ActionOutcome | undefined | void>;
   /**
    * The id a widget MOUNTED (or remounted) by the pass in flight is stamped with — the pass's
    * target Blueprint. A KEPT widget is stamped from its own entry, which only advances once the
@@ -532,7 +534,8 @@ export function renderInto(
         // remount gave the entry a new render) must not speak for it: its actions are dropped.
         onAction: (a: WidgetAction) => {
           if (entry.token !== token) return;
-          ctx.onAction?.(stampAction(a, entry, ctx));
+          // The host's answer (U8: an input widget waits for it) goes back to the widget.
+          return ctx.onAction?.(stampAction(a, entry, ctx));
         },
       }),
     });

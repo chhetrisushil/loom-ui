@@ -153,7 +153,7 @@ describe("ChatFeed: history", () => {
 
   it("text is sanitised on the way in (escapes, bidi) and a malformed page changes nothing", () => {
     const f = new ChatFeed();
-    f.applyHistory(page([wire(1, "user", { text: `hi\u001b[2J\u202eevil` })]), "backward");
+    f.applyHistory(page([wire(1, "user", { text: "hi\u001b[2J\u202eevil" })]), "backward");
     expect(textOf(f.value(), 0)).toBe("hi[2Jevil");
     const before = f.value();
     for (const bad of [

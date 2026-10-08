@@ -131,6 +131,17 @@ export interface ChatIssue {
   readonly message: string;
 }
 
+/** Equal iff all three fields are equal (loom's rule: an absent field equals only an absent field). */
+export function sameChatActor(a: ChatActor | undefined, b: ChatActor | undefined): boolean {
+  return (
+    a !== undefined &&
+    b !== undefined &&
+    a.actor === b.actor &&
+    a.tenant === b.tenant &&
+    a.onBehalfOf === b.onBehalfOf
+  );
+}
+
 const own = (o: object, k: string): unknown => (Object.hasOwn(o, k) ? (o as never)[k] : undefined);
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);

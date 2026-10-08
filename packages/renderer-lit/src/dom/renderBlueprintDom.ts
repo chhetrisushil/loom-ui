@@ -1,4 +1,9 @@
-import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loom-ui/core/browser";
+import {
+  type ActionOutcome,
+  type CurrentHead,
+  type StampedAction,
+  parseBlueprintId,
+} from "@loom-ui/core/browser";
 import {
   type Blueprint,
   type IdentityReport,
@@ -39,9 +44,13 @@ export interface DomRenderOptions {
   readonly containers?: DomContainerRegistry;
   /**
    * Every action carries `viewedVersion` (see `StampedAction`); a handler typed `(a: WidgetAction)`
-   * still works. Compare it with the current head (`isStaleAction`) before acting.
+   * still works. Compare it with the current head (`isStaleAction`) before acting. It MAY return
+   * (a promise of) an `ActionOutcome`: a widget that takes input (U8) waits for it, keeping what the
+   * user typed until it hears `ok: true`.
    */
-  readonly onAction?: (action: StampedAction & WidgetAction) => void;
+  readonly onAction?: (
+    action: StampedAction & WidgetAction
+  ) => void | PromiseLike<ActionOutcome | undefined | void>;
   /**
    * The compile fingerprint of THIS view (`compileFingerprint({ clearance, locale,
    * ...result.fingerprint })` from `@loom-ui/core`): what the Blueprint depends on besides the Experience. Stamped

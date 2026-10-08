@@ -26,11 +26,21 @@ const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist"));
 const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "action.js",
   "browser.js",
+  // U8: only what a chat WIDGET needs. `chat.js`, `chatFeed.js` and `chatHost.js` (the fold over loom's
+  // API, host-side acceptance, the catalogue guard) are deliberately absent: the entry that imports one
+  // of them fails this test.
+  "chatActions.js",
+  "chatForm.js",
+  "chatText.js",
+  "chatUi.js",
+  "chatValue.js",
+  "chatWords.js",
   "containerRoles.js",
   "format.js",
   "kindValues.js",
   "media.js",
   "mediaRef.js",
+  "mediaText.js",
   "paths.js",
   "streamText.js",
 ]);
@@ -58,14 +68,19 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // contract (~3 kB) has to ride in `checkKindValue` for every page, because a media widget's
     // value is checked wherever a value is checked. The widgets themselves are NOT here: they are the
     // opt-in `media.js` entry below.
-    ["index.js", 164 * 1000],
-    ["dom/index.js", 164 * 1000],
+    // U8 raised these from 164 kB by 8 kB (index measured 162_143 -> 168_584): the ChatValue contract
+    // (~6.4 kB) rides in `checkKindValue` for every page, as the MediaRef contract does. The chat widgets
+    // themselves are NOT here: they are the opt-in `chat.js` entry below.
+    ["index.js", 172 * 1000],
+    ["dom/index.js", 172 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
     ["dom/containers.js", 80 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 180 * 1000],
+    // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
+    ["chat.js", 196 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);
