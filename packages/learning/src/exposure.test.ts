@@ -87,7 +87,13 @@ describe("U11 seenLogExposure over the real SeenLog (U12)", () => {
   it("a view the server recorded satisfies the check; an unrecorded viewer, another version, an erased viewer do not", async () => {
     const { log, exp } = await setup();
     const check = seenLogExposure(log);
-    const q = { viewerId: "alice", experienceId: "e", versionHash: exp.versionHash, node: "a" };
+    const q = {
+      viewerId: "alice",
+      tenant: "acme",
+      experienceId: "e",
+      versionHash: exp.versionHash,
+      node: "a",
+    };
     expect(await check.saw(q)).toBe(true);
     expect(await check.saw({ ...q, viewerId: "bob" })).toBe(false);
     expect(await check.saw({ ...q, versionHash: "sha256:other" })).toBe(false);
@@ -106,7 +112,7 @@ describe("U11 seenLogExposure over the real SeenLog (U12)", () => {
     const refusing = seenLogExposure({
       read: async () => ({ ok: false as const, refusal: { code: "x" } }),
     });
-    const q = { viewerId: "a", experienceId: "e", versionHash: "v" };
+    const q = { viewerId: "a", tenant: "acme", experienceId: "e", versionHash: "v" };
     expect(await throwing.saw(q)).toBe(false);
     expect(await refusing.saw(q)).toBe(false);
   });
@@ -143,5 +149,22 @@ describe("U11 seenLogExposure over the real SeenLog (U12)", () => {
     expect(bob.accepted).toBe(0);
     expect(bob.rejected).toEqual({ unexposed: 2 });
     expect((await ledger.fold(ref)).summary).toMatchObject({ viewers: 1, feedbackViewers: 1 });
+  });
+
+  it("the tenant reaches the SeenLog read, and viewerIdOf maps (tenant, viewer) to a tenant-keyed id", async () => {
+    const reads: Array<{ viewerId: string; tenant?: string }> = [];
+    const spy = {
+      read: async (i: { viewerId: string; tenant?: string; experienceId: string }) => {
+        reads.push({ viewerId: i.viewerId, ...(i.tenant !== undefined && { tenant: i.tenant }) });
+        return { ok: false as const, refusal: { code: "x" } };
+      },
+    };
+    const q = { viewerId: "alice", tenant: "acme", experienceId: "e", versionHash: "v" };
+    await seenLogExposure(spy).saw(q);
+    await seenLogExposure(spy, { viewerIdOf: (x) => `${x.tenant}/${x.viewerId}` }).saw(q);
+    expect(reads).toEqual([
+      { viewerId: "alice", tenant: "acme" },
+      { viewerId: "acme/alice", tenant: "acme" },
+    ]);
   });
 });

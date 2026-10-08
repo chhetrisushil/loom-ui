@@ -41,6 +41,8 @@ export type SignalRejection =
   | "restricted-misuse"
   | "unknown-outcome"
   | "capacity"
+  | "viewer-capacity"
+  | "contended"
   | "closed";
 
 export interface IngestResult {
@@ -163,6 +165,7 @@ export class SignalIngestor {
     const check = this.opts.exposure === "client-claimed" ? undefined : this.opts.exposure;
     const base = {
       viewerId: viewer.id,
+      tenant: viewer.tenant,
       experienceId: batch.view.experienceId,
       versionHash: batch.view.versionHash,
     };

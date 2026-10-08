@@ -383,4 +383,58 @@ describe("U11 SignalIngestor", () => {
     });
     expect(late.rejected).toEqual({ closed: 1 });
   });
+
+  it("a resolver that returns ANOTHER tenant's link is refused (the tenant check does not rest on the registry)", async () => {
+    const r = rig();
+    const evil: DecisionLink = { tenant: "evil", decisions: [REF2] };
+    const ing = new SignalIngestor({
+      links: { resolve: () => evil },
+      ledger: r.ledger,
+      clock: () => 0,
+      exposure: "client-claimed",
+    });
+    const res = await ing.ingest({ viewer: alice, raw: r.batch([expo("a")]) });
+    expect(res).toEqual({ accepted: 0, rejected: {}, refused: "unknown-view" });
+    expect((await r.ledger.fold(REF2)).entries).toBe(0);
+  });
+
+  it("passes the viewer's tenant to the exposure check", async () => {
+    const seen: string[] = [];
+    const r = rig({
+      exposure: {
+        saw: (q) => {
+          seen.push(q.tenant);
+          return true;
+        },
+      },
+    });
+    await r.ing.ingest({ viewer: alice, raw: r.batch([expo("a")]) });
+    expect(new Set(seen)).toEqual(new Set(["acme"]));
+  });
+
+  it("one viewer sending 3000 one-signal batches cannot starve a later viewer; the flooder is refused past its budget", async () => {
+    const r = rig({ ledger: { maxEntriesPerDecision: 2000 } });
+    const flood = new SignalIngestor({
+      links: r.links,
+      ledger: r.ledger,
+      clock: () => 0,
+      exposure: "client-claimed",
+      rateLimit: 1_000_000,
+    });
+    let accepted = 0;
+    const reasons: Partial<Record<SignalRejection, number>> = {};
+    for (let i = 0; i < 3000; i++) {
+      const res = await flood.ingest({ viewer: alice, raw: r.batch([expo("a")]) });
+      accepted += res.accepted;
+      for (const [k, n] of Object.entries(res.rejected))
+        reasons[k as SignalRejection] = (reasons[k as SignalRejection] ?? 0) + (n ?? 0);
+    }
+    expect(accepted).toBe(128);
+    expect(reasons).toEqual({ "viewer-capacity": 2872 });
+    const bob = await flood.ingest({
+      viewer: { id: "bob", tenant: "acme" },
+      raw: r.batch([expo("a")]),
+    });
+    expect(bob).toEqual({ accepted: 1, rejected: {} });
+  });
 });

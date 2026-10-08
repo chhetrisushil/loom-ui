@@ -296,4 +296,50 @@ describe("U11 settleRewards (once per decision, at a close)", () => {
       /token/
     );
   });
+
+  it("the outcome key names the CLAIM's close id: settlers passing different ids record under ONE key", async () => {
+    const r = rig();
+    const ref = fresh();
+    await r.vote(ref, 3);
+    await settleRewards({ ...r.base(ref), closeId: "first" });
+    // a second settler with another close id folds the same frozen log; its key is the claim's
+    const again = await settleRewards({ ...r.base(ref), closeId: "second" });
+    expect(again.alreadySettled).toBe(1);
+    const other = rig();
+    const ref2 = fresh();
+    await other.vote(ref2, 3);
+    await other.ledger.close(ref2, "first");
+    await settleRewards({ ...other.base(ref2), closeId: "second" });
+    expect(other.calls[0]?.outcome.key).toBe(`ui:r1:first:${other.ledger.specHash}`);
+  });
+
+  it("a contended log defers that decision and the run carries on with the rest", async () => {
+    const r = rig();
+    const bad = fresh();
+    const good = fresh();
+    await r.vote(bad, 2);
+    await r.vote(good, 2);
+    const realClose = r.ledger.close.bind(r.ledger);
+    r.ledger.close = async (ref, id) =>
+      ref.executionId === bad.executionId ? r.ledger.fold(ref) : realClose(ref, id);
+    const rep = await settleRewards({ ...r.base(good), decisions: [bad, good] });
+    expect(rep).toMatchObject({ deferred: 1, appended: 1 });
+  });
+
+  it("retry counts are scoped to the settling ledger: another ledger's failures do not exhaust this one's attempts", async () => {
+    const failing = (): ReturnType<typeof rig> =>
+      rig((c) => {
+        void c;
+        throw new Error("transient");
+      });
+    const a = failing();
+    const b = failing();
+    const ref = fresh();
+    await a.vote(ref, 1);
+    await b.vote(ref, 1);
+    for (let i = 0; i < 4; i++)
+      expect((await settleRewards({ ...a.base(ref), maxAttempts: 5 })).deferred).toBe(1);
+    // b has never failed: its first failure is attempt 1, not 5
+    expect((await settleRewards({ ...b.base(ref), maxAttempts: 5 })).deferred).toBe(1);
+  });
 });

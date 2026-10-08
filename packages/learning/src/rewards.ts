@@ -6,7 +6,7 @@ import type { DecisionRef } from "./links";
 // A reward function turns what a decision's surface earned — one bounded vote per viewer, pooled —
 // into ONE score in [0, 1]. The score is recorded on the decision through loom's
 // `runtime.recordOutcome` (ADR 0116), LATE, once, at a host-declared close, under the key
-// `ui:<rewardId>:<closeId>:<specHash>`.
+// `ui:<rewardId>:<closeId>:<specHash>` (`closeId` is the CLAIM's, so settlers passing different ids agree).
 //
 // ONE SETTLEMENT PER DECISION. The kernel refuses a changed score for the same `(decisionId, key)`,
 // and `trajectories` AVERAGES a decision's outcomes with equal weight — so recording many partial
@@ -142,7 +142,7 @@ export async function settleRewards(opts: SettleOptions): Promise<SettleReport> 
   const rep = { appended: 0, duplicates: 0, empty: 0, alreadySettled: 0, deferred: 0 };
   const abandoned: Array<{ ref: DecisionRef; reason: string; error?: unknown }> = [];
   const refused: Array<{ ref: DecisionRef; error: unknown }> = [];
-  const key = `ui:${opts.rewardId}:${opts.closeId}:${opts.ledger.specHash}`;
+  const tries = triesOf(opts.ledger);
   for (const ref of opts.decisions) {
     let f = await opts.ledger.fold(ref);
     if (f.settled) {
@@ -151,7 +151,14 @@ export async function settleRewards(opts: SettleOptions): Promise<SettleReport> 
     }
     if (!f.claim) f = await opts.ledger.close(ref, opts.closeId);
     const claim = f.claim;
-    const age = claim === undefined ? 0 : opts.clock() - Date.parse(claim.at);
+    if (claim === undefined) {
+      // the log stayed contended: leave this decision for the next run and carry on with the rest
+      rep.deferred += 1;
+      continue;
+    }
+    // the key names the CLAIM's close id, not this caller's: settlers with different ids still agree
+    const key = `ui:${opts.rewardId}:${TOKEN.test(claim.closeId) ? claim.closeId : opts.closeId}:${opts.ledger.specHash}`;
+    const age = opts.clock() - Date.parse(claim.at);
     const raw = f.summary.viewers < (opts.minViewers ?? 1) ? undefined : opts.reward(f.summary);
     if (raw === undefined || !Number.isFinite(raw)) {
       await opts.ledger.markSettled(ref, "empty");
@@ -178,10 +185,12 @@ export async function settleRewards(opts: SettleOptions): Promise<SettleReport> 
       continue;
     }
     // not terminal yet, or a failure that may be transient: keep it open, within bounds
-    const tries = (attempts.get(`${ref.executionId}${"\u0000"}${ref.decisionId}`) ?? 0) + 1;
-    attempts.set(`${ref.executionId}${"\u0000"}${ref.decisionId}`, tries);
-    if (attempts.size > 10_000) attempts.delete(attempts.keys().next().value as string);
-    if (age > maxAge || (!isNotTerminal(err) && tries >= maxAttempts)) {
+    const tk = JSON.stringify([opts.rewardId, ref.executionId, ref.decisionId]);
+    const n = (tries.get(tk) ?? 0) + 1;
+    tries.delete(tk);
+    tries.set(tk, n);
+    if (tries.size > 10_000) tries.delete(tries.keys().next().value as string);
+    if (age > maxAge || (!isNotTerminal(err) && n >= maxAttempts)) {
       await opts.ledger.markSettled(ref, "abandoned");
       abandoned.push({
         ref,
@@ -195,5 +204,16 @@ export async function settleRewards(opts: SettleOptions): Promise<SettleReport> 
   return { ...rep, abandoned, refused };
 }
 
-/** Process-local retry counts for transient failures (the ledger holds the durable age). */
-const attempts = new Map<string, number>();
+/**
+ * Process-local retry counts for transient failures (the ledger holds the durable age), scoped to the
+ * ledger instance that settles (so two settlers never share a count) and bounded.
+ */
+const attemptsByLedger = new WeakMap<VoteLedger, Map<string, number>>();
+function triesOf(ledger: VoteLedger): Map<string, number> {
+  let m = attemptsByLedger.get(ledger);
+  if (m === undefined) {
+    m = new Map();
+    attemptsByLedger.set(ledger, m);
+  }
+  return m;
+}
