@@ -323,3 +323,59 @@ describe("the words both renderers share", () => {
     expect(lines.join()).toBe("[restricted assistant turn]");
   });
 });
+
+// ── U12: what a viewer SAW of a conversation is bounded, and a hidden conversation is never read ──
+import { MAX_SEEN_VALUE_BYTES, snapshotSeen } from "./seen";
+
+describe("a transcript in the seen log", () => {
+  const bound = (handle: string, sensitivity?: "secret") => ({
+    id: `n_${handle}`,
+    type: "Chat",
+    binding: { handle, priority: "P1", ...(sensitivity && { sensitivity }) },
+  });
+  const read = (m: Record<string, unknown>) => (s: { kind: string; handle?: string }) =>
+    s.kind === "handle" && s.handle !== undefined && Object.hasOwn(m, s.handle)
+      ? { found: true, value: m[s.handle], status: "ready" }
+      : { found: false, status: "pending" };
+
+  it("a big transcript is recorded as oversize (a marker, never the bytes); a small one is kept; a hidden one is never read", () => {
+    const small = {
+      entries: [
+        {
+          id: "t1.user",
+          turn: 1,
+          role: "user",
+          status: "complete",
+          parts: [{ type: "text", text: "hi" }],
+        },
+      ],
+    };
+    const big = {
+      entries: Array.from({ length: 40 }, (_, i) => ({
+        id: `t${i + 1}.user`,
+        turn: i + 1,
+        role: "user",
+        status: "complete",
+        parts: [{ type: "text", text: "x".repeat(2000) }],
+      })),
+    };
+    expect(JSON.stringify(big).length).toBeGreaterThan(MAX_SEEN_VALUE_BYTES);
+    const exp = tree([bound("small"), bound("big"), bound("hid", "secret")]);
+    const asked: string[] = [];
+    const snap = snapshotSeen(exp, {
+      viewer: { clearance: "internal" },
+      read: (src) => {
+        if (src.kind === "handle") asked.push(src.handle);
+        return read({ small, big, hid: small })(src as never);
+      },
+    });
+    expect(asked.sort()).toEqual(["big", "small"]); // the secret conversation was never even read
+    const by = Object.fromEntries(
+      snap.entries.map((e) => [e.source.kind === "handle" ? e.source.handle : "?", e])
+    );
+    expect(by.small?.state).toBe("seen");
+    expect(by.big?.state).toBe("oversize");
+    expect(JSON.stringify(snap)).not.toContain("xxxxxxxx");
+    expect(snap.restricted).toBe(true);
+  });
+});

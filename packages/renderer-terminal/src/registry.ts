@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type BarChartValue,
+  type ChatValue,
   DELTA_FORMAT,
   type KpiValue,
   LocalizedText,
@@ -12,16 +13,20 @@ import {
   type TableCell,
   type TableValue,
   type TimeSeriesValue,
+  chatTranscriptLines,
   checkKindValue,
   checkMediaUrl,
   cleanMediaText,
   deltaDirection,
   describeMedia,
   effectiveFormat,
+  fieldsProblem,
   formatSemanticNumber,
   isActiveMediaType,
   isSameOriginMediaUrl,
   maxBytesFor,
+  oneLineChatText,
+  optionsProblem,
   tableColumnFormat,
   tableColumnLabel,
   unitSuffix,
@@ -345,6 +350,77 @@ const mediaInput =
       : "[file upload — available on the web]";
   };
 
+// ── Chat and inputs (U8) ───────────────────────────────────────────────────────
+// The transcript prints as the SAME lines the web surface speaks (`chatTranscriptLines`: speaker,
+// status note, fixed failure sentence + reference id, restricted entries as bare placeholders, media
+// described without an address), under the title. Untrusted text is cleaned to one bounded line per
+// turn: a terminal escape (ESC) or a bidi override in a turn cannot reach the screen.
+const chatTranscript = (host: boolean) =>
+  guarded(host, "Chat", (w, v) => {
+    const chat = v as ChatValue;
+    const lines = chatTranscriptLines(chat);
+    const out: string[] = [];
+    if (chat.older !== undefined) out.push("… earlier messages are available");
+    out.push(...(lines.length === 0 ? ["(no messages)"] : lines));
+    if (chat.running === true && !chat.entries.some((e) => e.status === "streaming"))
+      out.push("(the assistant is replying…)");
+    if (chat.state === "closed") out.push("(conversation closed)");
+    const indent = hang(host);
+    return [...(host ? [] : [`${title(w)}:`]), ...out.map((l) => `${indent}${l}`)].join("\n");
+  });
+
+/** A prop that is text: a string, or an uncompiled LocalizedText's fallback; cleaned to one line. */
+const propText = (raw: unknown): string => {
+  const parsed = LocalizedText.safeParse(raw);
+  const text = typeof raw === "string" ? raw : parsed.success ? parsed.data.fallback : "";
+  return oneLineChatText(text, 120);
+};
+
+// An input is a prompt in a terminal: say what it asks, so an interactive host can collect the answer
+// (and send it through the same write-back as the web). Static, so never `guarded`.
+const textPrompt =
+  (host: boolean): TerminalWidgetRenderer =>
+  (w) => {
+    const label = propText(w.props.label) || "Message";
+    const multi = w.props.multiline === true ? " (multi-line)" : "";
+    const body = `> ${label}${multi} [text input — answer on an interactive surface]`;
+    return host ? body : `${title(w)}: ${body}`;
+  };
+
+const formPrompt =
+  (host: boolean): TerminalWidgetRenderer =>
+  (w) => {
+    const label = propText(w.props.label) || "Form";
+    const fields =
+      fieldsProblem(w.props.fields) === undefined
+        ? (w.props.fields as ReadonlyArray<{
+            name: string;
+            label: string;
+            type: string;
+            required?: boolean;
+          }>)
+        : [];
+    const rows = fields.map(
+      (f) =>
+        `${hang(host)}  ${oneLineChatText(f.label, 60)}${f.required === true ? "*" : ""} (${f.type})`
+    );
+    const head = `> ${label} [form — answer on an interactive surface]`;
+    return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
+  };
+
+const selectPrompt =
+  (host: boolean): TerminalWidgetRenderer =>
+  (w) => {
+    const label = propText(w.props.label) || "Choose";
+    const options =
+      optionsProblem(w.props.options) === undefined
+        ? (w.props.options as ReadonlyArray<{ label: string }>)
+        : [];
+    const rows = options.map((o, i) => `${hang(host)}  ${i + 1}) ${oneLineChatText(o.label, 60)}`);
+    const head = `> ${label} [choice — answer on an interactive surface]`;
+    return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
+  };
+
 /** The framework kinds' renderers. A NEW registry each call — never mutate a shared one. */
 export function createLoomUiTerminalRegistry(
   opts: TerminalRegistryOptions = {}
@@ -363,7 +439,11 @@ export function createLoomUiTerminalRegistry(
     .register("Audio", mediaLine(host, "Audio", opts.media))
     .register("Video", mediaLine(host, "Video", opts.media))
     .register("File", mediaLine(host, "File", opts.media))
-    .register("MediaInput", mediaInput(host));
+    .register("MediaInput", mediaInput(host))
+    .register("Chat", chatTranscript(host))
+    .register("TextInput", textPrompt(host))
+    .register("FormInput", formPrompt(host))
+    .register("SelectInput", selectPrompt(host));
 }
 
 export const loomUiTerminalRegistry: RendererRegistry<TerminalWidgetRenderer> =
