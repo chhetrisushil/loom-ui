@@ -108,6 +108,7 @@ export {
   MEDIA_KINDS,
   MEDIA_TEXT_PROPS,
   MEDIA_TYPE_VERSION,
+  MAX_EMBEDDED_SCAN,
   acceptMediaAttach,
   addressProblem,
   checkFileName,
@@ -132,6 +133,7 @@ export {
   safeFileName,
 } from "./media";
 export type {
+  IssuedMedia,
   MediaAttachRefusal,
   MediaIssue,
   MediaKind,

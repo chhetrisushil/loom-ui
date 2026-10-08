@@ -125,3 +125,19 @@ describe("terminal media", () => {
     );
   });
 });
+
+describe("fix round 2: terminal and the app origin", () => {
+  it("refuses an untrusted absolute link on the configured appOrigin", () => {
+    const media = {
+      link: () => "https://app.example.com/media/1",
+      policy: { appOrigin: "https://app.example.com" },
+    };
+    expect(draw("Image", ref(), { media })).toMatch(/ref#[0-9a-f]{8}/);
+    expect(draw("Image", ref(), { media: { ...media, trusted: () => true } })).toContain(
+      "https://app.example.com/media/1"
+    );
+    expect(
+      draw("Image", ref(), { media: { link: () => "https://cdn.example.com/m/1" } })
+    ).toContain("cdn.example.com");
+  });
+});

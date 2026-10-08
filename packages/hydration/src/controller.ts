@@ -446,8 +446,11 @@ export class HydrationController {
         .map((a) => a.handle)
         .filter(
           (h) =>
-            this.opts.outputKinds === undefined ||
-            (this.kinds.get(h) ?? []).includes("StreamingText")
+            // A media-bound handle is never streamable: a text chunk must not overwrite a MediaRef,
+            // and with no `outputKinds` the kinds known here are the node-type media ones only.
+            !(this.kinds.get(h) ?? []).some(isMediaKind) &&
+            (this.opts.outputKinds === undefined ||
+              (this.kinds.get(h) ?? []).includes("StreamingText"))
         )
     );
     for (const r of restricted) {

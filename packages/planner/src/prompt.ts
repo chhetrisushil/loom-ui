@@ -193,10 +193,15 @@ const MAX_REDACT_DEPTH = 16;
  */
 export function redactAddresses(value: unknown, depth = 0): unknown {
   if (typeof value === "string") return value.replace(ADDRESS_SHAPED, "[address]");
-  if (depth >= MAX_REDACT_DEPTH || typeof value !== "object" || value === null) return value;
+  if (typeof value !== "object" || value === null) return value;
+  // Past the cap the subtree is DROPPED, never passed through unredacted (fail closed).
+  if (depth >= MAX_REDACT_DEPTH) return "[truncated]";
   if (Array.isArray(value)) return value.map((v) => redactAddresses(v, depth + 1));
   return Object.fromEntries(
-    Object.entries(value).map(([k, v]) => [k, redactAddresses(v, depth + 1)])
+    Object.entries(value).map(([k, v]) => [
+      k.replace(ADDRESS_SHAPED, "[address]"),
+      redactAddresses(v, depth + 1),
+    ])
   );
 }
 

@@ -160,11 +160,30 @@ export interface MediaPolicy {
    * SVG...) would execute with the app's cookies. Untrusted media is served cross-origin.
    */
   readonly allowSameOriginUntrusted?: boolean;
+  /**
+   * The app's own origin (`https://app.example`). The web surface defaults to `location.origin`; a
+   * terminal has none, so set it there if untrusted absolute URLs on the app origin must be refused.
+   */
+  readonly appOrigin?: string;
 }
 
-/** Is `url` (already accepted by {@link checkMediaUrl}) served from the app's own origin (`/path` or `blob:`)? */
-export const isSameOriginMediaUrl = (url: string): boolean =>
-  url.startsWith("/") || url.startsWith("blob:");
+/**
+ * Is `url` (already accepted by {@link checkMediaUrl}) served from the app's own origin? A `/path` and a
+ * `blob:` URL always are; an ABSOLUTE `https://app.example/...` is when its origin equals `appOrigin`.
+ * Without an `appOrigin` an absolute URL is judged cross-origin. What this cannot see: a cross-origin
+ * URL that redirects back to the app (a server-side matter: the resolver must not mint redirecting
+ * URLs for untrusted media), and a DIFFERENT origin that shares the app's cookie scope (a sibling
+ * subdomain an attacker can influence): serve untrusted media from a registrable domain of its own.
+ */
+export function isSameOriginMediaUrl(url: string, appOrigin?: string): boolean {
+  if (url.startsWith("/") || url.startsWith("blob:")) return true;
+  if (appOrigin === undefined) return false;
+  try {
+    return new URL(url).origin === appOrigin;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Media types that execute or script in a browser when opened: markup (`text/html`, any `+xml`,
@@ -172,9 +191,14 @@ export const isSameOriginMediaUrl = (url: string): boolean =>
  * never drawn, whatever element would hold it: the same bytes opened in a tab are a page.
  */
 export function isActiveMediaType(mediaType: string): boolean {
-  const t = mediaType.toLowerCase();
+  // The ESSENCE: parameters (`text/html; charset=x`) and case do not change what a browser does.
+  const t = (mediaType.split(";")[0] ?? "").trim().toLowerCase();
   return (
     t === "text/html" ||
+    t === "text/xsl" ||
+    t === "application/hta" ||
+    t === "text/x-scriptlet" ||
+    t === "text/cache-manifest" ||
     t === "text/xml" ||
     t === "application/xml" ||
     t === "application/xhtml+xml" ||
@@ -247,19 +271,21 @@ function privateV6(h: string): boolean {
     if (g[2] === 1) return true; // 64:ff9b:1::/48 local-use NAT64
     return zero(2, 6) ? v4of(g[6] as number, g[7] as number) : false; // NAT64: embedded v4
   }
+  if (g[0] === 0x2001 && g[1] === 0) return true; // 2001:0::/32 Teredo (embeds a client address)
   if (g[0] === 0x2002) return v4of(g[1] as number, g[2] as number); // 6to4: embedded v4
   const top = g[0] as number;
   return (
     (top & 0xfe00) === 0xfc00 || // fc00::/7 unique local
     (top & 0xffc0) === 0xfe80 || // fe80::/10 link-local
+    (top & 0xffc0) === 0xfec0 || // fec0::/10 site-local (deprecated)
     (top & 0xff00) === 0xff00 // multicast
   );
 }
 
 function privateHost(hostname: string): boolean {
   let h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  // `localhost.` is the same host as `localhost`: one trailing root dot is not a different name.
-  if (h.endsWith(".")) h = h.slice(0, -1);
+  // `localhost.` is the same host as `localhost`: trailing root dots are not a different name.
+  h = h.replace(/\.+$/, "");
   if (h.includes(":")) return privateV6(h);
   if (!h.includes(".")) return true; // single label: intranet
   const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
@@ -326,25 +352,69 @@ const LITERAL_REF =
 const looksLikeLiteralRef = (s: string): boolean => LITERAL_REF.test(s.trim());
 
 const INVISIBLE = /[\u00ad\u200b-\u200f\u2060\ufeff]/g;
-const EMBEDDED = [
-  /[a-z][a-z0-9+.-]*:\/\/\S/i, // any scheme://
+/** Longest text `containsEmbeddedRef` scans; anything longer is reported by its callers, not scanned. */
+export const MAX_EMBEDDED_SCAN = 4096;
+
+// Every pattern here is LINEAR in the text: either a regex with no nested/overlapping quantifier, or
+// one of the two hand-written scanners below (a `scheme://` and a `host.tld/path` regex each backtrack
+// quadratically on `a.a.a.…`). Do not "simplify" them back into one regex.
+const SIMPLE = [
   /\b(?:data|blob|javascript|vbscript|file):\S/i,
   /\bwww\.[a-z0-9-]+\.[a-z]{2,}/i,
-  /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S/i, // host.tld/path
   /\b[a-z0-9]{3,10}:[0-9a-f]{16,}\b/i, // algo:hex content address
   /\bbaf[a-z2-7]{20,}/, // base32 CID
   /\bQm[1-9A-HJ-NP-Za-km-z]{40,}/, // base58 CIDv0
 ];
 
+const isAlpha = (c: number): boolean => c >= 97 && c <= 122; // a-z (input is lower-cased)
+const isDigit = (c: number): boolean => c >= 48 && c <= 57;
+const isSpace = (c: number): boolean => c === 32 || (c >= 9 && c <= 13) || c === 0xa0;
+
+/** `scheme://x`: an occurrence of `://` right after a run of scheme characters holding a letter, then a non-space. */
+function hasSchemeLocator(t: string): boolean {
+  for (let i = t.indexOf("://"); i !== -1; i = t.indexOf("://", i + 1)) {
+    const after = t.charCodeAt(i + 3);
+    if (Number.isNaN(after) || isSpace(after)) continue;
+    let sawLetter = false;
+    for (let j = i - 1; j >= 0; j--) {
+      const c = t.charCodeAt(j);
+      if (isAlpha(c)) sawLetter = true;
+      else if (!(isDigit(c) || c === 43 || c === 45 || c === 46)) break; // + - .
+    }
+    if (sawLetter) return true;
+  }
+  return false;
+}
+
+/** `label.tld/x`: a `/` right after a letters-only TLD (2+), a dot, and a host label, then a non-space. */
+function hasHostPath(t: string): boolean {
+  for (let i = t.indexOf("/"); i !== -1; i = t.indexOf("/", i + 1)) {
+    const after = t.charCodeAt(i + 1);
+    if (Number.isNaN(after) || isSpace(after)) continue;
+    let j = i - 1;
+    while (j >= 0 && isAlpha(t.charCodeAt(j))) j--;
+    if (i - 1 - j < 2 || j < 1 || t.charCodeAt(j) !== 46) continue; // need 2+ letters, then "."
+    const before = t.charCodeAt(j - 1);
+    if (isAlpha(before) || isDigit(before)) return true;
+  }
+  return false;
+}
+
 /**
  * Does `text` CONTAIN a URL, a scheme-prefixed locator, a bare `host/path`, a `www.` host, an
  * `algo:hex` content address or a CID? Compatibility-normalised first (fullwidth `ｈｔｔｐ：／／`) with
- * invisible characters removed. A HINT for composition-time review, not a security boundary: the
- * boundary is that a reference only ever comes from a binding and the host's resolver.
+ * invisible characters removed. LINEAR time, and text over {@link MAX_EMBEDDED_SCAN} characters is
+ * not scanned but reported as embedding (fail closed). A HINT for composition-time review, not a
+ * security boundary: the boundary is that a reference only ever comes from a binding and the host's
+ * resolver. Known false positives: dotted names followed by a slash read as `host.tld/path`
+ * (`Node.js/React`), and an `algo:hex` shape is any 3-10 character tag with 16+ hex digits.
  */
 export function containsEmbeddedRef(text: string): boolean {
-  const t = text.normalize("NFKC").replace(INVISIBLE, "");
-  return EMBEDDED.some((re) => re.test(t));
+  if (text.length > MAX_EMBEDDED_SCAN) return true;
+  const t = text.normalize("NFKC").replace(INVISIBLE, "").toLowerCase();
+  // `toLowerCase` would hide the case-sensitive CID shapes; test those on the original too.
+  const raw = text.normalize("NFKC").replace(INVISIBLE, "");
+  return hasSchemeLocator(t) || hasHostPath(t) || SIMPLE.some((re) => re.test(t) || re.test(raw));
 }
 
 function textValues(props: Readonly<Record<string, unknown>>): Array<[string, string]> {
@@ -369,10 +439,13 @@ export function embeddedRefWarnings(
 ): Finding[] {
   return textValues(props)
     .filter(([, v]) => containsEmbeddedRef(v))
-    .map(([k]) => ({
-      code: "embedded-ref",
+    .map(([k, v]) => ({
+      code: v.length > MAX_EMBEDDED_SCAN ? "text-too-long-to-scan" : "embedded-ref",
       severity: "warn" as const,
-      message: `"${nodeId}": prop "${k}" embeds a URL or address — references come from bindings, not text`,
+      message:
+        v.length > MAX_EMBEDDED_SCAN
+          ? `"${nodeId}": prop "${k}" is over ${MAX_EMBEDDED_SCAN} characters and is not scanned for embedded references`
+          : `"${nodeId}": prop "${k}" embeds a URL or address — references come from bindings, not text`,
       nodeId,
     }));
 }
@@ -416,6 +489,11 @@ export function mediaPropFindings(
       err(
         "media-literal-ref",
         `"${nodeId}": prop "${key}" is a literal address or URL — a media reference may only come from a binding`
+      );
+    else if (typeof value === "string" && key !== "accept" && value.length > MAX_EMBEDDED_SCAN)
+      err(
+        "media-prop-too-long",
+        `"${nodeId}": prop "${key}" is over ${MAX_EMBEDDED_SCAN} characters: media text is short, and long text is not scanned`
       );
     else if (typeof value === "string" && key !== "accept" && containsEmbeddedRef(value))
       err(
@@ -488,31 +566,43 @@ export function mediaCatalogEntries(
 
 export type MediaAttachRefusal =
   | "not-an-attach" // not a MEDIA_ATTACH action, or no object payload
+  | "not-media-input" // the widget it names is not an upload control
   | "bad-ref" // the payload ref is not a valid File MediaRef, or violates accept / maxBytes
   | "not-issued" // the host never issued this address to this principal
   | "stale"; // the action was not taken on the current view
+
+/** What the host's upload handler recorded when it issued an address: the TRUTH about the bytes. */
+export interface IssuedMedia {
+  readonly mediaType: string;
+  readonly size?: number;
+}
 
 /**
  * HOST-SIDE acceptance of a `MEDIA_ATTACH` action. The action is CLIENT INPUT: everything the
  * widget checked (type, size, `origin: "user"`) was checked in a browser the user controls. This is
  * the check that counts:
  *
- *  1. it is a `MEDIA_ATTACH` with a payload ref that re-parses as a `File` `MediaRef` (strict) and,
- *     if given, satisfies `accept` / `maxBytes`;
- *  2. `issued(address, principal)` is true: the address is one THIS host's upload handler issued to
- *     this session/principal. Without it a client could attach any address it has ever seen or
- *     guessed (an address is a capability), or one issued to another user;
- *  3. the action is `fresh` against `current` (`actionFreshness`): taken on the view still current;
- *  4. the accepted ref is re-stamped `origin: "user"`, whatever the client claimed.
+ *  1. it is a `MEDIA_ATTACH` naming a widget that is an upload control (`isMediaInput`, if given),
+ *     with a payload ref that re-parses as a `File` `MediaRef` (strict);
+ *  2. `issued(address, principal)` returns the stored `{ mediaType, size? }` of an address THIS host's
+ *     upload handler issued to THIS principal, or `undefined`. Without it a client could attach any
+ *     address it has seen or guessed, or another user's;
+ *  3. the CLIENT's `mediaType` and `size` are discarded and replaced by the stored ones (a client
+ *     claiming `image/png` for a stored `text/html` changes nothing); `accept` / `maxBytes` are
+ *     enforced on the stored values. The resolver's `Content-Type` must likewise come from the stored
+ *     record, never from the ref;
+ *  4. the action is `fresh` against `current` (`actionFreshness`);
+ *  5. the accepted ref is re-stamped `origin: "user"`.
  *
  * Returns the ref to act on, or a typed refusal. Total: never throws.
  */
 export function acceptMediaAttach<P>(
   action: unknown,
   options: {
-    readonly issued: (address: string, principal: P) => boolean;
+    readonly issued: (address: string, principal: P) => IssuedMedia | undefined;
     readonly principal: P;
     readonly current: CurrentHead;
+    readonly isMediaInput?: (widgetId: string) => boolean;
     readonly accept?: readonly string[];
     readonly maxBytes?: number;
   }
@@ -524,21 +614,28 @@ export function acceptMediaAttach<P>(
     const payload = a.payload as { ref?: unknown } | null;
     if (typeof payload !== "object" || payload === null || typeof a.widgetId !== "string")
       return { ok: false, reason: "not-an-attach" };
+    if (options.isMediaInput !== undefined && options.isMediaInput(a.widgetId) !== true)
+      return { ok: false, reason: "not-media-input" };
     const claimed = payload.ref;
     if (!isMediaRef("File", claimed)) return { ok: false, reason: "bad-ref" };
-    if (options.accept !== undefined && !matchesAccept(claimed.mediaType, options.accept))
-      return { ok: false, reason: "bad-ref" };
-    if (
-      options.maxBytes !== undefined &&
-      claimed.size !== undefined &&
-      claimed.size > options.maxBytes
-    )
-      return { ok: false, reason: "bad-ref" };
     if (actionFreshness(a as never, options.current) !== "fresh")
       return { ok: false, reason: "stale" };
-    if (options.issued(claimed.address, options.principal) !== true)
-      return { ok: false, reason: "not-issued" };
-    return { ok: true, ref: { ...claimed, origin: "user" }, widgetId: a.widgetId };
+    const stored = options.issued(claimed.address, options.principal);
+    if (typeof stored !== "object" || stored === null) return { ok: false, reason: "not-issued" };
+    const truth: MediaRef = {
+      address: claimed.address,
+      mediaType: stored.mediaType,
+      ...(stored.size !== undefined && { size: stored.size }),
+      ...(claimed.name !== undefined && { name: claimed.name }),
+      ...(claimed.alt !== undefined && { alt: claimed.alt }),
+      origin: "user",
+    };
+    if (!isMediaRef("File", truth)) return { ok: false, reason: "bad-ref" };
+    if (options.accept !== undefined && !matchesAccept(truth.mediaType, options.accept))
+      return { ok: false, reason: "bad-ref" };
+    if (options.maxBytes !== undefined && truth.size !== undefined && truth.size > options.maxBytes)
+      return { ok: false, reason: "bad-ref" };
+    return { ok: true, ref: truth, widgetId: a.widgetId };
   } catch {
     return { ok: false, reason: "not-an-attach" };
   }

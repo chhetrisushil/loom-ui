@@ -266,27 +266,35 @@ the DECLARED size before the resolver is asked), `untrusted: "mark" | "block"` a
 **Untrusted active content and origins.** Untrusted bytes of an ACTIVE type (`isActiveMediaType`: `text/html`,
 `application/xhtml+xml`, `image/svg+xml`, `text/xml`, `application/xml`, any `+xml`, script types, Flash) are
 never drawn: the same bytes opened in a tab are a page, and `download` does not stop open-in-new-tab. Untrusted
-media is also refused on a same-origin `/path` or `blob:` URL (it would run in the app's own origin) unless
+media is also refused on a same-origin `/path`, `blob:` or absolute URL on the app's origin (`policy.appOrigin`, default
+`location.origin` on the web; unset on a terminal) (it would run in the app's own origin) unless
 `policy.allowSameOriginUntrusted: true`. **The resolver's response must carry the headers that make this real:**
 `X-Content-Type-Options: nosniff`, `Content-Disposition: attachment` for `File`, and
 `Content-Security-Policy: sandbox` (plus a `Content-Type` equal to the ref's `mediaType`). `checkMediaUrl` refuses
 private, loopback, link-local, CGNAT, multicast/reserved IPv4, v4-mapped / IPv4-compatible / NAT64 / 6to4 IPv6 (embedded
 v4 checked), `localhost[.localdomain]`, `.local`/`.internal`/`.lan`/`.home.arpa` and single-label hosts, also with a
-trailing root dot. A public DNS name that RESOLVES to a private address (nip.io style) is invisible here: preventing
+trailing root dot. The origin check cannot see a cross-origin URL that redirects back to the app (the
+resolver must not mint redirecting URLs for untrusted media) or a different origin sharing the app's cookie scope (an
+attacker-influenced sibling subdomain): serve untrusted media from a registrable domain of its own. A public DNS name that RESOLVES to a private address (nip.io style) is invisible here: preventing
 that is the resolver's job (resolve and pin the address, or only mint URLs on hosts you control).
 
 **Accepting an upload is the host's check.** A `MEDIA_ATTACH` action is CLIENT INPUT: the widget's type/size checks and
 `origin: "user"` run in a browser the user controls. Call `acceptMediaAttach(action, { issued, principal, current,
-accept?, maxBytes? })` on the host: it re-parses the ref (strict `File` contract), requires `issued(address, principal)`
-(an address this host's upload handler issued to THIS principal: otherwise a client could attach any address it has
-seen or guessed, or another user's), requires the action to be `fresh` against `current`, and returns the ref
-re-stamped `origin: "user"`, or a typed refusal (`not-an-attach` / `bad-ref` / `stale` / `not-issued`).
+isMediaInput?, accept?, maxBytes? })` on the host: it checks the widget is an upload control (`isMediaInput`), re-parses
+the ref (strict `File` contract), requires `issued(address, principal)` to return the STORED `{ mediaType, size? }` of an
+address this host's upload handler issued to THIS principal (otherwise a client could attach any address it has seen or
+guessed, or another user's), then REPLACES the client's `mediaType` and `size` with the stored ones (enforcing `accept` /
+`maxBytes` on them), requires the action to be `fresh` against `current`, and returns the ref re-stamped `origin: "user"`,
+or a typed refusal (`not-an-attach` / `not-media-input` / `bad-ref` / `stale` / `not-issued`). The resolver's
+`Content-Type` must come from that stored record too, never from a ref a client sent.
 
 **Names.** `checkFileName(name, mediaType)` flags a name whose executable/scriptable final extension disagrees with
 its type (`invoice.pdf.exe` as `application/pdf`): the surface shows the type next to the name and the download name
 drops the misleading extension. Text props that EMBED a URL or address (`containsEmbeddedRef`: schemes, `www.`,
 `host/path`, `algo:hex`, CIDs; NFKC-normalised) are `media-embedded-ref` errors on media nodes and `embedded-ref`
-warnings elsewhere. That scan is a hint for review, NOT a security boundary: the boundary is that a reference only
+warnings elsewhere. The scan is linear and bounded (`MAX_EMBEDDED_SCAN`, 4096 characters: longer media text is
+`media-prop-too-long`, longer text elsewhere a `text-too-long-to-scan` warning). Known false positives: a dotted name
+before a slash (`Node.js/React`) reads as `host.tld/path`. That scan is a hint for review, NOT a security boundary: the boundary is that a reference only
 comes from a binding and the host's resolver.
 
 **Trust.** Media is untrusted unless the host vouches (`MediaResolution.trusted`); `origin` on the ref

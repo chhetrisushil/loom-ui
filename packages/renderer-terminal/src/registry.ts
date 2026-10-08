@@ -312,7 +312,8 @@ const mediaLine = (host: boolean, kind: MediaKind, media: TerminalMediaOptions |
     const trusted = ref.origin !== "user" && media?.trusted?.(ref, kind) === true;
     // Untrusted active content (HTML, SVG, XML, script types) is never offered: no link, no handle.
     const active = !trusted && isActiveMediaType(ref.mediaType);
-    const sameOrigin = (u: string): boolean => !trusted && isSameOriginMediaUrl(u);
+    const sameOrigin = (u: string): boolean =>
+      !trusted && isSameOriginMediaUrl(u, policy?.appOrigin);
     const link = tooLarge || active ? undefined : media?.link?.(ref, kind);
     const checked = checkMediaUrl(link, policy);
     const offered =
