@@ -7,6 +7,8 @@ import {
   contentRefPaths,
   findEntry,
   formatArgPath,
+  isChatInputKind,
+  isChatKind,
   isContainer,
   isMediaInputKind,
   isMediaKind,
@@ -90,7 +92,7 @@ export function describeCatalog(catalog: SemanticCatalog): string {
   return catalog.entries
     .map(
       (e) =>
-        `- ${e.name}@${e.version} — props: ${e.props.length ? e.props.join(", ") : "none"}; binding: ${e.binding}; surfaces: ${Object.keys(e.surfaces).join(", ")}${e.sensitivity === "model-may-set" ? "; sensitivity: model-may-set" : ""}${valueNotes(catalog, e)}${mediaNote(e)}`
+        `- ${e.name}@${e.version} — props: ${e.props.length ? e.props.join(", ") : "none"}; binding: ${e.binding}; surfaces: ${Object.keys(e.surfaces).join(", ")}${e.sensitivity === "model-may-set" ? "; sensitivity: model-may-set" : ""}${valueNotes(catalog, e)}${mediaNote(e)}${chatNote(e)}`
     )
     .join("\n");
 }
@@ -132,6 +134,22 @@ function mediaNote(e: SemanticCatalog["entries"][number]): string {
     return "; media input: a static upload control — set no data on it, it collects a file from the user";
   if ([...kinds].some(isMediaKind))
     return "; media: shows a content reference supplied by the bound capability — NEVER write an address, URL, file contents or autoplay in props (only text such as alt/caption); bind a capability that returns a reference, and never write a literal into a capability argument its schema marks as a content reference";
+  return "";
+}
+
+/**
+ * U8: guidance for an entry that resolves to a chat kind. Present ONLY when the catalogue offers one.
+ * Framework text, not model- or tool-authored. The model shapes WHERE a conversation and its inputs go
+ * and what they are called; it never writes what is said in one, nor what a person enters.
+ */
+function chatNote(e: SemanticCatalog["entries"][number]): string {
+  const kinds = new Set<string>();
+  for (const res of Object.values(e.surfaces))
+    if (res !== undefined && !("degradeTo" in res)) kinds.add(res.kind);
+  if ([...kinds].some(isChatKind))
+    return "; chat: shows a conversation transcript supplied by the bound capability — NEVER write messages, turns, replies or any transcript text in props (only emptyText and editable); what people and the assistant say is data, not yours to author";
+  if ([...kinds].some(isChatInputKind))
+    return "; input: a static control a person fills in — set no value, default, prefill or submit on it, and bind nothing; a form's props only describe its fields (name, label, type, bounds), never what is entered";
   return "";
 }
 

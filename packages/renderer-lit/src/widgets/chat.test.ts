@@ -502,3 +502,43 @@ describe("lu-chat: edit a previous turn (a NEW turn, never a mutation)", () => {
     expect(qa(el, "[data-text]")[0]?.textContent).toBe("user 1"); // the earlier turn is still there
   });
 });
+
+describe("parity with the terminal surface", () => {
+  it("the web and the terminal speak the same words for the same transcript (shared speaker, note and fixed sentences)", async () => {
+    const { chatTranscriptLines } = await import("@loom-ui/core/chat");
+    const v = value(
+      [
+        e(1, "user"),
+        e(1, "assistant", { status: "interrupted", parts: text("par") }),
+        e(2, "user", { editOf: 1 }),
+        e(2, "assistant", {
+          status: "failed",
+          parts: undefined,
+          reason: "model-error",
+          errorId: "err-7",
+        }),
+        e(3, "user", { status: "rejected", parts: undefined, reason: "stale" }),
+        e(3, "assistant", { status: "restricted", parts: undefined }),
+        e(4, "user", { asker: { actor: "alice" } }),
+        e(4, "assistant", { status: "streaming", parts: text("Thi") }),
+      ],
+      { viewer: { actor: "me" } }
+    );
+    // (turn 4 is someone else's in shared mode; turns 1-3 carry no asker so they are the viewer's own)
+    const el = await mount(v);
+    const web = qa(el, "article").map((a) => {
+      const who = a.querySelector(".who")?.textContent ?? "";
+      const note = a.querySelector(".note")?.textContent ?? "";
+      const body = [...a.querySelectorAll("[data-text], [data-fixed]")]
+        .map((n) => n.textContent?.replace(/\s+/g, " ").trim())
+        .join(" ");
+      return a.getAttribute("data-status") === "restricted"
+        ? "[restricted]"
+        : `${who}${note === "" ? "" : ` ${note}`}: ${body}`.trimEnd();
+    });
+    const terminal = chatTranscriptLines(v).map((l) =>
+      l.startsWith("[restricted") ? "[restricted]" : l
+    );
+    expect(web).toEqual(terminal);
+  });
+});

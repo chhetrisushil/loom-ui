@@ -156,6 +156,8 @@ export class LuChat extends LuWidget {
       .caret {
         display: inline-block;
         width: 0.5em;
+        height: 1em;
+        vertical-align: text-bottom;
         margin-inline-start: 1px;
         background: var(--lu-text-dim, #8b949e);
       }
@@ -378,7 +380,7 @@ export class LuChat extends LuWidget {
           ? this.editor()
           : html`${(e.parts ?? []).map((p, i) =>
               p.type === "text"
-                ? html`<p class="text" data-text>${cleanText(p)}${e.status === "streaming" ? html`<span class="caret" aria-hidden="true">&#8203;</span>` : nothing}</p>`
+                ? html`<p class="text" data-text>${cleanText(p)}${e.status === "streaming" ? html`<span class="caret" aria-hidden="true"></span>` : nothing}</p>`
                 : this.mediaPart(e, p, i)
             )}`
       }
