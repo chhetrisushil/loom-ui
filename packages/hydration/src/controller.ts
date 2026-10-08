@@ -13,6 +13,7 @@ import {
   experienceHandles,
   handleKindsWithMedia,
   hasMediaTypeNodes,
+  isChatKind,
   isMediaKind,
   mergeReadPolicy,
   treeDepth,
@@ -169,8 +170,14 @@ export interface ControllerOptions {
  * kinds: its bound nodes' resolved kinds can change (a catalogue edit, a widened binding) without
  * the provider itself changing, and that must not abort an in-flight load or force a re-run.
  */
-/** Does a handle feed a media display widget (so its value must be a MediaRef, always)? */
-const feedsMedia = (kinds: readonly string[]): boolean => kinds.some(isMediaKind);
+/**
+ * A kind whose value is a STRUCTURED contract the data boundary always enforces: a media display
+ * widget (a MediaRef, U9) or a chat transcript (a ChatValue, U8). Neither may ever be a streamed
+ * string, and neither may rely on a provider that declared only a shape.
+ */
+const isStrictValueKind = (kind: string): boolean => isMediaKind(kind) || isChatKind(kind);
+/** Does a handle feed a media display widget or a chat transcript (so its value must meet that contract, always)? */
+const feedsMedia = (kinds: readonly string[]): boolean => kinds.some(isStrictValueKind);
 
 export function loadFingerprint(spec: ProviderSpec, kinds: readonly string[]): string {
   if (spec.outputCheck !== "contract" || kinds.length === 0) return specFingerprint(spec);
@@ -492,9 +499,9 @@ export class HydrationController {
         .map((a) => a.handle)
         .filter(
           (h) =>
-            // A media-bound handle is never streamable: a text chunk must not overwrite a MediaRef,
+            // A media- or chat-bound handle is never streamable: a text chunk must not overwrite a MediaRef or a transcript,
             // and with no `outputKinds` the kinds known here are the node-type media ones only.
-            !(this.kinds.get(h) ?? []).some(isMediaKind) &&
+            !(this.kinds.get(h) ?? []).some(isStrictValueKind) &&
             (this.opts.outputKinds === undefined ||
               (this.kinds.get(h) ?? []).includes("StreamingText"))
         )

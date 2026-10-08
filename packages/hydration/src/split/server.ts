@@ -13,6 +13,7 @@ import {
   experienceHandles,
   handleKindsWithMedia,
   hasMediaTypeNodes,
+  isChatKind,
   isMediaKind,
   mergeReadPolicy,
   treeDepth,
@@ -590,7 +591,7 @@ async function serveOne(
       return refuse("unknown-handle", `"${handle}" is not a handle this experience binds`);
     // U9: a handle feeding a media widget is ALWAYS contract-checked, whatever the provider
     // declared (a shape pin passes inline bytes or a locator into a client payload and the cache).
-    const mediaBound = (pass.kinds.get(handle) ?? []).some(isMediaKind);
+    const mediaBound = (pass.kinds.get(handle) ?? []).some((k) => isMediaKind(k) || isChatKind(k));
     const spec: ProviderSpec =
       mediaBound && declared.outputCheck !== "contract"
         ? { ...declared, outputCheck: "contract" }

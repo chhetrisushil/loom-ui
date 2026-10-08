@@ -32,7 +32,13 @@
 //    feed never infers one (loom's record has no such field today, see the README).
 
 import { sanitizeChatText } from "./chatText";
-import { type ChatActor, type ChatEntry, type ChatValue, MAX_CHAT_ENTRIES } from "./chatValue";
+import {
+  type ChatActor,
+  type ChatEntry,
+  type ChatValue,
+  MAX_CHAT_ENTRIES,
+  sameChatActor,
+} from "./chatValue";
 import { MAX_ACTOR_FIELD, isChatCursor, isChatErrorId, isChatReason } from "./chatValue";
 import type { Finding } from "./experience";
 import { MAX_CHUNK_TEXT, type StreamedText, appendChunk } from "./streamText";
@@ -65,17 +71,6 @@ export function parseChatActor(raw: unknown): ChatActor | undefined {
     ...(typeof tenant === "string" && tenant.length <= MAX_ACTOR_FIELD && { tenant }),
     ...(typeof onBehalfOf === "string" && onBehalfOf.length <= MAX_ACTOR_FIELD && { onBehalfOf }),
   };
-}
-
-/** Equal iff all three fields are equal (loom's rule: an absent field equals only an absent field). */
-export function sameChatActor(a: ChatActor | undefined, b: ChatActor | undefined): boolean {
-  return (
-    a !== undefined &&
-    b !== undefined &&
-    a.actor === b.actor &&
-    a.tenant === b.tenant &&
-    a.onBehalfOf === b.onBehalfOf
-  );
 }
 
 const ROLE_RANK = { user: 0, assistant: 1, system: 2 } as const;

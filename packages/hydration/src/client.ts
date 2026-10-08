@@ -37,3 +37,10 @@ export type {
   HandleRef,
   SplitControllerOptions,
 } from "./split/client";
+export { connectConversation, publishChat } from "./chatSource";
+export type {
+  ConversationConnection,
+  ConversationConnectionOptions,
+  EventSourceLike,
+  FetchResponseLike,
+} from "./chatSource";

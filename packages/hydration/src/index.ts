@@ -75,3 +75,10 @@ export type {
 } from "./split/index";
 export { SCHEMA_REPAIRED, remapOperation } from "./repair";
 export type { SchemaRepairedPayload } from "./repair";
+export { connectConversation, publishChat } from "./chatSource";
+export type {
+  ConversationConnection,
+  ConversationConnectionOptions,
+  EventSourceLike,
+  FetchResponseLike,
+} from "./chatSource";

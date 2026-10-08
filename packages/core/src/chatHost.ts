@@ -26,6 +26,14 @@
 
 import { type ActionOutcome, type CurrentHead, actionFreshness } from "./action";
 import {
+  EDIT_TURN_ACTION,
+  LOAD_OLDER_ACTION,
+  SELECT_ACTION,
+  SUBMIT_FORM_ACTION,
+  SUBMIT_TEXT_ACTION,
+  isSubmitKey,
+} from "./chatActions";
+import {
   type FieldError,
   type FormField,
   type FormValues,
@@ -36,43 +44,6 @@ import {
   validateTextValue,
 } from "./chatForm";
 import { isChatCursor } from "./chatValue";
-
-export const SUBMIT_TEXT_ACTION = "SUBMIT_TEXT";
-export const SUBMIT_FORM_ACTION = "SUBMIT_FORM";
-export const SELECT_ACTION = "SELECT";
-export const EDIT_TURN_ACTION = "EDIT_TURN";
-export const LOAD_OLDER_ACTION = "LOAD_OLDER";
-
-/** The idempotency key shape: short, URL-safe, long enough to be unguessable when random. */
-const KEY = /^[A-Za-z0-9_-]{16,128}$/;
-export const isSubmitKey = (k: unknown): k is string => typeof k === "string" && KEY.test(k);
-
-let counter = 0;
-/**
- * A fresh idempotency key. `crypto.randomUUID` / `getRandomValues` when the platform has them; a
- * time + counter + `Math.random` fallback otherwise (uniqueness, not secrecy, is what it is for:
- * a key is not a credential, the ledger scopes it to the principal and the widget).
- */
-export function newSubmitKey(): string {
-  const c = (
-    globalThis as {
-      crypto?: {
-        randomUUID?: () => string;
-        getRandomValues?: (a: Uint8Array) => Uint8Array;
-      };
-    }
-  ).crypto;
-  if (typeof c?.randomUUID === "function") return c.randomUUID();
-  if (typeof c?.getRandomValues === "function") {
-    const b = c.getRandomValues(new Uint8Array(16));
-    return Array.from(b, (x: number) => x.toString(16).padStart(2, "0")).join("");
-  }
-  counter = (counter + 1) % 0xffffff;
-  return `k${Date.now().toString(36)}-${counter.toString(36)}-${Math.random().toString(36).slice(2, 12)}`.padEnd(
-    16,
-    "0"
-  );
-}
 
 /** What the host knows an input node is: derived from the node's own props, never from the action. */
 export type InputSpec =

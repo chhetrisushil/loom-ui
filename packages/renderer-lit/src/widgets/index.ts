@@ -4,6 +4,7 @@ export { LuA2UIView } from "./lu-a2ui-view";
 export { LuBarChart } from "./lu-bar-chart";
 export { LuDataTable } from "./lu-data-table";
 export { LuA2UIWidget, LuSandboxWidget } from "./lu-embedded";
+export { LuChatMissing } from "./lu-chat-missing";
 export { LuKpi } from "./lu-kpi";
 export { LuLocalePicker } from "./lu-locale-picker";
 export { LuMediaMissing } from "./lu-media-missing";

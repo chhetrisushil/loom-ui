@@ -145,11 +145,13 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "HydrationStore",
       "SplitHydrationController",
       "checkParams",
+      "connectConversation",
       "handleOfPath",
       "hydrationProjection",
       "isReservedHandle",
       "jsonPathSelect",
       "outputShapeHashOf",
+      "publishChat",
       "stepReferences",
       "terminalSteps",
       "topoWaves",
@@ -177,6 +179,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "TARGET_UNREGISTERED",
       "checkDataProviderConformance",
       "checkParams",
+      "connectConversation",
       "createServeSurface",
       "defineDataProviders",
       "defineReshapers",
@@ -192,6 +195,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "memoInvoker",
       "outputShapeHashOf",
       "publicFinding",
+      "publishChat",
       "remapOperation",
       "serveHandle",
       "serveHandles",
@@ -236,6 +240,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     // Budget: the client is a scheduler, a projection and param checks — tens of KB, not megabytes.
     const bytes = out.outputFiles[0]?.contents.byteLength ?? Number.POSITIVE_INFINITY;
     console.info(`@loom-ui/hydration/client browser bundle (minified, esm): ${bytes} bytes`);
-    expect(bytes).toBeLessThan(64 * 1024);
+    // 64 -> 72 KiB for U8: the ChatValue contract (~6 kB) rides in `checkKindValue` exactly as the
+    // MediaRef contract does, plus the ~2 kB conversation connection.
+    expect(bytes).toBeLessThan(72 * 1024);
   });
 });
