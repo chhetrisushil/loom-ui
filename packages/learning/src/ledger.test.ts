@@ -1,7 +1,7 @@
 import { eventStoreLineageStore } from "@loom-ui/lineage";
 import { UNIT_KEY } from "@loom-ui/planner";
 import { InMemoryAsyncEventStore } from "@loom/event-runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   InMemoryVoteLog,
   type Vote,
@@ -272,6 +272,30 @@ describe("U11 contention is a typed result, never a throw", () => {
     lose = false;
     expect(await l.recordVote(REF, vote("v1", "b", X))).toBe("ok");
   }, 30_000);
+
+  it("lost CAS attempts back off before retrying (after the first immediate retry)", async () => {
+    let losses = 3;
+    const inner = new InMemoryVoteLog();
+    const log: VoteLog = {
+      read: (st) => inner.read(st),
+      append: async (st, e, rec) => {
+        if (losses > 0) {
+          losses -= 1;
+          return { ok: false, tip: e };
+        }
+        return inner.append(st, e, rec);
+      },
+    };
+    const l = mk(log);
+    const spy = vi.spyOn(globalThis, "setTimeout");
+    try {
+      expect(await l.recordVote(REF, vote("v1", "b", X))).toBe("ok");
+      // three losses: attempt 0 retries at once, attempts 1 and 2 sleep first (deterministic count)
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 
   it("one ledger never loses a CAS to itself: 200 concurrent votes cost zero rejected appends", async () => {
     const inner = new InMemoryVoteLog();

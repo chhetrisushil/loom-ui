@@ -111,6 +111,12 @@ past that only that viewer is refused (`viewer-capacity`). The last quarter of `
 **reserved for first votes**: a returning viewer is refused (`viewer-capacity`) once the log holds 75% of
 the cap, while a viewer with no vote yet can still vote until the cap itself. So viewers cannot fill the
 log between them while a new one is turned away, short of genuinely running out of capacity.
+The reserve is only as strong as viewer identity: `ingest({ viewer })` MUST be the host's authenticated
+session (tenant + id), never a client-supplied id. A principal holding many identities, or a host that derives
+ids loosely, can spend the reserve with fresh viewers (each still capped at `maxBatchesPerViewer`, the pool at
+`maxViewers`). Cost: the ledger caches state for up to 1024 decisions, each with a per-viewer count; a lost CAS
+(cross-replica contention only) re-reads and re-folds that decision's log, so size `maxEntriesPerDecision`
+and `maxViewers` to what one decision really needs.
 
 **`pseudonymKey` rotation.** A rotated key gives each viewer a NEW `viewerKey`, so a viewer who voted
 under the old key and votes again under the new one counts as two viewers in a still-open decision.
