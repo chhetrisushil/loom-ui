@@ -461,6 +461,18 @@ app.post("/api/ui-action", async (req, res) => {
 });
 ```
 
+**Calling `acceptChatSubmit` directly.** `createWriteBack` does the bookkeeping for you; if you call `acceptChatSubmit`
+yourself you MUST call `commit()` when the write succeeds and `release()` when it fails, or every retry of that key
+answers `in-flight` until the ledger's TTL. The same holds for a route that never settles: a hung write keeps its key
+pending until the TTL (time-box your routes). The ledger is in-memory: a restart forgets its keys. That is safe for a
+conversation because `conversationTarget` sends the key as the turn's `messageId` and loom's R17 dedupes durably on
+(sender, messageId); a `resumeTarget` / `paramsTarget` host should give the key to its own durable dedupe the same way
+(`idempotencyKey` is passed on for exactly that).
+
+**`mode` is the host's claim.** `ChatFeed({ mode: "owner" })` makes every turn with no `asker` "You" and editable. Configure a
+feed over a SHARED conversation as owner-only and every participant's unattributed turn is mislabelled as the viewer's
+own: set `mode` from what the conversation actually is (`"shared"` there), or leave it unset (neutral "User").
+
 `LOAD_OLDER` is not a write: the widget emits it so the page can call `connection.loadOlder()` (the cursor is the
 feed's own). Routed to a `conversationTarget` anyway it is refused with the reason `browser-side`.
 

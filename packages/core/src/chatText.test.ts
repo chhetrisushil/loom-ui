@@ -155,3 +155,58 @@ describe("invisible glyph carriers (fix round 1)", () => {
     expect(performance.now() - t0).toBeLessThan(250);
   });
 });
+
+describe("fix round 2: VS16 is kept only where it selects something", () => {
+  const cp = (...c: number[]) => String.fromCodePoint(...c);
+  const VS = cp(0xfe0f);
+  it("a run collapses to ONE after an emoji (no 200 000-mark side channel) and to none after text", () => {
+    expect(sanitizeChatText(`${cp(0x1f600)}${VS.repeat(200_000)}`, 1_000_000)).toBe(
+      `${cp(0x1f600)}${VS}`
+    );
+    expect(sanitizeChatText(`a${VS}${VS}`)).toBe("a");
+    expect(sanitizeChatText(`${cp(0x2764)}${VS}${VS}${VS}`)).toBe(`${cp(0x2764)}${VS}`);
+  });
+  it("is dropped after whitespace, a no-break space, an em space and line separators; kept after (c) and after a keycap sequence", () => {
+    for (const w of [" ", "\n", "\t", cp(0xa0), cp(0x2003), cp(0x2028), cp(0x2029), cp(0x3000)])
+      expect(sanitizeChatText(`x${w}${VS}y`).includes(VS), JSON.stringify(w)).toBe(false);
+    expect(sanitizeChatText(`${cp(0xa9)}${VS}`)).toBe(`${cp(0xa9)}${VS}`);
+    expect(sanitizeChatText(`1${VS}${cp(0x20e3)}`)).toBe(`1${VS}${cp(0x20e3)}`);
+    expect(sanitizeChatText(`#${VS}${cp(0x20e3)}`)).toBe(`#${VS}${cp(0x20e3)}`);
+    expect(sanitizeChatText(`1${VS}2`)).toBe("12");
+    expect(sanitizeChatText(`${VS}lead`)).toBe("lead");
+  });
+  it("PROPERTY: sanitising its own output changes nothing (idempotent) over a random corpus", () => {
+    let seed = 0xbeef;
+    const rnd = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    const pool = [
+      VS,
+      VS,
+      cp(0x1f600),
+      cp(0x2764),
+      "a",
+      "1",
+      "#",
+      cp(0x20e3),
+      " ",
+      "\n",
+      cp(0xa0),
+      cp(0x2028),
+      cp(0x200d),
+      cp(0xfe0e),
+      cp(0xad),
+      "\r",
+      cp(0xa9),
+      "é",
+      cp(0xd83d),
+    ];
+    for (let i = 0; i < 2000; i++) {
+      let s = "";
+      for (let j = 0; j < 25; j++) s += pool[Math.floor(rnd() * pool.length)];
+      const once = sanitizeChatText(s);
+      expect(sanitizeChatText(once), JSON.stringify(s)).toBe(once);
+    }
+  });
+});

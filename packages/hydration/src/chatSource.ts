@@ -82,6 +82,8 @@ export interface ConversationConnection {
   close(): void;
 }
 
+/** A stream open at least this long (ms) was healthy: its end is not a failure streak. */
+const HEALTHY_MS = 5000;
 const EVENTS = ["status", "partial", "delta", "reset", "message", "closed", "reconnect", "error"];
 const finding = (code: string, message: string): Finding => ({ code, severity: "error", message });
 
@@ -171,15 +173,21 @@ export function connectConversation(
         if (r.changed) publish();
         if (r.reconnect === true) {
           // Asked to recycle. A server that does so right after opening is looping: back off like a failure.
-          failures = now() - openedAt < 5000 ? failures + 1 : 0;
-          reopen(Math.max(floor, failures === 0 ? 0 : backoff()));
+          const healthy = now() - openedAt >= HEALTHY_MS;
+          if (healthy) failures = 0;
+          reopen(failures === 0 ? floor : Math.max(floor, backoff()));
+          if (!healthy) failures++;
         }
       });
     // A stream the platform has given up on (it keeps trying by itself while CONNECTING).
     (es as { onerror?: () => void }).onerror = () => {
       if (es.readyState === 2) {
+        // A stream that stayed up long enough was healthy: its end starts the backoff afresh, and the
+        // first wait is the documented base.
+        if (now() - openedAt >= HEALTHY_MS) failures = 0;
+        const delay = backoff();
         failures++;
-        reopen(backoff());
+        reopen(delay);
       }
     };
   }
@@ -204,12 +212,13 @@ export function connectConversation(
       open();
       return;
     }
+    const delay = backoff();
     failures++;
     cancelReopen?.();
     cancelReopen = timer(() => {
       cancelReopen = undefined;
       void begin();
-    }, backoff());
+    }, delay);
   }
 
   return {

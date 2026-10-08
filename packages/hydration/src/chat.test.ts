@@ -537,7 +537,7 @@ describe("P3-11: reconnecting and the first page", () => {
     });
     await conn.start();
     expect(sources).toHaveLength(0);
-    expect(delays).toEqual([4000]); // first failure: base 2 000 doubled once failures counted
+    expect(delays).toEqual([2000]); // the first wait is the documented base
     timers.shift()?.();
     await new Promise((r) => setTimeout(r, 5));
     expect(delays.length).toBe(2);
@@ -547,5 +547,93 @@ describe("P3-11: reconnecting and the first page", () => {
     expect(sources).toHaveLength(1);
     expect(feed.value().entries).toHaveLength(1);
     conn.close();
+  });
+});
+
+describe("fix round 2: the backoff resets after a healthy stream, with an injected clock", () => {
+  class ErrSource extends FakeSource {
+    onerror?: () => void;
+  }
+  it("platform give-ups: the first wait is the base, consecutive quick ones double, and a stream that was up for a while starts afresh", async () => {
+    const delays: number[] = [];
+    const sources: ErrSource[] = [];
+    const timers: Array<() => void> = [];
+    let t = 0;
+    const conn = connectConversation({
+      baseUrl: "/c",
+      feed: new ChatFeed(),
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({ entries: [wire(1, "user")], done: true }),
+      }),
+      openStream: (u) => {
+        const s = new ErrSource(u);
+        sources.push(s);
+        return s;
+      },
+      publish: () => {},
+      now: () => t,
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        timers.push(fn);
+        return () => {};
+      },
+    });
+    await conn.start();
+    const giveUp = () => {
+      const s = sources.at(-1) as ErrSource;
+      s.readyState = 2;
+      s.onerror?.();
+      timers.shift()?.();
+    };
+    giveUp(); // up for 0 ms
+    giveUp();
+    giveUp();
+    expect(delays).toEqual([2000, 4000, 8000]);
+    t += 60_000; // this stream stayed up for a minute, idle but healthy
+    giveUp();
+    expect(delays.at(-1)).toBe(2000); // NOT 16 000: the streak is over
+    giveUp(); // quick again
+    expect(delays.at(-1)).toBe(4000);
+  });
+
+  it("a server recycle after a long healthy stream is a plain 250 ms reopen and clears the streak", async () => {
+    const delays: number[] = [];
+    const sources: ErrSource[] = [];
+    const timers: Array<() => void> = [];
+    let t = 0;
+    const conn = connectConversation({
+      baseUrl: "/c",
+      feed: new ChatFeed(),
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({ entries: [wire(1, "user")], done: true }),
+      }),
+      openStream: (u) => {
+        const s = new ErrSource(u);
+        sources.push(s);
+        return s;
+      },
+      publish: () => {},
+      now: () => t,
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        timers.push(fn);
+        return () => {};
+      },
+    });
+    await conn.start();
+    const s0 = sources[0] as ErrSource;
+    s0.readyState = 2;
+    s0.onerror?.(); // quick failure: 2000
+    timers.shift()?.();
+    t += 20_000;
+    (sources.at(-1) as ErrSource).emit("reconnect", {});
+    expect(delays).toEqual([2000, 250]);
+    timers.shift()?.();
+    const again = sources.at(-1) as ErrSource;
+    again.readyState = 2;
+    again.onerror?.();
+    expect(delays.at(-1)).toBe(2000); // the streak was cleared by the healthy stream
   });
 });
