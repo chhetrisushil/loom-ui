@@ -39,6 +39,22 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./kindValues";
+export {
+  MAX_ADDRESS_LENGTH,
+  MAX_DECLARED_MEDIA_BYTES,
+  MAX_MEDIA_ALT_LENGTH,
+  MAX_MEDIA_NAME_LENGTH,
+  MEDIA_INPUT_KIND,
+  MEDIA_KINDS,
+  addressProblem,
+  isMediaInputKind,
+  isMediaKind,
+  isMediaRef,
+  mediaFamily,
+  mediaTypeProblem,
+  mediaValueIssues,
+} from "./mediaRef";
+export type { MediaIssue, MediaKind, MediaOrigin, MediaRef } from "./mediaRef";
 export type { ContractRegistry, ValueContract } from "./kindValues";
 export {
   HYDRATION_STATUS_PREFIX,

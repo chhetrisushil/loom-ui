@@ -11,6 +11,7 @@ import {
   type Viewer,
   experienceHandles,
   handleKinds,
+  isMediaKind,
   mergeReadPolicy,
   treeDepth,
 } from "@loom-ui/core";
@@ -143,6 +144,9 @@ export interface ControllerOptions {
  * kinds: its bound nodes' resolved kinds can change (a catalogue edit, a widened binding) without
  * the provider itself changing, and that must not abort an in-flight load or force a re-run.
  */
+/** Does a handle feed a media display widget (so its value must be a MediaRef, always)? */
+const feedsMedia = (kinds: readonly string[]): boolean => kinds.some(isMediaKind);
+
 export function loadFingerprint(spec: ProviderSpec, kinds: readonly string[]): string {
   if (spec.outputCheck !== "contract" || kinds.length === 0) return specFingerprint(spec);
   // Normalised exactly as the cache key normalises them: a reordered or repeated kinds list is
@@ -475,8 +479,10 @@ export class HydrationController {
         });
         continue;
       }
-      const spec = Object.hasOwn(exp.providers, use.handle) ? exp.providers[use.handle] : undefined;
-      if (spec === undefined) {
+      const declared = Object.hasOwn(exp.providers, use.handle)
+        ? exp.providers[use.handle]
+        : undefined;
+      if (declared === undefined) {
         const f: Finding = {
           code: "unknown-handle",
           severity: "error",
@@ -487,6 +493,13 @@ export class HydrationController {
         continue;
       }
       const kinds = this.kinds.get(use.handle) ?? [];
+      // U9: a handle feeding a media widget is ALWAYS contract-checked (the MediaRef contract), whatever
+      // the provider declared. A shape pin passes any value of the pinned shape — inline bytes or a
+      // locator included — and what is published here reaches the store, a seen log and a client.
+      const spec =
+        feedsMedia(kinds) && declared.outputCheck !== "contract"
+          ? { ...declared, outputCheck: "contract" as const }
+          : declared;
       // Keyed on the params the provider can USE, never the raw bag: an unrelated param must
       // neither re-run the load nor split its cache entry.
       const params = relevantParams(spec, {

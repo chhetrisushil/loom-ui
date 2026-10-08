@@ -48,6 +48,18 @@ const VALID: Readonly<Record<string, unknown>> = {
   Note: undefined,
   A2UIView: { x: 1 },
   SandboxView: [1],
+  Image: {
+    address: "sha256:abc123",
+    mediaType: "image/png",
+    size: 10,
+    name: "a.png",
+    alt: "x",
+    origin: "tool",
+  },
+  Audio: { address: "sha256:abc123", mediaType: "audio/mpeg" },
+  Video: { address: "sha256:abc123", mediaType: "video/mp4", size: 0 },
+  File: { address: "sha256:abc123", mediaType: "application/pdf", name: "r.pdf" },
+  MediaInput: undefined,
 };
 
 const JUNK: readonly unknown[] = [

@@ -10,6 +10,7 @@ import {
   tableColumnFormat,
   tableColumnLabel,
 } from "./kindValues";
+import { mediaValueIssues } from "./mediaRef";
 
 // The zod-free vocabulary lives in kindValues.ts (a browser bundle imports it without zod);
 // re-exported here so this module keeps its public surface.
@@ -143,6 +144,16 @@ export const StatusCardValue = z.object({
 });
 export type StatusCardValue = z.infer<typeof StatusCardValue>;
 
+/**
+ * A MediaRef for `kind`: the SHARED checker (`media.ts`) drives zod, so the zod-free contract in
+ * `kindValues.ts` cannot drift from it. Messages are value-free.
+ */
+const mediaRefContract = (kind: string): z.ZodType =>
+  z.unknown().superRefine((v, ctx) => {
+    for (const i of mediaValueIssues(kind, v))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...i.path], message: i.message });
+  });
+
 export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   MetricCard: z.number(),
   StatusBadge: z.string(),
@@ -162,6 +173,12 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   // The bound value is the embedded view's / component's data model — any JSON.
   A2UIView: z.unknown(),
   SandboxView: z.unknown(),
+  Image: mediaRefContract("Image"),
+  Audio: mediaRefContract("Audio"),
+  Video: mediaRefContract("Video"),
+  File: mediaRefContract("File"),
+  // Static (props only): a value reaching an upload control is a defect.
+  MediaInput: z.undefined(),
 };
 
 export function kindValueContract(
