@@ -1,13 +1,15 @@
-import { type ContractRegistry, FRAMEWORK_KINDS } from "@loom-ui/core/browser";
+import type { ContractRegistry } from "@loom-ui/core/browser";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import "../widgets/index";
 import type { TitleChrome } from "../widgets/base";
+import type { MediaHostOptions } from "../widgets/lu-media";
 import type { DomRegistry, DomWidgetRenderer } from "./registry";
 
 /** A renderer that mounts `<tag>` and drives its `widget/value/status/onAction` properties. */
 export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): DomWidgetRenderer {
   const chrome = opts.chrome;
   const contracts = opts.contracts;
+  const media = opts.media;
   return (host, props) => {
     const el = document.createElement(tag) as HTMLElement & {
       widget: unknown;
@@ -16,9 +18,11 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
       onAction: unknown;
       chrome: TitleChrome;
       contracts?: ContractRegistry;
+      media?: MediaHostOptions;
     };
     if (chrome !== undefined) el.chrome = chrome;
     if (contracts !== undefined) el.contracts = contracts;
+    if (media !== undefined) el.media = media;
     el.widget = props.widget;
     el.value = props.value;
     el.status = props.status;
@@ -37,8 +41,6 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
   };
 }
 
-export const LIT_ONLY_KINDS: ReadonlySet<string> = new Set(FRAMEWORK_KINDS);
-
 /** The loom contract an app declares on a semantic entry's `surfaces.web` when it resolves to a
  * framework kind. */
 export const frameworkKindContracts: readonly CatalogEntry[] = [
@@ -55,6 +57,16 @@ export const frameworkKindContracts: readonly CatalogEntry[] = [
   { kind: "SandboxView", props: ["code"], binding: "required" },
 ];
 
+/**
+ * The kinds the DEFAULT registry draws. The media kinds (`Image`…`MediaInput`) are framework kinds
+ * with a universal value contract, but their Lit elements are an opt-in entry
+ * (`@loom-ui/renderer-lit/media`, `createMediaLitRegistry`) so a page that draws no media does not
+ * pay for them — the same arrangement as the reference containers.
+ */
+export const LIT_ONLY_KINDS: ReadonlySet<string> = new Set(
+  frameworkKindContracts.map((c) => c.kind)
+);
+
 /** Options shared by every widget the registry mounts. */
 export interface LitRegistryOptions {
   /**
@@ -69,6 +81,13 @@ export interface LitRegistryOptions {
    * with `data-unchecked` rather than silently passing.
    */
   readonly contracts?: ContractRegistry;
+  /**
+   * The host's media seams (U9): the authorising `resolver` that turns a content ref into a
+   * viewer-scoped URL, the display `policy` (size limits, untrusted handling, URL rules) and the
+   * `upload` handler a `MediaInput` hands files to. Without a resolver a media widget draws its
+   * unavailable state: nothing is loaded by default. Build them PER VIEWER SESSION.
+   */
+  readonly media?: MediaHostOptions;
 }
 
 /** The widget registry, configured. A NEW registry each call; `litRegistry` is `createLitRegistry()`. */

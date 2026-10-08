@@ -229,14 +229,14 @@ describe("a composer cannot author a media reference", () => {
 
 describe("display helpers", () => {
   it("cleanMediaText strips controls and bidi marks and bounds", () => {
-    expect(cleanMediaText("a‮b\u0000c\n d")).toBe("a b c d");
+    expect(cleanMediaText("a\u202eb\u0000c\n d")).toBe("a b c d");
     expect(cleanMediaText("x".repeat(500), 10)).toHaveLength(10);
     expect(cleanMediaText(5)).toBe("");
   });
   it("safeFileName has no separators, no leading dot, never empty", () => {
     expect(safeFileName("../../etc/passwd")).toBe("_.._etc_passwd");
     expect(safeFileName("..hidden")).toBe("hidden");
-    expect(safeFileName("‮")).toBe("download");
+    expect(safeFileName("\u202e")).toBe("download");
   });
   it("formatBytes and describeMedia are fixed text", () => {
     expect(formatBytes(0)).toBe("0 B");

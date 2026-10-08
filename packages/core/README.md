@@ -201,8 +201,9 @@ A semantic node binds either a hydrated **handle** (`binding`) or **any other lo
 
 ### Framework kinds and number formatting
 
-- `FRAMEWORK_KINDS` — the eight kinds this package adds beside loom's built-ins: `TimeSeries`,
-  `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`.
+- `FRAMEWORK_KINDS` — the kinds this package adds beside loom's built-ins: `TimeSeries`,
+  `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`, and the media kinds
+  `Image`, `Audio`, `Video`, `File`, `MediaInput` (see "Media" below).
 - `kindValueContracts`, `kindValueContract(kind)`, `checkKindValue(kind, value)` — the zod
   contract per kind (loom's built-ins included) and the check a renderer runs before drawing a
   value; `undefined` (not hydrated yet) or an unknown kind always passes.
@@ -214,9 +215,66 @@ A semantic node binds either a hydrated **handle** (`binding`) or **any other lo
   number MEANS (`number` / `integer` / `decimal` / `percentage` / `currency`, with `notation` and
   fraction-digit bounds) and how every renderer formats, rounds and suffixes it identically.
 
+### Media (U9, `@loom-ui/core/media`)
+
+Media is never bytes in an Experience, a Blueprint, a seen log or a change feed. Four DISPLAY kinds
+(`Image`, `Audio`, `Video`, `File`) are bound like any data widget; the bound value is a **`MediaRef`**:
+
+```ts
+{ address: string,      // an opaque content address ("sha256:..."), a HANDLE, never a URL
+  mediaType: string,    // lower-case type/subtype, no parameters; Image needs image/*, and so on
+  size?: number, name?: string, alt?: string,
+  origin?: "host" | "tool" | "user" }   // a claim; it never grants trust
+```
+
+The contract is strict (a field outside the list — inline bytes, a `url` — is refused), checked by
+`checkKindValue` like every other kind, and its messages never echo the value. `MediaInput` is the
+static upload control (props `accept`, `maxBytes`, `label`; a value reaching it is a defect).
+`mediaCatalogEntries()` returns the five semantic entries (`@1.0.0`) to splice into a catalogue; a
+catalogue without them cannot compose a media node, so a planner is offered media only if the host
+chose to. Node props are text only (`alt`, `caption`, `label`) plus the upload control's `accept` /
+`maxBytes`.
+
+**The leak model.** An address is a capability: the content store has no tenancy of its own (loom
+ADR 0120), so whoever can name an address can read the bytes. It therefore travels ONLY as a hydrated
+value, which the data boundary already gates:
+
+- it is never a node prop. `validateExperience` checks every media node against the FRAMEWORK's
+  allow-list, whatever the catalogue declares: an unknown prop (`src`, `address`, `autoplay`…) is
+  `media-prop-forbidden`, a prop whose whole value is a URL or address is `media-literal-ref`, an
+  unbound display node is `media-unbound`. A composer — a model included — cannot author a reference;
+- a handle the viewer may not see is never loaded (hydration), a restricted node compiles to an opaque
+  placeholder with no binding, `snapshotSeen` never asks the host's reader for it, and `describeChange`
+  / `explainNode` name no data. `mediaLeak.test.ts` is the property test: over 300 seeded experiences x
+  4 viewers, no hidden node's address, file name or caption appears in the Blueprint, fingerprint,
+  change description, seen snapshot or explanation, while the cleared viewer's own does;
+- a media value is bounded: the seen log keeps at most 16 KiB per value, so a value carrying bytes is
+  recorded as `oversize` with no content.
+
+**Resolving and uploading are the HOST's.** loom-ui never fetches an address and never builds a URL from
+one. `MediaResolver(request, { signal }) => MediaResolution` turns a ref into a viewer-scoped URL
+(short-lived and signed, or same-origin behind the host's own auth) or refuses; it MUST authorise. Build
+it per viewer session. `MediaUploadHandler` takes a file the user chose, stores it (authorising,
+scanning, size-limiting) and returns a `MediaRef`; loom-ui stores no bytes. `checkMediaUrl` re-checks
+every URL a resolver returns before an element sees it: https (http only with `allowInsecure`), `blob:`
+or a same-origin path; never `javascript:`/`data:`/`file:`, credentials in the URL, or (by default) a
+private, loopback, link-local or single-label host — a resolver bug must not turn the viewer's browser
+into a probe of the host's network. `MediaPolicy` carries the limits (`maxBytes` per kind, checked on
+the DECLARED size before the resolver is asked), `untrusted: "mark" | "block"` and the URL switches.
+
+**Trust.** Media is untrusted unless the host vouches (`MediaResolution.trusted`); `origin` on the ref
+never grants it, and `origin: "user"` is never trusted. Surfaces mark untrusted media (`data-untrusted`
+on the web, `[untrusted]` in the terminal) or, under `untrusted: "block"`, draw a placeholder.
+
+`cleanMediaText` / `safeFileName` sanitise name and alt text (controls, bidi overrides, path
+separators); `formatBytes` / `describeMedia` are the one description both surfaces use;
+`MEDIA_ATTACH_ACTION` (`"MEDIA_ATTACH"`, payload `{ ref }`) is what an upload emits.
+
 ### Browser entry (`@loom-ui/core/browser`)
 
-The zod-free slice a browser renderer needs: number formatting (`formatSemanticNumber`,
+The zod-free slice a browser renderer needs (the media CONTRACT rides in `checkKindValue`; the rest of
+the media surface is the separate `@loom-ui/core/media` subpath, so a page that draws no media does not
+carry it): number formatting (`formatSemanticNumber`,
 `effectiveFormat`, `unitSuffix`, `deltaDirection`, `DELTA_FORMAT`), `checkKindValue` (a hand-written
 twin of the main entry's, same verdict and same finding message — pinned by a differential test
 against the zod contracts), `FRAMEWORK_KINDS`, `tableColumnLabel`/`tableColumnFormat`,

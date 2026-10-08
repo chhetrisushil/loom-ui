@@ -212,6 +212,34 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 
 ## Notable behaviours and guarantees
 
+- **Media is an opt-in entry (U9): `@loom-ui/renderer-lit/media`.** `createMediaLitRegistry({ media })`
+  is the default registry plus `Image`, `Audio`, `Video`, `File` and `MediaInput`
+  (`registerMediaWidgets(registry, opts)` adds them to one you built; `mediaKindContracts` is what a
+  catalogue's `surfaces.web` carries). It is its own entry so a page with no media does not pay for it
+  (the default `index` budget grew only by the value contract, ~3 kB). The host passes `media: { resolver,
+  policy, upload }` — build them per viewer session:
+  - `resolver` (`MediaResolver`) is the ONLY source of a `src`. It must authorise; its URL is re-checked
+    (`checkMediaUrl`) before it reaches an element. With none, a media widget draws "Media unavailable"
+    and loads nothing. A refusal, a missing blob, a throwing resolver, a rejected URL and an element load
+    error are ONE fixed text — a difference would be an existence oracle for an address; the address,
+    the URL and the reason are never printed in any state.
+  - It resolves only once a value has arrived (so a P2 handle, which hydrates on `markVisible`, resolves
+    nothing off-screen) and, where `IntersectionObserver` exists, only once the element is on screen;
+    `loading="lazy"` / `preload="none"`; nothing autoplays; `referrerpolicy="no-referrer"`; a file is
+    `rel="noopener noreferrer nofollow"` with a sanitised `download` name; name, alt and caption are
+    bound, control- and bidi-stripped text set through attribute bindings.
+  - A declared size over `policy.maxBytes[kind]` is refused BEFORE the resolver is asked; a larger size
+    observed by the resolver is refused too. Media is drawn with an untrusted marker unless the resolver
+    answers `trusted: true` (never for `origin: "user"`); `policy.untrusted: "block"` draws a placeholder.
+  - `MediaInput` hands the chosen file to `upload` (a `MediaUploadHandler`), validates the ref it returns
+    against the `File` contract and `accept`/`maxBytes`, re-stamps it `origin: "user"` and emits
+    `{ type: "MEDIA_ATTACH", payload: { ref } }`, which the adapter stamps with `viewedVersion` like every
+    action. The type and size checks are courtesy only: the host's handler enforces. A result that
+    arrives after the widget was patched or removed is DROPPED (state `stale`) rather than stamped onto a
+    view the user did not choose the file in. No handler = "Uploads are not available"; bytes are never
+    read or stored here.
+
+
 - **A restricted node is a `Note`.** `compile({ viewer })` replaces a node the viewer may not see
   with a static, unbound `Note` (title and `text` "Restricted"), which `lu-note` draws with
   `role="note"` and that text as its accessible name — no value, label or binding of the original.

@@ -66,19 +66,22 @@ const MEDIA_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
 
 /** Why `address` is not an opaque content address, as a value-free message; `undefined` when it is. */
 export function addressProblem(address: string): string | undefined {
-  if (address.length === 0) return "address must not be empty";
-  if (address.length > MAX_ADDRESS_LENGTH)
-    return `address must be at most ${MAX_ADDRESS_LENGTH} characters`;
-  if (!ADDRESS_ALPHABET.test(address)) return "address must be an opaque content address";
-  if (LOCATOR.test(address) || address.includes("//") || address.startsWith("/"))
-    return "address must be an opaque content address, not a locator";
+  if (
+    address.length === 0 ||
+    address.length > MAX_ADDRESS_LENGTH ||
+    !ADDRESS_ALPHABET.test(address) ||
+    LOCATOR.test(address) ||
+    address.includes("//") ||
+    address.startsWith("/")
+  )
+    return `address must be an opaque content address (not a URL), at most ${MAX_ADDRESS_LENGTH} characters`;
   return undefined;
 }
 
 /** Why `mediaType` is not a bare lower-case `type/subtype`, value-free; `undefined` when it is. */
 export function mediaTypeProblem(mediaType: string): string | undefined {
   if (mediaType.length > MAX_MEDIA_TYPE_LENGTH || !MEDIA_TYPE.test(mediaType))
-    return "mediaType must be a lower-case type/subtype with no parameters";
+    return "mediaType must be a lower-case type/subtype";
   return undefined;
 }
 
@@ -111,7 +114,7 @@ const own = (o: object, k: string): unknown => (Object.hasOwn(o, k) ? (o as neve
 export function mediaValueIssues(kind: string, value: unknown): MediaIssue[] {
   const out: MediaIssue[] = [];
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    out.push({ path: [], message: "Expected a media reference object" });
+    out.push({ path: [], message: "Expected a media reference" });
     return out;
   }
   const v = value as object;
@@ -141,19 +144,19 @@ export function mediaValueIssues(kind: string, value: unknown): MediaIssue[] {
     if (typeof size !== "number" || !Number.isInteger(size) || size < 0)
       out.push({ path: ["size"], message: "size must be a non-negative integer" });
     else if (size > MAX_DECLARED_MEDIA_BYTES)
-      out.push({ path: ["size"], message: "size exceeds the declared-size ceiling" });
+      out.push({ path: ["size"], message: "size is out of range" });
   }
   const name = own(v, "name");
   if (name !== undefined && (typeof name !== "string" || name.length > MAX_MEDIA_NAME_LENGTH))
     out.push({
       path: ["name"],
-      message: `name must be a string of at most ${MAX_MEDIA_NAME_LENGTH} characters`,
+      message: `name must be text, at most ${MAX_MEDIA_NAME_LENGTH} characters`,
     });
   const alt = own(v, "alt");
   if (alt !== undefined && (typeof alt !== "string" || alt.length > MAX_MEDIA_ALT_LENGTH))
     out.push({
       path: ["alt"],
-      message: `alt must be a string of at most ${MAX_MEDIA_ALT_LENGTH} characters`,
+      message: `alt must be text, at most ${MAX_MEDIA_ALT_LENGTH} characters`,
     });
   const origin = own(v, "origin");
   if (origin !== undefined && (typeof origin !== "string" || !ORIGINS.includes(origin)))
@@ -162,7 +165,7 @@ export function mediaValueIssues(kind: string, value: unknown): MediaIssue[] {
   const known = new Set(["address", "mediaType", "size", "name", "alt", "origin"]);
   for (const key of Object.keys(v))
     if (!known.has(key)) {
-      out.push({ path: [], message: "unexpected field: a media reference carries no other data" });
+      out.push({ path: [], message: "unexpected field" });
       break;
     }
   return out;
