@@ -4,20 +4,39 @@ export type {
   DecisionLinkResolver,
   DecisionRef,
   LinkFromLedgerOptions,
+  LinkQuery,
 } from "./links";
 export { allOf, seenLogExposure } from "./exposure";
 export type { ExposureCheck, ExposureQuery, SeenLogReader } from "./exposure";
-export { RewardAccumulator, SignalIngestor } from "./ingest";
+export {
+  InMemoryVoteLog,
+  RESTRICTED_NODE,
+  VoteLedger,
+  foldVotes,
+  unitAlias,
+  visibleNode,
+} from "./ledger";
 export type {
-  AccumulatedEntry,
+  Folded,
+  LedgerSpec,
+  StoredVoteRecord,
+  Vote,
+  VoteAppend,
+  VoteLedgerOptions,
+  VoteLog,
+  VoteLogRecord,
+  VoteSignal,
+  VoteSummary,
+} from "./ledger";
+export { SignalIngestor } from "./ingest";
+export type {
   IngestRefusal,
   IngestResult,
   SignalIngestorOptions,
   SignalRejection,
   Viewer,
-  WindowSummary,
 } from "./ingest";
-export { defaultReward, settleRewards } from "./rewards";
+export { defaultReward, isNotTerminal, isPermanentRefusal, settleRewards } from "./rewards";
 export type {
   OutcomeRuntime,
   RewardFunction,

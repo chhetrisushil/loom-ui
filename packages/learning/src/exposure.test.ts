@@ -16,7 +16,8 @@ import {
 import { InMemoryContentStore } from "@loom/plugin-content";
 import { describe, expect, it } from "vitest";
 import { allOf, seenLogExposure } from "./exposure";
-import { RewardAccumulator, SignalIngestor } from "./ingest";
+import { SignalIngestor } from "./ingest";
+import { InMemoryVoteLog, VoteLedger } from "./ledger";
 import { DecisionLinks } from "./links";
 
 const user: Provenance = { source: "user" };
@@ -110,16 +111,19 @@ describe("U11 seenLogExposure over the real SeenLog (U12)", () => {
     expect(await refusing.saw(q)).toBe(false);
   });
 
-  it("gates the ingestor: only a viewer the server recorded a view for is rewarded", async () => {
+  it("gates the ingestor: only a viewer the server recorded a view for is rewarded; strict mode needs the node to be data-bound", async () => {
     const { log, exp } = await setup();
+    const ref = { executionId: "x1", decisionId: "plan-variant:1" };
     const links = new DecisionLinks();
-    links.register("e", exp.versionHash, {
-      decisions: [{ executionId: "x1", decisionId: "plan-variant:1" }],
+    links.register("e", exp.versionHash, { tenant: "acme", decisions: [ref] });
+    const ledger = new VoteLedger({
+      log: new InMemoryVoteLog(),
+      pseudonymKey: "0123456789abcdef0123456789abcdef",
+      clock: () => 0,
     });
-    const accumulator = new RewardAccumulator();
     const ing = new SignalIngestor({
       links,
-      accumulator,
+      ledger,
       clock: () => 0,
       exposure: allOf(seenLogExposure(log)),
     });
@@ -132,10 +136,12 @@ describe("U11 seenLogExposure over the real SeenLog (U12)", () => {
         { kind: "feedback", rating: 5 },
       ],
     });
-    expect((await ing.ingest({ viewer: { id: "alice" }, raw: raw("b1") })).accepted).toBe(2);
-    const bob = await ing.ingest({ viewer: { id: "bob" }, raw: raw("b2") });
+    expect(
+      (await ing.ingest({ viewer: { id: "alice", tenant: "acme" }, raw: raw("b1") })).accepted
+    ).toBe(2);
+    const bob = await ing.ingest({ viewer: { id: "bob", tenant: "acme" }, raw: raw("b2") });
     expect(bob.accepted).toBe(0);
     expect(bob.rejected).toEqual({ unexposed: 2 });
-    expect(accumulator.closed(1)[0]?.summary).toMatchObject({ exposed: 1, feedbackCount: 1 });
+    expect((await ledger.fold(ref)).summary).toMatchObject({ viewers: 1, feedbackViewers: 1 });
   });
 });

@@ -1,6 +1,8 @@
 import { type SemanticCatalog, defineSemanticCatalog } from "@loom-ui/core";
 import { SIGNAL_VERSION } from "@loom-ui/core/signals";
-import { ReferencePlanner, stableBucketPolicy } from "@loom-ui/planner";
+import { eventStoreLineageStore } from "@loom-ui/lineage";
+import { ReferencePlanner, stableBucketPolicy, ucbPolicy } from "@loom-ui/planner";
+import { recordOutcome } from "@loom/analytics";
 import { step$ } from "@loom/core";
 import { EffectRuntime } from "@loom/effect-runtime";
 import { InMemoryAsyncEventStore } from "@loom/event-runtime";
@@ -15,14 +17,16 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { VARIANT_DECISION_PREFIX, evaluateVariants } from "./evaluate";
-import { RewardAccumulator, SignalIngestor } from "./ingest";
-import { DecisionLinks } from "./links";
+import { SignalIngestor } from "./ingest";
+import { VoteLedger, unitAlias } from "./ledger";
+import { DecisionLinks, type DecisionRef } from "./links";
 import { defaultReward, settleRewards } from "./rewards";
 
 // The whole loop through the REAL kernel: the reference planner chooses a variant through
 // `decideWithPolicy` inside a flow (recorded with propensity), the execution finishes, viewers'
-// signals are ingested, rewards are recorded LATE with `runtime.recordOutcome` as the owner, and the
-// variants are compared off-policy from the exported log with `@loom/learning`.
+// signals are ingested into a DURABLE vote log, one pooled reward per decision is recorded LATE with
+// `runtime.recordOutcome` by a reward-pipeline principal, and the variants are compared off-policy
+// from the exported log with `@loom/learning`.
 
 const catalog: SemanticCatalog = defineSemanticCatalog({
   id: "learn.v1",
@@ -64,37 +68,47 @@ const draft = JSON.stringify({
     },
   ],
 });
-const alice = { tenant: "acme", actor: "alice" };
+const owner = { tenant: "acme", actor: "alice" };
+const pipeline = { tenant: "acme", actor: "reward-pipeline" };
 const mallory = { tenant: "evil", actor: "mallory" };
+const KEY = "0123456789abcdef0123456789abcdef";
 
-const planner = new ReferencePlanner({
+const model = { complete: async () => ({ content: draft }) };
+const abPlanner = new ReferencePlanner({
   modelId: "m",
-  model: { complete: async () => ({ content: draft }) },
+  model,
   variants: {
     policy: stableBucketPolicy({ id: "ab", version: "1", weights: { flat: 1, tabs: 1 } }),
     variants: { flat: { guidance: "flat" }, tabs: { guidance: "tabs" } },
   },
 });
 
-type In = { unit: string; park?: boolean };
-type Out = { variant: string | undefined; decisionId: string | undefined };
+type In = { unit: string; park?: boolean; csat?: boolean };
 const io = { inputSchema: z.any(), outputSchema: z.any() };
 
-function rig() {
+function rig(planner: ReferencePlanner, annotate: "tenant" | "owner" = "tenant") {
   const eventStore = new InMemoryAsyncEventStore();
   const runtime = new WorkflowRuntime({
     eventStore,
     snapshotStore: new InMemoryAsyncSnapshotStore(),
     effectRuntime: new EffectRuntime(),
-    executionAuthorizer: executionAccessPolicy(),
+    executionAuthorizer: executionAccessPolicy({ rules: { annotate } }),
   });
-  const runner: FlowRunner<In, Out> = async (ctx, input) => {
+  const runner: FlowRunner<In, unknown> = async (ctx, input) => {
     const r = await planner.compose(
       { intent: { objective: "orders", source: "user" }, catalog, capabilities, unit: input.unit },
       ctx as never
     );
+    // a userspace emit that IMITATES this pipeline's key on the very decision the reward lands on:
+    // it is not kernel-stamped, so the evaluation must not count it
+    if (input.csat && r.report.variant)
+      recordOutcome(ctx, {
+        key: "ui:r1:forged",
+        score: r.report.variant.id === "flat" ? 1 : 0,
+        decisionId: r.report.variant.decisionId,
+      });
     if (input.park) await ctx.suspend({ on: "GO" });
-    return { variant: r.report.variant?.id, decisionId: r.report.variant?.decisionId };
+    return {};
   };
   const flow = {
     definition: {
@@ -106,12 +120,13 @@ function rig() {
       steps: [step$({ id: "noop", name: "n", toolId: "noop", ...io })],
     },
     runner,
-  } as unknown as RegisteredFlow<In, Out>;
+  } as unknown as RegisteredFlow<In, unknown>;
   runtime.registerFlow(flow.definition, flow.runner);
   return { eventStore, runtime, flow };
 }
+
 /** The variant choice an execution recorded, read back from its log. */
-async function variantOf(eventStore: InMemoryAsyncEventStore, executionId: string): Promise<Out> {
+async function variantOf(eventStore: InMemoryAsyncEventStore, executionId: string) {
   const ev = (await eventStore.read(executionId)).find(
     (e) =>
       e.eventType === "DECISION_RECORDED" &&
@@ -120,62 +135,75 @@ async function variantOf(eventStore: InMemoryAsyncEventStore, executionId: strin
   const p = ev?.payload as { decisionId: string; choice: string };
   return { variant: p.choice, decisionId: p.decisionId };
 }
-const batch = (n: number, node: string, signals: unknown[], exp: string) => ({
+const batch = (n: string, exp: string, signals: unknown[]) => ({
   v: SIGNAL_VERSION,
-  batchId: `b${n}`,
+  batchId: n,
   view: { experienceId: exp, versionHash: "v1" },
   signals,
 });
 
 describe("U11 the learning loop through the kernel", () => {
-  it("records variants with propensity, rewards them late as the owner, and picks the winner off-policy", async () => {
-    const { eventStore, runtime, flow } = rig();
+  it("records variants with propensity, pools viewers into ONE late reward per decision, and picks the winner off-policy", async () => {
+    const { eventStore, runtime, flow } = rig(abPlanner);
     const links = new DecisionLinks();
-    const accumulator = new RewardAccumulator();
-    let now = 0;
-    const ing = new SignalIngestor({ links, accumulator, clock: () => now, windowMs: 1000 });
-    const executions: string[] = [];
+    const now = 1_000;
+    // the vote log is DURABLE: loom's EventStore behind the lineage seam, a second store than the runtime's
+    const votes = eventStoreLineageStore(new InMemoryAsyncEventStore(), {
+      streamPrefix: "__loom_ui_votes__:",
+      workflowId: "loom-ui.votes",
+    });
+    const ledger = new VoteLedger({
+      log: votes,
+      pseudonymKey: KEY,
+      clock: () => now,
+      outcomes: ["approved"],
+    });
+    const ing = new SignalIngestor({ links, ledger, clock: () => now, exposure: "client-claimed" });
+    const refs: DecisionRef[] = [];
     const chosen = { flat: 0, tabs: 0 };
 
     for (let i = 0; i < 80; i++) {
-      const unit = `u${i}`;
-      const run = await runtime.start(flow, { unit }, { executionId: `ex-${i}`, principal: alice });
+      const unit = unitAlias(KEY, `user-${i}@example.com`);
+      const run = await runtime.start(
+        flow,
+        { unit, csat: true },
+        { executionId: `ex-${i}`, principal: owner }
+      );
       await run.waitForCompletion();
       const out = await variantOf(eventStore, `ex-${i}`);
-      executions.push(`ex-${i}`);
       chosen[out.variant as "flat" | "tabs"]++;
-      const exp = `exp-${i}`;
-      links.register(exp, "v1", {
+      const ref = { executionId: `ex-${i}`, decisionId: out.decisionId };
+      refs.push(ref);
+      links.register(`exp-${i}`, "v1", {
         tenant: "acme",
-        decisions: [{ executionId: `ex-${i}`, decisionId: out.decisionId as string }],
-        nodes: { orders: { executionId: `ex-${i}`, decisionId: out.decisionId as string } },
+        decisions: [ref],
+        nodes: { orders: ref },
       });
       const good = out.variant === "tabs";
-      const res = await ing.ingest({
-        viewer: { id: unit, tenant: "acme" },
-        raw: batch(
-          i,
-          "orders",
-          [
-            { kind: "exposure", node: "orders" },
-            ...(good
-              ? [
-                  { kind: "engagement", action: "click", count: 2, node: "orders" },
-                  { kind: "engagement", action: "dwell", bucket: 3, node: "orders" },
-                  { kind: "feedback", rating: 5 },
-                ]
-              : [{ kind: "feedback", rating: 2 }]),
-          ],
-          exp
-        ),
-      });
-      expect(res.refused).toBeUndefined();
+      // five viewers per surface; repeats and a hostile extra batch change nothing
+      for (let v = 0; v < 5; v++) {
+        const viewer = { id: `${unit}-v${v}`, tenant: "acme" };
+        const signals = [
+          { kind: "exposure", node: "orders" },
+          ...(good
+            ? [
+                { kind: "engagement", action: "click", count: 2, node: "orders" },
+                { kind: "engagement", action: "dwell", bucket: 3, node: "orders" },
+                { kind: "feedback", rating: 5 },
+              ]
+            : [{ kind: "feedback", rating: 2 }]),
+        ];
+        expect(
+          (await ing.ingest({ viewer, raw: batch(`b${i}-${v}`, `exp-${i}`, signals) })).refused
+        ).toBeUndefined();
+        await ing.ingest({ viewer, raw: batch(`r${i}-${v}`, `exp-${i}`, signals) });
+      }
     }
     expect(chosen.flat).toBeGreaterThan(20);
     expect(chosen.tabs).toBeGreaterThan(20);
 
-    // the variant decision is a learnable decision: alternatives, context and propensity are in the log
-    const log = (await Promise.all(executions.map((e) => eventStore.read(e)))).flat();
+    // the variant decision is a learnable decision, and its unit is an opaque alias, never the user id
+    const log = (await Promise.all(refs.map((r) => eventStore.read(r.executionId)))).flat();
     const rec = log.find(
       (e) =>
         e.eventType === "DECISION_RECORDED" &&
@@ -188,194 +216,233 @@ describe("U11 the learning loop through the kernel", () => {
       policy: { id: "ab", version: "1", propensity: 0.5 },
       context: { kind: "compose" },
     });
-    expect(JSON.stringify(rec?.payload)).not.toMatch(/@/); // no PII-shaped value in the context
+    expect(JSON.stringify(rec?.payload)).not.toMatch(/@|user-/);
 
-    // nothing is settled while the window is open
-    const open = await settleRewards({
-      accumulator,
-      runtime,
-      reward: defaultReward(),
-      rewardId: "r1",
-      before: ing.windowOf(now),
-      authorize: () => ({ principal: alice }),
-    });
-    expect(open.appended).toBe(0);
+    const settle = (decisions: DecisionRef[], principal: object, extra: object = {}) =>
+      settleRewards({
+        ledger,
+        runtime,
+        decisions,
+        reward: defaultReward(),
+        rewardId: "r1",
+        closeId: "end",
+        clock: () => now,
+        authorize: () => ({ principal }),
+        ...extra,
+      });
 
-    // close the window; an UNAUTHORIZED principal cannot reward anyone's decision (log untouched)
-    now += 5_000;
+    // a principal of another tenant cannot reward anyone's decision: refused, log untouched
     const before = (await eventStore.read("ex-0")).length;
-    const denied = await settleRewards({
-      accumulator,
-      runtime,
-      reward: defaultReward(),
-      rewardId: "r1",
-      before: ing.windowOf(now),
-      authorize: () => ({ principal: mallory }),
-    });
+    const denied = await settle(refs.slice(0, 3), mallory);
+    expect(denied.refused).toHaveLength(3);
     expect(denied.appended).toBe(0);
-    expect(denied.refused).toHaveLength(80);
     expect((await eventStore.read("ex-0")).length).toBe(before);
-    expect(accumulator.size).toBe(0); // refused entries are dropped, not retried forever
 
-    // …so re-ingest nothing; settle properly on a fresh accumulator is covered below. Rebuild the signals:
-    // (the denied pass consumed them, which is the documented fail-closed behaviour)
-    now += 5_000;
-    const settledAt = now;
-    const acc2 = new RewardAccumulator();
-    const ing2 = new SignalIngestor({ links, accumulator: acc2, clock: () => now, windowMs: 1000 });
-    for (let i = 0; i < 80; i++) {
-      const out = await variantOf(eventStore, `ex-${i}`);
-      const good = out.variant === "tabs";
-      await ing2.ingest({
-        viewer: { id: `u${i}`, tenant: "acme" },
-        raw: batch(
-          1000 + i,
-          "orders",
-          [
-            { kind: "exposure", node: "orders" },
-            ...(good
-              ? [
-                  { kind: "engagement", action: "click", count: 2, node: "orders" },
-                  { kind: "engagement", action: "dwell", bucket: 3, node: "orders" },
-                  { kind: "feedback", rating: 5 },
-                ]
-              : [{ kind: "feedback", rating: 2 }]),
-          ],
-          `exp-${i}`
-        ),
-      });
-    }
-    now += 5_000;
-    const opts = {
-      accumulator: acc2,
-      runtime,
-      reward: defaultReward(),
-      rewardId: "r1",
-      before: ing2.windowOf(now),
-      authorize: () => ({ principal: alice }),
-    };
-    const rep = await settleRewards(opts);
-    expect(rep).toMatchObject({ appended: 80, duplicates: 0, deferred: 0, refused: [] });
-
-    // late, owner-stamped, status unchanged; the reward is exactly the function's bounded score
-    const state = await runtime.loadState("ex-0", { principal: alice });
-    expect(state?.status).toBe("completed");
-    const outcomes =
-      (state?.variables as { _outcomes?: Array<Record<string, unknown>> })._outcomes ?? [];
-    expect(outcomes).toHaveLength(1);
-    expect(outcomes[0]).toMatchObject({ late: true, recordedBy: "alice" });
-    expect(String(outcomes[0]?.key)).toMatch(/^ui:r1:\d+$/);
-
-    // idempotent end to end: the SAME signals in the same window record nothing new…
-    const replayed = async (rating: (variant: string | undefined) => number) => {
-      const acc = new RewardAccumulator();
-      const again = new SignalIngestor({
-        links,
-        accumulator: acc,
-        clock: () => settledAt,
-        windowMs: 1000,
-      });
-      for (let i = 0; i < 3; i++) {
-        const out = await variantOf(eventStore, `ex-${i}`);
-        const good = out.variant === "tabs";
-        await again.ingest({
-          viewer: { id: `u${i}`, tenant: "acme" },
-          raw: batch(
-            3000 + i,
-            "orders",
-            [
-              { kind: "exposure", node: "orders" },
-              ...(good
-                ? [
-                    { kind: "engagement", action: "click", count: 2, node: "orders" },
-                    { kind: "engagement", action: "dwell", bucket: 3, node: "orders" },
-                  ]
-                : []),
-              { kind: "feedback", rating: rating(out.variant) },
-            ],
-            `exp-${i}`
-          ),
-        });
-      }
-      return settleRewards({ ...opts, accumulator: acc });
-    };
-    expect(await replayed((v) => (v === "tabs" ? 5 : 2))).toMatchObject({
-      appended: 0,
-      duplicates: 3,
+    // the reward pipeline (annotate: tenant) settles the rest; one score each, status unchanged
+    const rep = await settle(refs.slice(3), pipeline);
+    expect(rep).toMatchObject({
+      appended: 77,
+      duplicates: 0,
+      deferred: 0,
       refused: [],
+      abandoned: [],
     });
-    // …and a DIFFERENT score for the same (decision, window) is refused by the kernel, never overwritten
-    const eventsBefore = (await eventStore.read("ex-0")).length;
-    const conflicting = await replayed(() => 1);
-    expect(conflicting.appended).toBe(0);
-    expect(conflicting.refused.length).toBeGreaterThan(0);
-    expect((await eventStore.read("ex-0")).length).toBe(eventsBefore);
+    const state = await runtime.loadState("ex-5", { principal: owner });
+    expect(state?.status).toBe("completed");
+    const uiOutcomes = (
+      (state?.variables as { _outcomes?: Array<Record<string, unknown>> })._outcomes ?? []
+    ).filter((o) => String(o.key).startsWith("ui:r1:end"));
+    expect(uiOutcomes).toHaveLength(1);
+    expect(uiOutcomes[0]).toMatchObject({ late: true, recordedBy: "reward-pipeline" });
+    expect(String(uiOutcomes[0]?.key)).toBe(`ui:r1:end:${ledger.specHash}`);
 
-    // off-policy comparison straight from the exported log
-    const log2 = (await Promise.all(executions.map((e) => eventStore.read(e)))).flat();
-    const ts = trajectories(log2, { terminalReward: () => undefined });
-    expect(
-      ts
-        .flatMap((t) => t.steps)
-        .filter(
-          (s) => s.decisionId.startsWith(VARIANT_DECISION_PREFIX) && s.rewardSource === "direct"
-        )
-    ).toHaveLength(80);
-    const evaluation = evaluateVariants(log2, {
+    // a KERNEL-stamped late outcome from another pipeline (a CSAT import, say) that favours `flat`
+    for (const ref of refs.slice(3)) {
+      const v = (await variantOf(eventStore, ref.executionId)).variant;
+      await runtime.recordOutcome(
+        ref.executionId,
+        { decisionId: ref.decisionId, key: "csat-late", score: v === "flat" ? 1 : 0 },
+        { principal: pipeline }
+      );
+    }
+
+    // re-running settles nothing new (already settled), and a second replica over the same log agrees
+    expect((await settle(refs.slice(3), pipeline)).alreadySettled).toBe(77);
+    const replica = new VoteLedger({
+      log: votes,
+      pseudonymKey: KEY,
+      clock: () => now,
+      outcomes: ["approved"],
+    });
+    expect((await replica.fold(refs[10] as DecisionRef)).summary).toEqual(
+      (await ledger.fold(refs[10] as DecisionRef)).summary
+    );
+
+    // P2-10: the unrelated CSAT outcome (which favours `flat`) is on the same decisions, and
+    // `trajectories` WOULD average it in - evaluateVariants must not
+    const events = (await Promise.all(refs.map((r) => eventStore.read(r.executionId)))).flat();
+    const raw = trajectories(events, { terminalReward: () => undefined })
+      .flatMap((t) => t.steps)
+      .filter((s) => s.decisionId.startsWith(VARIANT_DECISION_PREFIX));
+    const tabsRaw = raw
+      .filter((s) => s.action === "tabs" && s.rewardSource === "direct")
+      .map((s) => s.reward as number);
+    expect(Math.max(...tabsRaw)).toBeLessThan(0.7); // tabs' ui reward (~1) is dragged down by csat 0: the contamination is real
+    const evaluation = evaluateVariants(events, {
+      rewardId: "r1",
       thresholds: { minSteps: 40, minEffectiveSamples: 5, minUnits: 20 },
     });
     expect(evaluation.winner).toBe("tabs");
+    expect(evaluation.deterministicLogging).toBe(false);
     const [top, second] = evaluation.rows;
-    expect(top?.variant).toBe("tabs");
     expect(top?.report.estimator).toBe("snips");
     expect(top?.report.units).toBeGreaterThanOrEqual(20);
     expect(
       (top?.report.estimatedValue ?? 0) - (second?.report.estimatedValue ?? 1)
-    ).toBeGreaterThan(0.5);
+    ).toBeGreaterThan(0.4);
     expect(evaluation.steps).toBe(80);
-    // a gate that demands more evidence than exists names no winner — never a guess
-    expect(evaluateVariants(log2, { thresholds: { minSteps: 10_000 } }).winner).toBeUndefined();
+    // another reward pipeline's id sees none of these rewards
+    expect(evaluateVariants(events, { rewardId: "other" }).winner).toBeUndefined();
+    // a gate that demands more evidence than exists names no winner - never a guess
+    expect(
+      evaluateVariants(events, { rewardId: "r1", thresholds: { minSteps: 10_000 } }).winner
+    ).toBeUndefined();
   });
 
-  it("a decision of a still-running execution is deferred, with the kernel's real error name", async () => {
-    const { runtime, flow } = rig();
-    const run = await runtime.start(
-      flow,
-      { unit: "u-park", park: true },
-      { executionId: "ex-park", principal: alice }
-    );
-    await new Promise((r) => setTimeout(r, 20));
+  it("the default ADR 0116 rule is owner: a pipeline principal that is not the owner is refused until the host opts in", async () => {
+    const { eventStore, runtime, flow } = rig(abPlanner, "owner");
+    await (
+      await runtime.start(flow, { unit: "u_x" }, { executionId: "ex-o", principal: owner })
+    ).waitForCompletion();
+    const out = await variantOf(eventStore, "ex-o");
+    const ref = { executionId: "ex-o", decisionId: out.decisionId };
     const links = new DecisionLinks();
-    const accumulator = new RewardAccumulator();
-    const state = await runtime.loadState("ex-park", { principal: alice });
-    const decisionId = (state?.variables as { _decisions?: Record<string, unknown> })._decisions
-      ? Object.keys((state?.variables as { _decisions: Record<string, unknown> })._decisions).find(
-          (k) => k.startsWith(VARIANT_DECISION_PREFIX)
-        )
-      : undefined;
-    expect(decisionId).toBeDefined();
-    links.register("exp-p", "v1", {
-      tenant: "acme",
-      decisions: [{ executionId: "ex-park", decisionId: decisionId as string }],
+    links.register("e", "v1", { tenant: "acme", decisions: [ref] });
+    const ledger = new VoteLedger({
+      log: eventStoreLineageStore(new InMemoryAsyncEventStore(), {
+        streamPrefix: "__loom_ui_votes__:",
+      }),
+      pseudonymKey: KEY,
+      clock: () => 0,
     });
-    let now = 0;
-    const ing = new SignalIngestor({ links, accumulator, clock: () => now, windowMs: 1000 });
+    const ing = new SignalIngestor({ links, ledger, clock: () => 0, exposure: "client-claimed" });
     await ing.ingest({
-      viewer: { id: "u", tenant: "acme" },
-      raw: batch(1, "x", [{ kind: "exposure", node: "n" }], "exp-p"),
+      viewer: { id: "v", tenant: "acme" },
+      raw: batch("b", "e", [{ kind: "exposure", node: "n" }]),
     });
-    now += 5_000;
-    const rep = await settleRewards({
-      accumulator,
+    const mk = (principal: object) => ({
+      ledger,
       runtime,
+      decisions: [ref],
       reward: defaultReward(),
       rewardId: "r1",
-      before: ing.windowOf(now),
-      authorize: () => ({ principal: alice }),
+      closeId: "end",
+      clock: () => 0,
+      authorize: () => ({ principal }),
     });
-    expect(rep).toMatchObject({ deferred: 1, appended: 0, refused: [] });
-    expect(accumulator.size).toBe(1); // kept for the next settlement
-    await runtime.cancel?.("ex-park", { principal: alice }).catch(() => undefined);
-    void run;
+    expect((await settleRewards(mk(pipeline))).refused).toHaveLength(1);
+  });
+
+  it("a decision of a still-running execution is deferred (the kernel's real error name), then abandoned past maxDeferralMs", async () => {
+    const { eventStore, runtime, flow } = rig(abPlanner);
+    await runtime.start(
+      flow,
+      { unit: "u_p", park: true },
+      { executionId: "ex-park", principal: owner }
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    const out = await variantOf(eventStore, "ex-park");
+    const ref = { executionId: "ex-park", decisionId: out.decisionId };
+    const links = new DecisionLinks();
+    links.register("exp-p", "v1", { tenant: "acme", decisions: [ref] });
+    let now = 0;
+    const ledger = new VoteLedger({
+      log: eventStoreLineageStore(new InMemoryAsyncEventStore(), {
+        streamPrefix: "__loom_ui_votes__:",
+      }),
+      pseudonymKey: KEY,
+      clock: () => now,
+    });
+    const ing = new SignalIngestor({ links, ledger, clock: () => now, exposure: "client-claimed" });
+    await ing.ingest({
+      viewer: { id: "u", tenant: "acme" },
+      raw: batch("b1", "exp-p", [{ kind: "exposure", node: "n" }]),
+    });
+    const opts = {
+      ledger,
+      runtime,
+      decisions: [ref],
+      reward: defaultReward(),
+      rewardId: "r1",
+      closeId: "end",
+      clock: () => now,
+      authorize: () => ({ principal: pipeline }),
+      maxDeferralMs: 1_000,
+    };
+    expect(await settleRewards(opts)).toMatchObject({ deferred: 1, appended: 0, refused: [] });
+    now += 5_000;
+    const rep = await settleRewards(opts);
+    expect(rep.abandoned).toHaveLength(1);
+    expect((await settleRewards(opts)).alreadySettled).toBe(1);
+  });
+
+  it("P3-3: when every variant choice was deterministic (UCB, propensity 1) no winner is named unless explicitly allowed", async () => {
+    const ucb = new ReferencePlanner({
+      modelId: "m",
+      model,
+      variants: {
+        policy: ucbPolicy({ id: "ucb", version: "1", stats: () => ({}) }),
+        variants: { flat: {}, tabs: {} },
+      },
+    });
+    const { eventStore, runtime, flow } = rig(ucb);
+    const links = new DecisionLinks();
+    const ledger = new VoteLedger({
+      log: eventStoreLineageStore(new InMemoryAsyncEventStore(), {
+        streamPrefix: "__loom_ui_votes__:",
+      }),
+      pseudonymKey: KEY,
+      clock: () => 0,
+    });
+    const ing = new SignalIngestor({ links, ledger, clock: () => 0, exposure: "client-claimed" });
+    const refs: DecisionRef[] = [];
+    for (let i = 0; i < 6; i++) {
+      await (
+        await runtime.start(flow, { unit: `u_${i}` }, { executionId: `ex-u${i}`, principal: owner })
+      ).waitForCompletion();
+      const ref = {
+        executionId: `ex-u${i}`,
+        decisionId: (await variantOf(eventStore, `ex-u${i}`)).decisionId,
+      };
+      refs.push(ref);
+      links.register(`e${i}`, "v1", { tenant: "acme", decisions: [ref] });
+      await ing.ingest({
+        viewer: { id: "v", tenant: "acme" },
+        raw: batch(`b${i}`, `e${i}`, [
+          { kind: "exposure", node: "n" },
+          { kind: "feedback", rating: 5 },
+        ]),
+      });
+    }
+    await settleRewards({
+      ledger,
+      runtime,
+      decisions: refs,
+      reward: defaultReward(),
+      rewardId: "r1",
+      closeId: "end",
+      clock: () => 0,
+      authorize: () => ({ principal: pipeline }),
+    });
+    const events = (await Promise.all(refs.map((r) => eventStore.read(r.executionId)))).flat();
+    const thresholds = { minSteps: 3, minEffectiveSamples: 1 };
+    const strict = evaluateVariants(events, { rewardId: "r1", thresholds });
+    expect(strict.deterministicLogging).toBe(true);
+    expect(strict.winner).toBeUndefined();
+    expect(strict.reasons[0]).toMatch(/deterministic/);
+    expect(
+      evaluateVariants(events, { rewardId: "r1", thresholds, allowDeterministicLogging: true })
+        .deterministicLogging
+    ).toBe(true);
   });
 });

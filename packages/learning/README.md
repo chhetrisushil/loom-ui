@@ -1,109 +1,154 @@
 # @loom-ui/learning
 
-**The learning loop, host side (U11).** A planner chooses; a viewer reacts; the reaction becomes a
+**The learning loop, host side (U11).** A planner chooses; viewers react; the reactions become ONE
 bounded reward on the decision that produced what they saw; and the log says which choice was better.
 loom-ui adds no learner and no estimator: the choice is a loom decision (`decideWithPolicy`, ADRs
-0078-0080), the reward is a late `runtime.recordOutcome` (ADR 0116), and the comparison is
+0078-0080), the reward is a late `runtime.recordOutcome` (ADR 0116), the comparison is
 `@loom/learning`'s `evaluatePolicy` (SNIPS) and `promotionGate`. This package is the glue that has to
 distrust the browser. It is **server-side and optional**; `hydration`'s client guards name it among
 the packages a client graph must not reach.
 
 ```
-renderer (opt-in)            host                                   loom
-SignalCollector ──batch──▶ SignalIngestor ─▶ RewardAccumulator ─▶ settleRewards ─▶ runtime.recordOutcome
- (core/signals)             validate, rate, replay,                (closed windows,     (late, owner-authorized,
-                            tenant, saw-it, once                    idempotent key)      idempotent)
-                                   ▲
- ReferencePlanner variants ────────┘ DecisionLinks: version ─▶ (execution, decision)        ─▶ evaluateVariants
- (decideWithPolicy, propensity)                                                                 (evaluatePolicy)
+renderer (opt-in)          host                                              loom
+SignalCollector ─batch─▶ SignalIngestor ─vote─▶ VoteLedger (append-only ─▶ settleRewards ─▶ runtime.recordOutcome
+ (core/signals)           cost, shape, tenant,   VoteLog, CAS)  fold =      (close = CLAIM,    (late, one key per
+                          node, saw-it, names                   1 vote per   frozen summary)    decision)
+                                  ▲                              viewer
+ReferencePlanner variants ────────┘ DecisionLinks: (tenant, version) ─▶ (execution, decision) ─▶ evaluateVariants
+ (decideWithPolicy, propensity)                                                                    (evaluatePolicy)
 ```
 
 ## The signal model
 
-`@loom-ui/core/signals` (see core's README): `exposure`, `engagement` (click/expand counts,
-dwell buckets), `feedback` (1-5), `outcome` (token + boolean), batched per surface version
-(`experienceId`, `versionHash`, optional compile fingerprint), `v: 1`, at most 64 per batch. No text, no
-PII, no raw timing. A restricted node is reported `restricted: true` under its opaque alias (U10c) and
-is attributed at **version level only**: the host never maps an alias back to a real id.
+`@loom-ui/core/signals` (see core's README): `exposure`, `engagement` (click/expand counts, dwell
+buckets sent once per view), `feedback` (1-5), `outcome` (token + boolean), batched per surface version,
+`v: 1`, at most 64 per batch. No text, no PII, no raw timing. A restricted node is reported
+`restricted: true` under its opaque alias (U10c); the host collapses **every** restricted signal of a
+viewer onto one version-level pseudo node, so an alias carries no weight and no real id is ever needed.
 
 ## Decision linkage
 
 `ReferencePlanner` with `variants` records the variant choice as a learnable decision
 (`PlanResult.report.variant.decisionId`; propensity in the log). `plannerProvenance(result)` stamps it
-on the ops as `Provenance.policyDecisionId`, so the U12 ledger already says which decision wrote which
-node. The host registers what it knows per surface version:
+as `Provenance.policyDecisionId`, so the U12 ledger already says which decision wrote which node. The
+host registers what it knows per (tenant, experience, version):
 
 ```ts
 const links = new DecisionLinks();
 links.register(experienceId, versionHash, linkFromLedger(ledger, {
   executionOf: (decisionId) => executionByDecision.get(decisionId),   // the host ran the turn
-  tenant,
+  tenant,                                                             // REQUIRED
+  visibleTo: (viewer) => nodesCompiledVisibleFor(viewer),             // the host's own compile
 }));
 ```
 
-A signal on a node credits that node's decision; a version-level signal (an outcome, a surface
-rating, a restricted node) credits every decision of the version; a node the link does not list (a
-human edit) earns the planner nothing.
+A node signal credits that node's decision; version-level facts (a surface rating, an outcome) and
+restricted nodes credit every decision of the version; a node the link does not list, or that is not
+visible to this viewer, earns nothing and **answers identically** (`unknown-node`), so the host is not an
+existence oracle for hidden nodes. A link without a `tenant` cannot be registered, and the link is looked
+up by tenant: the same experience id in two tenants is two links.
 
 ## Ingesting untrusted signals
 
-`new SignalIngestor({ links, accumulator, clock, exposure? }).ingest({ viewer, raw })`, where `viewer`
-comes from the host's **authenticated session** (never the payload; a `viewerId` in the batch is
-ignored). In order:
+```ts
+const ledger = new VoteLedger({ log, pseudonymKey, clock, outcomes: ["task-approved"] });
+const ing = new SignalIngestor({ links, ledger, clock, exposure: seenLogExposure(seenLog, { versionIsEnough: false }) });
+const result = await ing.ingest({ viewer: { id: session.userId, tenant: session.tenant }, raw: req.body });
+res.status(204).end();     // ALWAYS the same bare answer; keep `result` in server logs
+```
 
-| Check | Refusal |
-|---|---|
-| shape: `validateSignalBatch` (bounded tokens, in-range ints, <=64 signals, extra keys stripped) | `batch-invalid`; a bad *signal* in a good batch is dropped and counted (`invalid`) |
-| replay: a `batchId` already accepted for this viewer | `duplicate-batch` |
-| view: registered, in the viewer's tenant | `unknown-view` (a foreign tenant's view is indistinguishable from an unregistered one) |
-| rate: `rateLimit` signals per viewer per `rateWindowMs`; over budget refuses the batch whole and does **not** remember it | `rate-limited` |
-| saw it: engagement, feedback and outcome count only after the viewer's exposure | `unexposed` |
-| once: exposure, each engagement action, feedback and outcome count once per (viewer, version, node) | `duplicate` |
-| node: must be one the link lists | `unknown-node` |
-| restricted exposures counted per viewer and version | `restricted-cap` |
-| accumulator is full | `capacity` |
+**Answer every well-formed POST with the same bare 204 and keep `IngestResult` server-side.** Its
+reasons (`unknown-node`, `unexposed`, `unknown-outcome`...) are for your logs; echoing them lets a client
+probe what exists, what it may see and which names are registered.
 
-**Saw it.** The ingestor's own ledger of accepted exposures is client-*claimed*: it stops an
-engagement on a node the client never claimed to show, not a determined forger of both. For a reward
-you will pay for, pass an authoritative `exposure` check: `seenLogExposure(seenLog)` re-checks the
-U12 `SeenLog` (the server-recorded view of this exact version for this viewer; an erased viewer or an
-unreadable log answers no), alone or with `allOf(...)`.
+The viewer is the host's authenticated session, **keyed by tenant and id**; a `viewerId` in the payload
+is ignored. In order: **cost** (every call, accepted or refused, is charged to the viewer's rate budget
+before it is parsed; an over-budget call is refused whole and not remembered) -> **shape**
+(`validateSignalBatch`) -> **view** (registered for this tenant; a foreign tenant's view and an
+unregistered one answer alike) -> **node** (listed + visible; a `restricted` flag on a node the link
+lists is refused) -> **saw it** -> **outcome names** (only those registered with the ledger; a client
+cannot mint outcomes). Replays of a `batchId` are refused fast per viewer and ignored by the fold.
 
-Memory is bounded everywhere (remembered keys, batch ids, viewers, accumulator buckets). A bound
-evicts the oldest remembered key, so a very old duplicate could count again; the per-batch, per-viewer
-rate and the once-per-key rule bound what that can add.
+**Exposure is required.** `exposure` is an authoritative `ExposureCheck` or the explicit string
+`"client-claimed"` (demos and tests). Use `seenLogExposure(seenLog, { versionIsEnough: false })` wherever
+nodes are data-bound: the server-recorded view of this exact version, with the node among the recorded
+entries (an erased viewer or an unreadable log answers no). Static nodes leave no entry in a `SeenLog`;
+for those the default `versionIsEnough: true` accepts a recorded view of the version. `"client-claimed"`
+stops an engagement on a node the client never claimed to show, and nothing more.
 
-## Rewards
+## One bounded vote per viewer (the vote ledger)
 
-`defaultReward({ engagement, feedback, outcome })` is a weighted mean of the components a window has
-(engaged share of exposed node views; mean rating mapped to 0-1; outcome success rate), in `[0, 1]`,
-`undefined` with no exposure. Any `RewardFunction` fits. `settleRewards({ accumulator, runtime, reward,
-rewardId, before, authorize })` settles **closed** windows only (`before = ingestor.windowOf(clock())`):
-one `recordOutcome` per (execution, decision, window) with key `ui:<rewardId>:<window>`, score clamped
-to `[0, 1]`, authorized per decision by `authorize(ref)` (`{ principal }` of the execution's owner, the
-ADR 0116 default `annotate: owner`). Re-running is safe (the kernel's `(decisionId, key)` idempotency);
-a *different* score for the same pair is refused by the kernel, never overwritten, which is why a window
-is only settled once it can no longer change. A still-running execution is `deferred` and retried;
-a refusal (unauthorized, unknown decision, conflict) is dropped and reported in `refused`, never retried
-forever. Several windows' scores for a decision are averaged by `trajectories`. The accumulator is in
-memory: persist it (or settle often) if a restart must not lose an open window.
+Accepted signals are appended to an **append-only log per decision** (`VoteLog`: `append` iff the tip is
+`n`, `read`; structurally `@loom-ui/lineage`'s `LineageStore`, so `eventStoreLineageStore(eventStore)`
+over SQLite/Postgres is the durable reference and `InMemoryVoteLog` the single-process one). The score
+is a **fold** of the log, and the fold reduces each viewer to one vote: engagement = engaged nodes /
+exposed nodes (a click, an expand or dwell >= 5 s counts; counts capped), the latest rating, outcomes
+by registered name, at most 64 nodes and 128 batches per viewer, at most 100 000 viewers per decision
+(`overflowViewers` counts the rest, in log order). Pooling is a mean of per-viewer terms in [0,1], so no
+client-controlled number multiplies a reward. A replayed batch is ignored (an old rating cannot override
+a newer one); an engagement or rating counts only after the **same viewer's** exposure of that node.
+
+Because there is no in-memory "once" ledger, there is nothing to evict: the per-decision entry cap
+(`maxEntriesPerDecision`) makes ingest **refuse** (`capacity`) rather than forget. The in-memory log is a
+single ingesting process; any number of replicas can share a durable `VoteLog`, and the log's CAS
+interleaves their appends. Viewers appear in the log only as `viewerKey` = HMAC(`pseudonymKey`, tenant,
+id); destroy the key and the votes can no longer be tied to a person.
+
+## Rewards: settle once, at a close
+
+`settleRewards({ ledger, runtime, decisions, reward, rewardId, closeId, authorize, clock })` closes each
+decision at a host-declared moment (an experiment end, a TTL after the execution finished). The close
+appends a **CLAIM** to the decision's log; every reader folds only the votes before the first CLAIM, so
+two replicas settling at once compute the **same frozen summary and score**, and the kernel's
+`(decisionId, key)` idempotency absorbs the repeat (a conflicting score is impossible, not merely
+refused). One `recordOutcome` per decision, key `ui:<rewardId>:<closeId>:<specHash>` (`specHash` names the
+ledger's outcome names and caps, so a changed spec records under a new key). `defaultReward` is the
+weighted mean 1 / 2 / 3 of engagement, rating and outcome rate **over per-viewer terms**, in [0,1].
+
+Why once and not per window: `trajectories` averages a decision's outcomes with equal weight, so many
+partial windows would let a 1-viewer window weigh the same as a 10 000-viewer one. Windows are not
+offered; if you need periodic results, use a new decision (a new planner turn) per period. Give a
+decision ONE `rewardId`/`closeId` for life.
+
+- **Principal.** `authorize(ref)` returns who records it. Prefer a **reward-pipeline principal** granted
+  `annotate` for its tenant (`executionAccessPolicy({ rules: { annotate: "tenant" } })`) or a system
+  grant over impersonating each owner; ADR 0116's default is `annotate: owner`, under which any other
+  principal is refused (tested).
+- **Terminal only.** `recordOutcome` refuses a running execution (ADR 0116). Run learning-relevant planner
+  turns in **short executions** (plan, record, finish), not inside a long-lived agent loop. A not-yet-
+  terminal decision is `deferred` and retried; past `maxDeferralMs` (default 7 days, aged from the CLAIM)
+  it is `abandoned`, marked settled and reported. A transient failure (anything not typed permanent) is
+  retried up to `maxAttempts` per process, then abandoned; only `ExecutionDeniedError` and
+  `OutcomeRefusedError` are treated as permanent refusals (marked settled, reported in `refused`).
+  Not-terminal detection is by error name, isolated in `isNotTerminal` (TODO: a loom typed check).
 
 ## UI evaluation
 
-`evaluateVariants(events, { thresholds })` takes exported events (any `EventStore.read`), keeps the
-variant decisions, scores the late rewards against them (terminal completion is **not** credited to a
-variant), and evaluates "always variant V" for each V with `evaluatePolicy`, gated by `promotionGate`.
-It returns per-variant `EvalReport`s, best estimate first, and a `winner` only if one passes the gate.
-loom's defaults demand 1000 evaluable steps, so a small trial passes its own `thresholds`
-(`minSteps`, `minEffectiveSamples`, `minUnits`).
+`evaluateVariants(events, { rewardId, thresholds })` takes exported events (any `EventStore.read`; for a
+compacted execution pass `evidenceEvents(state, events)` from `@loom/learning`, not the raw tail), keeps
+the variant decisions and **only the outcomes this pipeline recorded** (key `ui:<rewardId>:` AND
+kernel-stamped; an unrelated CSAT outcome on the same decision is excluded: tested), and evaluates
+"always variant V" for each V with `evaluatePolicy` gated by `promotionGate`. The unit of an execution is
+its first variant decision's. It returns per-variant reports, best first, and a `winner` only if one
+passes the gate **and** the logging policy explored: if every variant choice was logged with propensity 1
+(UCB, a greedy policy) no estimate is unbiased and no winner is named unless
+`allowDeterministicLogging: true`. loom's default gate demands 1000 steps; a small trial passes its own
+thresholds.
+
+## Units and erasure
+
+The planner's `unit` is a pseudonym: derive it server-side with `unitAlias(key, userId)` (HMAC), never
+from a client, never a raw id or email. It is recorded in the decision log for good; destroying the key
+severs it from the person, but the log still ties one alias's decisions together. `viewerKey` in the vote
+log is a separate HMAC domain under the same kind of key.
 
 ## Reference example spec: `planner-learning` (for `loom-examples`)
 
 Not in this repo (examples live in the sibling `loom-examples`). Proposed shape, headless and offline:
 
-1. Two planner variants, `flat` ("prefer one flat list") and `tabs` (`REFERENCE_CONTAINER_ROLES` plus "prefer grouped tabs"), assigned by `stableBucketPolicy` over 200 synthetic users, with a scripted model.
-2. Each user's turn runs in its own owner-attributed execution; `plannerProvenance` + `linkFromLedger` register the version's decisions.
-3. Simulated viewers drive a `SignalCollector` (exposure, clicks, dwell, a rating); batches go through a `SignalIngestor` with `seenLogExposure`.
-4. `settleRewards` at window close records the late rewards as the owner.
-5. `evaluateVariants` over the exported logs prints the per-variant SNIPS table and names the winner (`tabs`); the same table with `minSteps: 10_000` names none, and the example prints why.
-6. Optional last step: swap in `epsilonGreedyPolicy` with the winner as `greedy` and show the new propensities in the log.
+1. Two planner variants, `flat` and `tabs` (`REFERENCE_CONTAINER_ROLES` plus "prefer grouped tabs"), assigned by `stableBucketPolicy` over 200 synthetic users whose `unit` is `unitAlias(key, userId)`, with a scripted model.
+2. Each user's turn runs in its own short, owner-attributed execution; `plannerProvenance` + `linkFromLedger` register the version's decisions.
+3. Simulated viewers drive a `SignalCollector`; batches go through a `SignalIngestor` with `seenLogExposure` into a `VoteLedger` over `eventStoreLineageStore`.
+4. `settleRewards` at the close records one pooled late reward per decision as a reward-pipeline principal; a second ledger instance over the same log shows the same summaries.
+5. `evaluateVariants` over the exported logs prints the per-variant SNIPS table and names the winner (`tabs`); a stricter gate names none and says why; a UCB-logged run names none and says "deterministic".
+6. Optional: swap in `epsilonGreedyPolicy` with the winner as `greedy` and show the new propensities in the log.

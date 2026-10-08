@@ -6,10 +6,11 @@
 // count, or a dwell BUCKET), explicit FEEDBACK (a 1-5 rating), or a task OUTCOME (a token and a
 // boolean). That is the whole vocabulary, on purpose:
 //
-//   - NO content, NO text, NO free-form strings: every string is a bounded token (node ids are the
-//     Blueprint's own ids the page already holds; an outcome name is `[A-Za-z0-9_.:-]`);
-//   - NO raw timing: dwell is accumulated on the client and sent as ONE of four buckets per node and
-//     view, never an event stream; engagement is a coalesced COUNT (capped);
+//   - NO content, NO text, NO free-form strings: every string is a BOUNDED, control-free string (a node
+//     id is the Blueprint's own id, which the page already holds, <=128 chars) or a strict TOKEN (an
+//     outcome name or batch id is `[A-Za-z0-9_.:-]`);
+//   - NO raw timing: dwell is accumulated on the client for the whole view and sent ONCE, as one of
+//     four buckets per node, when the view is sealed; engagement is a coalesced COUNT (capped);
 //   - a node drawn as a restricted placeholder is reported as `restricted: true` under its OPAQUE alias
 //     (U10c), and a host attributes it at VERSION level only — it is never mapped back to a real id;
 //   - everything is BOUNDED: tracked nodes, signals per batch, queued batches. A bound that is hit
@@ -153,6 +154,8 @@ interface ViewState {
   readonly dwell: Map<string, number>; // node → ms
   readonly feedback: Map<string, number>; // node ("" = surface) → rating
   readonly outcomes: Map<string, boolean>;
+  /** What was last handed to the queue, by signal key: only a CHANGED value is sent again. */
+  readonly sent: Map<string, string>;
 }
 
 const sessionPrefix = (): string => {
@@ -211,7 +214,7 @@ export class SignalCollector {
       cur.placeholders = this.placeholders;
       return;
     }
-    if (cur !== undefined) this.seal(cur);
+    if (cur !== undefined) this.seal(cur, true);
     if (
       !safeString(view.experienceId, 256) ||
       !safeString(view.versionHash, 128) ||
@@ -232,6 +235,7 @@ export class SignalCollector {
       dwell: new Map(),
       feedback: new Map(),
       outcomes: new Map(),
+      sent: new Map(),
     };
   }
 
@@ -294,9 +298,9 @@ export class SignalCollector {
    * Seal the current view's pending signals and hand every queued batch to the sink, oldest first.
    * A batch the sink rejects stays queued (bounded) for the next flush. Concurrent calls share one run.
    */
-  flush(): Promise<{ sent: number }> {
+  flush(opts: { readonly final?: boolean } = {}): Promise<{ sent: number }> {
     if (this.flushing !== undefined) return this.flushing;
-    if (this.state !== undefined) this.seal(this.state);
+    if (this.state !== undefined) this.seal(this.state, opts.final === true);
     const run = (async () => {
       let sent = 0;
       while (this.queue.length > 0) {
@@ -348,35 +352,46 @@ export class SignalCollector {
     return ids.size;
   }
 
-  /** Turn what `s` holds into queued batches and reset it (the view stays current). */
-  private seal(s: ViewState): void {
+  /**
+   * Queue what changed since the last seal. Exposure, clicks, feedback and outcomes go out as they
+   * stand (the host keeps the max / latest per viewer, so a re-sent total is idempotent). DWELL is
+   * the exception: a bucket of a still-running total would be a moving target, so it is sent once
+   * when the view is `final` (a new version, a hide, an explicit `flush({ final: true })`) — per-view
+   * totals survive intermediate flushes.
+   */
+  private seal(s: ViewState, final: boolean): void {
     const mark = (node: string): NodeFields => ({
       node,
       ...(s.placeholders.has(node) && { restricted: true as const }),
     });
-    const out: InteractionSignal[] = [];
-    for (const node of s.exposed) out.push({ kind: "exposure", ...mark(node) });
+    const all: Array<[string, InteractionSignal]> = [];
+    for (const node of s.exposed) all.push([`x|${node}`, { kind: "exposure", ...mark(node) }]);
     for (const [k, count] of s.clicks) {
       const i = k.indexOf("\u0000");
-      out.push({
-        kind: "engagement",
-        action: k.slice(0, i) as ClickAction,
-        count,
-        ...mark(k.slice(i + 1)),
-      });
+      const action = k.slice(0, i) as ClickAction;
+      const node = k.slice(i + 1);
+      all.push([`c|${action}|${node}`, { kind: "engagement", action, count, ...mark(node) }]);
     }
-    for (const [node, ms] of s.dwell)
-      out.push({ kind: "engagement", action: "dwell", bucket: dwellBucket(ms), ...mark(node) });
+    if (final)
+      for (const [node, ms] of s.dwell)
+        all.push([
+          `d|${node}`,
+          { kind: "engagement", action: "dwell", bucket: dwellBucket(ms), ...mark(node) },
+        ]);
     for (const [node, rating] of s.feedback)
-      out.push(
-        node === "" ? { kind: "feedback", rating } : { kind: "feedback", rating, ...mark(node) }
-      );
-    for (const [name, success] of s.outcomes) out.push({ kind: "outcome", name, success });
-    s.exposed.clear();
-    s.clicks.clear();
-    s.dwell.clear();
-    s.feedback.clear();
-    s.outcomes.clear();
+      all.push([
+        `f|${node}`,
+        node === "" ? { kind: "feedback", rating } : { kind: "feedback", rating, ...mark(node) },
+      ]);
+    for (const [name, success] of s.outcomes)
+      all.push([`o|${name}`, { kind: "outcome", name, success }]);
+    const out: InteractionSignal[] = [];
+    for (const [key, sig] of all) {
+      const ser = JSON.stringify(sig);
+      if (s.sent.get(key) === ser) continue;
+      s.sent.set(key, ser);
+      out.push(sig);
+    }
     for (let i = 0; i < out.length; i += MAX_SIGNALS_PER_BATCH) {
       this.queue.push({
         v: SIGNAL_VERSION,

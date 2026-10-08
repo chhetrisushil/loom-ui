@@ -1,10 +1,12 @@
 // ── Exposure (U11) ────────────────────────────────────────────────────────────
 // A signal is client input; "the viewer saw it" is the fact a reward leans on, so it is checked, not
-// believed. Two sources, usable together:
-//   - the ingestor's own LEDGER of accepted `exposure` signals (client-CLAIMED: it stops an engagement
-//     on a node the client never even claimed to show, not a determined forger of both);
+// believed. `SignalIngestor` REQUIRES a policy:
 //   - an AUTHORITATIVE check the host supplies — `seenLogExposure` over what the server recorded as
-//     shown to this viewer (U12 `SeenLog`).
+//     shown to this viewer (U12 `SeenLog`). Prefer `{ versionIsEnough: false }` wherever nodes are
+//     data-bound: with the default a recorded view of the VERSION vouches for every node in it;
+//   - or the explicit `"client-claimed"` opt-out (demos, tests): the vote fold then credits an
+//     engagement only after the same viewer's own claimed exposure of that node, which stops a
+//     signal for a node the client never claimed to show and nothing more.
 
 export interface ExposureQuery {
   readonly viewerId: string;

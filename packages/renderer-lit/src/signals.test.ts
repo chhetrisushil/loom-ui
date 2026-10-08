@@ -72,7 +72,7 @@ describe("U11 observeSignals (renderer-lit/signals)", () => {
     r.io.fire(r.els[1] as Element, 0.9);
     r.at(7_100);
     r.io.fire(r.els[1] as Element, 0); // left after 7 s
-    await r.collector.flush();
+    await r.collector.flush({ final: true });
     const s = r.sent[0]?.signals ?? [];
     expect(s).toContainEqual({ kind: "exposure", node: "table" });
     expect(s).toContainEqual({ kind: "engagement", action: "dwell", bucket: 2, node: "table" });

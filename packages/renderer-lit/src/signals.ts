@@ -148,7 +148,7 @@ export function observeSignals(
   const onHide = (): void => {
     if (!hidden()) return;
     for (const id of [...since.keys()]) endDwell(id);
-    if (opts.flushOnHide !== false) void collector.flush();
+    if (opts.flushOnHide !== false) void collector.flush({ final: true });
   };
 
   root.addEventListener("click", onClick, true);
