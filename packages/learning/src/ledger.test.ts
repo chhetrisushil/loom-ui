@@ -115,6 +115,44 @@ describe("U11 VoteLedger fold: one bounded vote per viewer", () => {
     expect(f.summary.viewers).toBe(0);
   });
 
+  it("each bound alone is enforced by the fold (so a log written by another replica is bounded too)", () => {
+    const rec = (
+      seq: number,
+      v: Vote
+    ): { type: string; payload: unknown; at: string; sequence: number } => ({
+      type: "VOTE",
+      payload: v,
+      at: "t",
+      sequence: seq,
+    });
+    const spec = { outcomes: [], maxNodesPerViewer: 3, maxViewers: 100, maxBatchesPerViewer: 2 };
+    // nodes: 6 exposed, only the first 3 are tracked -> 3 exposed nodes, 0 engaged of them
+    const six = Array.from({ length: 6 }, (_, i) => ({ k: "x" as const, n: `n:${i}` }));
+    const withClick = [...six, { k: "c" as const, n: "n:5", a: "click" as const, c: 1 }];
+    const nodes = foldVotes([rec(1, vote("v", "b", withClick))], spec);
+    expect(nodes.summary.engagementSum).toBe(0); // n:5 was beyond the cap: its click is nothing
+    const nodesOk = foldVotes(
+      [rec(1, vote("v", "b", [...six, { k: "c", n: "n:2", a: "click", c: 1 }]))],
+      spec
+    );
+    expect(nodesOk.summary.engagementSum).toBeCloseTo(1 / 3);
+    // batches: the 3rd batch of a viewer is ignored
+    const batches = foldVotes(
+      [
+        rec(1, vote("v", "b1", X)),
+        rec(2, vote("v", "b2", X)),
+        rec(3, vote("v", "b3", [{ k: "f", r: 5 }])),
+      ],
+      spec
+    );
+    expect(batches.summary.feedbackViewers).toBe(0);
+    const two = foldVotes(
+      [rec(1, vote("v", "b1", X)), rec(2, vote("v", "b2", [{ k: "f", r: 5 }]))],
+      spec
+    );
+    expect(two.summary.feedbackViewers).toBe(1);
+  });
+
   it("refuses past the per-decision entry cap (never forgets silently)", async () => {
     const l = mk(new InMemoryVoteLog(), { maxEntriesPerDecision: 3 });
     const r = [];
@@ -171,6 +209,146 @@ for (const [name, make] of backends) {
     });
   });
 }
+
+const X: Vote["s"] = [{ k: "x", n: "n:a" }];
+const durable = (): VoteLog =>
+  eventStoreLineageStore(new InMemoryAsyncEventStore(), {
+    streamPrefix: "__loom_ui_votes__:",
+    workflowId: "loom-ui.votes",
+  });
+
+for (const [name, make] of backends) {
+  describe(`U11 concurrent appends are serialised, not retried to death (${name})`, () => {
+    for (const n of [17, 64, 200]) {
+      it(`${n} concurrent votes on one decision are ALL accepted`, async () => {
+        const l = mk(make());
+        const r = await Promise.all(
+          Array.from({ length: n }, (_, i) => l.recordVote(REF, vote(`v${i}`, "b", X)))
+        );
+        expect(r.filter((x) => x === "ok")).toHaveLength(n);
+        expect((await l.fold(REF)).summary.viewers).toBe(n);
+      });
+    }
+
+    it("a CLAIM racing 100 votes settles; every vote reported ok precedes it, none after it reports ok", async () => {
+      const l = mk(make());
+      const ops: Promise<unknown>[] = [];
+      const res: string[] = [];
+      for (let i = 0; i < 100; i++) {
+        ops.push(l.recordVote(REF, vote(`v${i}`, "b", X)).then((r) => res.push(r)));
+        if (i === 50) ops.push(l.close(REF, "end"));
+      }
+      await Promise.all(ops);
+      const f = await l.fold(REF);
+      expect(f.claim).toBeDefined();
+      // accepted == folded: nothing is "ok" yet invisible, nothing past the CLAIM is reported ok
+      expect(res.filter((x) => x === "ok")).toHaveLength(f.summary.viewers);
+      expect(res.filter((x) => x === "closed").length + f.summary.viewers).toBe(100);
+    });
+
+    it("a second replica's votes interleave with the first's: all accepted over one log", async () => {
+      const log = make();
+      const a = mk(log);
+      const b = mk(log);
+      const r = await Promise.all(
+        Array.from({ length: 60 }, (_, i) => (i % 2 ? a : b).recordVote(REF, vote(`v${i}`, "b", X)))
+      );
+      expect(r.filter((x) => x === "ok")).toHaveLength(60);
+      expect((await a.fold(REF)).summary.viewers).toBe(60);
+    });
+  });
+}
+
+describe("U11 contention is a typed result, never a throw", () => {
+  it("a log that always loses the CAS yields contended; the ledger keeps working afterwards", async () => {
+    let lose = true;
+    const inner = new InMemoryVoteLog();
+    const log: VoteLog = {
+      read: (st) => inner.read(st),
+      append: async (st, e, rec) => (lose ? { ok: false, tip: e } : inner.append(st, e, rec)),
+    };
+    const l = mk(log);
+    expect(await l.recordVote(REF, vote("v1", "b", X))).toBe("contended");
+    lose = false;
+    expect(await l.recordVote(REF, vote("v1", "b", X))).toBe("ok");
+  }, 30_000);
+
+  it("one ledger never loses a CAS to itself: 200 concurrent votes cost zero rejected appends", async () => {
+    const inner = new InMemoryVoteLog();
+    let lost = 0;
+    const log: VoteLog = {
+      read: (st) => inner.read(st),
+      append: async (st, e, rec) => {
+        const r = await inner.append(st, e, rec);
+        if (!r.ok) lost += 1;
+        return r;
+      },
+    };
+    const l = mk(log);
+    await Promise.all(
+      Array.from({ length: 200 }, (_, i) => l.recordVote(REF, vote(`v${i}`, "b", X)))
+    );
+    expect(lost).toBe(0);
+  });
+
+  it("the per-stream queue is dropped once idle (bounded)", async () => {
+    const l = mk();
+    await Promise.all(
+      Array.from({ length: 50 }, (_, i) =>
+        l.recordVote({ executionId: `e${i}`, decisionId: "d" }, vote("v", "b", X))
+      )
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect((l as unknown as { chains: Map<string, unknown> }).chains.size).toBe(0);
+  });
+});
+
+describe("U11 per-viewer append budget (one viewer cannot fill a decision's log)", () => {
+  it("the flooding viewer is refused past its budget; a later viewer still votes", async () => {
+    const l = mk(new InMemoryVoteLog(), { maxEntriesPerDecision: 2000 });
+    const res: string[] = [];
+    for (let i = 0; i < 3000; i++) res.push(await l.recordVote(REF, vote("flood", `b${i}`, X)));
+    expect(res.filter((x) => x === "ok")).toHaveLength(128);
+    expect(new Set(res.slice(128))).toEqual(new Set(["viewer-capacity"]));
+    expect(await l.recordVote(REF, vote("later", "b", X))).toBe("ok");
+    expect((await l.fold(REF)).summary.viewers).toBe(2);
+  });
+
+  it("the budget comes from the DURABLE log: a fresh ledger over the same log still refuses the flooder", async () => {
+    const log = durable();
+    const a = mk(log, { maxBatchesPerViewer: 5 });
+    for (let i = 0; i < 5; i++)
+      expect(await a.recordVote(REF, vote("flood", `b${i}`, X))).toBe("ok");
+    const b = mk(log, { maxBatchesPerViewer: 5 }); // restart / second replica: no in-memory memory of the flood
+    expect(await b.recordVote(REF, vote("flood", "more", X))).toBe("viewer-capacity");
+    expect(await b.recordVote(REF, vote("other", "b", X))).toBe("ok");
+  });
+
+  it("capacity is reserved for first votes: returning viewers stop at 75% of the cap, new viewers keep voting to 100%", async () => {
+    const l = mk(new InMemoryVoteLog(), { maxEntriesPerDecision: 40, maxBatchesPerViewer: 128 });
+    // 10 viewers first-vote, then keep going: returning votes stop once the log holds 30
+    for (let i = 0; i < 10; i++) await l.recordVote(REF, vote(`v${i}`, "b0", X));
+    const more: string[] = [];
+    for (let round = 1; round < 10; round++)
+      for (let i = 0; i < 10; i++)
+        more.push(await l.recordVote(REF, vote(`v${i}`, `b${round}`, X)));
+    expect(more.filter((x) => x === "ok")).toHaveLength(20);
+    expect(more.filter((x) => x === "viewer-capacity").length).toBe(70);
+    // the reserved 10 slots take 10 brand-new viewers; the 11th is genuinely out of capacity
+    const fresh: string[] = [];
+    for (let i = 0; i < 11; i++) fresh.push(await l.recordVote(REF, vote(`new${i}`, "b", X)));
+    expect(fresh.filter((x) => x === "ok")).toHaveLength(10);
+    expect(fresh[10]).toBe("capacity");
+  });
+});
+
+describe("U11 viewerKey is unambiguous", () => {
+  it("fields containing NUL cannot shift the tenant/id boundary", () => {
+    const l = mk();
+    expect(l.viewerKey("a\u0000b", "c")).not.toBe(l.viewerKey("a", "b\u0000c"));
+    expect(l.viewerKey("a", "b")).toBe(l.viewerKey("a", "b"));
+  });
+});
 
 describe("U11 pseudonyms", () => {
   it("viewerKey is keyed, tenant-scoped and carries no raw id", () => {

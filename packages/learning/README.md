@@ -73,7 +73,10 @@ cannot mint outcomes). Replays of a `batchId` are refused fast per viewer and ig
 `"client-claimed"` (demos and tests). Use `seenLogExposure(seenLog, { versionIsEnough: false })` wherever
 nodes are data-bound: the server-recorded view of this exact version, with the node among the recorded
 entries (an erased viewer or an unreadable log answers no). Static nodes leave no entry in a `SeenLog`;
-for those the default `versionIsEnough: true` accepts a recorded view of the version. `"client-claimed"`
+for those the default `versionIsEnough: true` accepts a recorded view of the version. The query carries
+the viewer's **tenant**, but the real `SeenLog` is keyed by `viewerId` alone: it MUST be tenant-keyed by
+the host (one `SeenLog` per tenant, or record views under `viewerIdOf({ tenant, viewerId })`, which
+`seenLogExposure` accepts). `"client-claimed"`
 stops an engagement on a node the client never claimed to show, and nothing more.
 
 ## One bounded vote per viewer (the vote ledger)
@@ -91,8 +94,27 @@ a newer one); an engagement or rating counts only after the **same viewer's** ex
 Because there is no in-memory "once" ledger, there is nothing to evict: the per-decision entry cap
 (`maxEntriesPerDecision`) makes ingest **refuse** (`capacity`) rather than forget. The in-memory log is a
 single ingesting process; any number of replicas can share a durable `VoteLog`, and the log's CAS
-interleaves their appends. Viewers appear in the log only as `viewerKey` = HMAC(`pseudonymKey`, tenant,
-id); destroy the key and the votes can no longer be tied to a person.
+interleaves their appends. Viewers appear in the log only as `viewerKey` = HMAC(`pseudonymKey`,
+`[tenant, id]`) (JSON-encoded, so no character can shift the boundary); destroy the key and the votes can
+no longer be tied to a person.
+
+**Appends.** Appends to one decision are serialised in-process (a promise chain per stream, dropped when
+idle), so one process never loses a CAS to itself; against other replicas a lost CAS rebuilds the stream's
+state from the durable log and retries with jittered backoff (64 attempts). If the log stays contended the
+result is the typed `contended` (an ingest rejection reason; `settleRewards` leaves that decision
+`deferred` and carries on with the rest), never a throw. A vote is checked against the stream's own state
+at the append, so a vote that lands after a CLAIM is `closed` and never counted as accepted.
+
+**Per-viewer budget (no starving).** Per decision, a viewer may append at most `maxBatchesPerViewer`
+(default 128) votes, counted from the **durable log** (so a restart or another replica cannot reset it);
+past that only that viewer is refused (`viewer-capacity`). The last quarter of `maxEntriesPerDecision` is
+**reserved for first votes**: a returning viewer is refused (`viewer-capacity`) once the log holds 75% of
+the cap, while a viewer with no vote yet can still vote until the cap itself. So viewers cannot fill the
+log between them while a new one is turned away, short of genuinely running out of capacity.
+
+**`pseudonymKey` rotation.** A rotated key gives each viewer a NEW `viewerKey`, so a viewer who voted
+under the old key and votes again under the new one counts as two viewers in a still-open decision.
+Rotate only between decisions (after their close), or keep accepting the old key for the open ones.
 
 ## Rewards: settle once, at a close
 
@@ -100,9 +122,13 @@ id); destroy the key and the votes can no longer be tied to a person.
 decision at a host-declared moment (an experiment end, a TTL after the execution finished). The close
 appends a **CLAIM** to the decision's log; every reader folds only the votes before the first CLAIM, so
 two replicas settling at once compute the **same frozen summary and score**, and the kernel's
-`(decisionId, key)` idempotency absorbs the repeat (a conflicting score is impossible, not merely
-refused). One `recordOutcome` per decision, key `ui:<rewardId>:<closeId>:<specHash>` (`specHash` names the
-ledger's outcome names and caps, so a changed spec records under a new key). `defaultReward` is the
+`(decisionId, key)` idempotency absorbs the repeat. The score is a pure function of the frozen summary
+AND the reward function, so **`rewardId` must name the weights** (`defaultReward({ outcome: 5 })` is a
+different `rewardId` from the default): `specHash` covers only the ledger's outcome names and caps. A
+second settler with different weights under the same `rewardId` computes a different score, and the
+kernel refuses it loudly (a typed permanent refusal, reported in `refused`) rather than overwriting.
+One `recordOutcome` per decision, key `ui:<rewardId>:<closeId>:<specHash>` where `closeId` is the
+**CLAIM's** (the first closer's), so settlers passing different close ids still record under one key. `defaultReward` is the
 weighted mean 1 / 2 / 3 of engagement, rating and outcome rate **over per-viewer terms**, in [0,1].
 
 Why once and not per window: `trajectories` averages a decision's outcomes with equal weight, so many

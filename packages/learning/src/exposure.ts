@@ -10,6 +10,8 @@
 
 export interface ExposureQuery {
   readonly viewerId: string;
+  /** The viewer's tenant: the same `viewerId` in two tenants is two viewers. */
+  readonly tenant: string;
   readonly experienceId: string;
   readonly versionHash: string;
   /** Absent = "the surface as a whole" (feedback / outcome). */
@@ -27,6 +29,8 @@ export interface SeenLogReader {
   read(input: {
     readonly experienceId: string;
     readonly viewerId: string;
+    /** Passed through; the real `SeenLog` is keyed by `viewerId` alone (see `seenLogExposure`). */
+    readonly tenant?: string;
     readonly limit?: number;
   }): Promise<
     | {
@@ -52,7 +56,16 @@ export interface SeenLogReader {
  */
 export function seenLogExposure(
   log: SeenLogReader,
-  opts: { readonly versionIsEnough?: boolean; readonly limit?: number } = {}
+  opts: {
+    readonly versionIsEnough?: boolean;
+    readonly limit?: number;
+    /**
+     * The `SeenLog` viewer id for a (tenant, viewer). The `SeenLog` has no tenant of its own, so it
+     * MUST be tenant-keyed: either one `SeenLog` per tenant, or record views under the id this
+     * returns (default: the bare viewer id, fine only for globally unique ids).
+     */
+    readonly viewerIdOf?: (q: { readonly tenant: string; readonly viewerId: string }) => string;
+  } = {}
 ): ExposureCheck {
   const enough = opts.versionIsEnough ?? true;
   return {
@@ -61,7 +74,8 @@ export function seenLogExposure(
       try {
         r = await log.read({
           experienceId: q.experienceId,
-          viewerId: q.viewerId,
+          viewerId: opts.viewerIdOf?.(q) ?? q.viewerId,
+          tenant: q.tenant,
           limit: opts.limit ?? 50,
         });
       } catch {

@@ -277,19 +277,54 @@ export interface VoteLedgerOptions {
 
 const AT = (ms: number): string => new Date(ms).toISOString();
 
+/** Why an append did not happen. `contended`: the log stayed busy past the retry bound; try again. */
+export type AppendResult = "ok" | "capacity" | "viewer-capacity" | "closed" | "contended";
+
+/** What a process knows of one decision's log, rebuilt from the durable log whenever a CAS loses. */
+interface StreamState {
+  tip: number;
+  claimed: boolean;
+  /** VOTE entries per viewer key, from the log itself (not from this process's own appends only). */
+  perViewer: Map<string, number>;
+}
+
+const MAX_STREAMS = 1024;
+const MAX_APPEND_ATTEMPTS = 64;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+function stateOf(records: readonly StoredVoteRecord[]): StreamState {
+  const st: StreamState = { tip: records.length, claimed: false, perViewer: new Map() };
+  for (const r of records) {
+    if (r.type === "CLAIM") st.claimed = true;
+    else if (r.type === "VOTE") {
+      const v = (r.payload as { v?: unknown } | null)?.v;
+      if (typeof v === "string") st.perViewer.set(v, (st.perViewer.get(v) ?? 0) + 1);
+    }
+  }
+  return st;
+}
+
 export class VoteLedger {
   readonly spec: LedgerSpec;
-  /** Names the settlement configuration: part of the recorded outcome key, so a changed spec records under a NEW key. */
+  /**
+   * Names the LEDGER configuration (outcome names and caps): part of the recorded outcome key, so a
+   * changed spec records under a NEW key. It does NOT cover the reward function or its weights: name
+   * those in `rewardId`.
+   */
   readonly specHash: string;
   private readonly key: Buffer;
   private readonly maxEntries: number;
-  private readonly tips = new Map<string, number>();
-  private readonly closed = new Set<string>();
+  /** Capacity kept back for viewers' FIRST votes: a returning viewer cannot spend it. */
+  private readonly firstVoteReserve: number;
+  private readonly streams = new Map<string, StreamState>();
+  /** Per-stream promise chain: appends to one decision are serialised in this process. Entries leave when idle. */
+  private readonly chains = new Map<string, Promise<unknown>>();
 
   constructor(private readonly opts: VoteLedgerOptions) {
     this.key = Buffer.from(opts.pseudonymKey);
     if (this.key.length < 16) throw new Error("VoteLedger: pseudonymKey must be at least 16 bytes");
     this.maxEntries = Math.max(1, opts.maxEntriesPerDecision ?? 1_000_000);
+    this.firstVoteReserve = Math.floor(this.maxEntries / 4);
     this.spec = {
       outcomes: [...(opts.outcomes ?? [])].sort(),
       maxNodesPerViewer: Math.max(1, opts.maxNodesPerViewer ?? 64),
@@ -299,60 +334,112 @@ export class VoteLedger {
     this.specHash = fnv1a64(canonicalJson({ v: 1, ...this.spec })).slice(0, 8);
   }
 
-  /** The pseudonym a viewer has in the log: HMAC(key, tenant, id). Tenant is part of the identity. */
+  /**
+   * The pseudonym a viewer has in the log: HMAC(key, [tenant, id]). Tenant is part of the identity;
+   * the pair is JSON-encoded so no character in either field can shift the boundary.
+   */
   viewerKey(tenant: string, id: string): string {
     return createHmac("sha256", this.key)
-      .update(`viewer\u0000${tenant}\u0000${id}`)
+      .update(JSON.stringify(["viewer", tenant, id]))
       .digest("base64url")
       .slice(0, 27);
   }
 
   streamOf(ref: DecisionRef): string {
-    return `votes-${createHash("sha256").update(`${ref.executionId}\u0000${ref.decisionId}`).digest("hex")}`;
+    return `votes-${createHash("sha256")
+      .update(JSON.stringify([ref.executionId, ref.decisionId]))
+      .digest("hex")}`;
   }
 
-  private async append(
+  private remember(stream: string, st: StreamState): void {
+    this.streams.delete(stream);
+    this.streams.set(stream, st);
+    while (this.streams.size > MAX_STREAMS)
+      this.streams.delete(this.streams.keys().next().value as string);
+  }
+
+  /** Run `fn` after every earlier job on `stream`; the chain entry is dropped when nothing follows. */
+  private serialised<T>(stream: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.chains.get(stream) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this.chains.set(stream, tail);
+    void tail.then(() => {
+      if (this.chains.get(stream) === tail) this.chains.delete(stream);
+    });
+    return run;
+  }
+
+  private append(
     stream: string,
     type: string,
-    payload: unknown
-  ): Promise<"ok" | "capacity" | "closed"> {
-    let expected = this.tips.get(stream) ?? 0;
-    for (let attempt = 0; attempt < 16; attempt++) {
-      if (expected >= this.maxEntries && type === "VOTE") return "capacity";
-      const r = await this.opts.log.append(stream, expected, {
-        type,
-        payload,
-        at: AT(this.opts.clock()),
-      });
-      if (r.ok) {
-        this.tips.set(stream, r.sequence);
-        if (this.tips.size > 10_000) this.tips.delete(this.tips.keys().next().value as string);
-        return "ok";
+    payload: unknown,
+    viewer?: string
+  ): Promise<AppendResult> {
+    return this.serialised(stream, async () => {
+      let st = this.streams.get(stream);
+      for (let attempt = 0; attempt < MAX_APPEND_ATTEMPTS; attempt++) {
+        if (st === undefined) {
+          st = stateOf(await this.opts.log.read(stream));
+          this.remember(stream, st);
+        }
+        if (type === "VOTE") {
+          if (st.claimed) return "closed";
+          if (st.tip >= this.maxEntries) return "capacity";
+          const mine = viewer === undefined ? 0 : (st.perViewer.get(viewer) ?? 0);
+          // A viewer is bounded by what the fold would read of it anyway, and a RETURNING viewer
+          // cannot spend the capacity reserved for first votes: one viewer cannot starve the rest.
+          if (mine >= this.spec.maxBatchesPerViewer) return "viewer-capacity";
+          if (mine > 0 && st.tip >= this.maxEntries - this.firstVoteReserve)
+            return "viewer-capacity";
+        }
+        const r = await this.opts.log.append(stream, st.tip, {
+          type,
+          payload,
+          at: AT(this.opts.clock()),
+        });
+        if (r.ok) {
+          st.tip = r.sequence;
+          if (type === "CLAIM") st.claimed = true;
+          if (type === "VOTE" && viewer !== undefined)
+            st.perViewer.set(viewer, (st.perViewer.get(viewer) ?? 0) + 1);
+          return "ok";
+        }
+        // lost the CAS to another replica: rebuild from the durable log (counts included), then back off
+        st = undefined;
+        this.streams.delete(stream);
+        if (attempt > 0) await sleep(Math.random() * Math.min(50, 2 ** attempt));
       }
-      expected = r.tip;
-      this.tips.set(stream, expected);
-    }
-    throw new Error("VoteLedger: the log stayed contended; try again");
+      return "contended";
+    });
   }
 
-  /** Append one viewer's vote on a decision. `closed` once this process has seen the decision claimed. */
-  async recordVote(ref: DecisionRef, vote: Vote): Promise<"ok" | "capacity" | "closed"> {
-    const stream = this.streamOf(ref);
-    if (this.closed.has(stream)) return "closed";
-    return this.append(stream, "VOTE", vote);
+  /**
+   * Append one viewer's vote on a decision. `closed` once the decision is claimed (checked against the
+   * log's own state at the append, so a vote that lands after a CLAIM is never reported accepted).
+   */
+  recordVote(ref: DecisionRef, vote: Vote): Promise<AppendResult> {
+    return this.append(this.streamOf(ref), "VOTE", vote, vote.v);
   }
 
   async fold(ref: DecisionRef): Promise<Folded> {
-    const records = await this.opts.log.read(this.streamOf(ref));
-    this.tips.set(this.streamOf(ref), records.length);
-    const f = foldVotes(records, this.spec);
-    if (f.claim) this.closed.add(this.streamOf(ref));
-    return f;
+    const stream = this.streamOf(ref);
+    // read + refresh inside the stream's queue, so the cache never goes behind an append that just landed
+    const records = await this.serialised(stream, async () => {
+      const rs = await this.opts.log.read(stream);
+      this.remember(stream, stateOf(rs));
+      return rs;
+    });
+    return foldVotes(records, this.spec);
   }
 
   /**
    * Freeze the decision: append a CLAIM unless one exists. Whoever wins, every reader folds the same
-   * votes (those before the first CLAIM), so concurrent closers agree on the summary.
+   * votes (those before the first CLAIM), so concurrent closers agree on the summary. The returned
+   * fold has no `claim` only if the log stayed contended: the caller leaves the decision for a retry.
    */
   async close(ref: DecisionRef, closeId: string): Promise<Folded> {
     for (let i = 0; i < 4; i++) {
@@ -364,6 +451,7 @@ export class VoteLedger {
   }
 
   async markSettled(ref: DecisionRef, status: string): Promise<void> {
+    // a contended SETTLED is harmless: the next run re-derives the same score and the kernel dedupes
     await this.append(this.streamOf(ref), "SETTLED", { status });
   }
 }
