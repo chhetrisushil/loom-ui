@@ -212,6 +212,29 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 
 ## Notable behaviours and guarantees
 
+- **Chat is an opt-in entry (U8): `@loom-ui/renderer-lit/chat`.** `createChatLitRegistry({ media })` is the default
+  registry plus `Chat`, `TextInput`, `FormInput` and `SelectInput` (`registerChatWidgets(registry, opts)` adds them to
+  one you built; `chatKindContracts` is what a catalogue's `surfaces.web` carries). The default registry draws one fixed
+  "Chat renderer not loaded" placeholder for these kinds (no value, title or prop; one console warning). The contract
+  rides every bundle (~7 kB, `index`/`dom` budgets 164 -> 172 kB); the widgets are this entry (budget 196 kB; it must
+  not pull in `ChatFeed` or the host-side code, `browserBundle.test.ts` fails if it does).
+  - **`lu-chat`** is a focusable `role="log"` region (`aria-live="polite"`, `aria-busy` while a reply streams, so a screen
+    reader hears the settled reply once). Every entry is an `<article>` labelled with its speaker and status. Text is a
+    Lit text binding, cleaned again with `sanitizeChatText` (memoised per part): never `unsafeHTML`, markdown or a link; the
+    fuzz test asserts no random text ever creates an element or attribute. A restricted entry draws "Restricted" and
+    nothing else; a failed / rejected turn draws a FIXED sentence plus `ref <errorId>`. A streaming entry keeps the id its
+    durable successor has, so nothing remounts or shifts; it sticks to the bottom only if the reader was at the bottom.
+    "Load earlier messages" emits `LOAD_OLDER`, keeps the reader's scroll position and, if its button goes away, hands
+    focus to the log. With `editable`, the viewer's own complete turns get an Edit button: an inline editor takes focus,
+    Ctrl/Cmd+Enter sends `EDIT_TURN`, Escape cancels back onto the button, a failed send keeps the text and the key.
+    Media parts are drawn by the media widgets and the host's resolver when `@loom-ui/renderer-lit/media` is loaded, and
+    DESCRIBED (type, name, size; never an address) when it is not.
+  - **The inputs** are native controls with labels, `aria-describedby`, `aria-invalid` and a status region that is always
+    one line high (no layout shift). The field is read-only (not disabled) while a send is in flight, so focus stays;
+    a second submit is ignored. Multi-line text sends with Ctrl/Cmd+Enter and never while an IME composes. An invalid form
+    sends nothing and focuses the first bad field. A failed send keeps the draft and the idempotency key.
+    `onAction` handlers may return `{ ok, reason? }` (or a promise): the widget waits for it (`renderBlueprintDom` passes
+    the return value through).
 - **Media is an opt-in entry (U9): `@loom-ui/renderer-lit/media`.** `createMediaLitRegistry({ media })`
   is the default registry plus `Image`, `Audio`, `Video`, `File` and `MediaInput`
   (`registerMediaWidgets(registry, opts)` adds them to one you built; `mediaKindContracts` is what a

@@ -351,6 +351,123 @@ on the web, `[untrusted]` in the terminal) or, under `untrusted: "block"`, draw 
 separators); `formatBytes` / `describeMedia` are the one description both surfaces use;
 `MEDIA_ATTACH_ACTION` (`"MEDIA_ATTACH"`, payload `{ ref }`) is what an upload emits.
 
+### Chat and inputs (U8, `@loom-ui/core/chat`)
+
+A conversation is four kinds. **`Chat`** is a transcript, bound like any data widget; **`TextInput`**,
+**`FormInput`** and **`SelectInput`** collect input and are static (props only; a value reaching one is a
+defect, as for a `Note`). File upload in a conversation is the existing `MediaInput`. Core names no loom
+type: the transcript contract below is what loom's conversation layer (`@loom/conversation`, ADR 0122)
+emits once a client has folded it, but any source that can say this much can feed the widget.
+`chatCatalogEntries()` returns the four semantic entries (`@1.0.0`) to splice into a catalogue; a
+catalogue without them cannot compose a chat node, so a planner is offered chat only if the host chose to.
+
+**The transcript value (`ChatValue`).** Strict, bounded, and checked by `checkKindValue` like every kind (one
+function backs the zod and the zod-free checker; its messages never echo the value):
+
+```ts
+{ entries: ChatEntry[],            // oldest first, at most 500
+  viewer?: { actor, tenant?, onBehalfOf? },   // "me": own turns are marked and are the only ones that can be edited
+  older?: "0.12",                  // the cursor that loads the turns before the window (absent = start reached)
+  state?: "open" | "closed", running?: boolean }
+// ChatEntry
+{ id: "t3.assistant",              // stable for the turn's slot: the streaming entry and its durable successor share it
+  turn: 3, role: "user" | "assistant" | "system",
+  status: "complete" | "streaming" | "interrupted" | "failed" | "rejected" | "restricted",
+  parts?: ({ type: "text", text } | { type: "media", ref: MediaRef })[],
+  asker?: Actor, cursor?: string, at?: number,
+  reason?: "model-error",          // a short TOKEN; the renderer owns the words (`chatReasonText`)
+  errorId?: string,                // a correlation id, shown as "ref ..." and never as an explanation
+  editOf?: number,                 // this turn is a NEW turn that revises an earlier one
+  tools?: { name, status }[] }     // optional one-line tool activity
+```
+
+A **restricted** entry is a bare placeholder: `parts`, `tools`, `reason`, `errorId` and `editOf` are refused on it
+by the CONTRACT, so a value that leaks content through a placeholder never reaches a store. A field outside the
+list (loom's `classes`, `turnExecutionId`...) is refused too.
+
+**Untrusted text.** Everything in a turn (a person's words, a model's, a tool's) is text to DRAW, never to
+interpret. No renderer here turns chat text into markup, applies a markdown pass or auto-links: markdown is
+deliberately NOT offered (a "safe subset" is a parser to get wrong; see Questions in the PR). `sanitizeChatText`
+removes what changes what a reader SEES or what a terminal DOES (C0/C1 controls incl. ESC, bidi overrides and
+isolates, zero-width marks, Unicode TAG characters), keeps ZWJ/ZWNJ (emoji, Indic scripts), normalises line breaks
+and collapses vertical-space bombs. Linear time; the input is cut before it is scanned (100 KB adversarial tests with absolute bounds).
+
+**Folding loom's API: `ChatFeed`.** Pure (no network, timers or DOM). `applyHistory(page, "backward" | "forward")`
+folds a history page, `applyEvent(name, data)` folds an SSE event (`status`, `partial`, `delta`, `reset`, `message`,
+`closed`, `reconnect`, `error`); `value()` is the `ChatValue` to publish, `resumeCursor()` is what the stream reopens
+after, `olderCursor()` what "load earlier" asks for. The rules, each pinned by a test: **append-only** (a visible
+durable entry is never changed by a later event; only a placeholder may be upgraded), **idempotent** (a re-read after
+a reconnect is one entry), a restricted/rejected entry carries no text whatever the wire said, an unknown status
+fails closed to a placeholder, **live text is not history** (a delta never touches a durable entry; the durable reply
+replaces the live text under the same id), deltas for a restricted turn, or for another asker when the viewer is known,
+are not rendered (the server already sends them to the asker alone; this is the second line), the live reply is
+bounded like any stream (`appendChunk`, 64 K), the window is bounded (default and ceiling 500; a full window offers no
+"load earlier" that could not fit), the server's `error` event text is never read. The browser transport is
+`connectConversation` in `@loom-ui/hydration/client`. On the SERVER, `chatValueFromHistory(page, { viewer })` is the same fold over one history page: a host
+effect that wraps `Conversations.history` (loom has already filtered it for the viewer) returns it, a `loom-effect`
+provider binds it to the `Chat` widget with `outputCheck: "contract"` for the first paint or a split-hydration payload,
+and `connectConversation` takes over in the browser.
+
+**Input actions and the write-back model.** Each input emits ONE action, stamped by the renderer with `viewedVersion` (U5):
+
+| widget | action `type` | payload |
+|---|---|---|
+| TextInput | `SUBMIT_TEXT` | `{ text, key }` |
+| FormInput | `SUBMIT_FORM` | `{ values, key }` |
+| SelectInput | `SELECT` | `{ value, key }` |
+| Chat (edit a turn) | `EDIT_TURN` | `{ turn, text, key }` |
+| Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
+| MediaInput | `MEDIA_ATTACH` | `{ ref }` (U9; `acceptMediaAttach`) |
+
+`key` is an idempotency key the widget minted when the draft began (`newSubmitKey`). The widget keeps the draft until
+the host answers `ok: true` (an `onAction` handler may return `{ ok, reason? }` or a promise of it; none = success), so
+a failed send leaves the text and the key in place and the user's retry carries the SAME key. Everything a widget
+checked was checked in a browser the user controls, so the HOST re-validates:
+
+```ts
+const specs = inputSpecsOf(experience, catalog, "web");       // widget id -> spec, from the host's OWN experience
+const writeBack = createWriteBack({
+  specOf: (id) => specs.get(id),
+  ledger: new SubmitLedger(),                                  // at-most-once per (principal, widget, key); bounded in size and time
+  canEdit: (turn, principal) => ownsTurn(principal, turn),     // required for EDIT_TURN; absent = every edit refused
+  routes: {
+    composer: conversationTarget((text, { messageId }) => conversations.sendTurn(id, text, { principal, messageId })),
+    rollbackForm: resumeTarget((payload, { idempotencyKey }) => runtime.resume(execId, "rollback", payload, { idempotencyKey })),
+    regionPicker: paramsTarget((p) => controller.setParams(p), "region"),
+  },
+});
+renderBlueprintDom(host, blueprint, { registry, onAction: (a) => writeBack.handle(a, { principal: key, current: head() }) });
+```
+
+`acceptChatSubmit` (what `handle` runs first) is total and returns a typed refusal: `not-a-submit`, `not-an-input`,
+`wrong-input`, `bad-key`, `invalid` (with fixed per-field codes), `stale` (not `fresh` against the head, U5; do NOT pass
+`bindingSeq` for a chat or input widget: a transcript moves by design, it is the COMPOSITION that must not have),
+`duplicate`, `edit-not-allowed`. Text is sanitised and bounded; a form's values are rebuilt from DECLARED fields only; a
+select value must be a declared option; the idempotency key is claimed last so a refusal never burns one, and
+`release()` gives it back when the write fails (so the retry is accepted). `createWriteBack` answers a duplicate
+`{ ok: true, reason: "duplicate" }` (the first one counts), a failed write `{ ok: false, reason: "failed" }` with NO error
+text, and a widget with no route `no-route`. The three targets are structural (core imports nothing from loom): a
+conversation's `sendTurn`, a flow's resume gate (typed gates still parse the payload, ADR 0077), `setParams`.
+
+**Edit-previous-turn is a new turn.** `EDIT_TURN` carries the revised text; the conversation target sends it as a NEW
+turn (`messageId` = the key), or hands it to the host's own `edit` handler to fork / branch / re-ask. History is never
+rewritten and the widget never changes what it draws: the new turn arrives from the log, and `ChatFeed.annotate(turn,
+{ editOf })` (the host knows which edit it sent) makes it draw as "edit of turn N". The feed never infers an edit:
+loom's message record has no such field today (see the PR's loom-impact note).
+
+**What a planner can do.** Node props are allow-listed by the FRAMEWORK, whatever the catalogue declares:
+`Chat` `emptyText`, `editable`; `TextInput` `label`, `placeholder`, `multiline`, `maxChars`, `submitLabel`; `FormInput`
+`label`, `fields`, `submitLabel`; `SelectInput` `label`, `options`, `placeholder`. Anything else (`entries`, `messages`,
+`text`, `value`, `defaultValue`, a prefill) is `chat-prop-forbidden`; a field spec is closed (name, label, type
+`text|textarea|number|boolean|select`, `required`, `maxLength`, `min`, `max`, `options`; no regular expressions, no
+defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` is `chat-unbound`. A planner shapes WHERE a
+conversation goes and what its inputs are called, never what is said in one or what a person "entered".
+
+**Entries.** `@loom-ui/core/chat` is the host/folding surface; `@loom-ui/core/chat-ui` is the narrow part a browser WIDGET
+needs (contract, text cleaner, validators, action vocabulary, shared words), because core is CommonJS and a bundler
+cannot drop an unused module behind a barrel. `chatTranscriptLines(value)` is the one-line-per-turn text both the terminal
+and a screen-reader summary use.
+
 ### Browser entry (`@loom-ui/core/browser`)
 
 The zod-free slice a browser renderer needs (the media CONTRACT rides in `checkKindValue`; the rest of

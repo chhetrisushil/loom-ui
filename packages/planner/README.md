@@ -329,6 +329,15 @@ const repaired = await reviseForDrift(planner, {
 
 ## Notable behaviours and guarantees
 
+- **Chat and inputs: the model shapes, never says (U8).** `describeCatalog` adds chat guidance to an entry ONLY when it
+  resolves to a chat kind (a catalogue without the chat entries says nothing about it, and a draft naming `Chat` is
+  `unknown-type`). A chat node's props are checked against the framework's allow-list, whatever the catalogue declares:
+  transcript content (`entries`, `messages`, `text`), an entered value (`value`, `defaultValue`, a prefill), a submit
+  or any markup prop is `chat-prop-forbidden`; a form's `fields` / a select's `options` are a closed spec (no
+  regular expressions, no defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` is `chat-unbound`; an input
+  with a binding is `unexpected-binding`. `checkPlannerConformance` reports a planner that gets one past validation as
+  `compose-invalid:<code>`. A planner decides where a conversation goes and what its inputs are called; what people
+  and the assistant say, and what a person enters, are data and never its to author.
 - **Media comes from bindings, never from the model (U9).** `describeCatalog` adds media guidance to an
   entry ONLY when it resolves to a media kind (a catalogue without the media entries says nothing about
   media, and a draft naming `Image` is `unknown-type`). A media node's props are checked against the

@@ -267,6 +267,20 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   the same rule, including its cache variant. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`, called by
   the renderer (see `@loom-ui/core` "Media").
 
+- **A handle that feeds a chat transcript is always contract-checked, and never a stream (U8).** Like media: a node of type
+  `Chat` (or a kind that resolves to it) marks its handle, the provider is checked against the `ChatValue` contract
+  whatever `outputCheck` it declared (controller AND split server), and a text chunk (`append`) cannot overwrite a
+  transcript. A live reply therefore rides the transcript VALUE (a `ChatFeed` republishes it), with `pending` status while
+  it streams, rather than `appendChunk` on a string handle; the bounds of `appendChunk` still apply inside the feed.
+- **`connectConversation` (U8, `@loom-ui/hydration/client`)** is the browser's read half over loom's conversation routes
+  (`GET {base}/history`, `GET {base}/events`, ADR 0122 D6). The transport is injected (`fetch`; `openStream(url)` so the host
+  builds the `EventSource` with its credentials), it imports no loom package, and it folds history pages and SSE frames into
+  a `ChatFeed`, publishing the result through `publish` (`publishChat(store, handle)` writes the handle: `pending` while a
+  reply streams, `ready` once durable). `start()` loads the newest page then opens the stream after its cursor;
+  `loadOlder()` follows the feed's cursor, one load at a time; a `reconnect` event reopens from the feed's resume cursor.
+  Failures are FIXED findings (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`): no status code,
+  response body or exception text is carried, and an `error` event's body is not read. Sending is NOT here: it is the host's
+  authenticated write-back (`createWriteBack`, `@loom-ui/core` "Chat and inputs").
 - **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,
   `handleInventory` and `serveHandle(s)`; `@loom-ui/core`'s `DeclaredToolClasses`) makes a handle
   whose provider calls a declared tool at least that class, even when no stored node carries one.

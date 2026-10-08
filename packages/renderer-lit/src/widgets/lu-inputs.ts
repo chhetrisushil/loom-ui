@@ -103,7 +103,8 @@ export class LuTextInput extends LuInput {
         v.error === "too-long" ? t("That message is too long.") : t("Type a message first.");
       return;
     }
-    const key = (this.key ??= newSubmitKey());
+    this.key ??= newSubmitKey();
+    const key = this.key;
     this.phase = "sending";
     const result = await dispatch(this.onAction, {
       type: SUBMIT_TEXT_ACTION,
@@ -215,7 +216,8 @@ export class LuFormInput extends LuInput {
           ?.focus();
       return;
     }
-    const key = (this.key ??= newSubmitKey());
+    this.key ??= newSubmitKey();
+    const key = this.key;
     this.errors = {};
     this.phase = "sending";
     const result = await dispatch(this.onAction, {

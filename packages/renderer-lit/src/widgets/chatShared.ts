@@ -14,12 +14,12 @@ export type DispatchResult = "ok" | "failed" | "stale" | "unavailable";
  * widget maps it to its own fixed words.
  */
 export async function dispatch(
-  onAction: ((a: WidgetAction) => void | PromiseLike<ActionOutcome | undefined | void>) | undefined,
+  onAction: ((a: WidgetAction) => unknown) | undefined,
   action: WidgetAction
 ): Promise<DispatchResult> {
   if (onAction === undefined) return "unavailable";
   try {
-    const out = await onAction(action);
+    const out = (await onAction(action)) as Partial<ActionOutcome> | null | undefined;
     if (typeof out === "object" && out !== null && out.ok === false)
       return out.reason === "stale" ? "stale" : "failed";
     return "ok";

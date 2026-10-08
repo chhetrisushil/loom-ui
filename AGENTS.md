@@ -220,3 +220,14 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   Fix round 1: hydration (controller AND split server) contract-checks a media handle by node TYPE even with no `outputKinds`;
   untrusted active types (`isActiveMediaType`) and untrusted same-origin/`blob:` URLs are blocked; the host must run
   `acceptMediaAttach` on every `MEDIA_ATTACH`; the default lit registry draws a fixed "not loaded" placeholder for media kinds.
+- Chat and inputs (U8): `Chat` is bound to a `ChatValue` (bounded entries, a bare `restricted` placeholder, a fixed `reason`
+  token + `errorId`, `editOf`), `TextInput`/`FormInput`/`SelectInput` are static (file upload is `MediaInput`). Chat text is
+  UNTRUSTED and drawn as text only (no markdown, no links; `sanitizeChatText`). `ChatFeed` (pure) folds loom's conversation
+  API (history pages + SSE events; ADR 0122) append-only, idempotently, dropping everything the contract does not name;
+  `connectConversation` (hydration client) is the browser transport. Inputs emit `SUBMIT_TEXT` / `SUBMIT_FORM` / `SELECT` /
+  `EDIT_TURN` / `LOAD_OLDER` stamped with `viewedVersion`, each with an idempotency `key`; the HOST runs `acceptChatSubmit`
+  (re-validate against its own `inputSpecsOf`, freshness, `SubmitLedger`) via `createWriteBack` (targets: `conversationTarget`,
+  `resumeTarget`, `paramsTarget`) and its answer (`{ ok }`) is what the widget waits for. An edit is a NEW turn, never a
+  mutation. Entries: `@loom-ui/core/chat` (host/folding) vs `@loom-ui/core/chat-ui` (what a widget needs: core is CommonJS, so
+  a barrel cannot be tree-shaken), widgets in the opt-in `@loom-ui/renderer-lit/chat`; a handle feeding `Chat` is
+  contract-checked and never a stream.
