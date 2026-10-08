@@ -97,7 +97,10 @@ describe("lu-chat: drawing a transcript", () => {
 
   it("FUZZ: no random text ever produces an element or an attribute inside a turn", async () => {
     let seed = 0xc0ffee;
-    const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    const rnd = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
     const pool = [
       "<",
       ">",
@@ -133,7 +136,8 @@ describe("lu-chat: drawing a transcript", () => {
     for (const p of qa(el, "[data-text]")) {
       expect(p.children).toHaveLength(0);
       expect([...p.attributes].map((a) => a.name).sort()).toEqual(["class", "data-text"]);
-      expect(p.textContent).not.toMatch(/[\u202e\u001b]/);
+      expect(p.textContent).not.toContain(String.fromCharCode(0x202e));
+      expect(p.textContent).not.toContain(String.fromCharCode(27));
     }
     expect(
       qa(el, ".log *").every((n) =>

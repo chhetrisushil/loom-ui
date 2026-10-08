@@ -1,9 +1,4 @@
-import {
-  type ActionOutcome,
-  type ContractRegistry,
-  checkKindValue,
-  hasKindContract,
-} from "@loom-ui/core/browser";
+import { type ContractRegistry, checkKindValue, hasKindContract } from "@loom-ui/core/browser";
 import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
@@ -65,9 +60,7 @@ export abstract class LuWidget extends LitElement {
   @property({ attribute: false }) widget!: Widget;
   @property({ attribute: false }) value: unknown = undefined;
   @property({ attribute: false }) status?: BindingStatus;
-  @property({ attribute: false }) onAction?: (
-    a: WidgetAction
-  ) => void | PromiseLike<ActionOutcome | undefined | void>;
+  @property({ attribute: false }) onAction?: (a: WidgetAction) => unknown;
   /**
    * The host's value contracts (a catalogue's `valueContracts`) for kinds of its own. A widget of
    * a host kind with no contract here still renders, but marked `data-unchecked` — never as if it

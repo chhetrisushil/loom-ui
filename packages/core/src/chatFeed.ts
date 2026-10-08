@@ -455,3 +455,21 @@ function insertSorted(list: ChatEntry[], entry: ChatEntry): void {
   }
   list.splice(lo, 0, entry);
 }
+
+/**
+ * A `ChatValue` straight from one history page, for the SERVER side: a host effect that wraps
+ * `Conversations.history` (already filtered for the viewer by loom) returns this, and a hydration
+ * provider of kind `loom-effect` binds it to a `Chat` widget for the first paint / a split-hydration
+ * payload, with the browser's `connectConversation` taking over afterwards. Exactly the fold a
+ * browser runs (the same wire parsing, sanitising, bare placeholders, bounds), so the two cannot
+ * disagree. `direction` is the page's own (default `backward`: the newest page). A malformed page
+ * is an empty transcript, never a throw.
+ */
+export function chatValueFromHistory(
+  page: unknown,
+  options: ChatFeedOptions & { readonly direction?: "backward" | "forward" } = {}
+): ChatValue {
+  const feed = new ChatFeed(options);
+  feed.applyHistory(page, options.direction ?? "backward");
+  return feed.value();
+}

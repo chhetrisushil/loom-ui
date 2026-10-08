@@ -1,4 +1,3 @@
-import type { ActionOutcome } from "@loom-ui/core/browser";
 import type {
   BindingStatus,
   IdentityReport,
@@ -19,13 +18,11 @@ export interface DomWidgetProps {
   readonly value: unknown;
   readonly status?: BindingStatus;
   /**
-   * Emit an action. The host's handler MAY answer (a promise of) an {@link ActionOutcome}; an input
+   * Emit an action. The host's handler MAY answer (a promise of) an `ActionOutcome` (`@loom-ui/core/browser`); an input
    * widget (U8) keeps what the user typed until it hears `ok: true`. A handler that returns nothing
    * is read as success.
    */
-  readonly onAction?: (
-    action: WidgetAction
-  ) => void | PromiseLike<ActionOutcome | undefined | void>;
+  readonly onAction?: (action: WidgetAction) => unknown;
 }
 export interface DomWidgetHandle {
   update(value: unknown, status?: BindingStatus): void;

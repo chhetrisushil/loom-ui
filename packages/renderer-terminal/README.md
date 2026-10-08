@@ -98,6 +98,14 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
 
 ## Notable behaviours and guarantees
 
+- **Chat and inputs (U8).** `Chat` prints under its title as the SAME lines the web speaks (`chatTranscriptLines`):
+  `You: ...`, `Assistant (interrupted): ...`, `You (edit of turn 1): ...`, a failure as its fixed sentence plus
+  `(ref <id>)`, a restricted entry as `[restricted assistant turn]`, media described without an address, then
+  `(the assistant is replying...)` / `(conversation closed)` / `... earlier messages are available`. Each turn is one
+  bounded line of cleaned text: an escape sequence, a bidi override or a newline in a turn cannot reach the screen or
+  forge a `Assistant:` line. `TextInput` / `FormInput` / `SelectInput` print a prompt that says what they ask (fields,
+  numbered options) and that the answer goes through an interactive surface (the registry draws, it does not read a
+  line): a terminal host that collects answers sends them through the same `createWriteBack` as the web.
 - **Media prints a line, never loads (U9).** `Image`/`Audio`/`Video`/`File` print the same one-line
   description the web speaks (`describeMedia`: `image chart.png (image/png, 2 KiB)`), `[untrusted]`
   unless `media.trusted(ref)` says the host vouches (never for `origin: "user"`), and either a

@@ -380,3 +380,27 @@ describe("cursors", () => {
     expect(compareChatCursors(undefined, "0.1")).toBeGreaterThan(0);
   });
 });
+
+describe("chatValueFromHistory (the server-side first paint)", () => {
+  it("is the same fold a browser runs: placeholders bare, text cleaned, contract-valid, newest page oldest-first", async () => {
+    const { chatValueFromHistory } = await import("./chatFeed");
+    const v = chatValueFromHistory(
+      page(
+        [
+          wire(2, "assistant", { status: "restricted", text: "SECRET" }),
+          wire(2, "user", { text: "hi‮\u001b[2J" }),
+          wire(1, "assistant"),
+          wire(1, "user"),
+        ],
+        { done: false, nextCursor: "0.1" }
+      ),
+      { viewer: { actor: "me" } }
+    );
+    expect(isChatValue(v)).toBe(true);
+    expect(v.entries.map((e) => e.id)).toEqual(["t1.user", "t1.assistant", "t2.user", "t2.assistant"]);
+    expect(JSON.stringify(v)).not.toContain("SECRET");
+    expect(v.older).toBe("0.1");
+    expect(v.viewer).toEqual({ actor: "me" });
+    expect(chatValueFromHistory("not a page").entries).toEqual([]);
+  });
+});

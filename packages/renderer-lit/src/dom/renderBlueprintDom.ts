@@ -1,9 +1,4 @@
-import {
-  type ActionOutcome,
-  type CurrentHead,
-  type StampedAction,
-  parseBlueprintId,
-} from "@loom-ui/core/browser";
+import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loom-ui/core/browser";
 import {
   type Blueprint,
   type IdentityReport,
@@ -48,9 +43,7 @@ export interface DomRenderOptions {
    * (a promise of) an `ActionOutcome`: a widget that takes input (U8) waits for it, keeping what the
    * user typed until it hears `ok: true`.
    */
-  readonly onAction?: (
-    action: StampedAction & WidgetAction
-  ) => void | PromiseLike<ActionOutcome | undefined | void>;
+  readonly onAction?: (action: StampedAction & WidgetAction) => unknown;
   /**
    * The compile fingerprint of THIS view (`compileFingerprint({ clearance, locale,
    * ...result.fingerprint })` from `@loom-ui/core`): what the Blueprint depends on besides the Experience. Stamped
