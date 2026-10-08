@@ -66,6 +66,15 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   back to a random per-process key + a warn; a supplied key under 16 bytes throws `PlaceholderKeyError`; `requirePlaceholderKey` makes a missing key an error; never an unkeyed hash). `CompileResult.findings`,
   `restrictedProjectionNodes`, `restrictedHandles` and `inspectExperience` are SERVER-SIDE (real ids); the viewer's
   `compileFingerprint` is built from `result.fingerprint`. See the core README "Opaque ids".
+- The learning loop (U11): the planner's variant choice is a `decideWithPolicy` decision (`plan-variant:*`, propensity in
+  the log) made BEFORE the plan, and the plan id is keyed on the variant; `Provenance.policyDecisionId` is the
+  learnable decision (the model call stays `decisionId`). Signals (`@loom-ui/core/signals`, opt-in, no zod) are
+  UNTRUSTED client input: four content-free facts, tokens only, dwell as a bucket, restricted nodes flagged under their
+  alias (`CompileResult.fingerprint.placeholderNodes`) and credited at VERSION level. `@loom-ui/learning` is
+  server-side (both hydration guards list it): the viewer is the session's, never the payload's; replay, rate, tenant,
+  saw-it (`seenLogExposure` over `SeenLog` is the authoritative check) and once-per-key are enforced in
+  `SignalIngestor`; `settleRewards` records `ui:<rewardId>:<window>` through `recordOutcome` for CLOSED windows only
+  (the kernel refuses a changed score for the same pair); evaluation is `@loom/learning`'s, not ours.
 - Provenance and "what was seen" (U12): the per-node ledger is DERIVED from lineage ops (ids and handles only,
   never content; not in the content address), and `explainNode` is fail-closed (unknown, restricted and unreadable all
   answer `{ available: false }`; model text is `UntrustedText`, gated by the class floor + `summaryClass`). What a

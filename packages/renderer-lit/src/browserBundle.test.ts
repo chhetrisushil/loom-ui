@@ -99,3 +99,16 @@ describe("renderer-lit's browser entries carry no zod", () => {
     });
   }
 });
+
+// U11: the opt-in signal observer (an IntersectionObserver and two listeners) is its own entry, so
+// index/dom pay nothing, and it imports NOTHING from core at runtime (it takes the collector by its
+// shape), so it is not subject to the core allowlist above — it must have no core module at all.
+describe("renderer-lit/signals", () => {
+  it("bundles with no zod and no core module, under 6000 bytes", async () => {
+    const { inputs, bytes } = await bundle("signals.js");
+    console.info(`@loom-ui/renderer-lit/signals.js browser bundle (minified, esm): ${bytes} bytes`);
+    expect(inputs.filter((f) => /[\\/]zod[\\/]/.test(f))).toEqual([]);
+    expect(inputs.filter((f) => f.startsWith(`${CORE_DIST}/`))).toEqual([]);
+    expect(bytes).toBeLessThan(6 * 1000);
+  });
+});

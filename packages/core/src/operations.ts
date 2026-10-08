@@ -43,6 +43,14 @@ export const Provenance = z.object({
    * parses unchanged) and outside the content address, like the rest of provenance.
    */
   decisionId: z.string().min(1).max(256).optional(),
+  /**
+   * The LEARNABLE loom decision behind the op (U11): the `decideWithPolicy` choice among planner
+   * variants that shaped this plan, recorded with its policy and propensity. `decisionId` names
+   * the model call; this names the choice a reward should be attributed to, so a late reward
+   * (`runtime.recordOutcome`) lands on the decision off-policy evaluation reads. Optional, outside
+   * the content address, and absent unless the planner ran with variants.
+   */
+  policyDecisionId: z.string().min(1).max(256).optional(),
 });
 export type Provenance = z.infer<typeof Provenance>;
 

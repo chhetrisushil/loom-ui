@@ -41,6 +41,8 @@ export function planDecisionId(
     surface?: Surface;
     /** The container roles offered (U15); keyed only when there are some. */
     containers?: readonly ContainerRoleSpec[];
+    /** The planner variant (U11, `variantKey`); keyed only when there is one. */
+    variant?: string;
   }
 ): string;
 export function planDecisionId(
@@ -56,6 +58,8 @@ export function planDecisionId(
     observedHandles?: readonly string[];
     /** The container roles offered (U15); keyed only when there are some. */
     containers?: readonly ContainerRoleSpec[];
+    /** The planner variant (U11, `variantKey`); keyed only when there is one. */
+    variant?: string;
   }
 ): string;
 export function planDecisionId(kind: "compose" | "revise", input: Record<string, unknown>): string {
@@ -65,6 +69,8 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
   // so every decision made without them keeps the id it always had.
   const roles = input.containers as readonly ContainerRoleSpec[] | undefined;
   const offered = roles !== undefined && roles.length > 0 ? { containers: roles } : {};
+  // Likewise a variant (U11): the guidance it carries shapes the prompt, so it keys the decision.
+  const variant = typeof input.variant === "string" ? { variant: input.variant } : {};
   const key =
     kind === "compose"
       ? {
@@ -74,6 +80,7 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
           context: input.context ?? null,
           surface,
           ...offered,
+          ...variant,
         }
       : {
           versionHash: input.versionHash,
@@ -85,6 +92,7 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
           context: input.context ?? null,
           surface,
           ...offered,
+          ...variant,
           ...(Array.isArray(input.observedHandles) &&
             input.observedHandles.length > 0 && {
               observedHandles: [...(input.observedHandles as readonly string[])].sort(),

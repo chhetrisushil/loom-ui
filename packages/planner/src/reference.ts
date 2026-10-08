@@ -17,6 +17,8 @@ import {
   walk,
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
+import { fnv1a64 } from "@loom/core";
+import { type Policy, decideWithPolicy } from "@loom/learning";
 import { declaredToolClassesFrom } from "./capabilityClass";
 import { contentRefArgsFrom } from "./contentRefs";
 import {
@@ -40,6 +42,7 @@ import type {
   PlanReport,
   PlanResult,
   PlanStreamOptions,
+  PlanVariantReport,
   Planner,
   PlannerDeltaSink,
   PlannerModel,
@@ -48,6 +51,13 @@ import type {
 } from "./spi";
 import { NodeScanner } from "./streamScan";
 import { addUsage, readReportedUsage, totalUsage } from "./usage";
+import {
+  type PlanVariant,
+  type PlanVariants,
+  UNIT_KEY,
+  assertVariants,
+  variantKey,
+} from "./variants";
 
 export const REFERENCE_POLICY = { id: "loom-ui.reference-planner", version: "1.0.0" } as const;
 export const REFERENCE_SOURCE = "loom-ui.planner.reference";
@@ -79,6 +89,13 @@ export interface ReferencePlannerOptions {
    * and the planner's output is byte-identical to before this option existed.
    */
   readonly orderSalt?: string;
+  /**
+   * Planner variants (U11): each turn first CHOOSES a variant through `decideWithPolicy` (recorded
+   * with its context, the alternatives and the policy's propensity, so loom's off-policy evaluation
+   * applies), then plans under it. The turn needs `ComposeInput.unit` / `ReviseInput.unit`. Absent =
+   * exactly the planner as it was, with no extra decision.
+   */
+  readonly variants?: PlanVariants;
 }
 
 /** Ops are id-based and every genesis has the same root, so validation can run against a scratch lineage. */
@@ -129,6 +146,99 @@ export class ReferencePlanner implements Planner {
   constructor(private readonly opts: ReferencePlannerOptions) {
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
     if (opts.reach !== undefined) declarePlannerReach(this, opts.reach);
+    if (opts.variants !== undefined) assertVariants(opts.variants);
+  }
+
+  /**
+   * Choose the variant for a turn (U11). `planKey` is the plan decision's id WITHOUT a variant: it
+   * keys the variant decision too, so one execution planning two different things records two
+   * choices, and a replay serves each. A refusal (no valid unit, an id the variant set no longer
+   * knows) comes back as a finished {@link PlanResult} with NO model call.
+   */
+  private async chooseVariant(
+    kind: "compose" | "revise",
+    planKey: string,
+    unit: string | undefined,
+    catalogId: string,
+    ctx: DecideContext
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly chosen: { id: string; variant: PlanVariant; report: PlanVariantReport };
+      }
+    | { readonly ok: false; readonly result: PlanResult }
+  > {
+    const vs = this.opts.variants as PlanVariants;
+    const refuse = (code: string, message: string) => ({
+      ok: false as const,
+      result: {
+        ops: [],
+        findings: [err(code, message)],
+        report: {
+          decisionId: planKey,
+          attempts: [],
+          firstAttemptValid: false,
+          modelId: this.opts.modelId,
+        },
+      } satisfies PlanResult,
+    });
+    if (unit === undefined || !UNIT_KEY.test(unit))
+      return refuse(
+        "variant-unit-invalid",
+        "this planner assigns a variant by `unit`, and the input carries none (or one that is not an opaque token); the model was not called"
+      );
+    const decisionId = `plan-variant:${fnv1a64(`${kind}\u0000${planKey}\u0000${unit}`)}`;
+    const ids = Object.keys(vs.variants).sort();
+    // Capture the policy's own answer so the report can say what propensity THIS run produced.
+    let produced: { action: string; propensity?: number } | undefined;
+    const watched: Policy<string> = {
+      id: vs.policy.id,
+      version: vs.policy.version,
+      select: (c, a) => {
+        const r = vs.policy.select(c, a);
+        produced = r;
+        return r;
+      },
+    };
+    let id: string;
+    try {
+      id = await decideWithPolicy(
+        ctx,
+        decisionId,
+        watched,
+        { kind, unit, key: planKey, catalogId },
+        ids,
+        { source: REFERENCE_SOURCE }
+      );
+    } catch (e) {
+      if (isControlPlaneError(e)) throw e;
+      return refuse(
+        "variant-policy-failed",
+        `the variant policy could not choose: ${e instanceof Error ? e.message : String(e)}; the model was not called`
+      );
+    }
+    const variant = Object.hasOwn(vs.variants, id) ? vs.variants[id] : undefined;
+    if (variant === undefined)
+      return refuse(
+        "variant-unknown",
+        `the recorded variant "${String(id).slice(0, 48)}" is not offered by this planner; the model was not called`
+      );
+    const p = produced as { action: string; propensity?: number } | undefined;
+    return {
+      ok: true,
+      chosen: {
+        id,
+        variant,
+        report: {
+          decisionId,
+          id,
+          policy: { id: vs.policy.id, version: vs.policy.version },
+          ...(p !== undefined &&
+            p.action === id &&
+            p.propensity !== undefined && { propensity: p.propensity }),
+        },
+      },
+    };
   }
 
   private modelFor(scope: DecideScope): PlannerModel {
@@ -151,21 +261,38 @@ export class ReferencePlanner implements Planner {
     };
   }
 
-  compose(
+  async compose(
     input: ComposeInput,
     ctx: DecideContext,
     stream: PlanStreamOptions = {}
   ): Promise<PlanResult> {
-    const decisionId = planDecisionId("compose", input);
-    return ctx.decide(
+    let effective = input;
+    let variant: { id: string; variant: PlanVariant; report: PlanVariantReport } | undefined;
+    if (this.opts.variants !== undefined) {
+      const chosen = await this.chooseVariant(
+        "compose",
+        planDecisionId("compose", input),
+        input.unit,
+        input.catalog.id,
+        ctx
+      );
+      if (!chosen.ok) return chosen.result;
+      variant = chosen.chosen;
+      effective = withVariant(input, variant.variant);
+    }
+    const decisionId = planDecisionId("compose", {
+      ...effective,
+      ...(variant !== undefined && { variant: variantKey(variant.id, variant.variant) }),
+    });
+    const result = await ctx.decide(
       decisionId,
       (scope) =>
         this.plan(
           () => this.modelFor(scope),
           decisionId,
           scratchGenesis(input.intent),
-          input,
-          (prev) => composeMessages(input, prev),
+          effective,
+          (prev) => guided(composeMessages(effective, prev), variant?.variant),
           undefined,
           stream
         ),
@@ -177,34 +304,41 @@ export class ReferencePlanner implements Planner {
           catalogId: input.catalog.id,
           types: input.catalog.entries.length,
           capabilities: input.capabilities.length,
+          ...(variant !== undefined && { variant: variant.id }),
         },
       }
     );
+    return variant === undefined
+      ? result
+      : { ...result, report: { ...result.report, variant: variant.report } };
   }
 
-  revise(
+  async revise(
     input: ReviseInput,
     ctx: DecideContext,
     stream: PlanStreamOptions = {}
   ): Promise<PlanResult> {
-    const decisionId = planDecisionId("revise", {
-      versionHash: input.experience.versionHash,
-      request: input.request,
-      catalog: input.catalog,
-      capabilities: input.capabilities,
-      ...(input.context !== undefined && { context: input.context }),
-      ...(input.surface !== undefined && { surface: input.surface }),
-      ...(input.containers !== undefined && { containers: input.containers }),
-      ...(input.observed !== undefined && { observedHandles: Object.keys(input.observed) }),
-    });
+    const keyOf = (variant?: string) =>
+      planDecisionId("revise", {
+        versionHash: input.experience.versionHash,
+        request: input.request,
+        catalog: input.catalog,
+        capabilities: input.capabilities,
+        ...(input.context !== undefined && { context: input.context }),
+        ...(input.surface !== undefined && { surface: input.surface }),
+        ...(input.containers !== undefined && { containers: input.containers }),
+        ...(input.observed !== undefined && { observedHandles: Object.keys(input.observed) }),
+        ...(variant !== undefined && { variant }),
+      });
+    const baseId = keyOf();
     if (input.experience.versionHash === "") {
       const report: PlanReport = {
-        decisionId,
+        decisionId: baseId,
         attempts: [],
         firstAttemptValid: false,
         modelId: this.opts.modelId,
       };
-      return Promise.resolve({
+      return {
         ops: [],
         findings: [
           err(
@@ -213,17 +347,27 @@ export class ReferencePlanner implements Planner {
           ),
         ],
         report,
-      });
+      };
     }
-    return ctx.decide(
+    let effective = input;
+    let variant: { id: string; variant: PlanVariant; report: PlanVariantReport } | undefined;
+    if (this.opts.variants !== undefined) {
+      const chosen = await this.chooseVariant("revise", baseId, input.unit, input.catalog.id, ctx);
+      if (!chosen.ok) return chosen.result;
+      variant = chosen.chosen;
+      effective = withVariant(input, variant.variant);
+    }
+    const decisionId =
+      variant === undefined ? baseId : keyOf(variantKey(variant.id, variant.variant));
+    const result = await ctx.decide(
       decisionId,
       (scope) =>
         this.plan(
           () => this.modelFor(scope),
           decisionId,
           input.experience,
-          input,
-          (prev) => reviseMessages(input, prev),
+          effective,
+          (prev) => guided(reviseMessages(effective, prev), variant?.variant),
           input.request,
           stream
         ),
@@ -235,9 +379,13 @@ export class ReferencePlanner implements Planner {
           catalogId: input.catalog.id,
           base: input.experience.versionHash,
           scope: input.request.scopeNodeIds?.length ?? 0,
+          ...(variant !== undefined && { variant: variant.id }),
         },
       }
     );
+    return variant === undefined
+      ? result
+      : { ...result, report: { ...result.report, variant: variant.report } };
   }
 
   /** The bounded loop. `request` present ⇒ revise: the primitives are wrapped in one `prompt` op. */
@@ -573,6 +721,20 @@ export class ReferencePlanner implements Planner {
       report: this.report(decisionId, attempts, false),
     };
   }
+}
+
+/** The input a variant turn plans under: the variant's container roles replace the offered ones. */
+function withVariant<T extends { readonly containers?: readonly ContainerRoleSpec[] }>(
+  input: T,
+  v: PlanVariant
+): T {
+  return v.containers === undefined ? input : { ...input, containers: v.containers };
+}
+
+/** The prompt, with the variant's application-authored guidance appended to the system text. */
+function guided<M extends { system: string }>(m: M, v: PlanVariant | undefined): M {
+  if (v?.guidance === undefined) return m;
+  return { ...m, system: `${m.system}\n\nLAYOUT GUIDANCE (from the application): ${v.guidance}` };
 }
 
 /**

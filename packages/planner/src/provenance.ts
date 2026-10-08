@@ -16,6 +16,7 @@ export function plannerProvenance(
   opts: { readonly agentId?: string; readonly ref?: string } = {}
 ): Provenance {
   const { decisionId, modelId } = result.report;
+  const learnable = result.report.variant?.decisionId;
   // `Provenance.decisionId` is 1-256 characters. A decision id outside that is OMITTED, never
   // truncated (a cut id links to a different decision) and never stamped (an invalid provenance is
   // refused by the lineage's write path).
@@ -25,6 +26,10 @@ export function plannerProvenance(
     ...(opts.agentId !== undefined && { agentId: opts.agentId }),
     ...(modelId !== "" && { modelId }),
     ...(linkable && { decisionId }),
+    // The decision a reward attaches to (U11): the variant choice, which carries the propensity.
+    ...(learnable !== undefined &&
+      learnable !== "" &&
+      learnable.length <= 256 && { policyDecisionId: learnable }),
     ...(opts.ref !== undefined && { ref: opts.ref }),
   };
 }

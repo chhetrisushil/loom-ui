@@ -100,12 +100,14 @@ export function cleanProvenance(p: Provenance): Provenance {
   const modelId = cleanField(p.modelId);
   const ref = cleanField(p.ref);
   const decisionId = cleanField(p.decisionId);
+  const policyDecisionId = cleanField(p.policyDecisionId);
   return {
     source,
     ...(agentId !== undefined && { agentId }),
     ...(modelId !== undefined && { modelId }),
     ...(ref !== undefined && { ref }),
     ...(decisionId !== undefined && { decisionId }),
+    ...(policyDecisionId !== undefined && { policyDecisionId }),
   };
 }
 

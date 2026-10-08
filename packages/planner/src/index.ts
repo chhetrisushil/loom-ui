@@ -42,6 +42,15 @@ export { NodeScanner } from "./streamScan";
 export type { ScanLimits } from "./streamScan";
 export type { ReferencePlannerOptions } from "./reference";
 export { plannerProvenance } from "./provenance";
+export {
+  MAX_GUIDANCE,
+  UNIT_KEY,
+  epsilonGreedyPolicy,
+  stableBucketPolicy,
+  ucbPolicy,
+  variantKey,
+} from "./variants";
+export type { PlanVariant, PlanVariants } from "./variants";
 export { isControlPlaneError } from "./controlPlane";
 export { REACH_DECLARATION, declarePlannerReach, readPlannerReach } from "./reach";
 export type { PlannerReach } from "./reach";
@@ -92,5 +101,6 @@ export type {
   PlanReport,
   PlanResult,
   PlanStreamOptions,
+  PlanVariantReport,
   ReviseInput,
 } from "./spi";

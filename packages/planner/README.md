@@ -257,6 +257,27 @@ turn. Hand it to `Lineage.compose({ by })` / `RecordedOperation.by`, with `PlanR
 `summaryClass`, and `Lineage.explain` can answer "which model call put this widget here?" without
 the model's text ever entering the op log through the provenance. It copies nothing else.
 
+## Variants, propensity and a learning loop (U11)
+
+`new ReferencePlanner({ variants: { policy, variants } })` makes each turn two decisions. First a
+**variant choice** through `decideWithPolicy` (`plan-variant:<hash>`): recorded with its context
+(`{ kind, unit, key, catalogId }`), the alternatives (the sorted variant ids) and the policy's
+**propensity**, so `@loom/learning` can evaluate it off-policy from the log. Then the plan, keyed
+additionally on the variant (a plan made under one variant is not a plan for another). A variant is
+`{ containers?, guidance? }`: the container roles offered for the turn, and a bounded, control-free line
+of application-authored layout guidance appended to the system prompt.
+
+The turn needs `ComposeInput.unit` / `ReviseInput.unit`, an opaque `[A-Za-z0-9_.:-]{1,128}` id of the
+user, tenant or cohort (an email is refused). Without a valid unit the turn returns a
+`variant-unit-invalid` finding and calls nothing. Policies shipped: `stableBucketPolicy` (A/B by a
+hash of the unit, propensity = weight share), `epsilonGreedyPolicy` (propensity `eps/k` plus `1-eps`
+for the greedy arm — exact) and `ucbPolicy` (deterministic, propensity 1, over a stats snapshot). All are
+pure — no clock, no RNG — so a replay and a re-run agree; and a replay serves the RECORDED choice even if
+the policy has since changed (`report.variant.propensity` is then absent: it is only claimed when this
+run's policy made the recorded choice). A recorded variant the planner no longer offers fails closed
+(`variant-unknown`, no model call). `PlanResult.report.variant.decisionId` is the learnable decision;
+`plannerProvenance` stamps it as `Provenance.policyDecisionId`.
+
 ## Streaming a turn (U1)
 
 Optional and generic, and ONE governed call: there is no second model path. Pass

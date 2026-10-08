@@ -41,6 +41,12 @@ describe("@loom-ui/core/browser", () => {
     ]);
   });
 
+  it("@loom-ui/core/signals (U11, opt-in) reaches no package and no other core module", () => {
+    const graph = [...reach(resolve(DIST, "signals.js"))];
+    expect(graph.filter((g) => g.startsWith("pkg:"))).toEqual([]);
+    expect(graph.map((g) => g.replace(`${DIST}/`, "")).sort()).toEqual(["signals.js"]);
+  });
+
   it("is the same vocabulary as the main entry, not a fork", async () => {
     const browser = await import("./browser");
     for (const name of Object.keys(browser) as (keyof typeof browser)[]) {

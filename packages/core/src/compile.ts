@@ -180,6 +180,12 @@ export interface CompileResult {
   readonly fingerprint: {
     readonly restrictedHandles: readonly string[];
     readonly restrictedProjectionNodes: readonly string[];
+    /**
+     * The ids (aliases) of every node drawn as a bare restricted placeholder, sorted. The viewer
+     * already holds them (they are the placeholders' ids in the Blueprint); a signal collector
+     * (`@loom-ui/core/signals`) takes them so it reports such a node as restricted, never by content.
+     */
+    readonly placeholderNodes: readonly string[];
   };
 }
 
@@ -219,7 +225,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
       ok: false,
       restrictedProjectionNodes: [],
       restrictedHandles: [],
-      fingerprint: { restrictedHandles: [], restrictedProjectionNodes: [] },
+      fingerprint: { restrictedHandles: [], restrictedProjectionNodes: [], placeholderNodes: [] },
     };
   }
   const semantic = validateExperience(exp, opts.catalog, opts.surface);
@@ -342,6 +348,7 @@ export function compile(exp: Experience, opts: CompileOptions): CompileResult {
     fingerprint: {
       restrictedHandles: opaque([...restrictedHandles], "handle"),
       restrictedProjectionNodes: opaque(restrictedProjectionNodes, "node"),
+      placeholderNodes: placeholderIdsOf(layout, redaction.bare),
     },
   };
 }
@@ -478,6 +485,23 @@ function barePlaceholder(
   });
   redaction.bare.add(out);
   return out;
+}
+
+/**
+ * The ids of the bare placeholders that SURVIVED into the final tree (a placeholder swallowed by a
+ * collapsed container is not in it), sorted. Iterative, so a deep tree cannot overflow the stack.
+ */
+function placeholderIdsOf(root: Layout, bare: WeakSet<object>): string[] {
+  const out: string[] = [];
+  const stack: Array<Widget | Layout> = [root];
+  while (stack.length > 0) {
+    const n = stack.pop() as Widget | Layout;
+    if ("_tag" in n) {
+      if (bare.has(n)) out.push(n.id);
+    } else if (n.type === "grid") for (const c of n.children) stack.push(c.node);
+    else for (const c of n.children) stack.push(c);
+  }
+  return out.sort();
 }
 
 /** loom's finding codes that restate one this compiler already reported for the same node. */
