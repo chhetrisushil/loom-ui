@@ -329,6 +329,17 @@ const repaired = await reviseForDrift(planner, {
 
 ## Notable behaviours and guarantees
 
+- **Media comes from bindings, never from the model (U9).** `describeCatalog` adds media guidance to an
+  entry ONLY when it resolves to a media kind (a catalogue without the media entries says nothing about
+  media, and a draft naming `Image` is `unknown-type`). A media node's props are checked against the
+  FRAMEWORK allow-list in `validateExperience` (text props only): a `src`/`address`/`autoplay` prop is
+  `media-prop-forbidden`, a URL or content address as a prop's whole value is `media-literal-ref`, an
+  unbound display node is `media-unbound` — even for a catalogue that DECLARES such a prop. The
+  reference planner feeds those findings back like any validation finding, and the conformance kit
+  reports them as `compose-invalid:<code>` for any planner. Not covered: an address a model writes into a
+  capability's `arguments`; that is the tool's input, authorised by the host's invoker like any other.
+
+
 - **Error semantics: refusals propagate, model failures become findings.** A plain model failure
   (provider error, unparseable or invalid output, `TypedFailure`) becomes a `model-error` /
   `model-output-invalid` finding, is retried up to `maxAttempts`, and ends as a recorded failed

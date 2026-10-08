@@ -9,7 +9,11 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./dom": { "types": "./dist/dom/index.d.ts", "default": "./dist/dom/index.js" },
-    "./containers": { "types": "./dist/dom/containers.d.ts", "default": "./dist/dom/containers.js" }
+    "./containers": {
+      "types": "./dist/dom/containers.d.ts",
+      "default": "./dist/dom/containers.js"
+    },
+    "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" }
   },
   "scripts": {
     "build": "tsc --build",

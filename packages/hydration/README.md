@@ -240,6 +240,16 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 
 ## Notable behaviours and guarantees
 
+- **A handle that feeds a media widget is always contract-checked (U9).** When the controller is given
+  `outputKinds` and a handle's bound nodes resolve to `Image`/`Audio`/`Video`/`File`, the load runs as
+  `outputCheck: "contract"` whatever the provider declared: a shape pin passes any value of the pinned
+  shape (inline bytes or a locator included), and what is published reaches the store, a seen log and a
+  split-hydration payload. A value that is not a `MediaRef` is drift (`output-contract-drift`), never
+  published. A restricted media handle is never invoked, as for any restricted handle. Without
+  `outputKinds` the controller cannot know a handle feeds media; the renderer's check still refuses to
+  draw it. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`, called by
+  the renderer (see `@loom-ui/core` "Media").
+
 - **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,
   `handleInventory` and `serveHandle(s)`; `@loom-ui/core`'s `DeclaredToolClasses`) makes a handle
   whose provider calls a declared tool at least that class, even when no stored node carries one.

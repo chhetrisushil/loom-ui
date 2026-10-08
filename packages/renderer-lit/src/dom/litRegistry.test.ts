@@ -15,6 +15,8 @@ import {
   litRegistry,
 } from "./litRegistry";
 
+const MEDIA = new Set<string>(["Image", "Audio", "Video", "File", "MediaInput"]);
+
 describe("litRegistry parity", () => {
   it("covers every kind in loom's built-in catalogue, so one web compile renders on React or Lit", () => {
     const report = catalogCoverage(builtinCatalog, litRegistry);
@@ -22,9 +24,13 @@ describe("litRegistry parity", () => {
     expect(report.ok).toBe(true);
   });
   it("names the Lit-only kinds explicitly and declares their loom contracts", () => {
-    expect([...LIT_ONLY_KINDS].sort()).toEqual([...FRAMEWORK_KINDS].sort());
-    for (const k of FRAMEWORK_KINDS) expect(litRegistry.has(k)).toBe(true);
-    expect(frameworkKindContracts.map((c) => c.kind).sort()).toEqual([...FRAMEWORK_KINDS].sort());
+    // The media kinds are framework kinds too, drawn by the opt-in `@loom-ui/renderer-lit/media`
+    // entry (see media.test.ts for their registry parity), so the DEFAULT registry omits them.
+    const defaultKinds = FRAMEWORK_KINDS.filter((k) => !MEDIA.has(k));
+    expect([...LIT_ONLY_KINDS].sort()).toEqual([...defaultKinds].sort());
+    for (const k of defaultKinds) expect(litRegistry.has(k)).toBe(true);
+    for (const k of MEDIA) expect(litRegistry.has(k)).toBe(false);
+    expect(frameworkKindContracts.map((c) => c.kind).sort()).toEqual([...defaultKinds].sort());
     // A Note is static text from props; every other framework kind renders bound data.
     for (const c of frameworkKindContracts)
       expect(c.binding).toBe(c.kind === "Note" ? "none" : "required");

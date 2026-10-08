@@ -18,7 +18,7 @@ export * from "./mediaRef";
 // ── Text and size shown to a reader ─────────────────────────────────────────────
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping controls is the point
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]+/g;
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g;
 
 /** Untrusted display text: controls, bidi overrides and zero-width marks become a space; whitespace collapses; bounded. */
 export function cleanMediaText(text: unknown, max = MAX_MEDIA_NAME_LENGTH): string {

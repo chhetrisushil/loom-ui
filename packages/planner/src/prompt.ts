@@ -6,6 +6,8 @@ import {
   type SemanticCatalog,
   findEntry,
   isContainer,
+  isMediaInputKind,
+  isMediaKind,
   nodeIds,
   toolKey,
 } from "@loom-ui/core";
@@ -84,7 +86,7 @@ export function describeCatalog(catalog: SemanticCatalog): string {
   return catalog.entries
     .map(
       (e) =>
-        `- ${e.name}@${e.version} — props: ${e.props.length ? e.props.join(", ") : "none"}; binding: ${e.binding}; surfaces: ${Object.keys(e.surfaces).join(", ")}${e.sensitivity === "model-may-set" ? "; sensitivity: model-may-set" : ""}${valueNotes(catalog, e)}`
+        `- ${e.name}@${e.version} — props: ${e.props.length ? e.props.join(", ") : "none"}; binding: ${e.binding}; surfaces: ${Object.keys(e.surfaces).join(", ")}${e.sensitivity === "model-may-set" ? "; sensitivity: model-may-set" : ""}${valueNotes(catalog, e)}${mediaNote(e)}`
     )
     .join("\n");
 }
@@ -112,6 +114,21 @@ export function describeContainers(roles: readonly ContainerRoleSpec[] = []): st
       return `- ${r.role} — ${oneLine(r.description)}${n}`;
     }),
   ].join("\n");
+}
+
+/**
+ * U9: guidance for an entry that resolves to a media kind. Present ONLY when the catalogue offers
+ * one, so a catalogue without media says nothing about it. Framework text, not model- or tool-authored.
+ */
+function mediaNote(e: SemanticCatalog["entries"][number]): string {
+  const kinds = new Set<string>();
+  for (const res of Object.values(e.surfaces))
+    if (res !== undefined && !("degradeTo" in res)) kinds.add(res.kind);
+  if ([...kinds].some(isMediaInputKind))
+    return "; media input: a static upload control — set no data on it, it collects a file from the user";
+  if ([...kinds].some(isMediaKind))
+    return "; media: shows a content reference supplied by the bound capability — NEVER write an address, URL, file contents or autoplay in props (only text such as alt/caption); bind a capability that returns a reference";
+  return "";
 }
 
 /** `; value (<kind>): <description>` for each of an entry's own kinds whose host contract describes itself. */

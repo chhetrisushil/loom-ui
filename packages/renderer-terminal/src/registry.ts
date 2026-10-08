@@ -3,15 +3,22 @@ import {
   DELTA_FORMAT,
   type KpiValue,
   LocalizedText,
+  type MediaKind,
+  type MediaPolicy,
+  type MediaRef,
   type SemanticFormat,
   type StatusCardValue,
   type TableCell,
   type TableValue,
   type TimeSeriesValue,
   checkKindValue,
+  checkMediaUrl,
+  cleanMediaText,
   deltaDirection,
+  describeMedia,
   effectiveFormat,
   formatSemanticNumber,
+  maxBytesFor,
   tableColumnFormat,
   tableColumnLabel,
   unitSuffix,
@@ -30,9 +37,30 @@ const SPARK = "▁▂▃▄▅▆▇█";
  */
 export type TitleChrome = "widget" | "host";
 
+/**
+ * What a terminal can do about media (U9). A terminal loads nothing, so there is no resolver: it
+ * prints WHAT the media is (name, type, size) and a way to name it. Media is shown as untrusted
+ * unless the host says otherwise, exactly as the web surface does without a vouching resolver.
+ */
+export interface TerminalMediaOptions {
+  /**
+   * A SYNCHRONOUS viewer-scoped link for a ref (e.g. a short-lived signed URL the host minted for
+   * this session), or `undefined` for none. It is re-checked with `checkMediaUrl` before printing;
+   * a refused link prints nothing. Without one the line carries a short handle only, never the full
+   * address (an address is a capability, and terminal output is copied and logged).
+   */
+  readonly link?: (ref: MediaRef, kind: MediaKind) => string | undefined;
+  /** Whether the HOST vouches for this ref's bytes. Default: nothing is trusted. User-origin media never is. */
+  readonly trusted?: (ref: MediaRef, kind: MediaKind) => boolean;
+  /** The same display policy the web surface takes (size limits, URL rules). */
+  readonly policy?: MediaPolicy;
+}
+
 export interface TerminalRegistryOptions {
   /** Who draws each widget's title. Default `"widget"` — today's output, unchanged. */
   readonly chrome?: TitleChrome;
+  /** How media prints. Default: handle only, everything untrusted. */
+  readonly media?: TerminalMediaOptions;
 }
 
 /** A non-empty string is a title; `""` (or a stray non-string) is none, so the kind stands in. */
@@ -270,6 +298,38 @@ const a2uiView = (host: boolean) =>
 const sandboxView = (host: boolean) =>
   guarded(host, "SandboxView", (w, _v, l) => l(w, "[sandboxed component — rendered on the web]"));
 
+// ── Media (U9) ─────────────────────────────────────────────────────────────────
+// `Image 'chart.png' (image/png, 1 KiB) [untrusted] ref:sha256:0123456789…` — the SAME one-line
+// description the web surface speaks (`describeMedia`), a trust marker, and a link or short handle.
+const mediaLine = (host: boolean, kind: MediaKind, media: TerminalMediaOptions | undefined) =>
+  guarded(host, kind, (w, v, l) => {
+    const ref = v as MediaRef;
+    const policy = media?.policy;
+    const tooLarge = ref.size !== undefined && ref.size > maxBytesFor(kind, policy);
+    const trusted = ref.origin !== "user" && media?.trusted?.(ref, kind) === true;
+    const checked = tooLarge ? undefined : checkMediaUrl(media?.link?.(ref, kind), policy);
+    const where = tooLarge
+      ? "too large to open"
+      : checked?.ok === true
+        ? checked.url
+        : `ref:${ref.address.slice(0, 16)}${ref.address.length > 16 ? "…" : ""}`;
+    const alt = kind === "Image" ? cleanMediaText(ref.alt, 200) : "";
+    return l(
+      w,
+      `${describeMedia(kind, ref)}${alt === "" ? "" : ` — ${alt}`}${trusted ? "" : " [untrusted]"} ${where}`
+    );
+  });
+
+// A media input is a web control (a file picker): say so, don't fake it. Static, so never `guarded`.
+const mediaInput =
+  (host: boolean): TerminalWidgetRenderer =>
+  (w) => {
+    const t = titleText(w);
+    return t !== undefined && !host
+      ? `${t}: [file upload — available on the web]`
+      : "[file upload — available on the web]";
+  };
+
 /** The framework kinds' renderers. A NEW registry each call — never mutate a shared one. */
 export function createLoomUiTerminalRegistry(
   opts: TerminalRegistryOptions = {}
@@ -283,7 +343,12 @@ export function createLoomUiTerminalRegistry(
     .register("StatusCard", statusCard(host))
     .register("Note", note(host))
     .register("A2UIView", a2uiView(host))
-    .register("SandboxView", sandboxView(host));
+    .register("SandboxView", sandboxView(host))
+    .register("Image", mediaLine(host, "Image", opts.media))
+    .register("Audio", mediaLine(host, "Audio", opts.media))
+    .register("Video", mediaLine(host, "Video", opts.media))
+    .register("File", mediaLine(host, "File", opts.media))
+    .register("MediaInput", mediaInput(host));
 }
 
 export const loomUiTerminalRegistry: RendererRegistry<TerminalWidgetRenderer> =

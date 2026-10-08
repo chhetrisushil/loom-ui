@@ -29,6 +29,8 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "containerRoles.js",
   "format.js",
   "kindValues.js",
+  "media.js",
+  "mediaRef.js",
   "paths.js",
   "streamText.js",
 ]);
@@ -52,11 +54,18 @@ async function bundle(entry: string) {
 
 describe("renderer-lit's browser entries carry no zod", () => {
   for (const [entry, budget] of [
-    ["index.js", 160 * 1000],
-    ["dom/index.js", 160 * 1000],
+    // U9 raised these from 160 kB by 4 kB (index measured 157_537 -> 160_857): the MediaRef value
+    // contract (~3 kB) has to ride in `checkKindValue` for every page, because a media widget's
+    // value is checked wherever a value is checked. The widgets themselves are NOT here: they are the
+    // opt-in `media.js` entry below.
+    ["index.js", 164 * 1000],
+    ["dom/index.js", 164 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
     ["dom/containers.js", 80 * 1000],
+    // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
+    // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
+    ["media.js", 180 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

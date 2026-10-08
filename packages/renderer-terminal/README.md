@@ -98,6 +98,16 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
 
 ## Notable behaviours and guarantees
 
+- **Media prints a line, never loads (U9).** `Image`/`Audio`/`Video`/`File` print the same one-line
+  description the web speaks (`describeMedia`: `image chart.png (image/png, 2 KiB)`), `[untrusted]`
+  unless `media.trusted(ref)` says the host vouches (never for `origin: "user"`), and either a
+  re-checked `media.link(ref)` (`checkMediaUrl`) or a SHORT handle `ref:sha256:0123456789…` — never the
+  full address, which is a capability and terminal output is copied and logged. A declared size over
+  `media.policy.maxBytes` prints "too large to open" with no link. Name and alt are stripped of control
+  and bidi characters. `MediaInput` prints that it is a web control. A restricted media node is a
+  `Note`, as for any kind.
+
+
 - **A restricted node prints as a `Note`.** `compile({ viewer })` replaces a node the viewer may
   not see with a static, unbound `Note`, printed as `Restricted: Restricted` (or `Restricted` under
   `chrome: "host"`); it is bound to nothing, so a value the store happens to hold is never read.
