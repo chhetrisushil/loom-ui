@@ -21,6 +21,7 @@ import type { TransientInvokeOptions } from "@loom/effect-runtime";
 import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
 import {
   type ContentRefParamGate,
+  assertContentRefConfig,
   contentRefEnv,
   inspectContentRefs,
   principalScoped,
@@ -225,6 +226,7 @@ export class HydrationController {
   private readonly policy: ReadPolicy;
 
   constructor(private readonly opts: ControllerOptions) {
+    assertContentRefConfig(opts.contentRefArgs, "HydrationController");
     this.policy = mergeReadPolicy(opts.readPolicy, {
       ...(opts.declaredToolClasses !== undefined && {
         declaredToolClasses: opts.declaredToolClasses,

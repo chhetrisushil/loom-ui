@@ -505,12 +505,30 @@ function contentRefArgumentFindings(
               ? `${where}: the input schema of "${step.toolName}" mentions a content-reference marker but cannot be fully read, so its content-reference arguments are unknown and the binding is refused`
               : `${where}: the input schema of "${step.toolName}" could not be read, so its content-reference arguments are unknown; a URL or content address in its arguments is refused`,
         });
+      const producers = new Set<string>();
       out.push(
         ...contentRefArgFindings(step.arguments, marked ?? [], where, {
           suspect: typeof marked !== "string",
           proven: provenIn(table, steps, step.stepId, toolKey),
+          onProvenRef: (id) => producers.add(id),
         })
       );
+      // A declared producer is trusted as a whole, including what it does with its own unmarked
+      // inputs: an address-shaped literal in ITS arguments is worth a reviewer's look.
+      for (const id of producers) {
+        const producer = steps.get(id);
+        if (
+          producer !== undefined &&
+          contentRefArgFindings(producer.arguments, [], where, { suspect: true }).some(
+            (f) => f.code === "media-arg-suspect"
+          )
+        )
+          out.push({
+            code: "media-arg-suspect",
+            severity: "warn",
+            message: `${where}: the producer step "${id}" that feeds a content-reference argument carries an address-shaped literal in its own arguments (review)`,
+          });
+      }
     }
   }
   return out;

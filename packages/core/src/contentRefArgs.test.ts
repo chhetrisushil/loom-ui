@@ -459,6 +459,20 @@ describe("validateExperience: media-arg-literal / unproven-ref / suspect / schem
     }
   });
 
+  it("F4: a producer step that feeds a marked argument and carries an address-shaped literal gets a hint", () => {
+    const e = exp({ image: "{{steps.up.output.addr}}" }, undefined, "producer");
+    const withLiteral: Experience = JSON.parse(JSON.stringify(e));
+    (withLiteral.providers.h?.executionGraph[0] as { arguments: unknown }).arguments = {
+      src: ADDR,
+    };
+    const v = run(withLiteral, table);
+    expect(v.ok).toBe(true);
+    expect(
+      v.findings.some((f) => f.code === "media-arg-suspect" && f.message.includes("producer step"))
+    ).toBe(true);
+    expect(run(e, table).findings.some((f) => f.message.includes("producer step"))).toBe(false);
+  });
+
   it("accepts an absent argument and an overridable param slot", () => {
     for (const e of [exp({}), exp({ q: "x" }, ["image"])])
       expect(run(e, table).findings.filter((f) => f.code.startsWith("media-arg"))).toEqual([]);

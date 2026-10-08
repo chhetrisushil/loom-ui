@@ -354,8 +354,10 @@ const repaired = await reviseForDrift(planner, {
   verbatim on purpose: the model must echo them byte-identical, so redacting them would silently rebind the call; they passed
   validation, which refuses a literal at a marked path and warns on address-shaped text elsewhere. An UNMARKED string
   argument that looks like an address warns (`media-arg-suspect`); a hint. Hand the SAME table to hydration's required
-  `contentRefArgs` (its README has the run-time re-check, the cache rule and the param gate). Residual: an unmarked schema is
-  unguarded.
+  `contentRefArgs` (its README has the run-time re-check, the cache rule and the param gate). Residuals: an unmarked schema is
+  unguarded, and a declared producer is trusted as a whole, including what it does with its own unmarked inputs (the host's
+  invoker authorises each call as the viewer; a producer step with an address-shaped literal argument gets a
+  `media-arg-suspect` hint).
 
 - **Error semantics: refusals propagate, model failures become findings.** A plain model failure
   (provider error, unparseable or invalid output, `TypedFailure`) becomes a `model-error` /

@@ -159,6 +159,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
   it("the root entry still exports everything it did", () => {
     const mod = load(resolve(DIST, "index.js")) as Record<string, unknown>;
     expect(Object.keys(mod).sort()).toEqual([
+      "ContentRefConfigError",
       "DEFAULT_DATA_PROVIDERS",
       "DEFAULT_MAX_BATCH",
       "DEFAULT_MAX_CONCURRENT_CALLS",

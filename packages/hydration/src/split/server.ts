@@ -20,7 +20,12 @@ import {
 import { MCP_INVOKE_ERRORS } from "@loom/plugin-mcp";
 import { SANDBOX_ERRORS } from "@loom/plugin-sandbox";
 import { type HydrationCache, specFingerprint } from "../cache";
-import { contentRefEnv, inspectContentRefs, principalScoped } from "../contentRefs";
+import {
+  assertContentRefConfig,
+  contentRefEnv,
+  inspectContentRefs,
+  principalScoped,
+} from "../contentRefs";
 import type { DriftReport } from "../controller";
 import type { TransientInvoker } from "../invoker";
 import { limitInvoker, memoInvoker } from "../invokers";
@@ -415,6 +420,7 @@ export async function serveHandles(
   opts: ServeOptions
 ): Promise<HandleLoadResult[]> {
   // Server configuration, not client input: a bad bound is a programming error, and loud.
+  assertContentRefConfig(opts.contentRefArgs, "serveHandles");
   const max = opts.maxBatch ?? DEFAULT_MAX_BATCH;
   if (!Number.isInteger(max) || max < 1)
     throw new TypeError(`serveHandles: maxBatch must be a positive integer, got ${String(max)}`);
