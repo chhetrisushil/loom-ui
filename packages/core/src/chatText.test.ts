@@ -1,0 +1,132 @@
+import { describe, expect, it } from "vitest";
+import { oneLineChatText, sanitizeChatText } from "./chatText";
+import { MAX_CHAT_TEXT } from "./chatValue";
+
+const ESC = String.fromCharCode(27);
+const RLO = String.fromCharCode(0x202e);
+
+/** Code points no sanitised output may contain (a scan, not a regex: it asserts independently of the implementation). */
+function forbidden(text: string): number[] {
+  const out: number[] = [];
+  for (const ch of text) {
+    const c = ch.codePointAt(0) as number;
+    if (
+      (c < 32 && c !== 10 && c !== 9) ||
+      (c >= 0x7f && c < 0xa0) ||
+      (c >= 0x202a && c <= 0x202e) ||
+      (c >= 0x2066 && c <= 0x2069) ||
+      c === 0x200b ||
+      (c >= 0xe0000 && c <= 0xe007f)
+    )
+      out.push(c);
+  }
+  return out;
+}
+
+describe("sanitizeChatText", () => {
+  it("removes terminal escapes, C1 controls, bidi overrides, zero-width marks and TAG characters", () => {
+    const tag = String.fromCodePoint(0xe0041, 0xe0042);
+    const dirty = `a${ESC}[31mred${ESC}[0m b${RLO}c${String.fromCharCode(0x200b)}d${tag}e${String.fromCharCode(0x85)}f${String.fromCharCode(0xfeff)}g${String.fromCharCode(0x2066)}h`;
+    expect(sanitizeChatText(dirty)).toBe("a[31mred[0m bcdefgh");
+  });
+
+  it("keeps what a reader needs: newlines, tabs, emoji ZWJ sequences, non-Latin scripts", () => {
+    const family = "👨\u200d👩\u200d👧";
+    expect(sanitizeChatText(`a\n\tb ${family} 日本語 مرحبا`)).toBe(`a\n\tb ${family} 日本語 مرحبا`);
+  });
+
+  it("normalises line breaks and collapses vertical-space bombs", () => {
+    expect(sanitizeChatText("a\r\nb\rc\u2028d\u2029e")).toBe("a\nb\nc\nd\ne");
+    expect(sanitizeChatText(`a${"\n".repeat(5000)}b`)).toBe("a\n\nb");
+  });
+
+  it("does not turn markup into anything: it is text, and stays text", () => {
+    const html =
+      "<img src=x onerror=alert(1)><script>alert(1)</script>[x](javascript:alert(1)) **b** `c`";
+    expect(sanitizeChatText(html)).toBe(html); // escaping is the renderer's text node; nothing here interprets it
+  });
+
+  it("is bounded, ends the cut with an ellipsis and never splits a surrogate pair", () => {
+    const out = sanitizeChatText("😀".repeat(100), 11);
+    expect(out.length).toBeLessThanOrEqual(11);
+    expect(out.endsWith("…")).toBe(true);
+    expect(out).not.toMatch(/[\ud800-\udbff]…$/);
+    expect(sanitizeChatText("x".repeat(MAX_CHAT_TEXT + 10)).length).toBe(MAX_CHAT_TEXT);
+    expect(sanitizeChatText(12)).toBe("");
+    expect(sanitizeChatText(undefined)).toBe("");
+  });
+
+  it("is LINEAR: 100 KB of adversarial text finishes in absolute time bounds", () => {
+    const n = 100_000;
+    const cases: Record<string, string> = {
+      newlines: "\n".repeat(n),
+      mixedBreaks: "\r\n".repeat(n / 2),
+      controls: ESC.repeat(n),
+      bidi: RLO.repeat(n),
+      tags: String.fromCodePoint(0xe0041).repeat(n / 2),
+      alternating: "a\n\n\n".repeat(n / 4),
+      spaces: " ".repeat(n),
+      dots: "a.".repeat(n / 2),
+      surrogates: "\ud83d".repeat(n),
+    };
+    for (const [name, text] of Object.entries(cases)) {
+      const t0 = performance.now();
+      sanitizeChatText(text);
+      oneLineChatText(text);
+      const ms = performance.now() - t0;
+      expect(ms, `${name}: ${ms.toFixed(1)}ms`).toBeLessThan(250);
+    }
+    // Ten times the input costs about ten times, not a hundred (no quadratic path).
+    const time = (len: number): number => {
+      const t0 = performance.now();
+      for (let i = 0; i < 5; i++) sanitizeChatText("a\n\n\n \r".repeat(len));
+      return performance.now() - t0;
+    };
+    time(1000);
+    const small = Math.max(time(10_000), 0.5);
+    const big = time(100_000);
+    expect(big / small).toBeLessThan(40);
+  });
+
+  it("FUZZ: no output ever contains a control, bidi override or TAG character", () => {
+    let seed = 0x1234abcd;
+    const rnd = (): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    const pool = [
+      ESC,
+      RLO,
+      "\u0007",
+      "\u0085",
+      "\u200b",
+      "\u2067",
+      "\u2029",
+      "<",
+      ">",
+      "&",
+      "a",
+      " ",
+      "\n",
+      "\t",
+      "\u{e0061}",
+      "😀",
+      "\ud800",
+      "é",
+    ];
+    for (let i = 0; i < 400; i++) {
+      let s = "";
+      for (let j = 0; j < 60; j++) s += pool[Math.floor(rnd() * pool.length)];
+      const out = sanitizeChatText(s);
+      expect(forbidden(out)).toEqual([]);
+      expect(out).not.toContain("\r");
+    }
+  });
+});
+
+describe("oneLineChatText", () => {
+  it("is one bounded line", () => {
+    expect(oneLineChatText("a\n\n b\t c")).toBe("a b c");
+    expect(oneLineChatText("x".repeat(500), 20).length).toBe(20);
+  });
+});

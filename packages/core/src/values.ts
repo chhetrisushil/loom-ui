@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { chatValueIssues } from "./chatValue";
 import type { Finding } from "./experience";
 import {
   type ContractRegistry,
@@ -179,6 +180,14 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   File: mediaRefContract("File"),
   // Static (props only): a value reaching an upload control is a defect.
   MediaInput: z.undefined(),
+  // U8: the transcript contract is the shared checker (`chatValue.ts`); the inputs are static.
+  Chat: z.unknown().superRefine((v, ctx) => {
+    for (const i of chatValueIssues(v))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...i.path], message: i.message });
+  }),
+  TextInput: z.undefined(),
+  FormInput: z.undefined(),
+  SelectInput: z.undefined(),
 };
 
 export function kindValueContract(

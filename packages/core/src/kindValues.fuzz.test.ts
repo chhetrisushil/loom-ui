@@ -105,6 +105,59 @@ function genMedia(r: Rng, family: string): unknown {
   return o;
 }
 
+function genChatEntry(r: Rng, i: number): unknown {
+  const role = pick(r, ["user", "assistant", "assistant", "system", "bot"]);
+  const o: Record<string, unknown> = {
+    id: pick(r, [`t${i + 1}.${role}`, `t${i + 1}.${role}`, "bad id", "", "dup"]),
+    turn: pick(r, [i + 1, i + 1, 0, 1.5, "1", -1]),
+    role,
+    status: pick(r, [
+      "complete",
+      "complete",
+      "streaming",
+      "interrupted",
+      "failed",
+      "rejected",
+      "restricted",
+      "nope",
+    ]),
+  };
+  withOptional(r, o, "parts", () =>
+    arr(r, () =>
+      chance(r, 0.7)
+        ? { type: "text", text: pick(r, ["hello", "", "a".repeat(70000), 5]) }
+        : { type: "media", ref: genMedia(r, "application") }
+    )
+  );
+  withOptional(r, o, "asker", () =>
+    pick(r, [
+      { actor: "a" },
+      { actor: "a", tenant: "t", onBehalfOf: "o" },
+      { actor: "" },
+      { x: 1 },
+      "a",
+    ])
+  );
+  withOptional(r, o, "cursor", () => pick(r, ["0.1", "12.345", "x", "1.", "", 3]));
+  withOptional(r, o, "at", () => pick(r, [1, 0, -1, Number.NaN, "1"]));
+  withOptional(r, o, "reason", () => pick(r, ["model-error", "denied", "Bad Reason", "", 1]));
+  withOptional(r, o, "errorId", () => pick(r, ["e-1", "a b", "", 1]));
+  withOptional(r, o, "editOf", () => pick(r, [1, 0, 99, 1.5, "1"]));
+  withOptional(r, o, "tools", () =>
+    arr(r, () =>
+      pick(r, [
+        { name: "t", status: "done" },
+        { name: "", status: "done" },
+        { name: "t", status: "weird" },
+        1,
+        { name: "t", status: "done", args: 1 },
+      ])
+    )
+  );
+  if (chance(r, 0.08)) o.classes = ["secret"];
+  return o;
+}
+
 const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   MetricCard: finite,
   StatusBadge: (r) => pick(r, strs),
@@ -169,6 +222,26 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   Video: (r) => genMedia(r, "video"),
   File: (r) => genMedia(r, "application"),
   MediaInput: () => undefined,
+  Chat: (r) => {
+    const o: Record<string, unknown> = {
+      entries: arr(
+        r,
+        (() => {
+          let i = 0;
+          return () => genChatEntry(r, i++);
+        })(),
+        4
+      ),
+    };
+    withOptional(r, o, "viewer", () => pick(r, [{ actor: "a" }, { actor: 1 }]));
+    withOptional(r, o, "older", () => pick(r, ["0.1", "bad", 4]));
+    withOptional(r, o, "state", () => pick(r, ["open", "closed", "paused"]));
+    withOptional(r, o, "running", () => pick(r, [true, false, "yes"]));
+    return o;
+  },
+  TextInput: () => undefined,
+  FormInput: () => undefined,
+  SelectInput: () => undefined,
 };
 
 // ── Deep junk: a fresh value each call (the checkers must not mutate it, but never share) ────

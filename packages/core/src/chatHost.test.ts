@@ -1,0 +1,440 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  EDIT_TURN_ACTION,
+  type InputSpec,
+  LOAD_OLDER_ACTION,
+  SELECT_ACTION,
+  SUBMIT_FORM_ACTION,
+  SUBMIT_TEXT_ACTION,
+  SubmitLedger,
+  acceptChatSubmit,
+  conversationTarget,
+  createWriteBack,
+  isSubmitKey,
+  newSubmitKey,
+  paramsTarget,
+  resumeTarget,
+} from "./chatHost";
+
+const head = { experienceId: "e", versionHash: "sha256:v2" };
+const stamp = (over: Record<string, unknown> = {}) => ({
+  blueprintId: "e@sha256:v2",
+  experienceId: "e",
+  versionHash: "sha256:v2",
+  ...over,
+});
+const FIELDS = [
+  { name: "reason", label: "Reason", type: "textarea" as const, required: true, maxLength: 50 },
+  { name: "count", label: "Count", type: "number" as const, min: 1, max: 10 },
+  { name: "urgent", label: "Urgent", type: "boolean" as const },
+  {
+    name: "env",
+    label: "Env",
+    type: "select" as const,
+    options: [
+      { value: "prod", label: "Prod" },
+      { value: "dev", label: "Dev" },
+    ],
+  },
+];
+const SPECS: Record<string, InputSpec> = {
+  composer: { kind: "TextInput", maxChars: 100 },
+  form: { kind: "FormInput", fields: FIELDS },
+  pick: {
+    kind: "SelectInput",
+    options: [
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ],
+  },
+  chat: { kind: "Chat", editable: true },
+  fixedchat: { kind: "Chat", editable: false },
+};
+const KEY = "key-0123456789abcdef";
+const act = (
+  type: string,
+  widgetId: string,
+  payload: unknown,
+  over: Record<string, unknown> = {}
+) => ({
+  type,
+  widgetId,
+  payload,
+  viewedVersion: stamp(),
+  ...over,
+});
+const opts = (over: Record<string, unknown> = {}) => ({
+  specOf: (id: string) => (Object.hasOwn(SPECS, id) ? SPECS[id] : undefined),
+  principal: "t/alice",
+  current: head,
+  ledger: new SubmitLedger(),
+  canEdit: (turn: number) => turn === 1,
+  ...over,
+});
+
+describe("acceptChatSubmit", () => {
+  it("accepts a fresh text submit and returns the SANITISED text", () => {
+    const r = acceptChatSubmit(
+      act(SUBMIT_TEXT_ACTION, "composer", { text: "hi\u202e there\u001b[2J", key: KEY }),
+      opts()
+    );
+    expect(r).toMatchObject({
+      ok: true,
+      submission: { kind: "text", widgetId: "composer", key: KEY, text: "hi there[2J" },
+    });
+  });
+
+  it("a STALE submit (the view was recomposed since) is refused, and burns no key", () => {
+    const o = opts();
+    const stale = act(
+      SUBMIT_TEXT_ACTION,
+      "composer",
+      { text: "x", key: KEY },
+      { viewedVersion: stamp({ versionHash: "sha256:v1", blueprintId: "e@sha256:v1" }) }
+    );
+    expect(acceptChatSubmit(stale, o)).toEqual({ ok: false, reason: "stale" });
+    // the same key, on the current view, is accepted: the refusal did not claim it
+    expect(
+      acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: KEY }), o).ok
+    ).toBe(true);
+    // unstamped, unsealed: not fresh either
+    expect(
+      acceptChatSubmit(
+        { type: SUBMIT_TEXT_ACTION, widgetId: "composer", payload: { text: "x", key: KEY } },
+        opts()
+      )
+    ).toEqual({ ok: false, reason: "stale" });
+    expect(
+      acceptChatSubmit(
+        act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: KEY }),
+        opts({ current: { experienceId: "e", versionHash: "" } })
+      )
+    ).toEqual({ ok: false, reason: "stale" });
+  });
+
+  it("a DUPLICATE (same principal, widget, key) is refused once; a different principal or widget is independent", () => {
+    const o = opts();
+    const a = act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: KEY });
+    expect(acceptChatSubmit(a, o).ok).toBe(true);
+    expect(acceptChatSubmit(a, o)).toEqual({ ok: false, reason: "duplicate" });
+    expect(acceptChatSubmit(a, { ...o, principal: "t/bob" }).ok).toBe(true);
+    expect(acceptChatSubmit(act(SELECT_ACTION, "pick", { value: "a", key: KEY }), o).ok).toBe(true);
+  });
+
+  it("releasing a claim lets the user's retry (same key) through", () => {
+    const o = opts();
+    const a = act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: KEY });
+    const r = acceptChatSubmit(a, o);
+    expect(r.ok && r.release()).not.toBe(false);
+    expect(acceptChatSubmit(a, o).ok).toBe(true);
+  });
+
+  it("the ledger is bounded in size and time", () => {
+    let now = 0;
+    const l = new SubmitLedger({ max: 3, ttlMs: 100, now: () => now });
+    for (const k of ["k1", "k2", "k3", "k4"]) expect(l.claim("p", "w", k)).toBe(true);
+    expect(l.size).toBe(3);
+    expect(l.claim("p", "w", "k1")).toBe(true); // evicted: the oldest is forgotten first
+    expect(l.claim("p", "w", "k4")).toBe(false);
+    now = 500;
+    expect(l.claim("p", "w", "k4")).toBe(true); // aged out
+  });
+
+  it("refuses malformed idempotency keys, unknown widgets, mismatched widgets, junk actions", () => {
+    const o = opts();
+    for (const key of [
+      undefined,
+      "",
+      "short",
+      "a b c d e f g h i j k l",
+      5,
+      "x".repeat(200),
+      "../../../../../../etc",
+    ])
+      expect(
+        acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key }), o),
+        String(key)
+      ).toEqual({ ok: false, reason: "bad-key" });
+    expect(acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "ghost", { text: "x", key: KEY }), o)).toEqual({
+      ok: false,
+      reason: "not-an-input",
+    });
+    expect(
+      acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "__proto__", { text: "x", key: KEY }), o)
+    ).toEqual({ ok: false, reason: "not-an-input" });
+    expect(acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "pick", { text: "x", key: KEY }), o)).toEqual({
+      ok: false,
+      reason: "wrong-input",
+    });
+    for (const junk of [
+      null,
+      undefined,
+      5,
+      "s",
+      [],
+      {},
+      { type: "OTHER", widgetId: "composer", payload: {} },
+      { type: SUBMIT_TEXT_ACTION, widgetId: 5, payload: {} },
+      { type: SUBMIT_TEXT_ACTION, widgetId: "composer", payload: "x" },
+      { type: "toString", widgetId: "composer", payload: {} },
+    ])
+      expect(acceptChatSubmit(junk, o), JSON.stringify(junk)).toEqual({
+        ok: false,
+        reason: "not-a-submit",
+      });
+  });
+
+  it("re-validates text against the HOST's spec: blank, over the widget's maxChars, not a string", () => {
+    const o = opts();
+    const text = (t: unknown) =>
+      acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "composer", { text: t, key: newSubmitKey() }), o);
+    expect(text("   \n ")).toEqual({ ok: false, reason: "invalid", errors: { text: "required" } });
+    expect(text("a".repeat(101))).toEqual({
+      ok: false,
+      reason: "invalid",
+      errors: { text: "too-long" },
+    });
+    expect(text(5)).toEqual({ ok: false, reason: "invalid", errors: { text: "type" } });
+    expect(text({ toString: () => "x" })).toMatchObject({ ok: false });
+    expect(text("a".repeat(100)).ok).toBe(true);
+    // a host ceiling below the widget's own wins
+    expect(
+      acceptChatSubmit(
+        act(SUBMIT_TEXT_ACTION, "composer", { text: "abcdef", key: KEY }),
+        opts({ maxTextChars: 5 })
+      )
+    ).toMatchObject({ ok: false });
+  });
+
+  it("form values are rebuilt from DECLARED fields only; unknown, missing, mistyped and out-of-range are refused with fixed codes", () => {
+    const o = opts();
+    const form = (values: unknown) =>
+      acceptChatSubmit(act(SUBMIT_FORM_ACTION, "form", { values, key: newSubmitKey() }), o);
+    const good = form({ reason: "disk full", count: "3", urgent: true, env: "prod" });
+    expect(good).toMatchObject({
+      ok: true,
+      submission: {
+        kind: "form",
+        values: { reason: "disk full", count: 3, urgent: true, env: "prod" },
+      },
+    });
+    expect(form({ reason: "r", admin: true })).toEqual({
+      ok: false,
+      reason: "invalid",
+      errors: { admin: "unknown" },
+    });
+    expect(form({})).toMatchObject({ ok: false, errors: { reason: "required" } });
+    expect(form({ reason: "r", count: 99 })).toMatchObject({ errors: { count: "range" } });
+    expect(form({ reason: "r", count: "NaN" })).toMatchObject({ errors: { count: "type" } });
+    expect(form({ reason: "r", env: "staging" })).toMatchObject({ errors: { env: "option" } });
+    expect(form({ reason: "x".repeat(51) })).toMatchObject({ errors: { reason: "too-long" } });
+    expect(form({ reason: {} })).toMatchObject({ errors: { reason: "type" } });
+    expect(form([])).toMatchObject({ ok: false });
+    const hostile = form(JSON.parse('{"reason":"r","__proto__":{"isAdmin":true}}'));
+    expect(hostile.ok).toBe(false);
+    expect(!hostile.ok && Object.keys(hostile.errors ?? {})).toEqual(["__proto__"]);
+    // an unchecked box is false, not missing
+    expect(form({ reason: "r" })).toMatchObject({
+      ok: true,
+      submission: { values: { reason: "r", urgent: false } },
+    });
+    // the result is a plain object with only declared names
+    if (good.ok && good.submission.kind === "form")
+      expect(Object.keys(good.submission.values).sort()).toEqual([
+        "count",
+        "env",
+        "reason",
+        "urgent",
+      ]);
+  });
+
+  it("a select value must be one of the declared options", () => {
+    const o = opts();
+    const sel = (value: unknown) =>
+      acceptChatSubmit(act(SELECT_ACTION, "pick", { value, key: newSubmitKey() }), o);
+    expect(sel("a")).toMatchObject({ ok: true, submission: { kind: "select", value: "a" } });
+    expect(sel("c")).toEqual({ ok: false, reason: "invalid", errors: { value: "option" } });
+    expect(sel(["a"])).toMatchObject({ ok: false });
+    expect(sel("constructor")).toMatchObject({ ok: false });
+  });
+
+  it("EDIT_TURN: only when the widget is editable AND the host's policy allows that turn; it is a NEW submission, never a mutation", () => {
+    const o = opts();
+    const edit = (widget: string, turn: unknown, over: Partial<Parameters<typeof opts>[0]> = {}) =>
+      acceptChatSubmit(
+        act(EDIT_TURN_ACTION, widget, { turn, text: "better question", key: newSubmitKey() }),
+        { ...o, ...over }
+      );
+    expect(edit("chat", 1)).toMatchObject({
+      ok: true,
+      submission: { kind: "edit", turn: 1, text: "better question" },
+    });
+    expect(edit("chat", 2)).toEqual({ ok: false, reason: "edit-not-allowed" }); // not the user's turn
+    expect(edit("fixedchat", 1)).toEqual({ ok: false, reason: "edit-not-allowed" }); // the node did not offer editing
+    expect(edit("chat", 1, { canEdit: undefined })).toEqual({
+      ok: false,
+      reason: "edit-not-allowed",
+    }); // no policy: fail closed
+    expect(
+      edit("chat", 1, {
+        canEdit: () => {
+          throw new Error("db down");
+        },
+      })
+    ).toEqual({ ok: false, reason: "edit-not-allowed" });
+    expect(edit("chat", 1.5)).toMatchObject({ ok: false, reason: "invalid" });
+    expect(edit("chat", 0)).toMatchObject({ ok: false, reason: "invalid" });
+    expect(edit("chat", "1")).toMatchObject({ ok: false, reason: "invalid" });
+  });
+
+  it("LOAD_OLDER is a read: needs a fresh view and a well-formed cursor, no key, nothing claimed", () => {
+    const o = opts();
+    expect(acceptChatSubmit(act(LOAD_OLDER_ACTION, "chat", { cursor: "0.12" }), o)).toMatchObject({
+      ok: true,
+      submission: { kind: "older", cursor: "0.12" },
+    });
+    expect(acceptChatSubmit(act(LOAD_OLDER_ACTION, "chat", { cursor: "0.12" }), o).ok).toBe(true); // repeatable
+    expect(acceptChatSubmit(act(LOAD_OLDER_ACTION, "chat", { cursor: "../../x" }), o)).toEqual({
+      ok: false,
+      reason: "invalid",
+    });
+    expect(o.ledger.size).toBe(0);
+  });
+
+  it("a transcript that MOVED is not stale for a chat widget (no bindingSeq), but a recomposed one is", () => {
+    const a = act(
+      EDIT_TURN_ACTION,
+      "chat",
+      { turn: 1, text: "t", key: KEY },
+      { viewedVersion: stamp({ binding: { state: "ready", seq: 3 } }) }
+    );
+    expect(acceptChatSubmit(a, opts()).ok).toBe(true);
+    const b = act(
+      EDIT_TURN_ACTION,
+      "chat",
+      { turn: 1, text: "t", key: newSubmitKey() },
+      { viewedVersion: stamp({ binding: { state: "ready", seq: 3 } }) }
+    );
+    expect(acceptChatSubmit(b, opts({ current: { ...head, bindingSeq: () => 9 } }))).toEqual({
+      ok: false,
+      reason: "stale",
+    });
+  });
+
+  it("is total: a hostile spec lookup or payload getter cannot throw out of it", () => {
+    const o = opts({
+      specOf: () => {
+        throw new Error("boom");
+      },
+    });
+    expect(
+      acceptChatSubmit(act(SUBMIT_TEXT_ACTION, "composer", { text: "x", key: KEY }), o)
+    ).toEqual({ ok: false, reason: "not-a-submit" });
+  });
+});
+
+describe("keys", () => {
+  it("newSubmitKey mints distinct, well-formed keys", () => {
+    const keys = new Set(Array.from({ length: 200 }, newSubmitKey));
+    expect(keys.size).toBe(200);
+    for (const k of keys) expect(isSubmitKey(k)).toBe(true);
+  });
+});
+
+describe("createWriteBack and the targets", () => {
+  const mk = (routes: Record<string, (s: never) => unknown>) =>
+    createWriteBack({ ...opts(), routes: routes as never });
+  const ctx = { principal: "t/alice", current: head };
+
+  it("routes an accepted text submit to a conversation as a turn whose messageId IS the idempotency key", async () => {
+    const sendTurn = vi.fn(async () => ({ messageId: "m" }));
+    const wb = mk({ composer: conversationTarget(sendTurn) });
+    const key = newSubmitKey();
+    const r = await wb.handle(act(SUBMIT_TEXT_ACTION, "composer", { text: "hello", key }), ctx);
+    expect(r).toMatchObject({ ok: true });
+    expect(sendTurn).toHaveBeenCalledWith("hello", { messageId: key });
+  });
+
+  it("a duplicate submit reaches the target ONCE and the user is told it landed, not that it failed", async () => {
+    const sendTurn = vi.fn(async () => undefined);
+    const wb = mk({ composer: conversationTarget(sendTurn) });
+    const a = act(SUBMIT_TEXT_ACTION, "composer", { text: "hello", key: newSubmitKey() });
+    expect(await wb.handle(a, ctx)).toMatchObject({ ok: true });
+    expect(await wb.handle(a, ctx)).toEqual({ ok: true, reason: "duplicate" });
+    expect(sendTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failing write releases the key (the retry is accepted) and reports no error text", async () => {
+    let fail = true;
+    const sendTurn = vi.fn(async () => {
+      if (fail) throw new Error("ECONNREFUSED db.internal:5432 password=hunter2");
+    });
+    const wb = mk({ composer: conversationTarget(sendTurn) });
+    const a = act(SUBMIT_TEXT_ACTION, "composer", { text: "hello", key: newSubmitKey() });
+    const first = await wb.handle(a, ctx);
+    expect(first).toEqual({ ok: false, reason: "failed" });
+    expect(JSON.stringify(first)).not.toContain("hunter2");
+    fail = false;
+    expect(await wb.handle(a, ctx)).toMatchObject({ ok: true });
+    expect(sendTurn).toHaveBeenCalledTimes(2);
+  });
+
+  it("an edit becomes a NEW turn through the same target, or goes to the host's own fork/re-ask handler", async () => {
+    const sendTurn = vi.fn(async () => undefined);
+    const edit = vi.fn(async () => undefined);
+    const plain = mk({ chat: conversationTarget(sendTurn) });
+    const key = newSubmitKey();
+    await plain.handle(act(EDIT_TURN_ACTION, "chat", { turn: 1, text: "revised", key }), ctx);
+    expect(sendTurn).toHaveBeenCalledWith("revised", { messageId: key });
+    const forking = mk({ chat: conversationTarget(sendTurn, { edit }) });
+    await forking.handle(
+      act(EDIT_TURN_ACTION, "chat", { turn: 1, text: "branch", key: newSubmitKey() }),
+      ctx
+    );
+    expect(edit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "edit", turn: 1, text: "branch" })
+    );
+    expect(sendTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("forms and selections resume a gate; selections and text set params; a widget with no route claims nothing", async () => {
+    const resume = vi.fn(async () => undefined);
+    const setParams = vi.fn();
+    const o = opts();
+    const wb = createWriteBack({
+      ...o,
+      routes: {
+        form: resumeTarget(resume),
+        pick: paramsTarget(setParams, "region"),
+        composer: resumeTarget(resume),
+      },
+    });
+    const key = newSubmitKey();
+    await wb.handle(act(SUBMIT_FORM_ACTION, "form", { values: { reason: "r" }, key }), ctx);
+    expect(resume).toHaveBeenCalledWith({ reason: "r", urgent: false }, { idempotencyKey: key });
+    await wb.handle(act(SELECT_ACTION, "pick", { value: "b", key: newSubmitKey() }), ctx);
+    expect(setParams).toHaveBeenCalledWith({ region: "b" });
+    await wb.handle(act(SUBMIT_TEXT_ACTION, "composer", { text: "yes", key: newSubmitKey() }), ctx);
+    expect(resume).toHaveBeenLastCalledWith({ text: "yes" }, expect.anything());
+    const noRoute = createWriteBack({ ...o, ledger: new SubmitLedger(), routes: {} });
+    const a = act(SELECT_ACTION, "pick", { value: "a", key: newSubmitKey() });
+    expect(await noRoute.handle(a, ctx)).toEqual({ ok: false, reason: "no-route" });
+    expect(await noRoute.handle(a, ctx)).toEqual({ ok: false, reason: "no-route" }); // the key was given back
+  });
+
+  it("a refused action reaches NO target", async () => {
+    const sendTurn = vi.fn();
+    const wb = mk({ composer: conversationTarget(sendTurn) });
+    const stale = act(
+      SUBMIT_TEXT_ACTION,
+      "composer",
+      { text: "x", key: newSubmitKey() },
+      { viewedVersion: stamp({ versionHash: "sha256:old" }) }
+    );
+    expect(await wb.handle(stale, ctx)).toEqual({ ok: false, reason: "stale" });
+    expect(
+      await wb.handle(act(SUBMIT_TEXT_ACTION, "composer", { text: "  ", key: newSubmitKey() }), ctx)
+    ).toMatchObject({ ok: false, reason: "invalid" });
+    expect(sendTurn).not.toHaveBeenCalled();
+  });
+});

@@ -52,6 +52,18 @@ export interface StampedAction {
   readonly viewedVersion?: ViewedVersion;
 }
 
+/**
+ * What a host's action handler MAY return (a promise of it): the outcome of acting on the action.
+ * A widget that takes input (U8) keeps what the user typed until it hears `ok: true`, and offers a
+ * retry on `ok: false`; a handler that returns nothing is read as success. `reason` is a short
+ * token from the host's vocabulary (`stale`, `invalid`, `failed`...): the widget maps it to its own
+ * fixed words and never prints it.
+ */
+export interface ActionOutcome {
+  readonly ok: boolean;
+  readonly reason?: string;
+}
+
 const UNSEALED = "unsealed";
 
 /** Split a compiled Blueprint id (`<experienceId>@<versionHash|unsealed>`) into its two halves. */

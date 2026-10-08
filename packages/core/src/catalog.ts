@@ -1,3 +1,5 @@
+import { chatPropFindings } from "./chat";
+import { CHAT_KIND, isChatKind } from "./chatValue";
 import {
   type ContentRefTable,
   contentRefArgFindings,
@@ -449,6 +451,16 @@ function checkSemantic(
   // nothing bound has no reference to draw at all.
   if (r.ok) {
     findings.push(...mediaPropFindings(r.kind, n.id, n.props));
+    // U8: a chat node's props likewise: no transcript content, no entered value, no default.
+    findings.push(...chatPropFindings(r.kind, n.id, n.props));
+    if (isChatKind(r.kind) && !bound)
+      findings.push(
+        finding(
+          "chat-unbound",
+          `"${n.id}" is a ${CHAT_KIND} and has no binding: a transcript comes only from bound data`,
+          n.id
+        )
+      );
     if (!isMediaKind(r.kind) && r.kind !== "MediaInput")
       findings.push(...embeddedRefWarnings(n.id, n.props));
     if (isMediaKind(r.kind) && !bound)
