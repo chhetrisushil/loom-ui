@@ -10,7 +10,9 @@ import {
   type UndeclaredToolPolicy,
   type Viewer,
   experienceHandles,
-  handleKinds,
+  handleKindsWithMedia,
+  hasMediaTypeNodes,
+  isMediaKind,
   mergeReadPolicy,
   treeDepth,
 } from "@loom-ui/core";
@@ -382,6 +384,8 @@ interface ServePass {
   /** Handles bound by a node the viewer may not see: refused before anything else about them. */
   readonly restricted: ReadonlySet<string>;
   readonly kinds: ReadonlyMap<string, readonly string[]>;
+  /** Media nodes exist but the host gave no `outputKinds` (a dev warning, reported when a media handle is served). */
+  readonly mediaWithoutKinds: boolean;
 }
 
 /**
@@ -522,10 +526,9 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
         snapshotViewer(opts.viewer)
       ).restricted.map((u) => u.handle)
     ),
-    kinds:
-      outputKinds === undefined
-        ? new Map()
-        : handleKinds(exp, outputKinds.catalog, outputKinds.surface),
+    // U9: media-typed nodes mark their handle as media even with NO `outputKinds` (fail closed).
+    kinds: handleKindsWithMedia(exp, outputKinds?.catalog, outputKinds?.surface),
+    mediaWithoutKinds: outputKinds === undefined && hasMediaTypeNodes(exp),
   };
 }
 
@@ -557,12 +560,26 @@ async function serveOne(
       return answer;
     }
     // Only what a node binds is served: a provider no node binds is not the client's to ask for.
-    const spec =
+    const declared =
       pass.bound.has(handle) && Object.hasOwn(exp.providers, handle)
         ? exp.providers[handle]
         : undefined;
-    if (spec === undefined)
+    if (declared === undefined)
       return refuse("unknown-handle", `"${handle}" is not a handle this experience binds`);
+    // U9: a handle feeding a media widget is ALWAYS contract-checked, whatever the provider
+    // declared (a shape pin passes inline bytes or a locator into a client payload and the cache).
+    const mediaBound = (pass.kinds.get(handle) ?? []).some(isMediaKind);
+    const spec: ProviderSpec =
+      mediaBound && declared.outputCheck !== "contract"
+        ? { ...declared, outputCheck: "contract" }
+        : declared;
+    if (mediaBound && pass.mediaWithoutKinds)
+      report({
+        code: "media-output-kinds-missing",
+        severity: "warn",
+        message:
+          "the experience has media nodes and serve has no outputKinds: media handles are contract-checked by node type, but pass outputKinds so kinds resolve through the catalogue",
+      });
     // ONE deep-copy-and-validate pass over the request's params (`snapshotParams`): the result is
     // plain, detached data with no accessor of its own, so `relevantParams`/`pickParams` below can
     // never re-trigger a caller-supplied getter that answered differently than the check just did.

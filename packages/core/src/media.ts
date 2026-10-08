@@ -1,3 +1,4 @@
+import { type CurrentHead, actionFreshness } from "./action";
 import type { SemanticEntry, SurfaceResolution } from "./catalog";
 import type { Finding } from "./experience";
 import {
@@ -7,6 +8,7 @@ import {
   MEDIA_KINDS,
   type MediaKind,
   type MediaRef,
+  isMediaRef,
 } from "./mediaRef";
 
 // The rest of the media surface: text, the host seams, limits, URL safety, the composition guard and
@@ -152,6 +154,36 @@ export interface MediaPolicy {
   readonly allowPrivateHosts?: boolean;
   /** Accept a same-origin `/path` URL (default true). */
   readonly allowRelative?: boolean;
+  /**
+   * Accept a same-origin `/path` or `blob:` URL for media that is NOT trusted (default false). Such a
+   * URL runs in the app's own origin: if it is ever opened in a tab, active content in it (HTML,
+   * SVG...) would execute with the app's cookies. Untrusted media is served cross-origin.
+   */
+  readonly allowSameOriginUntrusted?: boolean;
+}
+
+/** Is `url` (already accepted by {@link checkMediaUrl}) served from the app's own origin (`/path` or `blob:`)? */
+export const isSameOriginMediaUrl = (url: string): boolean =>
+  url.startsWith("/") || url.startsWith("blob:");
+
+/**
+ * Media types that execute or script in a browser when opened: markup (`text/html`, any `+xml`,
+ * `text/xml`, `application/xml`), SVG, script types and Flash. Untrusted media of these types is
+ * never drawn, whatever element would hold it: the same bytes opened in a tab are a page.
+ */
+export function isActiveMediaType(mediaType: string): boolean {
+  const t = mediaType.toLowerCase();
+  return (
+    t === "text/html" ||
+    t === "text/xml" ||
+    t === "application/xml" ||
+    t === "application/xhtml+xml" ||
+    t === "image/svg+xml" ||
+    t === "application/x-shockwave-flash" ||
+    t.endsWith("+xml") ||
+    t.includes("javascript") ||
+    t.includes("ecmascript")
+  );
 }
 
 export const DEFAULT_MEDIA_MAX_BYTES: Readonly<Record<MediaKind, number>> = Object.freeze({
@@ -164,24 +196,77 @@ export const DEFAULT_MEDIA_MAX_BYTES: Readonly<Record<MediaKind, number>> = Obje
 export const maxBytesFor = (kind: MediaKind, policy?: MediaPolicy): number =>
   policy?.maxBytes?.[kind] ?? DEFAULT_MEDIA_MAX_BYTES[kind];
 
-const PRIVATE_HOST =
-  /^(?:localhost|.*\.localhost|.*\.local|.*\.internal|.*\.lan|.*\.home\.arpa|0\.0\.0\.0|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+)$/i;
+const PRIVATE_NAME =
+  /^(?:localhost|.*\.localhost|localhost\.localdomain|.*\.localdomain|.*\.local|.*\.internal|.*\.lan|.*\.home\.arpa)$/;
+
+/** Is a dotted-decimal IPv4 (given as four octets) in a range a viewer's browser must not be pointed at? */
+function privateV4(a: number, b: number, c: number): boolean {
+  return (
+    a === 0 || // 0.0.0.0/8
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) || // CGNAT
+    (a === 169 && b === 254) || // link-local, cloud metadata
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && c === 0) || // 192.0.0.0/24
+    (a === 198 && (b === 18 || b === 19)) || // benchmarking
+    a >= 224 // multicast 224/4, reserved 240/4, 255.255.255.255
+  );
+}
+
+/** Expand an IPv6 literal to eight 16-bit groups, or undefined if malformed. */
+function expandV6(h: string): number[] | undefined {
+  let text = h;
+  // A trailing dotted-quad becomes two hex groups.
+  const v4 = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (v4) {
+    const o = v4.slice(1).map(Number);
+    if (o.some((n) => n > 255)) return undefined;
+    text = `${text.slice(0, v4.index)}${(((o[0] as number) << 8) | (o[1] as number)).toString(16)}:${(((o[2] as number) << 8) | (o[3] as number)).toString(16)}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return undefined;
+  const head = halves[0] === "" ? [] : (halves[0] as string).split(":");
+  const tail = halves.length === 2 && halves[1] !== "" ? (halves[1] as string).split(":") : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return undefined;
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill("0"), ...tail].map(
+    (g) => (/^[0-9a-f]{1,4}$/.test(g) ? Number.parseInt(g, 16) : Number.NaN)
+  );
+  return groups.length === 8 && groups.every((n) => Number.isInteger(n)) ? groups : undefined;
+}
+
+function privateV6(h: string): boolean {
+  const g = expandV6(h);
+  if (g === undefined) return true; // unparseable: refuse
+  const v4of = (hi: number, lo: number): boolean => privateV4(hi >> 8, hi & 255, lo >> 8);
+  const zero = (from: number, to: number): boolean => g.slice(from, to).every((n) => n === 0);
+  if (zero(0, 5)) return true; // ::/96 (unspecified, loopback, IPv4-compatible) and ::ffff:0:0/96 (v4-mapped)
+  if (g[0] === 0x64 && g[1] === 0xff9b) {
+    if (g[2] === 1) return true; // 64:ff9b:1::/48 local-use NAT64
+    return zero(2, 6) ? v4of(g[6] as number, g[7] as number) : false; // NAT64: embedded v4
+  }
+  if (g[0] === 0x2002) return v4of(g[1] as number, g[2] as number); // 6to4: embedded v4
+  const top = g[0] as number;
+  return (
+    (top & 0xfe00) === 0xfc00 || // fc00::/7 unique local
+    (top & 0xffc0) === 0xfe80 || // fe80::/10 link-local
+    (top & 0xff00) === 0xff00 // multicast
+  );
+}
 
 function privateHost(hostname: string): boolean {
-  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (h.includes(":")) {
-    // IPv6 literals: loopback, unspecified, unique-local, link-local, and v4-mapped.
-    return (
-      h === "::1" ||
-      h === "::" ||
-      /^f[cd][0-9a-f]{2}:/.test(h) ||
-      /^fe[89ab][0-9a-f]:/.test(h) ||
-      h.startsWith("::ffff:")
-    );
-  }
-  // `URL` has already normalised every numeric IPv4 spelling to dotted decimal; a single-label host is intranet.
-  if (!h.includes(".")) return true;
-  return PRIVATE_HOST.test(h);
+  let h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  // `localhost.` is the same host as `localhost`: one trailing root dot is not a different name.
+  if (h.endsWith(".")) h = h.slice(0, -1);
+  if (h.includes(":")) return privateV6(h);
+  if (!h.includes(".")) return true; // single label: intranet
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  // `URL` has already normalised every numeric IPv4 spelling to dotted decimal.
+  if (m) return privateV4(Number(m[1]), Number(m[2]), Number(m[3]));
+  // DNS names that RESOLVE to a private address (nip.io style) cannot be seen here: that is the resolver's job.
+  return PRIVATE_NAME.test(h);
 }
 
 /**
@@ -240,6 +325,58 @@ const LITERAL_REF =
   /^(?:[a-z][a-z0-9+.-]*:\/\/\S*|(?:data|blob|javascript|file|vbscript):\S*|[a-z0-9_-]{3,16}:[0-9a-f]{16,}|\/\/\S+)$/i;
 const looksLikeLiteralRef = (s: string): boolean => LITERAL_REF.test(s.trim());
 
+const INVISIBLE = /[\u00ad\u200b-\u200f\u2060\ufeff]/g;
+const EMBEDDED = [
+  /[a-z][a-z0-9+.-]*:\/\/\S/i, // any scheme://
+  /\b(?:data|blob|javascript|vbscript|file):\S/i,
+  /\bwww\.[a-z0-9-]+\.[a-z]{2,}/i,
+  /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S/i, // host.tld/path
+  /\b[a-z0-9]{3,10}:[0-9a-f]{16,}\b/i, // algo:hex content address
+  /\bbaf[a-z2-7]{20,}/, // base32 CID
+  /\bQm[1-9A-HJ-NP-Za-km-z]{40,}/, // base58 CIDv0
+];
+
+/**
+ * Does `text` CONTAIN a URL, a scheme-prefixed locator, a bare `host/path`, a `www.` host, an
+ * `algo:hex` content address or a CID? Compatibility-normalised first (fullwidth `ｈｔｔｐ：／／`) with
+ * invisible characters removed. A HINT for composition-time review, not a security boundary: the
+ * boundary is that a reference only ever comes from a binding and the host's resolver.
+ */
+export function containsEmbeddedRef(text: string): boolean {
+  const t = text.normalize("NFKC").replace(INVISIBLE, "");
+  return EMBEDDED.some((re) => re.test(t));
+}
+
+function textValues(props: Readonly<Record<string, unknown>>): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const [k, raw] of Object.entries(props)) {
+    if (typeof raw === "string") out.push([k, raw]);
+    else if (typeof raw === "object" && raw !== null) {
+      const f = (raw as { fallback?: unknown }).fallback;
+      if (typeof f === "string") out.push([k, f]);
+    }
+  }
+  return out;
+}
+
+/**
+ * WARN-level: a non-media node whose text props embed a URL or address. Often legitimate (a docs
+ * link in a note); worth a reviewer's eye because the same text could have smuggled a reference.
+ */
+export function embeddedRefWarnings(
+  nodeId: string,
+  props: Readonly<Record<string, unknown>>
+): Finding[] {
+  return textValues(props)
+    .filter(([, v]) => containsEmbeddedRef(v))
+    .map(([k]) => ({
+      code: "embedded-ref",
+      severity: "warn" as const,
+      message: `"${nodeId}": prop "${k}" embeds a URL or address — references come from bindings, not text`,
+      nodeId,
+    }));
+}
+
 /** A `MediaInput` `accept` entry: `type/subtype` or `type/*`. */
 export const ACCEPT_PATTERN = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/(?:\*|[a-z0-9][a-z0-9!#$&^_.+-]*)$/;
 
@@ -279,6 +416,11 @@ export function mediaPropFindings(
       err(
         "media-literal-ref",
         `"${nodeId}": prop "${key}" is a literal address or URL — a media reference may only come from a binding`
+      );
+    else if (typeof value === "string" && key !== "accept" && containsEmbeddedRef(value))
+      err(
+        "media-embedded-ref",
+        `"${nodeId}": prop "${key}" embeds a URL or address — a media reference may only come from a binding`
       );
     if (kind === MEDIA_INPUT_KIND && key === "accept") {
       if (
@@ -340,4 +482,106 @@ export function mediaCatalogEntries(
     };
   };
   return [...MEDIA_KINDS.map((k) => entry(k, "required")), entry(MEDIA_INPUT_KIND, "none")];
+}
+
+// ── Host-side duties ─────────────────────────────────────────────────────────────
+
+export type MediaAttachRefusal =
+  | "not-an-attach" // not a MEDIA_ATTACH action, or no object payload
+  | "bad-ref" // the payload ref is not a valid File MediaRef, or violates accept / maxBytes
+  | "not-issued" // the host never issued this address to this principal
+  | "stale"; // the action was not taken on the current view
+
+/**
+ * HOST-SIDE acceptance of a `MEDIA_ATTACH` action. The action is CLIENT INPUT: everything the
+ * widget checked (type, size, `origin: "user"`) was checked in a browser the user controls. This is
+ * the check that counts:
+ *
+ *  1. it is a `MEDIA_ATTACH` with a payload ref that re-parses as a `File` `MediaRef` (strict) and,
+ *     if given, satisfies `accept` / `maxBytes`;
+ *  2. `issued(address, principal)` is true: the address is one THIS host's upload handler issued to
+ *     this session/principal. Without it a client could attach any address it has ever seen or
+ *     guessed (an address is a capability), or one issued to another user;
+ *  3. the action is `fresh` against `current` (`actionFreshness`): taken on the view still current;
+ *  4. the accepted ref is re-stamped `origin: "user"`, whatever the client claimed.
+ *
+ * Returns the ref to act on, or a typed refusal. Total: never throws.
+ */
+export function acceptMediaAttach<P>(
+  action: unknown,
+  options: {
+    readonly issued: (address: string, principal: P) => boolean;
+    readonly principal: P;
+    readonly current: CurrentHead;
+    readonly accept?: readonly string[];
+    readonly maxBytes?: number;
+  }
+): { ok: true; ref: MediaRef; widgetId: string } | { ok: false; reason: MediaAttachRefusal } {
+  try {
+    const a = action as { type?: unknown; widgetId?: unknown; payload?: unknown } | null;
+    if (typeof a !== "object" || a === null || a.type !== MEDIA_ATTACH_ACTION)
+      return { ok: false, reason: "not-an-attach" };
+    const payload = a.payload as { ref?: unknown } | null;
+    if (typeof payload !== "object" || payload === null || typeof a.widgetId !== "string")
+      return { ok: false, reason: "not-an-attach" };
+    const claimed = payload.ref;
+    if (!isMediaRef("File", claimed)) return { ok: false, reason: "bad-ref" };
+    if (options.accept !== undefined && !matchesAccept(claimed.mediaType, options.accept))
+      return { ok: false, reason: "bad-ref" };
+    if (
+      options.maxBytes !== undefined &&
+      claimed.size !== undefined &&
+      claimed.size > options.maxBytes
+    )
+      return { ok: false, reason: "bad-ref" };
+    if (actionFreshness(a as never, options.current) !== "fresh")
+      return { ok: false, reason: "stale" };
+    if (options.issued(claimed.address, options.principal) !== true)
+      return { ok: false, reason: "not-issued" };
+    return { ok: true, ref: { ...claimed, origin: "user" }, widgetId: a.widgetId };
+  } catch {
+    return { ok: false, reason: "not-an-attach" };
+  }
+}
+
+// ── File names vs their media type ──────────────────────────────────────────────
+
+const RISKY_EXT = new Set(
+  "exe msi bat cmd com scr pif js mjs jse vbs vbe wsf jar sh bash ps1 app dmg apk deb rpm lnk hta html htm xhtml svg xml dll iso reg".split(
+    " "
+  )
+);
+const EXT_ALIAS: Readonly<Record<string, readonly string[]>> = {
+  "text/html": ["html", "htm"],
+  "application/xhtml+xml": ["xhtml"],
+  "image/svg+xml": ["svg"],
+  "text/xml": ["xml"],
+  "application/xml": ["xml"],
+  "application/javascript": ["js", "mjs"],
+  "text/javascript": ["js", "mjs"],
+  "application/java-archive": ["jar"],
+  "application/x-sh": ["sh"],
+  "application/x-msdownload": ["exe", "dll"],
+};
+
+/**
+ * A downloaded file's name checked against its media type. A name whose final extension is
+ * executable or scriptable (`.exe`, `.html`, `.svg`, `.js`...) while the TYPE says something else
+ * (`invoice.pdf.exe` as `application/pdf`) is a disguise: `mismatch` is true, `display` says the
+ * type out loud and `download` drops the misleading extension. A matching or harmless extension is
+ * untouched.
+ */
+export function checkFileName(
+  name: unknown,
+  mediaType: string
+): { readonly display: string; readonly download: string; readonly mismatch: boolean } {
+  const clean = safeFileName(name);
+  const m = /\.([A-Za-z0-9]{1,8})$/.exec(clean);
+  const ext = m?.[1]?.toLowerCase();
+  if (ext === undefined || !RISKY_EXT.has(ext))
+    return { display: clean, download: clean, mismatch: false };
+  const allowed = EXT_ALIAS[mediaType.toLowerCase()];
+  if (allowed?.includes(ext) === true) return { display: clean, download: clean, mismatch: false };
+  const stripped = safeFileName(clean.slice(0, -(ext.length + 1)));
+  return { display: `${clean} (${mediaType})`, download: stripped, mismatch: true };
 }

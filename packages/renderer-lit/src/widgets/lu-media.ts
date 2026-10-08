@@ -5,14 +5,16 @@ import {
   type MediaRef,
   type MediaResolver,
   type MediaUploadHandler,
+  checkFileName,
   checkMediaUrl,
   cleanMediaText,
   describeMedia,
   formatBytes,
+  isActiveMediaType,
   isMediaRef,
+  isSameOriginMediaUrl,
   matchesAccept,
   maxBytesFor,
-  safeFileName,
 } from "@loom-ui/core/media";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -183,6 +185,10 @@ abstract class LuMedia extends LuWidget {
     // An oversized DECLARED size is refused before the resolver is ever asked.
     if (ref.size !== undefined && ref.size > limit)
       return this.settle(key, { key, state: "too-large" });
+    // Active content (HTML, SVG, XML, script types) from a USER is untrusted for certain: the same
+    // bytes opened in a tab are a page, so it is never drawn and the resolver is not even asked.
+    if (ref.origin === "user" && isActiveMediaType(ref.mediaType))
+      return this.settle(key, { key, state: "blocked" });
     const resolver = this.media?.resolver;
     if (resolver === undefined) return this.settle(key, { key, state: "unavailable" });
     const ac = new AbortController();
@@ -208,6 +214,13 @@ abstract class LuMedia extends LuWidget {
     const trusted = answer.trusted === true && ref.origin !== "user";
     if (!trusted && policy?.untrusted === "block")
       return this.settle(key, { key, state: "blocked" });
+    if (!trusted) {
+      // Untrusted bytes must not be served from the app's own origin (a tab opened on a same-origin
+      // URL would run active content with the app's cookies), and active types are never drawn.
+      if (isActiveMediaType(ref.mediaType)) return this.settle(key, { key, state: "blocked" });
+      if (isSameOriginMediaUrl(url.url) && policy?.allowSameOriginUntrusted !== true)
+        return this.settle(key, { key, state: "blocked" });
+    }
     this.settle(key, { key, state: "ready", url: url.url, trusted });
   }
 
@@ -307,13 +320,15 @@ export class LuFile extends LuMedia {
   readonly kind = "File";
   protected readonly purpose = "download" as const;
   protected drawResolved(ref: MediaRef, url: string): TemplateResult {
-    const shown = this.safeName || t("file");
+    const named = checkFileName(ref.name, ref.mediaType);
+    const shown = ref.name === undefined || this.safeName === "" ? t("file") : named.display;
     const meta = [ref.mediaType, ref.size === undefined ? "" : formatBytes(ref.size)]
       .filter((s) => s !== "")
       .join(", ");
     return html`<a
         href=${url}
-        download=${safeFileName(ref.name)}
+        download=${named.download}
+        ?data-type-mismatch=${named.mismatch}
         rel="noopener noreferrer nofollow"
         referrerpolicy="no-referrer"
         >${shown}</a

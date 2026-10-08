@@ -6,6 +6,7 @@ export { LuDataTable } from "./lu-data-table";
 export { LuA2UIWidget, LuSandboxWidget } from "./lu-embedded";
 export { LuKpi } from "./lu-kpi";
 export { LuLocalePicker } from "./lu-locale-picker";
+export { LuMediaMissing } from "./lu-media-missing";
 export { LuMetricCard } from "./lu-metric-card";
 export { LuNote } from "./lu-note";
 export { LuSandbox } from "./lu-sandbox";

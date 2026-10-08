@@ -195,3 +195,38 @@ describe("checkPlannerConformance and media", () => {
     expect(found.map((f) => f.code)).toContain("compose-invalid:media-prop-forbidden");
   });
 });
+
+describe("fix round 1: raw capability samples do not hand the model real addresses", () => {
+  it("redacts address-shaped strings in samples, keeping them strings", async () => {
+    const { composeMessages, redactAddresses } = await import("./prompt");
+    const cap = {
+      ...capabilitiesFixture[0],
+      sampleOutput: {
+        image: { address: "sha256:0123456789abcdef0123456789abcdef", mediaType: "image/png" },
+        list: [
+          "see sha256:0123456789abcdef0123456789abcdef now",
+          "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ],
+        n: 3,
+      },
+    };
+    const msg =
+      composeMessages({ ...input, capabilities: [cap as never] }).messages[0]?.content ?? "";
+    expect(msg).not.toContain("0123456789abcdef");
+    expect(msg).not.toContain("bafybeig");
+    expect(msg).toContain("[address]");
+    expect(msg).toContain("image/png");
+    expect(redactAddresses({ a: ["Q3 report"] })).toEqual({ a: ["Q3 report"] });
+  });
+  it("embedded references in a media caption are refused and fed back", async () => {
+    const model = scriptedModel([media({ caption: "chart from https://evil.example/x.png" })]);
+    const r = await new ReferencePlanner({ model, modelId: "m", maxAttempts: 2 }).compose(
+      input,
+      recordingContext()
+    );
+    expect(r.ops).toEqual([]);
+    expect(r.report.attempts.flatMap((a) => a.findings.map((f) => f.code))).toContain(
+      "media-embedded-ref"
+    );
+  });
+});

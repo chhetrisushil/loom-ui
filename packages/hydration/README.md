@@ -245,9 +245,11 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   `outputCheck: "contract"` whatever the provider declared: a shape pin passes any value of the pinned
   shape (inline bytes or a locator included), and what is published reaches the store, a seen log and a
   split-hydration payload. A value that is not a `MediaRef` is drift (`output-contract-drift`), never
-  published. A restricted media handle is never invoked, as for any restricted handle. Without
-  `outputKinds` the controller cannot know a handle feeds media; the renderer's check still refuses to
-  draw it. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`, called by
+  published. A restricted media handle is never invoked, as for any restricted handle. Kinds are
+  resolved through the catalogue when `outputKinds` is given AND by node type alone: a node whose `type` is a
+  framework media kind marks its handle as media even with NO `outputKinds`, so forgetting it fails closed (a
+  `media-output-kinds-missing` warning says to pass it). The split server (`serveHandle`/`serveHandles`) applies
+  the same rule, including its cache variant. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`, called by
   the renderer (see `@loom-ui/core` "Media").
 
 - **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,

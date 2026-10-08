@@ -108,8 +108,14 @@ export {
   MEDIA_KINDS,
   MEDIA_TEXT_PROPS,
   MEDIA_TYPE_VERSION,
+  acceptMediaAttach,
   addressProblem,
+  checkFileName,
   checkMediaUrl,
+  containsEmbeddedRef,
+  embeddedRefWarnings,
+  isActiveMediaType,
+  isSameOriginMediaUrl,
   cleanMediaText,
   describeMedia,
   formatBytes,
@@ -126,6 +132,7 @@ export {
   safeFileName,
 } from "./media";
 export type {
+  MediaAttachRefusal,
   MediaIssue,
   MediaKind,
   MediaOrigin,
@@ -168,7 +175,12 @@ export type {
   ProjectionPlan,
   ProjectionVerdict,
 } from "./projections";
-export { experienceHandles, handleKinds } from "./handles";
+export {
+  experienceHandles,
+  handleKinds,
+  handleKindsWithMedia,
+  hasMediaTypeNodes,
+} from "./handles";
 export type { HandleUse } from "./handles";
 export {
   BarChartValue,

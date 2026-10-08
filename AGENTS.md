@@ -217,3 +217,6 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   one. The HOST supplies an authorising `MediaResolver` (viewer-scoped URL, re-checked by `checkMediaUrl`) and
   `MediaUploadHandler`; media is untrusted unless the resolver vouches. The web widgets are the opt-in
   `@loom-ui/renderer-lit/media` entry. `core/src/mediaLeak.test.ts` is the viewer-leak property test.
+  Fix round 1: hydration (controller AND split server) contract-checks a media handle by node TYPE even with no `outputKinds`;
+  untrusted active types (`isActiveMediaType`) and untrusted same-origin/`blob:` URLs are blocked; the host must run
+  `acceptMediaAttach` on every `MEDIA_ATTACH`; the default lit registry draws a fixed "not loaded" placeholder for media kinds.

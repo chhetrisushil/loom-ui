@@ -231,6 +231,17 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   - A declared size over `policy.maxBytes[kind]` is refused BEFORE the resolver is asked; a larger size
     observed by the resolver is refused too. Media is drawn with an untrusted marker unless the resolver
     answers `trusted: true` (never for `origin: "user"`); `policy.untrusted: "block"` draws a placeholder.
+  - Untrusted bytes of an active type (HTML, SVG, XML, script) are `blocked`, never drawn; untrusted media on a
+    same-origin `/path` or `blob:` URL is `blocked` unless `policy.allowSameOriginUntrusted`. **The resolver's
+    response duties** (this package cannot enforce them): `X-Content-Type-Options: nosniff`, `Content-Disposition:
+    attachment` for files, `Content-Security-Policy: sandbox`, and a `Content-Type` equal to the ref's
+    `mediaType`. A file whose name's extension disagrees with its type is shown with the type beside it and a
+    `data-type-mismatch` attribute, and its download name drops the misleading extension.
+  - **The default registry draws a fixed "Media renderer not loaded" placeholder** for the media kinds (and
+    warns once on the console) instead of an empty hole; `createMediaLitRegistry` replaces it with the real widgets.
+  - `MEDIA_ATTACH` is client input: the host MUST run `acceptMediaAttach` (`@loom-ui/core/media`) on it. The
+    widget's checks and the `origin: "user"` stamp are courtesy; ownership of the address, freshness and the
+    strict re-parse are the host's.
   - `MediaInput` hands the chosen file to `upload` (a `MediaUploadHandler`), validates the ref it returns
     against the `File` contract and `accept`/`maxBytes`, re-stamps it `origin: "user"` and emits
     `{ type: "MEDIA_ATTACH", payload: { ref } }`, which the adapter stamps with `viewedVersion` like every
