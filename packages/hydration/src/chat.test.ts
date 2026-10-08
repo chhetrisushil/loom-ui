@@ -482,6 +482,32 @@ describe("P3-11: reconnecting and the first page", () => {
     expect(Math.max(...delays)).toBeLessThanOrEqual(30_000);
   });
 
+  it("a healthy stream recycled by the server reopens after the floor (250 ms), never at 0", async () => {
+    const delays: number[] = [];
+    let t = 0;
+    const sources: FakeSource[] = [];
+    const conn = connectConversation({
+      baseUrl: "/c",
+      feed: new ChatFeed(),
+      fetch: async () => ({ ok: true, json: async () => pageOf["direction=backward"] }),
+      openStream: (u) => {
+        const s = new FakeSource(u);
+        sources.push(s);
+        return s;
+      },
+      publish: () => {},
+      now: () => t,
+      setTimer: (fn, ms) => {
+        delays.push(ms);
+        return () => {};
+      },
+    });
+    await conn.start();
+    t = 15 * 60_000; // the server's 15 minute lifetime
+    (sources[0] as FakeSource).emit("reconnect", {});
+    expect(delays).toEqual([250]);
+  });
+
   it("a failed first page is RETRIED with backoff instead of giving up, and the stream opens once it loads", async () => {
     const delays: number[] = [];
     const timers: Array<() => void> = [];
