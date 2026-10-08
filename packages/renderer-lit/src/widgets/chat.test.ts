@@ -337,6 +337,10 @@ describe("lu-chat: load earlier", () => {
     q<HTMLButtonElement>(el, "[data-older]")?.click();
     await settle(el);
     expect(actions).toHaveLength(1);
+    // a live message arriving meanwhile does not re-enable it (the same cursor is still being loaded)
+    el.value = value([e(5, "user"), e(6, "user")], { older: "0.9" });
+    await settle(el);
+    expect(q<HTMLButtonElement>(el, "[data-older]")?.disabled).toBe(true);
     el.value = value([e(4, "user"), e(5, "user")], { older: "0.4" });
     await settle(el);
     expect(q<HTMLButtonElement>(el, "[data-older]")?.disabled).toBe(false);

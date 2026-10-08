@@ -388,7 +388,7 @@ describe("chatValueFromHistory (the server-side first paint)", () => {
       page(
         [
           wire(2, "assistant", { status: "restricted", text: "SECRET" }),
-          wire(2, "user", { text: "hi‮\u001b[2J" }),
+          wire(2, "user", { text: "hi\u202e\u001b[2J" }),
           wire(1, "assistant"),
           wire(1, "user"),
         ],
@@ -397,7 +397,12 @@ describe("chatValueFromHistory (the server-side first paint)", () => {
       { viewer: { actor: "me" } }
     );
     expect(isChatValue(v)).toBe(true);
-    expect(v.entries.map((e) => e.id)).toEqual(["t1.user", "t1.assistant", "t2.user", "t2.assistant"]);
+    expect(v.entries.map((e) => e.id)).toEqual([
+      "t1.user",
+      "t1.assistant",
+      "t2.user",
+      "t2.assistant",
+    ]);
     expect(JSON.stringify(v)).not.toContain("SECRET");
     expect(v.older).toBe("0.1");
     expect(v.viewer).toEqual({ actor: "me" });
