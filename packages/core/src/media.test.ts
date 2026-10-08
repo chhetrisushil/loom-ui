@@ -4,6 +4,7 @@ import { genesis } from "./experience";
 import { checkKindValue } from "./kindValues";
 import { loomCatalogFor } from "./loomCatalog";
 import {
+  MAX_EMBEDDED_SCAN,
   MEDIA_ALLOWED_PROPS,
   acceptMediaAttach,
   addressProblem,
@@ -332,7 +333,7 @@ describe("fix round 1: active media types", () => {
   });
 });
 
-describe("fix round 1: acceptMediaAttach (host-side)", () => {
+describe("fix round 1+2: acceptMediaAttach (host-side)", () => {
   const head = { experienceId: "e", versionHash: "sha256:v" };
   const stamp = { blueprintId: "e@sha256:v", experienceId: "e", versionHash: "sha256:v" };
   const good = {
@@ -341,6 +342,7 @@ describe("fix round 1: acceptMediaAttach (host-side)", () => {
     size: 10,
     name: "a.pdf",
   };
+  const stored = { mediaType: "application/pdf", size: 10 };
   const act = (ref: unknown, over: Record<string, unknown> = {}) => ({
     type: "MEDIA_ATTACH",
     widgetId: "up",
@@ -349,16 +351,49 @@ describe("fix round 1: acceptMediaAttach (host-side)", () => {
     ...over,
   });
   const opts = (
-    issued: (a: string, p: string) => boolean = (a, p) => a === "sha256:mine0001" && p === "alice"
-  ) => ({
-    issued,
-    principal: "alice",
-    current: head,
-  });
+    issued: (a: string, p: string) => { mediaType: string; size?: number } | undefined = (a, p) =>
+      a === "sha256:mine0001" && p === "alice" ? stored : undefined
+  ) => ({ issued, principal: "alice", current: head });
 
   it("accepts an issued, fresh, well-formed attach and forces origin=user", () => {
     const r = acceptMediaAttach(act({ ...good, origin: "host" }), opts());
     expect(r).toEqual({ ok: true, ref: { ...good, origin: "user" }, widgetId: "up" });
+  });
+  it("replaces the CLIENT's mediaType and size with the stored ones", () => {
+    const r = acceptMediaAttach(act({ ...good, mediaType: "image/png", size: 1 }), {
+      ...opts(() => ({ mediaType: "text/html", size: 5000 })),
+    });
+    expect(r).toMatchObject({ ok: true, ref: { mediaType: "text/html", size: 5000 } });
+    const noSize = acceptMediaAttach(
+      act({ ...good, size: 1 }),
+      opts(() => ({ mediaType: "application/pdf" }))
+    );
+    expect(noSize.ok && "size" in noSize.ref).toBe(false);
+  });
+  it("enforces accept / maxBytes on the STORED values, not the claimed ones", () => {
+    expect(
+      acceptMediaAttach(act({ ...good, mediaType: "image/png", size: 1 }), {
+        ...opts(() => ({ mediaType: "application/pdf", size: 9999 })),
+        accept: ["image/*"],
+      })
+    ).toEqual({ ok: false, reason: "bad-ref" });
+    expect(
+      acceptMediaAttach(act({ ...good, size: 1 }), {
+        ...opts(() => ({ mediaType: "application/pdf", size: 9999 })),
+        maxBytes: 100,
+      })
+    ).toEqual({ ok: false, reason: "bad-ref" });
+  });
+  it("refuses a widget that is not an upload control", () => {
+    expect(acceptMediaAttach(act(good), { ...opts(), isMediaInput: (w) => w === "other" })).toEqual(
+      {
+        ok: false,
+        reason: "not-media-input",
+      }
+    );
+    expect(acceptMediaAttach(act(good), { ...opts(), isMediaInput: (w) => w === "up" }).ok).toBe(
+      true
+    );
   });
   it("refuses someone else's address (never issued to this principal)", () => {
     expect(acceptMediaAttach(act({ ...good, address: "sha256:bobs0002" }), opts())).toEqual({
@@ -389,16 +424,6 @@ describe("fix round 1: acceptMediaAttach (host-side)", () => {
   ])("refuses a malformed ref (%s)", (_l, ref) =>
     expect(acceptMediaAttach(act(ref), opts())).toEqual({ ok: false, reason: "bad-ref" })
   );
-  it("enforces accept / maxBytes again", () => {
-    expect(acceptMediaAttach(act(good), { ...opts(), accept: ["image/*"] })).toEqual({
-      ok: false,
-      reason: "bad-ref",
-    });
-    expect(acceptMediaAttach(act(good), { ...opts(), maxBytes: 5 })).toEqual({
-      ok: false,
-      reason: "bad-ref",
-    });
-  });
   it("refuses other actions and throwing hosts without throwing", () => {
     expect(acceptMediaAttach(act(good, { type: "APPROVE" }), opts())).toEqual({
       ok: false,
@@ -440,6 +465,97 @@ describe("fix round 1: embedded references in text props", () => {
     expect(embeddedRefWarnings("n", { text: "see https://docs.example.com" })[0]?.severity).toBe(
       "warn"
     );
+  });
+});
+
+describe("fix round 2: linear embedded-ref scan", () => {
+  const BOUND_MS = 250;
+  const time = (f: () => unknown): number => {
+    const t0 = performance.now();
+    f();
+    return performance.now() - t0;
+  };
+  it.each([
+    ["a.", "a.".repeat(50_000)],
+    ["a", "a".repeat(100_000)],
+    ["a.a/", "a.a/".repeat(25_000)],
+    ["scheme runs", "a+".repeat(50_000)],
+    ["://", "a://".repeat(25_000)],
+    ["www.", "www.".repeat(25_000)],
+    ["hex tags", "abc:".repeat(25_000)],
+    ["baf", "baf".repeat(33_000)],
+    ["Qm", "Qm".repeat(50_000)],
+  ])("a 100 KB %s string is handled well under the bound", (_l, text) => {
+    expect(time(() => containsEmbeddedRef(text))).toBeLessThan(BOUND_MS);
+    expect(time(() => mediaPropFindings("Image", "n", { caption: text }))).toBeLessThan(BOUND_MS);
+    expect(time(() => embeddedRefWarnings("n", { text }))).toBeLessThan(BOUND_MS);
+  });
+  it("text over the scan cap is reported, not scanned", () => {
+    const long = "x".repeat(MAX_EMBEDDED_SCAN + 1);
+    expect(mediaPropFindings("Image", "n", { caption: long }).map((f) => f.code)).toEqual([
+      "media-prop-too-long",
+    ]);
+    expect(embeddedRefWarnings("n", { text: long }).map((f) => f.code)).toEqual([
+      "text-too-long-to-scan",
+    ]);
+    expect(containsEmbeddedRef(long)).toBe(true);
+    expect(containsEmbeddedRef("x".repeat(MAX_EMBEDDED_SCAN))).toBe(false);
+  });
+  it("the hand-written scanners keep the old verdicts", () => {
+    for (const t of [
+      "https://a",
+      "x-y+z.1://q",
+      "a.b.example.com/p",
+      "evil.example/x",
+      "see (evil.io/a)",
+    ])
+      expect(containsEmbeddedRef(t)).toBe(true);
+    for (const t of [
+      "http:// ",
+      "://x",
+      "1://x",
+      "a.b/",
+      "evil.e/x",
+      "a.example.com /x",
+      "x.1/",
+      "plain words",
+    ])
+      expect(containsEmbeddedRef(t)).toBe(false);
+  });
+  it("documented false positive: name.js/name reads as host/path", () => {
+    expect(containsEmbeddedRef("Node.js/React")).toBe(true);
+  });
+});
+
+describe("fix round 2: absolute same-origin URLs, active-type essence, hosts", () => {
+  it("an absolute URL on the app origin is same-origin; others are not", () => {
+    expect(isSameOriginMediaUrl("https://app.example.com/m/1", "https://app.example.com")).toBe(
+      true
+    );
+    expect(isSameOriginMediaUrl("https://cdn.example.com/m/1", "https://app.example.com")).toBe(
+      false
+    );
+    expect(isSameOriginMediaUrl("https://app.example.com:8443/m", "https://app.example.com")).toBe(
+      false
+    );
+    expect(isSameOriginMediaUrl("https://app.example.com/m")).toBe(false); // no appOrigin: cannot tell
+  });
+  it.each([
+    "text/html; charset=utf-8",
+    " TEXT/HTML ;x=y",
+    "text/xsl",
+    "application/hta",
+    "text/x-scriptlet",
+    "text/cache-manifest",
+  ])("%s is active", (t) => expect(isActiveMediaType(t)).toBe(true));
+  it.each([
+    "https://localhost../x",
+    "https://foo.internal.../x",
+    "https://[fec0::1]/x",
+    "https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/x",
+  ])("refuses %s", (u) => expect(checkMediaUrl(u).ok).toBe(false));
+  it("a public 2001: address is still fine", () => {
+    expect(checkMediaUrl("https://[2001:4860:4860::8888]/x").ok).toBe(true);
   });
 });
 

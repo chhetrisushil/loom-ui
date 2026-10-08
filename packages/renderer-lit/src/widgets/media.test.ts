@@ -507,3 +507,46 @@ describe("fix round 1: a file name cannot disguise its type", () => {
     expect(a?.hasAttribute("data-type-mismatch")).toBe(true);
   });
 });
+
+describe("fix round 2: absolute same-origin URLs are same-origin", () => {
+  it("an untrusted absolute URL on the app origin is blocked (policy.appOrigin); a cross-origin one is not", async () => {
+    const same = await mount("lu-image", {
+      widget: widget("Image"),
+      value: ref(),
+      media: {
+        resolver: resolverOf(ok("https://app.example.com/media/1?sig=x")),
+        policy: { appOrigin: "https://app.example.com" },
+      },
+    });
+    expect(q(same, "img")).toBeNull();
+    expect(q(same, '[data-media-state="blocked"]')).not.toBeNull();
+    const cross = await mount("lu-image", {
+      widget: widget("Image"),
+      value: ref(),
+      media: { resolver: resolverOf(ok()), policy: { appOrigin: "https://app.example.com" } },
+    });
+    expect(q(cross, "img")).not.toBeNull();
+    const trusted = await mount("lu-image", {
+      widget: widget("Image"),
+      value: ref(),
+      media: {
+        resolver: resolverOf(ok("https://app.example.com/media/1", { trusted: true })),
+        policy: { appOrigin: "https://app.example.com" },
+      },
+    });
+    expect(q(trusted, "img")).not.toBeNull();
+  });
+
+  it("defaults to the page's own location.origin", async () => {
+    const w = window as unknown as { happyDOM?: { setURL(u: string): void } };
+    w.happyDOM?.setURL("https://page.example.com/app");
+    const el = await mount("lu-image", {
+      widget: widget("Image"),
+      value: ref(),
+      media: { resolver: resolverOf(ok("https://page.example.com/media/1")) },
+    });
+    expect(location.origin).toBe("https://page.example.com");
+    expect(q(el, "img")).toBeNull();
+    expect(q(el, '[data-media-state="blocked"]')).not.toBeNull();
+  });
+});

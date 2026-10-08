@@ -177,3 +177,23 @@ describe("U9 controller without outputKinds: fail closed by node type, with a de
     await flush();
   });
 });
+
+describe("fix round 2: a streamed chunk cannot overwrite a media handle", () => {
+  it("is refused for a media-bound handle, with and without outputKinds", async () => {
+    for (const withKinds of [true, false]) {
+      const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+      const ctl = new HydrationController({
+        invoker: replying(GOOD),
+        store,
+        ...(withKinds && { outputKinds: { catalog, surface: "web" as const } }),
+      });
+      ctl.load(exp(shapeSpec()));
+      await flush();
+      expect(store.value("h")).toEqual(GOOD);
+      const r = ctl.append("h", { seq: 0, text: "TEXT-CHUNK" });
+      expect(r.ok).toBe(false);
+      expect(JSON.stringify(store.value("h"))).not.toContain("TEXT-CHUNK");
+      expect(store.value("h")).toEqual(GOOD);
+    }
+  });
+});

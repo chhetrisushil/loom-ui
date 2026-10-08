@@ -230,3 +230,17 @@ describe("fix round 1: raw capability samples do not hand the model real address
     );
   });
 });
+
+describe("fix round 2: redactAddresses fails closed", () => {
+  it("drops a subtree past the depth cap instead of passing it through, and redacts address-shaped keys", async () => {
+    const { redactAddresses } = await import("./prompt");
+    const addr = "sha256:0123456789abcdef0123456789abcdef";
+    let deep: unknown = { leak: addr };
+    for (let i = 0; i < 30; i++) deep = { n: deep };
+    const out = JSON.stringify(redactAddresses(deep));
+    expect(out).not.toContain("0123456789abcdef");
+    expect(out).toContain("[truncated]");
+    const keyed = JSON.stringify(redactAddresses({ [addr]: "x", ok: [addr] }));
+    expect(keyed).not.toContain("0123456789abcdef");
+  });
+});

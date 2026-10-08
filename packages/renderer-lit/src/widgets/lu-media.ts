@@ -42,6 +42,10 @@ import { LuWidget } from "./base";
 // is. Untrusted media is drawn with a visible marker (`data-untrusted`), or not at all under
 // `policy.untrusted: "block"`.
 
+/** The page's own origin, or undefined where there is no `location` (a server, a worker without one). */
+const currentOrigin = (): string | undefined =>
+  typeof location === "undefined" || location.origin === "null" ? undefined : location.origin;
+
 /** What the host hands the media widgets (the registry option `media`). */
 export interface MediaHostOptions {
   readonly resolver?: MediaResolver;
@@ -218,7 +222,10 @@ abstract class LuMedia extends LuWidget {
       // Untrusted bytes must not be served from the app's own origin (a tab opened on a same-origin
       // URL would run active content with the app's cookies), and active types are never drawn.
       if (isActiveMediaType(ref.mediaType)) return this.settle(key, { key, state: "blocked" });
-      if (isSameOriginMediaUrl(url.url) && policy?.allowSameOriginUntrusted !== true)
+      if (
+        isSameOriginMediaUrl(url.url, policy?.appOrigin ?? currentOrigin()) &&
+        policy?.allowSameOriginUntrusted !== true
+      )
         return this.settle(key, { key, state: "blocked" });
     }
     this.settle(key, { key, state: "ready", url: url.url, trusted });
