@@ -34,6 +34,7 @@ describe("@loom-ui/core/browser", () => {
       "containerRoles.js",
       "format.js",
       "kindValues.js",
+      "mediaRef.js",
       "paths.js",
       "streamText.js",
     ]);

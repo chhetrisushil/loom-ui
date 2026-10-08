@@ -17,9 +17,13 @@ describe("kindValueContracts", () => {
         "A2UIView",
         "AlertCard",
         "ApprovalCard",
+        "Audio",
         "BarChart",
         "DataTable",
+        "File",
+        "Image",
         "Kpi",
+        "MediaInput",
         "MetricCard",
         "Note",
         "ProgressBar",
@@ -30,6 +34,7 @@ describe("kindValueContracts", () => {
         "Table",
         "TimeSeries",
         "Timeline",
+        "Video",
       ].sort()
     );
     expect(FRAMEWORK_KINDS).toEqual([
@@ -41,6 +46,11 @@ describe("kindValueContracts", () => {
       "Note",
       "A2UIView",
       "SandboxView",
+      "Image",
+      "Audio",
+      "Video",
+      "File",
+      "MediaInput",
     ]);
     expect(kindValueContract("Nope")).toBeUndefined();
   });

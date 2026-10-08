@@ -71,6 +71,40 @@ const withOptional = (r: Rng, o: Record<string, unknown>, key: string, v: () => 
   if (chance(r, 0.5)) o[key] = v();
 };
 
+const MEDIA_ADDRESSES = [
+  "sha256:ab12",
+  "",
+  "http://x/y",
+  "//h/p",
+  "/abs",
+  "a b",
+  "a".repeat(600),
+  "x\u0000y",
+  "blake3:00ff",
+];
+const MEDIA_TYPES = (family: string): string[] => [
+  `${family}/png`,
+  `${family}/x`,
+  "image/png",
+  "audio/mpeg",
+  "video/mp4",
+  "IMAGE/PNG",
+  "image/png; charset=x",
+  "text",
+  "",
+];
+function genMedia(r: Rng, family: string): unknown {
+  const o: Record<string, unknown> = {};
+  if (chance(r, 0.95)) o.address = pick(r, MEDIA_ADDRESSES);
+  if (chance(r, 0.95)) o.mediaType = pick(r, MEDIA_TYPES(family));
+  withOptional(r, o, "size", () => pick(r, [0, 1, 10, -1, 1.5, 2 ** 41, "9", Number.NaN]));
+  withOptional(r, o, "name", () => pick(r, ["a.png", "", "n".repeat(300), 4]));
+  withOptional(r, o, "alt", () => pick(r, ["alt", "a".repeat(1100), null]));
+  withOptional(r, o, "origin", () => pick(r, ["host", "tool", "user", "admin", 1]));
+  if (chance(r, 0.1)) o.data = "AAAA";
+  return o;
+}
+
 const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   MetricCard: finite,
   StatusBadge: (r) => pick(r, strs),
@@ -130,6 +164,11 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   Note: () => undefined,
   A2UIView: (r) => pick(r, [{ x: 1 }, [], "s"]),
   SandboxView: (r) => pick(r, [{ x: 1 }, [], "s"]),
+  Image: (r) => genMedia(r, "image"),
+  Audio: (r) => genMedia(r, "audio"),
+  Video: (r) => genMedia(r, "video"),
+  File: (r) => genMedia(r, "application"),
+  MediaInput: () => undefined,
 };
 
 // ── Deep junk: a fresh value each call (the checkers must not mutate it, but never share) ────

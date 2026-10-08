@@ -1,5 +1,7 @@
 import type { Experience, Finding, VocabularyFloor } from "./experience";
 import { type ContractRegistry, hasKindContract, isFrameworkContractKind } from "./kindValues";
+import { mediaPropFindings } from "./media";
+import { isMediaKind } from "./mediaRef";
 import {
   type ContainerNode,
   type ExperienceNode,
@@ -424,6 +426,20 @@ function checkSemantic(
     );
   const r = resolveSurface(catalog, n.type, n.typeVersion, surface, n.id);
   if (!r.ok && r.finding.code !== "unknown-type") findings.push(r.finding);
+  // U9: a media node's props are checked against the FRAMEWORK's allow-list, whatever the catalogue
+  // declares: a composer can never author an address, URL, source or autoplay. A display node with
+  // nothing bound has no reference to draw at all.
+  if (r.ok) {
+    findings.push(...mediaPropFindings(r.kind, n.id, n.props));
+    if (isMediaKind(r.kind) && !bound)
+      findings.push(
+        finding(
+          "media-unbound",
+          `"${n.id}" is a ${r.kind} and has no binding: a media reference comes only from bound data`,
+          n.id
+        )
+      );
+  }
   // `outputCheck: "contract"` checks the handle's value against its bound kinds' contracts; a kind
   // with none would pass every value, so the load refuses at run time — reported here, ahead of it.
   if (

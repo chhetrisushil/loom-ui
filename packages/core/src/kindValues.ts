@@ -12,6 +12,7 @@
 // contract in `values.ts` and that test fails until this file follows.
 
 import type { Finding } from "./experience";
+import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import type { SemanticFormat, TableColumn } from "./values";
 
 /** The kinds this framework adds over loom's built-ins. */
@@ -24,6 +25,9 @@ export const FRAMEWORK_KINDS = [
   "Note",
   "A2UIView",
   "SandboxView",
+  // U9: media. Each Image/Audio/Video/File is bound to a MediaRef (never bytes); MediaInput is static.
+  ...MEDIA_KINDS,
+  MEDIA_INPUT_KIND,
 ] as const;
 
 /** A column's heading, whichever form it was written in. */
@@ -374,6 +378,20 @@ const statusCard = (v: unknown, p: Path, out: Out): Status =>
 const any = (): Status => "valid";
 const record = (v: unknown, p: Path, out: Out): Status => type("object", v, p, out);
 
+/** A MediaRef contract: the shared issue list, recorded in order. Messages are value-free. */
+const mediaContract =
+  (kind: string) =>
+  (v: unknown, p: Path, out: Out): Status => {
+    const issues = mediaValueIssues(kind, v);
+    if (issues.length === 0) return "valid";
+    for (const i of issues) {
+      for (const seg of i.path) p.push(seg);
+      fail(out, p, i.message);
+      p.length -= i.path.length;
+    }
+    return "dirty";
+  };
+
 const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Status>> = {
   MetricCard: number,
   StatusBadge: string,
@@ -391,6 +409,13 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   Note: (v, p, out) => type("undefined", v, p, out),
   A2UIView: any,
   SandboxView: any,
+  // U9: the value is a MediaRef; ONE shared checker (`media.ts`) backs this and the zod contract.
+  Image: mediaContract("Image"),
+  Audio: mediaContract("Audio"),
+  Video: mediaContract("Video"),
+  File: mediaContract("File"),
+  // An upload control is static (props only); a value reaching it is a defect, as for a Note.
+  MediaInput: (v, p, out) => type("undefined", v, p, out),
 };
 
 /**
