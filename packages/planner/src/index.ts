@@ -82,7 +82,7 @@ export {
   fenceData,
   reviseMessages,
 } from "./prompt";
-export type { PreviousError } from "./prompt";
+export type { PlannerTextMessage, PreviousError } from "./prompt";
 export { plannerMessageText } from "./spi";
 export type {
   AttemptTrace,

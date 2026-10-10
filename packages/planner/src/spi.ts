@@ -104,7 +104,9 @@ export interface PlannerMediaPart {
 /**
  * One content part — structurally `@loom/llm`'s `LlmContentPart` (text, media, `tool_use`,
  * `tool_result`; ADR 0120). `@loom-ui/planner` does not depend on `@loom/llm`, so the shape is
- * mirrored and a loom provider's request flows through with no adapter.
+ * mirrored. A loom `LlmMessage` is assignable to a `PlannerMessage` as is. The other direction needs a
+ * shallow copy (`[...parts]`): the arrays here are `readonly` DELIBERATELY (a planner never mutates a
+ * message), and a `readonly` array does not assign to loom's mutable `LlmContentPart[]`.
  */
 export type PlannerContentPart =
   | PlannerTextPart

@@ -246,7 +246,17 @@ function observedRawShape(raw: unknown): { observedRawShape?: Shape } {
 
 /** The PUBLIC code of a step refused by the content-reference guard (literal, unproven ref, or a param the gate refused). */
 export const CONTENT_REF_REFUSED = "content-ref-refused";
-const isContentRefRefusal = (f: Finding): boolean => f.code.startsWith("media-arg-");
+/**
+ * The step-level refusals a CLIENT can cause. An explicit set, not a `media-arg-` prefix: the family
+ * also holds `media-arg-schema-unknown` (a host/schema defect) and `media-arg-suspect` (a hint), neither
+ * of which is a refused argument.
+ */
+const CONTENT_REF_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  "media-arg-literal",
+  "media-arg-unproven-ref",
+  "media-arg-param-refused",
+]);
+const isContentRefRefusal = (f: Finding): boolean => CONTENT_REF_REFUSAL_CODES.has(f.code);
 
 /**
  * The first finding (graph order) when every step that failed ON ITS OWN failed with the same
@@ -271,7 +281,6 @@ function onlyFailure(
       continue;
     }
     if (f.code !== "schema-drift" && f.code !== "upstream-empty") return undefined;
-    if (first?.code === CONTENT_REF_REFUSED) return undefined;
     if (first !== undefined && f.code !== first.code) return undefined;
     first ??= f;
   }
