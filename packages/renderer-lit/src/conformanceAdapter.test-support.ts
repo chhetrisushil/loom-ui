@@ -3,6 +3,7 @@ import type { HandleEntry, InvokeIntent, RendererAdapter } from "@loom-ui/render
 import type { Blueprint } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { vi } from "vitest";
+import "./register";
 import { registerChatWidgets } from "./chat";
 import { createLitRegistry } from "./dom/litRegistry";
 import { renderBlueprintDom } from "./dom/renderBlueprintDom";

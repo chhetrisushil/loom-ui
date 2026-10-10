@@ -53,6 +53,7 @@ export type KeyName =
   | "backspace"
   | "interrupt"
   | "paste"
+  | "ignored"
   | "char";
 export interface Key {
   readonly name: KeyName;
@@ -97,29 +98,86 @@ const NAMED: ReadonlyArray<readonly [string, KeyName]> = [
   ["\x03", "interrupt"],
 ];
 
+/** How long a bracketed paste may sit with no byte before it is abandoned (ms of the injected clock). */
+const PASTE_IDLE_MS = 2000;
+
+/** The longest proper suffix of `s` that is a prefix of the paste end marker (a marker split across chunks). */
+function markerTail(s: string): string {
+  for (let n = Math.min(PASTE_END.length - 1, s.length); n > 0; n--) {
+    if (PASTE_END.startsWith(s.slice(s.length - n))) return s.slice(s.length - n);
+  }
+  return "";
+}
+
+export interface KeyDecoderOptions {
+  /** The clock the paste idle bound reads (ms). Default `Date.now`. Injected so a test needs no sleep. */
+  readonly now?: () => number;
+  /** A paste with no byte for this long is discarded and paste mode left. Default 2000. */
+  readonly pasteIdleMs?: number;
+}
+
 /**
  * A decoder that remembers an unfinished bracketed paste across chunks. `decodeKeys` is the
- * stateless form (one chunk, a fresh decoder).
+ * stateless form (one chunk, a fresh decoder). It returns EVERY input unit, dropped sequences and
+ * non-printables included as `ignored`, so a caller can tell a lone key from one with company.
+ *
+ * Paste mode always ends: at the end marker (even split across chunks), at Ctrl-C (the paste is
+ * discarded and the interrupt delivered), when the paste outgrows MAX_PASTE (it is discarded, and
+ * the rest is swallowed up to the end marker, never typed), or after `pasteIdleMs` of silence.
+ * Nothing it discards ever becomes a key.
  */
-export function createKeyDecoder(): (chunk: string) => Key[] {
+export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) => Key[] {
+  const now = opts.now ?? Date.now;
+  const idleMs = opts.pasteIdleMs ?? PASTE_IDLE_MS;
   let pasting: string | undefined;
+  let overflow = false;
+  let carry = "";
+  let lastByteAt = 0;
+  const leavePaste = (): void => {
+    pasting = undefined;
+    overflow = false;
+    carry = "";
+  };
   return (chunk) => {
     const keys: Key[] = [];
     let i = 0;
+    if (pasting !== undefined && now() - lastByteAt > idleMs) leavePaste();
     while (i < chunk.length) {
       if (pasting !== undefined) {
-        const end = chunk.indexOf(PASTE_END, i);
-        const stop = end === -1 ? chunk.length : end;
-        if (pasting.length < MAX_PASTE) pasting += chunk.slice(i, stop);
-        if (end === -1) return keys;
-        keys.push({ name: "paste", text: pasteText(pasting) });
-        pasting = undefined;
-        i = end + PASTE_END.length;
+        lastByteAt = now();
+        const text = carry + chunk.slice(i);
+        const lead = carry.length;
+        carry = "";
+        const end = text.indexOf(PASTE_END);
+        const ctrl = text.indexOf("\x03");
+        if (ctrl !== -1 && (end === -1 || ctrl < end)) {
+          // Ctrl-C always gets out: the paste is dropped and the interrupt is delivered.
+          leavePaste();
+          keys.push({ name: "interrupt" });
+          i += ctrl - lead + 1;
+          continue;
+        }
+        const stop = end === -1 ? text.length - markerTail(text).length : end;
+        if (!overflow) {
+          pasting += text.slice(0, stop);
+          if (pasting.length > MAX_PASTE) {
+            overflow = true;
+            pasting = "";
+          }
+        }
+        if (end === -1) {
+          carry = text.slice(stop);
+          return keys;
+        }
+        if (!overflow) keys.push({ name: "paste", text: pasteText(pasting) });
+        leavePaste();
+        i += end - lead + PASTE_END.length;
         continue;
       }
       const rest = chunk.slice(i);
       if (rest.startsWith(PASTE_START)) {
         pasting = "";
+        lastByteAt = now();
         i += PASTE_START.length;
         continue;
       }
@@ -133,6 +191,7 @@ export function createKeyDecoder(): (chunk: string) => Key[] {
         // A control string (OSC/DCS/SOS/PM/APC) is dropped WHOLE, payload included; so is a CSI/SS3.
         const seq = CONTROL_STRING.exec(rest) ?? CSI.exec(rest) ?? SS3.exec(rest);
         if (seq !== null) {
+          keys.push({ name: "ignored" });
           i += seq[0].length;
           continue;
         }
@@ -144,7 +203,7 @@ export function createKeyDecoder(): (chunk: string) => Key[] {
       const ch = String.fromCodePoint(cp);
       i += ch.length;
       // Controls, bidi and invisible marks are never typed text (core's one unsafe set).
-      if (isPrintableChar(ch)) keys.push({ name: "char", char: ch });
+      keys.push(isPrintableChar(ch) ? { name: "char", char: ch } : { name: "ignored" });
     }
     return keys;
   };
@@ -164,7 +223,7 @@ const SS3 = /^\x1bO[@-~]/;
  * (`ESC[200~ … ESC[201~`) is ONE `paste` key, text only.
  */
 export function decodeKeys(chunk: string): Key[] {
-  return createKeyDecoder()(chunk);
+  return createKeyDecoder()(chunk).filter((k) => k.name !== "ignored");
 }
 
 /** One changed line of a repaint. `text: undefined` = the line no longer exists. */
@@ -198,6 +257,8 @@ export interface InteractiveLabels {
   readonly hint?: string;
   /** The marker before the focused control. Default `▸`. */
   readonly focus?: string;
+  /** Shown after a first `y` / `n` when `confirmConsent` is on. Default: a symbols-only prompt. */
+  readonly confirm?: string;
 }
 
 export interface InteractiveOptions extends RenderExperienceOptions {
@@ -217,6 +278,17 @@ export interface InteractiveOptions extends RenderExperienceOptions {
   readonly labels?: InteractiveLabels;
   /** The compile fingerprint stamped on every action (`viewedVersion.compile`). */
   readonly compile?: string;
+  /**
+   * Require a SECOND, deliberate key for an approval: the first `y` / `n` only arms it (the frame
+   * says "press again"), and the same key, alone in a LATER chunk on the same frame, acts. Any other
+   * key disarms it. Default off. RECOMMENDED when the host reads a raw byte stream (see the known
+   * limits on `interactiveTerminal`).
+   */
+  readonly confirmConsent?: boolean;
+  /** The clock (ms) the bracketed-paste idle bound reads. Default `Date.now`; injected by tests. */
+  readonly now?: () => number;
+  /** A bracketed paste with no byte for this long is discarded. Default 2000. */
+  readonly pasteIdleMs?: number;
 }
 
 export interface PaintStats {
@@ -271,7 +343,17 @@ function widgetsOf(layout: Layout): Widget[] {
 const propLabel = (raw: unknown): string =>
   typeof raw === "string" ? oneLineChatText(raw, 80) : "";
 
-/** Run the renderer as a live, keyboard-driven session. */
+/**
+ * Run the renderer as a live, keyboard-driven session.
+ *
+ * Consent (`y` / `n`, a submit) acts only as the SOLE unit of an input chunk: every decoded unit
+ * counts, dropped escape sequences and non-printables included. KNOWN LIMITS, because a chunk
+ * boundary is all the terminal gives us: (1) a terminal WITHOUT bracketed paste delivers a one-char
+ * paste (`y`) as a one-key chunk, indistinguishable from a keypress; (2) a host that reads byte by
+ * byte (slow serial / ssh) makes every key a one-key chunk, so a multi-line non-bracketed paste can
+ * reach `\t`, `y`. For such hosts turn on `confirmConsent`, which asks for the same key again in a
+ * later chunk. Default off.
+ */
 export function interactiveTerminal(
   initial: Blueprint,
   opts: InteractiveOptions
@@ -289,6 +371,9 @@ export function interactiveTerminal(
     onInterrupt: _t,
     labels: _l,
     compile: _c,
+    confirmConsent: _cc,
+    now: _n,
+    pasteIdleMs: _pi,
     ...rest
   }) => rest)(opts);
 
@@ -301,6 +386,7 @@ export function interactiveTerminal(
   let current = "";
   let queue: Promise<void> = Promise.resolve();
   /** The APPROVE/REJECT already sent for a pending approval: further y/n are ignored until the frame moves. */
+  let armed: { readonly id: string; readonly fp: string; readonly char: string } | undefined;
   let answered: { readonly id: string; readonly fp: string } | undefined;
 
   const boundValue = (w: Widget): unknown => {
@@ -471,6 +557,9 @@ export function interactiveTerminal(
   }
 
   async function handle(key: Key, sole: boolean, snap: Snapshot): Promise<Outcome> {
+    // Any key but the confirming one disarms; the confirming key is checked below.
+    const wasArmed = armed;
+    armed = undefined;
     if (key.name === "interrupt") {
       (opts.onInterrupt ?? stop)();
       return "stop";
@@ -555,6 +644,15 @@ export function interactiveTerminal(
       // One answer per pending approval: until the frame moves (the host answered, or a new
       // version landed) a second y/n is ignored, so a repeat cannot double-submit.
       if (answered !== undefined && answered.id === c.id && answered.fp === snap.fp) return "stop";
+      if (
+        opts.confirmConsent === true &&
+        !(wasArmed?.id === c.id && wasArmed.fp === snap.fp && wasArmed.char === key.char)
+      ) {
+        const char = key.char ?? "";
+        armed = { id: c.id, fp: snap.fp, char };
+        note = labels?.confirm ?? `${char} ×2`;
+        return "stop";
+      }
       const approved = key.char === "y";
       const ok = await dispatch(
         { type: approved ? "APPROVE" : "REJECT", widgetId: c.id, payload: { approved } },
@@ -596,7 +694,10 @@ export function interactiveTerminal(
     await Promise.all(keys.map((k) => chunkOf([k])));
   }
 
-  const decode = createKeyDecoder();
+  const decode = createKeyDecoder({
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+    ...(opts.pasteIdleMs !== undefined ? { pasteIdleMs: opts.pasteIdleMs } : {}),
+  });
   const onData = (chunk: string | Uint8Array): void => {
     void chunkOf(decode(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8")));
   };
