@@ -18,7 +18,7 @@ concurrency:
 env:
   # the loom commit this repo is built and tested against; bump deliberately after rebuilding
   # ../loom at that commit and re-running the suite
-  LOOM_REF: c2ff76fd802190f4895cae961fb57204de316b12
+  LOOM_REF: f5a80a906f9a0e9ecc5ce555d577d750b86e5ac1
 jobs:
   ci:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
