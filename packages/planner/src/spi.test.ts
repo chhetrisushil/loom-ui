@@ -77,5 +77,9 @@ describe("PlannerMessage content is text or parts (loom R5)", () => {
       ])
     ).toThrow(/tainted/);
     expect(() => plannerMessageText([t()])).toThrow(/tainted/);
+    // a wrapper used as an element of a tool_result's parts is refused too, never skipped
+    expect(() =>
+      plannerMessageText([{ type: "tool_result", toolUseId: "t", content: [t()] }])
+    ).toThrow(/tainted/);
   });
 });
