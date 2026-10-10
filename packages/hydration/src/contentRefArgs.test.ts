@@ -7,6 +7,7 @@ import {
   type SemanticNode,
   genesis,
 } from "@loom-ui/core";
+import { TypedFailure } from "@loom/core";
 import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
@@ -531,6 +532,58 @@ describe("a content-reference refusal has its own public code", () => {
       { invoker: inv, contentRefArgs: table }
     );
     expect(!r.ok && r.finding.code).toBe("provider-failed");
+  });
+
+  // The order guard in `onlyFailure`: a refusal and a drift / empty are different failures, in either order.
+  const driftThenRefusal = (refusalFirst: boolean) => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (input) => {
+      const i = input as { toolName: string; expectedSchemaHash: string };
+      throw new TypedFailure("schemaDrift", {
+        toolName: i.toolName,
+        expectedSchemaHash: i.expectedSchemaHash,
+        observedHash: "v2",
+      });
+    });
+    const drift = mcpStep("a", "drifting", {});
+    const refused = mcpStep("b", "describe", { image: ADDR });
+    return executeProvider(providerSpec("h", refusalFirst ? [refused, drift] : [drift, refused]), {
+      invoker: inv,
+      contentRefArgs: table,
+    });
+  };
+  it.each([
+    ["drift before a refusal", false],
+    ["a refusal before drift", true],
+  ])("%s stays provider-failed (the refusal is not hidden)", async (_l, refusalFirst) => {
+    const r = await driftThenRefusal(refusalFirst);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("provider-failed");
+    expect(r.findings.map((f) => f.code)).toEqual(
+      expect.arrayContaining(["schema-drift", "media-arg-literal"])
+    );
+  });
+
+  it.each([
+    ["upstream-empty before a refusal", false],
+    ["a refusal before upstream-empty", true],
+  ])("%s stays provider-failed", async (_l, refusalFirst) => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ rows: [] }));
+    const top = mcpStep("top", "db.top");
+    const detail = mcpStep("detail", "db.detail", { sku: "{{steps.top.output.rows[0].sku}}" }, [
+      "top",
+    ]);
+    const refused = mcpStep("b", "describe", { image: ADDR });
+    const r = await executeProvider(
+      providerSpec("h", refusalFirst ? [refused, top, detail] : [top, detail, refused]),
+      { invoker: inv, contentRefArgs: table }
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.findings.map((f) => f.code)).toEqual(
+      expect.arrayContaining(["upstream-empty", "media-arg-literal"])
+    );
+    expect(r.finding.code).toBe("provider-failed");
   });
 
   it("serveHandle tells the client `content-ref-refused` (same text for a literal and a foreign param); onFinding gets the real code", async () => {

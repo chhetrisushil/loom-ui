@@ -66,4 +66,16 @@ describe("PlannerMessage content is text or parts (loom R5)", () => {
       plannerMessageText([{ type: "text", text: tainted("evil", "mcp:x") as never }])
     ).toThrow(/tainted/);
   });
+  it("refuses taint in a tool_result (its content, and text inside its parts) and a wrapper used as a whole part", () => {
+    const t = () => tainted("evil", "mcp:x") as never;
+    expect(() =>
+      plannerMessageText([{ type: "tool_result", toolUseId: "t", content: t() }])
+    ).toThrow(/tainted/);
+    expect(() =>
+      plannerMessageText([
+        { type: "tool_result", toolUseId: "t", content: [{ type: "text", text: t() }] },
+      ])
+    ).toThrow(/tainted/);
+    expect(() => plannerMessageText([t()])).toThrow(/tainted/);
+  });
 });
