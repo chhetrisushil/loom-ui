@@ -153,8 +153,11 @@ export function plannerMessageText(content: PlannerMessageContent): string {
         throw new Error(taintedMessage((c as TaintedValue<unknown>).__loomTainted.origin));
       if (typeof c === "string") out += c;
       else
-        for (const r of c as readonly PlannerContentPart[])
+        for (const r of c as readonly PlannerContentPart[]) {
+          if (isTainted(r))
+            throw new Error(taintedMessage((r as TaintedValue<unknown>).__loomTainted.origin));
           if (r.type === "text") out += plain(r.text);
+        }
     }
   }
   return out;
