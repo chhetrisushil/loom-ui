@@ -13,6 +13,7 @@ import { isMediaKind } from "./mediaRef";
 import {
   type ContainerNode,
   type ExperienceNode,
+  GRID_LINE_WARN_ABOVE,
   LocalizedText,
   MAX_TREE_DEPTH,
   type SemanticNode,
@@ -313,6 +314,16 @@ function checkPlacement(
   findings: Finding[]
 ): void {
   if (!isPlaced(n)) return;
+  for (const k of ["row", "rowSpan"] as const) {
+    const v = n[k];
+    if (v !== undefined && v > GRID_LINE_WARN_ABOVE)
+      findings.push({
+        code: "grid-line-extreme",
+        severity: "warn",
+        message: `"${n.id}": ${k} ${v} is past ${GRID_LINE_WARN_ABOVE} — the IR allows it (the grid grows implicit rows), but a placement this far out is usually a runaway plan`,
+        nodeId: n.id,
+      });
+  }
   if (parent === null || parent.direction !== "grid") {
     const keys = (["row", "rowSpan", "column"] as const).filter((k) => n[k] !== undefined);
     const where =

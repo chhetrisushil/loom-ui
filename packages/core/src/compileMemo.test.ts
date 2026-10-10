@@ -158,6 +158,23 @@ describe("compile memo", () => {
       expect(memo.hits).toBe(1);
       expect(memo.size).toBe(2);
     });
+    it("the same resolveLabelKey on two DIFFERENT resolvers never cross-serves", () => {
+      const memo = createCompileMemo();
+      const a = compile(exp, {
+        ...base(memo),
+        resolveLabel: (l) => `A ${l.fallback}`,
+        resolveLabelKey: "en",
+      });
+      const b = compile(exp, {
+        ...base(memo),
+        resolveLabel: (l) => `B ${l.fallback}`,
+        resolveLabelKey: "en",
+      });
+      expect(memo.hits).toBe(0);
+      expect(JSON.stringify(a.blueprint)).toContain("A Label");
+      expect(JSON.stringify(b.blueprint)).toContain("B Label");
+      expect(JSON.stringify(b.blueprint)).not.toContain("A Label");
+    });
     it("a registry disables the memo", () => {
       const memo = createCompileMemo();
       const registry = new RendererRegistry<unknown>();
@@ -165,6 +182,25 @@ describe("compile memo", () => {
       compile(exp, { ...base(memo), registry });
       expect(memo.size).toBe(0);
     });
+  });
+
+  it("a reloaded-equal copy is a plain compile and does not evict the held object's entry", () => {
+    const memo = createCompileMemo();
+    compile(exp, base(memo));
+    const reloaded = structuredClone(exp);
+    const r = compile(reloaded, base(memo));
+    expect([memo.hits, memo.misses]).toEqual([0, 2]);
+    expect(r).toEqual(compile(exp, { ...base(memo), memo: false }));
+    compile(exp, base(memo)); // the holder still hits
+    expect(memo.hits).toBe(1);
+  });
+
+  it("a stale-hash spread cannot displace the genuine entry", () => {
+    const memo = createCompileMemo();
+    compile(exp, base(memo));
+    compile({ ...exp, intent: { objective: "forged", source: "user" as const } }, base(memo));
+    compile(exp, base(memo));
+    expect(memo.hits).toBe(1);
   });
 
   it("a stale-hash spread (same hash, different content) is a miss, not a stale hit", () => {

@@ -22,6 +22,12 @@ export const GRID_COLUMNS = 12;
 export const Span = z.number().int().min(1).max(GRID_COLUMNS);
 /** A 1-based grid line or extent — a node's `row` or `rowSpan` (loom ADR 0098 D1). No upper bound: a grid grows implicit rows. */
 export const GridLine = z.number().int().min(1);
+/**
+ * A `row` / `rowSpan` past this draws a `grid-line-extreme` WARN from `validateExperience`. The IR
+ * stays unbounded (ADR 0098 D1: a grid grows implicit rows), so nothing is rejected; the threshold
+ * only flags a runaway planner output. Exactly this value is fine; one more warns.
+ */
+export const GRID_LINE_WARN_ABOVE = 1000;
 /** A start column, 1-based, inside the grid: the node occupies `column..column+span-1`. */
 export const GridColumn = z.number().int().min(1).max(GRID_COLUMNS);
 /**

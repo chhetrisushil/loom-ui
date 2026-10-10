@@ -395,6 +395,12 @@ function place(n: ExperienceNode, op: SetPlacement): ExperienceNode {
  */
 export interface ApplyOptions {
   readonly allowDeclassify?: boolean;
+  /**
+   * Replaying RECORDED history: a `bindProvider` to an undeclared handle applies (the strict
+   * `missing-provider` check is a write-path rule; older versions legally did this). Never set it
+   * for a new write.
+   */
+  readonly legacyBind?: boolean;
 }
 
 /** Fold the classes the current handles carry into their tools, so a later retirement keeps them. */
@@ -672,6 +678,8 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
       // node binds it: an undeclared one renders a permanently empty widget (`unknown-handle`).
       if (
         op.type === "bindProvider" &&
+        opts.legacyBind !== true &&
+        target.binding?.handle !== op.handle && // a re-pin of the CURRENT handle is not a new bind
         !Object.prototype.hasOwnProperty.call(base.providers, op.handle)
       )
         return refuse(
@@ -894,7 +902,7 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
       // never having happened; `next` produces the unsealed child the other cases do.
       return op.materialized.length === 0
         ? { ok: true, value: next(base, {}) }
-        : replay(base, op.materialized); // no authority forwarded: a declassify was refused above
+        : replay(base, op.materialized, opts.legacyBind === true ? { legacyBind: true } : {}); // no authority forwarded: a declassify was refused above
   }
 }
 

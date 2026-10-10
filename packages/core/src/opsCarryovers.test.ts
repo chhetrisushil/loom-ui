@@ -163,3 +163,23 @@ describe("bindProvider refuses an undeclared handle", () => {
     expect(apply(gone, { type: "bindProvider", nodeId: "m", handle: "h" }).ok).toBe(false);
   });
 });
+
+describe("bindProvider re-pin of the node's current handle", () => {
+  it("is accepted on write even when that handle was never declared; a NEW undeclared handle is refused unless legacyBind", () => {
+    const legacy = must(
+      replay(g, [ins(metric("m", { binding: { handle: "ghost", priority: "P1" } }))])
+    );
+    const repin = apply(legacy, {
+      type: "bindProvider",
+      nodeId: "m",
+      handle: "ghost",
+      priority: "P0",
+    });
+    expect(repin.ok).toBe(true);
+    const fresh = apply(legacy, { type: "bindProvider", nodeId: "m", handle: "other" });
+    expect(!fresh.ok && fresh.finding.code).toBe("missing-provider");
+    expect(
+      apply(legacy, { type: "bindProvider", nodeId: "m", handle: "other" }, { legacyBind: true }).ok
+    ).toBe(true);
+  });
+});
