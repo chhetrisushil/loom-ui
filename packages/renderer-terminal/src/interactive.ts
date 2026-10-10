@@ -133,6 +133,9 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
   let overflow = false;
   let carry = "";
   let lastByteAt = 0;
+  // After an idle-abandon the rest of the stalled paste may still arrive: drain (discard) it up to
+  // the end marker, Ctrl-C, or a second idle period, so it is never typed.
+  let draining = false;
   const leavePaste = (): void => {
     pasting = undefined;
     overflow = false;
@@ -141,7 +144,29 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
   return (chunk) => {
     const keys: Key[] = [];
     let i = 0;
-    if (pasting !== undefined && now() - lastByteAt > idleMs) leavePaste();
+    if (pasting !== undefined && now() - lastByteAt > idleMs) {
+      leavePaste();
+      draining = true;
+    } else if (draining && now() - lastByteAt > idleMs) draining = false;
+    if (draining) {
+      lastByteAt = now();
+      const text = carry + chunk;
+      const lead = carry.length;
+      carry = "";
+      const end = text.indexOf(PASTE_END);
+      const ctrl = text.indexOf("\x03");
+      if (ctrl !== -1 && (end === -1 || ctrl < end)) {
+        draining = false;
+        keys.push({ name: "interrupt" });
+        i = ctrl - lead + 1;
+      } else if (end !== -1) {
+        draining = false;
+        i = end - lead + PASTE_END.length;
+      } else {
+        carry = markerTail(text);
+        return keys;
+      }
+    }
     while (i < chunk.length) {
       if (pasting !== undefined) {
         lastByteAt = now();

@@ -384,3 +384,116 @@ describe("content refs that are not artifacts", () => {
     expect(await r.content.get(media)).not.toBeNull();
   });
 });
+
+describe("pins cost: each distinct retained artifact is read once, with bounded concurrency", () => {
+  /** Count (and optionally gate) the content store's reads. */
+  function spy(r: Rig, onGet?: (address: string) => Promise<void>) {
+    const reads: string[] = [];
+    const orig = r.content.get.bind(r.content);
+    (r.content as { get: typeof orig }).get = async (ref) => {
+      reads.push(typeof ref === "string" ? ref : (ref as { __loomContent: string }).__loomContent);
+      await onGet?.(reads.at(-1) as string);
+      return orig(ref);
+    };
+    return reads;
+  }
+  const drain = async (it: AsyncIterable<string>) => {
+    const out: string[] = [];
+    for await (const a of it) out.push(a);
+    return out;
+  };
+
+  it("an artifact reachable twice (a stream a paged listing returns twice) is read once", async () => {
+    // Artifacts embed their parents and line, so distinct versions rarely share one; the address
+    // dedupe covers what does repeat. A listing that returns a stream twice stands in for it.
+    const r = await rig();
+    await line(r.lin, "e", 6);
+    const list = r.events.listStreams?.bind(r.events);
+    if (list === undefined) throw new Error("rig store cannot list");
+    (r.events as { listStreams: typeof list }).listStreams = async function* () {
+      for await (const id of list()) {
+        yield id;
+        yield id;
+      }
+    };
+    const reads = spy(r);
+    const roots = await drain(r.lin.pins({ keepLast: 100 }));
+    expect(reads.length).toBe(6); // not 12
+    expect(new Set(reads).size).toBe(6);
+    expect(new Set(roots).size).toBe(roots.length);
+  });
+
+  it("at most `concurrency` reads of a line are in flight, and more than one with the default", async () => {
+    for (const [concurrency, expected] of [
+      [1, 1],
+      [3, 3],
+    ] as const) {
+      const r = await rig();
+      await line(r.lin, "e", 10);
+      let inFlight = 0;
+      let peak = 0;
+      spy(r, async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((res) => setImmediate(res));
+        inFlight--;
+      });
+      await drain(r.lin.pins({ keepLast: 100 }, { concurrency }));
+      expect(peak).toBe(expected);
+    }
+    const r = await rig();
+    await line(r.lin, "e", 10);
+    let inFlight = 0;
+    let peak = 0;
+    spy(r, async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((res) => setImmediate(res));
+      inFlight--;
+    });
+    await drain(r.lin.pins({ keepLast: 100 }));
+    expect(peak).toBe(8);
+  });
+
+  it("a malformed concurrency throws", async () => {
+    const r = await rig();
+    await line(r.lin, "e", 2);
+    for (const c of [0, -1, 1.5, Number.NaN])
+      await expect(drain(r.lin.pins({}, { concurrency: c }))).rejects.toThrow(/concurrency/);
+  });
+
+  it("stays fail-closed: an unreadable artifact throws before the line yields anything; a missing one is skipped", async () => {
+    const r = await rig();
+    const h = await line(r.lin, "e", 6);
+    const bad = ok(await r.lin.get("e", h[3] as string));
+    void bad;
+    const orig = r.content.get.bind(r.content);
+    let broken = true;
+    (r.content as { get: typeof orig }).get = async (ref) => {
+      const a = (ref as { __loomContent: string }).__loomContent;
+      if (broken && a === (await currentRef(r, h[3] as string))) throw new Error("disk on fire");
+      return orig(ref);
+    };
+    const got: string[] = [];
+    await expect(
+      (async () => {
+        for await (const a of r.lin.pins({ keepLast: 100 })) got.push(a);
+      })()
+    ).rejects.toThrow(/disk on fire|artifact/);
+    expect(got).toEqual([]);
+    broken = false;
+    expect((await drain(r.lin.pins({ keepLast: 100 }))).length).toBeGreaterThan(0);
+  });
+});
+
+async function currentRef(r: Rig, versionHash: string): Promise<string> {
+  const state = await (
+    r.lin as unknown as {
+      state(id: string): Promise<{
+        ok: true;
+        value: { versions: Map<string, { ref: { __loomContent: string } }> };
+      }>;
+    }
+  ).state("e");
+  return state.value.versions.get(versionHash)?.ref.__loomContent as string;
+}

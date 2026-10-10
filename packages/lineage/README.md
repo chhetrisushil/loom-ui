@@ -47,7 +47,10 @@ NOT passed as an `eventStore`. `retainedVersions(state, policy, branchSources)` 
 version is left out, so that blob becomes reclaimable; every other ref a line's events cite (anything an op carries) stays
 pinned, and so does every content ref found INSIDE a retained artifact's bytes (the sweep does not read blobs).
 It refuses (throws) over a store that cannot enumerate its lines, a line that does not fold, or a retained artifact it cannot
-read. A malformed policy THROWS (NaN, negative or fractional `keepLast`; a `keepSince` that is not an ISO-8601 date/time string, a valid `Date` or epoch ms): a deletion policy never coerces.
+read. **Cost.** `pins` reads each distinct retained artifact once per call (deduplicated by content address across lines and versions; artifacts embed
+their parents and line, so distinct versions seldom share one and the dedupe is a safety net, the real saving is concurrency), with at most `extra.concurrency` (default 8) reads of one line in flight; a read error
+other than "already gone" throws before that line yields. Reads are O(retained versions), at `concurrency` per line; a lower `keepLast`
+shrinks it directly. A malformed policy THROWS (NaN, negative or fractional `keepLast`; a `keepSince` that is not an ISO-8601 date/time string, a valid `Date` or epoch ms): a deletion policy never coerces.
 
 **Build `roots` with `rootsFor`, always.** `rootsFor({ lineages: [{ lineage, policy }, ...], seenLogs?, allowUnreadable?, extra? })`
 returns the ONE async iterable of addresses loom's `sweepUnpinnedContent({ roots: () => rootsFor(...), completeScan: true })` needs:
