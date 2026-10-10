@@ -287,7 +287,8 @@ and the choice is made with `decideWithRollout`, with `unit` as the traffic key.
 the version that ACTED, its propensity and the rollout stamp (mode, bucket, shadow arm, `fellBack`),
 so a shadow candidate never serves, a canary unit gets the candidate's variant stamped with the
 candidate's version, and `linkFromLedger` / U11 rewards attribute to the right version.
-`report.variant.policy` is then the acting `{ id, version }` and `report.variant.rollout` the stamp.
+`report.variant.policy` is then the acting `{ id, version }` and `report.variant.rollout` the stamp
+(on a replay `version` is omitted: the log's recorded stamp is the truth).
 Like `propensity`, both are claimed only for a choice this run made; a replay serves the recorded
 choice and the log keeps its stamp. A registry with no live version is a `variant-policy-failed`
 finding, no model call.
