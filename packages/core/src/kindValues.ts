@@ -16,7 +16,12 @@ import type { Finding } from "./experience";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import type { SemanticFormat, TableColumn } from "./values";
 
-/** The kinds this framework adds over loom's built-ins. */
+/**
+ * The kinds this framework adds over loom's built-ins. This list GROWS as vocabulary slices land (charts and
+ * tables, then chat and media, ...): treat it as an open set. A host that renders a subset should check that its
+ * kinds are present (`expect(FRAMEWORK_KINDS).toEqual(expect.arrayContaining([...]))`) rather than pin the
+ * length or the whole list, or every new slice breaks it.
+ */
 export const FRAMEWORK_KINDS = [
   "TimeSeries",
   "BarChart",
