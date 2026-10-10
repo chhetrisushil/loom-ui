@@ -1,6 +1,6 @@
 // `@loom-ui/renderer-lit/chat` — the chat and input widgets (U8), opt-in.
 //
-// Importing this registers the `lu-chat`, `lu-text-input`, `lu-form-input` and `lu-select-input`
+// Creating a registry here (or `registerChatWidgets`) defines the `lu-chat`, `lu-text-input`, `lu-form-input` and `lu-select-input`
 // elements. It is its own entry, like the media widgets, so a page that draws no conversation does
 // not pay for them. The kinds themselves (and the `ChatValue` contract) are universal and live in
 // `@loom-ui/core`; this entry is only how the web surface DRAWS them. File upload in a conversation
@@ -17,10 +17,10 @@
 
 import { CHAT_INPUT_KINDS, CHAT_KIND } from "@loom-ui/core/chat-ui";
 import type { CatalogEntry } from "@loom/blueprint-runtime";
+import { defineChat } from "./define/lu-chat";
+import { defineInputs } from "./define/lu-inputs";
 import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";
 import type { DomRegistry } from "./dom/registry";
-import "./widgets/lu-chat";
-import "./widgets/lu-inputs";
 
 export { LuChat } from "./widgets/lu-chat";
 export { LuFormInput, LuSelectInput, LuTextInput } from "./widgets/lu-inputs";
@@ -49,6 +49,8 @@ export function registerChatWidgets(
   registry: DomRegistry,
   opts: LitRegistryOptions = {}
 ): DomRegistry {
+  defineChat();
+  defineInputs();
   for (const kind of [CHAT_KIND, ...CHAT_INPUT_KINDS])
     registry.register(kind, elementRenderer(TAGS[kind] as string, opts));
   return registry;

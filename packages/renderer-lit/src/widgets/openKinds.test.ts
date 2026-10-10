@@ -2,6 +2,7 @@ import { type TemplateResult, html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { describe, expect, it } from "vitest";
 import { elementRenderer } from "../dom/litRegistry";
+import "../register";
 import { LuWidget } from "./base";
 
 // U13 review round 1: a host's own kind rendered by a Lit widget is checked against the host's

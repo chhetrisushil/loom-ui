@@ -15,7 +15,7 @@ import {
   validateTextValue,
 } from "@loom-ui/core/chat-ui";
 import { type PropertyValues, type TemplateResult, html, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 
 import { say } from "../say";
 import { titleText } from "../title";
@@ -55,7 +55,6 @@ abstract class LuInput extends LuWidget {
 
 type Phase = "idle" | "sending" | "sent" | DispatchResult | "invalid";
 
-@customElement("lu-text-input")
 export class LuTextInput extends LuInput {
   readonly kind = "TextInput";
   @state() private draft = "";
@@ -163,7 +162,6 @@ export class LuTextInput extends LuInput {
 
 // ── FormInput ─────────────────────────────────────────────────────────────────────────────────────
 
-@customElement("lu-form-input")
 export class LuFormInput extends LuInput {
   readonly kind = "FormInput";
   @state() private raw: Record<string, string | boolean> = {};
@@ -326,7 +324,6 @@ export class LuFormInput extends LuInput {
 
 // ── SelectInput ───────────────────────────────────────────────────────────────────────────────────
 
-@customElement("lu-select-input")
 export class LuSelectInput extends LuInput {
   readonly kind = "SelectInput";
   @state() private picked = "";

@@ -6,7 +6,7 @@ import {
   customWidget$,
 } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
-import "./index";
+import "../register";
 
 const mount = async <T extends HTMLElement>(
   tag: string,

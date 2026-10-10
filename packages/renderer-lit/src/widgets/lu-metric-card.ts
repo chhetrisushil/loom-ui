@@ -1,9 +1,7 @@
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import { type SemanticFormat, effectiveFormat, measure, unitSuffix } from "../format";
 import { LuWidget } from "./base";
 
-@customElement("lu-metric-card")
 export class LuMetricCard extends LuWidget {
   readonly kind = "MetricCard";
 

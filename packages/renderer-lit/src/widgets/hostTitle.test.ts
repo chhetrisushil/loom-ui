@@ -1,7 +1,7 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { createLitRegistry, litRegistry } from "../dom/litRegistry";
-import "./index";
+import "../register";
 
 // G13: a host that draws its own chrome (title bar, frame) must be able to get a widget BODY
 // without a second title. `chrome="host"` removes every VISIBLE title; the accessible name keeps it.

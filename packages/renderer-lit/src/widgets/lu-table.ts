@@ -6,7 +6,7 @@ import {
 } from "@loom-ui/core/browser";
 import { pluralForms } from "@loom-ui/core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
 import { formattingLocale } from "../i18n";
@@ -40,7 +40,6 @@ function compareCells(a: TableCell, b: TableCell): number {
 // each numeric cell formatted with ITS column's semantics. Rendering walks the columns, so a
 // surplus cell is not shown and a missing one is "—" — unlike loom's DataTable, which stays
 // records.
-@customElement("lu-table")
 export class LuTable extends LuWidget {
   readonly kind = "Table";
 

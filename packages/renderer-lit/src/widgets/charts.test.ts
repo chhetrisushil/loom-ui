@@ -1,7 +1,7 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { setLocale } from "../i18n";
-import "./index";
+import "../register";
 
 const b = { projectionId: "hydration", path: "values.h" };
 const mount = async (tag: string, props: Record<string, unknown>): Promise<HTMLElement> => {

@@ -2,7 +2,7 @@ import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it, vi } from "vitest";
 import * as i18n from "../i18n";
 import { setLocale } from "../i18n";
-import "./index";
+import "../register";
 
 const b = { projectionId: "hydration", path: "values.h" };
 type Mounted = HTMLElement & { updateComplete: Promise<unknown> };

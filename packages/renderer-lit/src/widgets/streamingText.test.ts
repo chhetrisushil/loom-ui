@@ -1,6 +1,6 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
-import "./index";
+import "../register";
 
 type El = HTMLElement & { updateComplete: Promise<unknown> };
 const widget = customWidget$({

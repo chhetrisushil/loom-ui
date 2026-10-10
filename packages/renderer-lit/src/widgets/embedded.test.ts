@@ -1,6 +1,6 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
-import "./index";
+import "../register";
 
 const b = { projectionId: "hydration", path: "values.h" };
 type Mounted = HTMLElement & { updateComplete: Promise<unknown> };

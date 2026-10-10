@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { frameMessage } from "../sandbox/protocol";
 import { createLitRegistry, renderBlueprintDom } from "./index";
 import type { DomWidgetRenderer } from "./registry";
+import "../register";
 
 const bind = (h: string) => ({
   projectionId: HYDRATION_PROJECTION_ID,

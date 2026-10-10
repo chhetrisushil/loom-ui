@@ -1,6 +1,6 @@
 import { type BindingStatus, MetricCard } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
-import "./index";
+import "../register";
 
 // ── The status matrix, Lit side ───────────────────────────────────────────────
 // The SAME ten rows are asserted against the terminal surface in

@@ -1,7 +1,7 @@
 import { pluralForms } from "@loom-ui/core/messages";
 import type { Widget } from "@loom/blueprint-runtime";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
 
@@ -33,7 +33,6 @@ function compareCells(a: unknown, b: unknown): number {
   return as < bs ? -1 : as > bs ? 1 : 0;
 }
 
-@customElement("lu-data-table")
 export class LuDataTable extends LuWidget {
   readonly kind = "DataTable";
 

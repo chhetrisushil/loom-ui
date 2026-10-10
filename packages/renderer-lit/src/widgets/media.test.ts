@@ -1,7 +1,7 @@
 import type { MediaRequest, MediaResolution, MediaResolver } from "@loom-ui/core/media";
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import "./lu-media";
+import "../elements/lu-media";
 
 // U9: the media widgets. The address is a capability and never a locator: it must not appear in any
 // rendered state, a resolver's refusal and failure look identical, and only a re-checked

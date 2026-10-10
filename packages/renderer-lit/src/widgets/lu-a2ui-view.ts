@@ -1,6 +1,6 @@
 import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type TemplateResult, css, html, nothing } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { property } from "lit/decorators.js";
 import { type A2UIRender, type A2UIView, planView } from "../a2ui/plan";
 import { localized } from "../i18n";
 import { say } from "../say";
@@ -18,10 +18,9 @@ import { say } from "../say";
 // guarding, binding resolution) live in `planView` in `../a2ui/plan` and are unit-
 // tested there; this element is a thin, deterministic map from that plan to DOM.
 // A Button dispatches an `a2ui-action` event (composed, bubbling) carrying its
-// `action` name and optional `context` — the inbound leg the studio/egress bridge
+// `action` name and optional `context` — the inbound leg the host/egress bridge
 // turns into a Loom event.
 
-@customElement("lu-a2ui-view")
 export class LuA2UIView extends LitElement {
   /** The component tree to render (with its catalog id). */
   @property({ attribute: false }) view!: A2UIView;

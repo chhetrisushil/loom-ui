@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { localized } from "../i18n";
 import { say } from "../say";
 
@@ -12,7 +12,7 @@ export interface TimeRange {
 
 // A dashboard-level time-range control. Presets cover the common windows; the
 // Custom option reveals two date inputs. Emits `lu-time-range` with a
-// TimeRange; the studio re-hydrates every time-bound widget for the new window.
+// TimeRange; the host re-hydrates every time-bound widget for the new window.
 
 // Labels are resolved per render, not once at module load: t() must run after the
 // locale is active, and again after the user switches it.
@@ -24,7 +24,6 @@ const presets = (): { key: TimeRangePreset; label: string }[] => [
   { key: "12m", label: say("lu.range.12m") },
 ];
 
-@customElement("lu-time-range-picker")
 export class LuTimeRangePicker extends LitElement {
   @property({ attribute: false }) value?: TimeRange;
   @state() private customOpen = false;

@@ -1,13 +1,11 @@
 import { DELTA_FORMAT, type KpiValue, deltaDirection, unitSuffix } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import { type SemanticFormat, effectiveFormat, measure } from "../format";
 import { LuWidget } from "./base";
 
 // A value in its own semantics, a ▲/▼ change badge (none when flat), and the widget title with
 // the value's own label as a caption beside it — richer than loom's MetricCard, which stays a
 // bare number.
-@customElement("lu-kpi")
 export class LuKpi extends LuWidget {
   readonly kind = "Kpi";
 

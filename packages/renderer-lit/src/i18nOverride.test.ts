@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { describeValue, emptyStateText } from "./a11y";
 import { placeholderFor } from "./dom/registry";
 import { configureI18n, currentLocale, setLocale } from "./i18n";
-import "./widgets/index";
+import "./register";
 
 // U14: the host override. With none, English (the rest of the suite proves that, byte for byte); with
 // one, every fixed word a renderer prints comes from the host.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { currentLocale, setLocale } from "../i18n";
 import { frameMessage } from "../sandbox/protocol";
-import "./index";
+import "../register";
 
 const mount = async <T extends HTMLElement>(
   tag: string,

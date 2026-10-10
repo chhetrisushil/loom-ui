@@ -5,6 +5,7 @@ import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { litRegistry } from "./litRegistry";
 import { renderBlueprintDom } from "./renderBlueprintDom";
+import "../register";
 
 // ── The seam, end to end ──────────────────────────────────────────────────────
 // Every other test in this package exercises ONE of: the DOM adapter (with a fake registry),
