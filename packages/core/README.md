@@ -410,7 +410,7 @@ replaces the live text under the same id), deltas for a restricted turn, or for 
 are not rendered (the server already sends them to the asker alone; this is the second line), the live reply is
 bounded like any stream (`appendChunk`, 64 K), the window is bounded (default and ceiling 500; a full window offers no
 "load earlier" that could not fit), the server's `error` event text is never read. The browser transport is
-`connectConversation` in `@loom-ui/hydration/client`. On the SERVER, `chatValueFromHistory(page, { viewer })` is the same fold over one history page: a host
+`connectConversation` in `@loom-ui/hydration/client`. On the SERVER, `chatValueFromHistory(page, { viewer })` is the same fold over one history page (fetch it with `GET .../history?direction=backward`, the newest page: loom's route defaults to `forward` when `direction` is omitted, and `direction` here must match how the page was fetched): a host
 effect that wraps `Conversations.history` (loom has already filtered it for the viewer) returns it, a `loom-effect`
 provider binds it to the `Chat` widget with `outputCheck: "contract"` for the first paint or a split-hydration payload,
 and `connectConversation` takes over in the browser.
