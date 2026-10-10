@@ -72,3 +72,5 @@ export type { SeenGcOptions, SeenGcReport, SeenGcResult } from "./seenGc";
 
 export { DEFAULT_KEEP_LAST, retainedVersions, validateRetentionPolicy } from "./retention";
 export type { Retained, RetentionPolicy } from "./retention";
+export { rootsFor } from "./rootsFor";
+export type { RootsForOptions } from "./rootsFor";

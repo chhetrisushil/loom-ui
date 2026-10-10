@@ -18,8 +18,12 @@ export interface RetentionPolicy {
    * "keep nothing".
    */
   readonly keepLast?: number;
-  /** Also keep every version authored at or after this instant (ISO-8601, compared as a date). An unparseable value THROWS. */
-  readonly keepSince?: string;
+  /**
+   * Also keep every version authored at or after this instant: an ISO-8601 date or date-time string
+   * (`2026-10-01`, `2026-10-01T00:00:00Z`), a `Date`, or epoch milliseconds. Anything else THROWS
+   * (lenient parsing would read `"1"` as the year 2001).
+   */
+  readonly keepSince?: string | number | Date;
   /**
    * Keep the line's first version (default `true`): the genesis anchors `verify`'s replay and is the
    * one version every other is derived from.
@@ -30,6 +34,16 @@ export interface RetentionPolicy {
 }
 
 export const DEFAULT_KEEP_LAST = 20;
+
+const ISO_8601 = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/** `keepSince` as epoch milliseconds; NaN when it is not a strict ISO-8601 string, a valid Date or a finite number. */
+function keepSinceMs(v: unknown): number {
+  if (typeof v === "string") return ISO_8601.test(v) ? Date.parse(v) : Number.NaN;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "number") return Number.isFinite(v) ? v : Number.NaN;
+  return Number.NaN;
+}
 
 /**
  * Refuse a policy that does not mean what its author meant. A deletion policy must not coerce: NaN,
@@ -51,10 +65,10 @@ export function validateRetentionPolicy(policy: RetentionPolicy): void {
         `keepLast must be a non-negative integer or Infinity (keep all), got ${String(keepLast)}`
       );
   }
-  if (keepSince !== undefined) {
-    if (typeof keepSince !== "string" || Number.isNaN(Date.parse(keepSince)))
-      bad(`keepSince must be a parseable ISO-8601 date string, got ${String(keepSince)}`);
-  }
+  if (keepSince !== undefined && Number.isNaN(keepSinceMs(keepSince)))
+    bad(
+      `keepSince must be an ISO-8601 date/time string, a valid Date or epoch milliseconds, got ${String(keepSince)}`
+    );
   if (keepGenesis !== undefined && typeof keepGenesis !== "boolean")
     bad("keepGenesis must be a boolean");
   if (keep !== undefined && typeof keep !== "function") bad("keep must be a function");
@@ -91,7 +105,7 @@ export function retainedVersions(
 
   if ((policy.keepGenesis ?? true) && order.length > 0) keep.add(order[0] as string);
 
-  const since = policy.keepSince === undefined ? Number.NaN : Date.parse(policy.keepSince);
+  const since = policy.keepSince === undefined ? Number.NaN : keepSinceMs(policy.keepSince);
   for (const h of order) {
     const v = state.versions.get(h) as VersionRecord;
     if (!Number.isNaN(since)) {
