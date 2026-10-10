@@ -164,6 +164,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     const mod = load(resolve(DIST, "index.js")) as Record<string, unknown>;
     expect(Object.keys(mod).sort()).toEqual([
       "ContentRefConfigError",
+      "DEFAULT_CACHE_MAX_ENTRIES",
       "DEFAULT_DATA_PROVIDERS",
       "DEFAULT_MAX_BATCH",
       "DEFAULT_MAX_CONCURRENT_CALLS",
