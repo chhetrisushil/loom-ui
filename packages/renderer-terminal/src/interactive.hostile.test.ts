@@ -233,14 +233,36 @@ describe("paste mode always ends, and a lone key is alone", () => {
     expect(d("y\ty")).toEqual([]);
     expect(d(`${END}y`)).toEqual([{ name: "char", char: "y" }]);
   });
-  it("an idle paste is abandoned by an injected clock, not a sleep", () => {
-    let t = 0;
-    const d = createKeyDecoder({ now: () => t, pasteIdleMs: 2000 });
-    expect(d("\x1b[200~abc")).toEqual([]);
-    t = 1999;
-    expect(d("def")).toEqual([]);
-    t = 1999 + 2001;
-    expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+  describe("a stalled paste's remainder is drained, never typed", () => {
+    const stalled = () => {
+      const clock = { t: 0 };
+      const d = createKeyDecoder({ now: () => clock.t, pasteIdleMs: 2000 });
+      expect(d("\x1b[200~abc")).toEqual([]);
+      clock.t = 1999;
+      expect(d("def")).toEqual([]); // still within the idle bound: pasted text
+      clock.t = 1999 + 2001; // idle longer than the bound
+      return { d, clock };
+    };
+    it("the remainder and the end marker (even split) yield no keys, then typing resumes", () => {
+      const { d, clock } = stalled();
+      expect(d("rest\ty\n")).toEqual([]);
+      clock.t += 100;
+      expect(d("more\x1b[20")).toEqual([]);
+      clock.t += 100;
+      expect(d("1~")).toEqual([]);
+      expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+    });
+    it("Ctrl-C leaves the drain and is delivered as an interrupt", () => {
+      const { d } = stalled();
+      expect(d("junk\x03y")).toEqual([{ name: "interrupt" }, { name: "char", char: "y" }]);
+      expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+    });
+    it("a second idle period with no input resumes normal decoding", () => {
+      const { d, clock } = stalled();
+      expect(d("tail")).toEqual([]);
+      clock.t += 2001;
+      expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+    });
   });
   it("a dropped sequence or non-printable beside `y` disqualifies it", async () => {
     for (const chunk of ["\x1b[Cy", "\x1b]52;c;AAAA\x07y", "y\x1b[C", "‮y", "\x00y"]) {

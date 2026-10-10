@@ -155,6 +155,35 @@ export interface PinsExtra {
   readonly keepVersions?: Iterable<{ readonly experienceId: string; readonly versionHash: string }>;
   /** Addresses of other users of the same store (e.g. a seen log's sealed value blobs). */
   readonly keepAddresses?: Iterable<string> | AsyncIterable<string>;
+  /**
+   * How many retained artifacts of ONE line are read at once, to find the refs inside their bytes.
+   * Default 8; a positive integer (anything else throws). 1 reads strictly one after another.
+   */
+  readonly concurrency?: number;
+}
+
+/** Run `fn` over `items` with at most `limit` in flight; rejects on the first failure (nothing after it starts). */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async (): Promise<void> => {
+    while (!failed && next < items.length) {
+      const i = next++;
+      try {
+        out[i] = await fn(items[i] as T);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
@@ -256,6 +285,9 @@ export class Lineage {
     extra: PinsExtra = {}
   ): AsyncGenerator<string, void, undefined> {
     validateRetentionPolicy(policy);
+    const concurrency = extra.concurrency ?? 8;
+    if (!Number.isInteger(concurrency) || concurrency < 1)
+      throw new Error("Lineage.pins: concurrency must be a positive integer");
     if (this.events.listStreams === undefined)
       throw new Error("Lineage.pins: the LineageStore cannot enumerate its lines");
     // Pass 1: the versions that must outlive their referrers: other lines' forks, and `extra`.
@@ -274,6 +306,7 @@ export class Lineage {
     }
     // Pass 2: the roots.
     const yielded = new Set<string>();
+    const walked = new Set<string>();
     const pending: string[] = [];
     const emit = (a: string) => {
       if (yielded.has(a)) return;
@@ -300,17 +333,27 @@ export class Lineage {
           emit(a);
         });
       }
-      // Refs that live only inside a retained artifact's bytes.
+      // Refs that live only inside a retained artifact's bytes. Artifacts are content-addressed, so
+      // versions (and forks) that share an artifact are read ONCE per call; a line's reads run with
+      // bounded concurrency and any failure but "missing" throws before this line yields anything.
+      const toWalk: ContentRef[] = [];
       for (const h of keep) {
         const v = fold.state.versions.get(h);
         if (v === undefined) continue;
-        const art = await getExperience(this.content, v.ref as ContentRef);
-        if (!art.ok) {
-          if (art.finding.code === "artifact-missing") continue; // already gone: nothing inside to root
-          throw new Error(`Lineage.pins: "${id}" version ${h}: ${art.finding.message}`);
-        }
-        walkContentRefs(art.experience, emit);
+        const ref = v.ref as ContentRef;
+        if (walked.has(ref.__loomContent)) continue;
+        walked.add(ref.__loomContent);
+        toWalk.push(ref);
       }
+      const arts = await mapLimit(toWalk, concurrency, async (ref) => {
+        const art = await getExperience(this.content, ref);
+        if (art.ok) return art.experience;
+        if (art.finding.code === "artifact-missing") return undefined; // already gone: nothing inside to root
+        throw new Error(
+          `Lineage.pins: "${id}" artifact ${ref.__loomContent}: ${art.finding.message}`
+        );
+      });
+      for (const exp of arts) if (exp !== undefined) walkContentRefs(exp, emit);
       while (pending.length > 0) yield pending.shift() as string;
     }
     if (extra.keepAddresses !== undefined)
