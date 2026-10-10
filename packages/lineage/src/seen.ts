@@ -22,7 +22,7 @@ import {
   encodeValue,
 } from "@loom/plugin-content";
 import { z } from "zod";
-import type { Lineage, LineageResult } from "./lineage";
+import type { Lineage, LineageResult, Refused } from "./lineage";
 import {
   MAX_SEALED_ADDRESS_CHARS,
   type SeenKeyStore,
@@ -204,12 +204,22 @@ export interface SeenLogOptions {
   readonly readPolicy?: ReadPolicy;
 }
 
-export type SeenRefusal = { readonly code: string; readonly message: string };
+/**
+ * Why a seen-log call did not happen. It IS a lineage `Refused` (`kind`, `finding`), so a
+ * `SeenResult<T>` is assignable to a `LineageResult<T>`, and it keeps the flat `code` / `message`
+ * every seen-log caller already reads (the same values as `finding.code` / `finding.message`).
+ */
+export type SeenRefusal = Refused & { readonly code: string; readonly message: string };
 export type SeenResult<T> = { ok: true; value: T } | { ok: false; refusal: SeenRefusal };
 
 const refused = (code: string, message: string): { ok: false; refusal: SeenRefusal } => ({
   ok: false,
-  refusal: { code, message },
+  refusal: {
+    kind: "refused",
+    finding: { code, severity: "error", message },
+    code,
+    message,
+  },
 });
 
 export interface SeenView {

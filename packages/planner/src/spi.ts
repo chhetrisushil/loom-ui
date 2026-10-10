@@ -8,6 +8,7 @@ import type {
   Surface,
 } from "@loom-ui/core";
 import type { DataClass, TaintedValue } from "@loom/classify";
+import type { RolloutStamp } from "@loom/learning";
 
 /**
  * A tool the planner MAY bind a node to. The framework fetches nothing (spec §7.1: context is an
@@ -261,6 +262,13 @@ export interface PlanVariantReport {
   /** The chosen variant id. */
   readonly id: string;
   readonly policy: { readonly id: string; readonly version: string };
+  /**
+   * Under a `rollout` (R18): the version that ACTED is `policy.version`, and this is the rollout
+   * stamp recorded with the decision (mode, bucket, `acted`, the `shadow` arm, `fellBack`). Present
+   * only when this run made the choice; a replay serves the recorded one, whose stamp stays on the
+   * decision in the log.
+   */
+  readonly rollout?: RolloutStamp;
   /**
    * The probability the policy gave the choice, when this run's policy produced the recorded
    * choice. Absent when a replay served a choice the CURRENT policy would not make (the recorded

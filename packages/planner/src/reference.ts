@@ -18,7 +18,7 @@ import {
   walk,
 } from "@loom-ui/core";
 import { unwrapTainted } from "@loom/classify";
-import { type Policy, decideWithPolicy } from "@loom/learning";
+import { type Policy, type PolicyStamp, decideWithPolicy, decideWithRollout } from "@loom/learning";
 import { declaredToolClassesFrom } from "./capabilityClass";
 import { contentRefArgsFrom } from "./contentRefs";
 import {
@@ -37,6 +37,7 @@ import type {
   AttemptTrace,
   ComposeInput,
   DecideContext,
+  DecideOptionsLike,
   DecideScope,
   PlanPartial,
   PlanReport,
@@ -193,25 +194,59 @@ export class ReferencePlanner implements Planner {
     const ids = Object.keys(vs.variants).sort();
     // Capture the policy's own answer so the report can say what propensity THIS run produced.
     let produced: { action: string; propensity?: number } | undefined;
-    const watched: Policy<string> = {
-      id: vs.policy.id,
-      version: vs.policy.version,
-      select: (c, a) => {
-        const r = vs.policy.select(c, a);
-        produced = r;
-        return r;
-      },
-    };
+    // Rollout only: the stamp the decision was (or, on a replay, would have been) recorded with,
+    // and the action the decider actually ran for (absent on a replay: the log answered).
+    let stamped: PolicyStamp | undefined;
+    let ran: string | undefined;
     let id: string;
     try {
-      id = await decideWithPolicy(
-        ctx,
-        decisionId,
-        watched,
-        { kind, unit, key: planKey, catalogId },
-        ids,
-        { source: REFERENCE_SOURCE }
-      );
+      if (vs.rollout !== undefined) {
+        const capture = {
+          decide: <T>(did: string, decider: () => T | Promise<T>, o?: DecideOptionsLike) => {
+            stamped = o?.policy as PolicyStamp | undefined;
+            return ctx.decide<T>(
+              did,
+              async () => {
+                const a = await decider();
+                ran = a as string;
+                return a;
+              },
+              o
+            );
+          },
+        };
+        id = await decideWithRollout(
+          capture as never,
+          decisionId,
+          { source: vs.rollout.source, policyId: vs.rollout.policyId, resolve: vs.rollout.resolve },
+          unit,
+          { kind, unit, key: planKey, catalogId },
+          ids,
+          {
+            source: REFERENCE_SOURCE,
+            ...(vs.rollout.bucketSecret !== undefined && { bucketSecret: vs.rollout.bucketSecret }),
+          }
+        );
+      } else {
+        const policy = vs.policy as Policy<string>;
+        const watched: Policy<string> = {
+          id: policy.id,
+          version: policy.version,
+          select: (c, a) => {
+            const r = policy.select(c, a);
+            produced = r;
+            return r;
+          },
+        };
+        id = await decideWithPolicy(
+          ctx,
+          decisionId,
+          watched,
+          { kind, unit, key: planKey, catalogId },
+          ids,
+          { source: REFERENCE_SOURCE }
+        );
+      }
     } catch (e) {
       if (isControlPlaneError(e)) throw e;
       return refuse(
@@ -226,6 +261,11 @@ export class ReferencePlanner implements Planner {
         `the recorded variant "${String(id).slice(0, 48)}" is not offered by this planner; the model was not called`
       );
     const p = produced as { action: string; propensity?: number } | undefined;
+    // A rollout names the version that ACTED. On a replay the decider did not run, so the stamp
+    // here is only what the registry would say now: the version is still reported, but the
+    // propensity and rollout fields are claimed only for a choice THIS run made.
+    const acted = vs.rollout !== undefined ? stamped : undefined;
+    const fresh = vs.rollout !== undefined && ran === id && acted !== undefined;
     return {
       ok: true,
       chosen: {
@@ -234,7 +274,18 @@ export class ReferencePlanner implements Planner {
         report: {
           decisionId,
           id,
-          policy: { id: vs.policy.id, version: vs.policy.version },
+          policy:
+            vs.rollout !== undefined
+              ? {
+                  id: acted?.id ?? vs.rollout.policyId,
+                  version: acted?.version ?? "",
+                }
+              : {
+                  id: (vs.policy as Policy<string>).id,
+                  version: (vs.policy as Policy<string>).version,
+                },
+          ...(fresh && acted.propensity !== undefined && { propensity: acted.propensity }),
+          ...(fresh && acted.rollout !== undefined && { rollout: acted.rollout }),
           ...(p !== undefined &&
             p.action === id &&
             p.propensity !== undefined && { propensity: p.propensity }),

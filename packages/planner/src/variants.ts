@@ -1,6 +1,12 @@
 import type { ContainerRoleSpec } from "@loom-ui/core";
 import { canonicalJson, fnv1a64 } from "@loom/core";
-import type { Policy, PolicyChoice, PolicyContext } from "@loom/learning";
+import type {
+  Policy,
+  PolicyChoice,
+  PolicyContext,
+  PolicyResolver,
+  RolloutSource,
+} from "@loom/learning";
 
 // ── Planner variants (U11) ────────────────────────────────────────────────────
 // A variant is a named way of asking the SAME planner for the SAME surface: which container roles it
@@ -30,16 +36,45 @@ export interface PlanVariant {
   readonly guidance?: string;
 }
 
-export interface PlanVariants {
-  /**
-   * Chooses a variant id from the variant ids. Its context is `{ kind, unit, key, catalogId }`.
-   * `stableBucketPolicy`, `epsilonGreedyPolicy` and `ucbPolicy` below are the shipped shapes; any
-   * `@loom/learning` `Policy<string>` works (a learned one included).
-   */
-  readonly policy: Policy<string>;
+/**
+ * Choose through a policy REGISTRY (loom R18, ADR 0124) instead of one fixed policy: the variant is
+ * decided with `decideWithRollout`, so the decision records which VERSION acted, its shadow arm and
+ * the rollout fields. These are `decideWithRollout`'s own arguments; `unit` (the turn's
+ * `ComposeInput.unit`) is its `unitKey`.
+ */
+export interface PlanVariantRollout {
+  /** Where the live/candidate versions come from. loom's `PolicyRegistry` satisfies it. */
+  readonly source: RolloutSource;
+  /** The registry id of the variant policy. */
+  readonly policyId: string;
+  /** Turns a registered (id, version) into code this process runs. */
+  readonly resolve: PolicyResolver<string>;
+  /** Server-held secret mixed into the traffic bucket (see `DecideWithRolloutOptions`). */
+  readonly bucketSecret?: string;
+}
+
+interface PlanVariantSet {
   /** Variant id → variant. Ids are `[A-Za-z0-9_.:-]{1,48}`; at least one. */
   readonly variants: Readonly<Record<string, PlanVariant>>;
 }
+
+/**
+ * Exactly one of `policy` (one fixed policy, `decideWithPolicy`) or `rollout` (a registry,
+ * `decideWithRollout`).
+ */
+export type PlanVariants = PlanVariantSet &
+  (
+    | {
+        /**
+         * Chooses a variant id from the variant ids. Its context is `{ kind, unit, key, catalogId }`.
+         * `stableBucketPolicy`, `epsilonGreedyPolicy` and `ucbPolicy` below are the shipped shapes; any
+         * `@loom/learning` `Policy<string>` works (a learned one included).
+         */
+        readonly policy: Policy<string>;
+        readonly rollout?: undefined;
+      }
+    | { readonly rollout: PlanVariantRollout; readonly policy?: undefined }
+  );
 
 // A code-point test (tab and newline allowed in guidance), not a regex: a formatter may rewrite
 // escapes in a regex into the raw characters.
@@ -62,6 +97,8 @@ const VARIANT_ID = /^[A-Za-z0-9_.:-]{1,48}$/;
 
 /** Throws on a variant set the planner could not run safely. Called once, at construction. */
 export function assertVariants(v: PlanVariants): void {
+  if ((v.policy === undefined) === (v.rollout === undefined))
+    throw new Error("PlanVariants: set exactly one of `policy` and `rollout`");
   const ids = Object.keys(v.variants);
   if (ids.length === 0) throw new Error("PlanVariants: at least one variant is required");
   for (const id of ids) {
