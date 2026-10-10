@@ -198,7 +198,7 @@ export class LuDataTable extends LuWidget {
     return html`<table aria-rowcount=${win !== undefined ? total + 1 : nothing}>
         <caption class="sr-only">${describeValue("DataTable", rows, this.title_, this.widget.props)}</caption>
         <thead>
-          <tr>
+          <tr aria-rowindex=${win !== undefined ? 1 : nothing}>
             ${columns.map(
               (c) => html`<th class=${numeric.get(c) ? "num" : ""} @click=${() => this.sortBy(c)}>
                 ${c}${this.sortCol === c ? (this.sortDir === 1 ? " ↑" : " ↓") : ""}

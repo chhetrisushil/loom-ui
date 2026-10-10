@@ -191,7 +191,7 @@ export class LuTable extends LuWidget {
     return html`<table aria-rowcount=${win !== undefined ? total + 1 : nothing}>
         <caption class="sr-only">${describeValue("Table", v, this.title_)}</caption>
         <thead>
-          <tr>
+          <tr aria-rowindex=${win !== undefined ? 1 : nothing}>
             ${labels.map(
               (label, i) => html`<th
                 class=${numeric[i] ? "num" : ""}

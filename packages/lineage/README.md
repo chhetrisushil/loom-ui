@@ -39,13 +39,28 @@ const lineage = new Lineage({ events, content, readPolicy: {
 ## Retention: which versions to keep (U17)
 
 Every version stores its whole artifact, and a scanned lineage stream pins every one of them for ever (loom's
-`sweepUnpinnedContent` treats a bare ref as load-bearing). `lineage.pins(policy)` is the replacement root set: an async
-iterable of the content addresses a collector must keep, to be passed as `roots` while the lineage's `LineageStore` is
+`sweepUnpinnedContent` treats a bare ref as load-bearing). `lineage.pins(policy, extra?)` is the replacement root set: an
+async iterable of the content addresses a collector must keep, to be passed as `roots` while the lineage's `LineageStore` is
 NOT passed as an `eventStore`. `retainedVersions(state, policy, branchSources)` is the pure policy: the newest
-`keepLast` (default 20), the head, the promoted version, the genesis (`keepGenesis`), `keepSince`, a host
+`keepLast` (default 20; `Infinity` keeps all), the head, the promoted version, the genesis (`keepGenesis`), `keepSince`, a host
 `keep(version)` predicate, and always every version another line branched from. The artifact ref of every other
-version is left out, so that blob becomes reclaimable; every other ref a line's events cite (anything an op carries) stays pinned.
-It refuses (throws) over a store that cannot enumerate its lines or a line that does not fold.
+version is left out, so that blob becomes reclaimable; every other ref a line's events cite (anything an op carries) stays
+pinned, and so does every content ref found INSIDE a retained artifact's bytes (the sweep does not read blobs).
+It refuses (throws) over a store that cannot enumerate its lines, a line that does not fold, or a retained artifact it cannot
+read. A malformed policy THROWS (NaN, negative or fractional `keepLast`, an unparseable `keepSince`): a deletion policy never coerces.
+
+**The root set must be complete.** With `reclaimOrphans: { completeScan: true }` loom erases every blob in the store that no
+root names, so `roots` must come from EVERY user of the store: this lineage's `pins`, every other lineage's `pins`, a `SeenLog`
+sharing the store, and loom's own execution scan. For a seen log, `lineage.pins(policy, await collectSeenRoots(seenLog))`
+adds its sealed value blobs and the versions its live views still read (it throws if anything in the live window was
+unreadable, rather than return an incomplete set). Which collector: with loom's sweep owning the store, use `pins` +
+`collectSeenRoots`; with ONE collector owning the store, `collectSeenGarbage(log, { lineageRetention: policy, ... })` does
+both in one pass. Never run the two against the same store with different roots.
+
+**Races.** `promote`, `branch` and `SeenLog.record` cite an artifact that already exists, with no `put`, so each
+`touch`es it first (`ContentStore.touch`, SPI 1.4.0; loom ADR 0055 D6 amendment 2): a sweep whose roots were computed a moment
+earlier then refuses to delete it, including a fork made between `pins`' two passes. A store without `touch` is left alone,
+and loom's sweep refuses to erase through one, so use a store that implements it.
 
 Known limit: reclaiming a version leaves its event in the log, so `get` of it reports the missing artifact and `verify` of
 a line with reclaimed versions reports them (and what derives from them), because `verify` replays from the genesis.

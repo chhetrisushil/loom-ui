@@ -1,3 +1,5 @@
+import type { PinsExtra } from "./lineage";
+import type { RetentionPolicy } from "./retention";
 import { type SeenLog, type SeenRefusal, type SeenUnreadable, UNREADABLE_EXAMPLES } from "./seen";
 
 // ── Reclaiming the value blobs of the record of what a viewer saw (U12) ──────────────────────
@@ -40,6 +42,16 @@ export interface SeenGcOptions {
   readonly ownsContentStore: true;
   /** Addresses this collector cannot see but must keep (other users of the same ContentStore). */
   readonly extraRoots?: () => AsyncIterable<string> | Iterable<string>;
+  /**
+   * Reclaim old LINEAGE versions in the same pass. Absent (the default), every artifact any version
+   * ever cited is rooted (`Lineage.forEachContentRef`), so this collector reclaims only the seen
+   * log's value blobs. With a policy, the lineage half of the root set is `Lineage.pins(policy)` plus
+   * the versions the live views still name, so versions the policy dropped (and not a viewer's) stop
+   * being rooted and are swept. Use this when ONE collector owns the whole store; use
+   * `Lineage.pins` + loom's `sweepUnpinnedContent` when loom's sweep owns it and pass it
+   * `collectSeenRoots(log)` as `extra`. Never run both against the same store with different roots.
+   */
+  readonly lineageRetention?: RetentionPolicy;
   /** Refuse (before deleting anything) if more than this many distinct addresses are live. Default 5,000,000. */
   readonly maxMarked?: number;
   /** Blobs per `listPage`. Default 500. */
@@ -126,8 +138,16 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
     // The clock is read BEFORE marking: anything touched after this instant is spared, so a blob
     // written while we mark (whose manifest we may have read too early to see) survives.
     cutoffMs = (await content.touchClock()) - opts.graceMs;
-    await log.lineageOf.forEachContentRef(visit);
-    unreadable = await log.forEachLiveRef(visit);
+    const versions = new Map<string, { experienceId: string; versionHash: string }>();
+    unreadable = await log.forEachLiveRef(visit, (experienceId, versionHash) =>
+      versions.set(`${experienceId}\u0000${versionHash}`, { experienceId, versionHash })
+    );
+    if (opts.lineageRetention === undefined) await log.lineageOf.forEachContentRef(visit);
+    else
+      for await (const a of log.lineageOf.pins(opts.lineageRetention, {
+        keepVersions: versions.values(),
+      }))
+        visit(a);
     if (opts.extraRoots !== undefined) for await (const a of opts.extraRoots()) visit(a);
   } catch (err) {
     return no(
@@ -180,4 +200,34 @@ export async function collectSeenGarbage(log: SeenLog, opts: SeenGcOptions): Pro
     ok: true,
     report: { marked: marked.size, scanned, deleted, spared, cutoffMs, unreadable },
   };
+}
+
+/**
+ * The seen log's share of a shared content store's root set, for `Lineage.pins(policy, extra)`:
+ * the sealed value blobs of every live view and the (experience, version) each live view reads.
+ *
+ *   roots: () => lineage.pins(policy, await collectSeenRoots(seenLog))   // sweepUnpinnedContent
+ *
+ * With `reclaimOrphans: { completeScan: true }` loom erases EVERYTHING in the store no root names, so
+ * the roots must come from every user of it (this seen log, other lineages, loom's executions). THROWS
+ * if anything in the live window could not be read (a root set that silently omits what it could not
+ * open would delete it): fix or finish the upgrade, or pass `allowUnreadable: true` to accept that.
+ */
+export async function collectSeenRoots(
+  log: SeenLog,
+  opts: { readonly allowUnreadable?: boolean } = {}
+): Promise<Required<Pick<PinsExtra, "keepVersions" | "keepAddresses">>> {
+  const addresses = new Set<string>();
+  const versions = new Map<string, { experienceId: string; versionHash: string }>();
+  const unreadable = await log.forEachLiveRef(
+    (a) => addresses.add(a),
+    (experienceId, versionHash) =>
+      versions.set(`${experienceId}\u0000${versionHash}`, { experienceId, versionHash })
+  );
+  const n = unreadable.streams + unreadable.records + unreadable.refs;
+  if (n > 0 && opts.allowUnreadable !== true)
+    throw new Error(
+      `collectSeenRoots: ${n} stream(s)/record(s)/sealed ref(s) in the live window could not be read, so what they cite would be unrooted (examples: ${[...unreadable.examples.streams, ...unreadable.examples.records, ...unreadable.examples.refs].slice(0, UNREADABLE_EXAMPLES).join(", ")}). Nothing was collected; pass allowUnreadable: true to sweep it anyway`
+    );
+  return { keepVersions: [...versions.values()], keepAddresses: [...addresses] };
 }

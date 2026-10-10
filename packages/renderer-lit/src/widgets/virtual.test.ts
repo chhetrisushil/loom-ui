@@ -53,10 +53,13 @@ describe("virtualWindow (pure)", () => {
 async function mount(
   tag: string,
   props: Record<string, unknown>,
-  viewport = 300
+  viewport = 300,
+  /** What the host reports as its content height; the default is a real scroller (content taller than the box). */
+  scrollHeight = 10_000_000
 ): Promise<Mounted> {
   const el = document.createElement(tag) as Mounted;
   Object.defineProperty(el, "clientHeight", { value: viewport, configurable: true });
+  Object.defineProperty(el, "scrollHeight", { value: scrollHeight, configurable: true });
   Object.assign(el, props);
   document.body.appendChild(el);
   for (let i = 0; i < 4; i++) {
@@ -119,9 +122,31 @@ describe("lu-table windowing", () => {
     ).toBe(5000 * 30);
     // The DOM rows carry their true position for assistive technology (header is row 1).
     expect(bodyRows(el)[0]?.getAttribute("aria-rowindex")).toBe("2498");
+    expect(el.shadowRoot?.querySelector("thead tr")?.getAttribute("aria-rowindex")).toBe("1");
 
     await scrollTo(el, 30 * 5000 + 999); // past the end: the last window, never blank
     expect(bodyRows(el).at(-1)?.querySelector("td")?.textContent?.trim()).toBe("r4999");
+  });
+
+  it("a host that is NOT the scroll container (no layout box, or content not taller than its box) falls back to the classic rendering", async () => {
+    // clientHeight 0: no box at all (display: contents, a hidden ancestor). The page scrolls, no
+    // scroll event ever reaches the host, so a window would leave every row past the first blank.
+    const noBox = await mount("lu-table", { widget, value, virtualize: true }, 0, 0);
+    expect(bodyRows(noBox)).toHaveLength(200); // classic: the 200-row cap and its button
+    expect(noBox.shadowRoot?.querySelector("tr.pad")).toBeNull();
+    expect(noBox.shadowRoot?.querySelector(".more")).not.toBeNull();
+    expect(noBox.shadowRoot?.querySelector("table")?.hasAttribute("aria-rowcount")).toBe(false);
+
+    // a definite height but the content is not clipped (the box grew to fit): scrollHeight <= clientHeight
+    const grown = await mount("lu-table", { widget, value, virtualize: true }, 300, 300);
+    expect(bodyRows(grown)).toHaveLength(200);
+    expect(grown.shadowRoot?.querySelector("tr.pad")).toBeNull();
+  });
+
+  it("a host that proves to be a scroller keeps its window (CONTROL for the fallback)", async () => {
+    const el = await mount("lu-table", { widget, value, virtualize: true }, 300, 5000 * 30);
+    expect(bodyRows(el).length).toBeLessThan(60);
+    expect(el.shadowRoot?.querySelectorAll("tr.pad").length).toBeGreaterThan(0);
   });
 
   it("re-renders only when the mounted window changes, not on every scroll event", async () => {
