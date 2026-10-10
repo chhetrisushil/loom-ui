@@ -95,7 +95,8 @@ Then write the adapter and run the kit. `src/speech.test-support.ts` is a comple
 "voice" renderer in about 100 lines that speaks a Blueprint as sentences and passes every check,
 with nothing skipped; copy it as a starting point. `@loom-ui/renderer-lit/src/conformance.test.ts`
 and `@loom-ui/renderer-terminal/src/conformance.test.ts` show the same kit against a DOM and a
-terminal renderer.
+terminal renderer. The lit adapter must `import "@loom-ui/renderer-lit/register"` (inside that
+package, `./register`) first: importing the renderer no longer defines its custom elements.
 
 Container roles: a role your renderer does not know is the plain container (loom ADR 0099). If you
 draw one (`tabs`), the kit still requires every panel to be reachable from `text()`.

@@ -268,6 +268,18 @@ term.stop();
   a pending approval, further `y` / `n` for it are ignored until the frame moves (the host answered,
   or a new version landed): the HOST must still dedupe by its own key, since another session can
   answer too. `press(...keys)` treats each key as its own arrival; `send(chunk)` and real input are chunks.
+- **Sole means sole.** Every decoded unit of a chunk counts toward "sole", including dropped escape
+  sequences (arrows, OSC) and non-printables: `ESC[C` + `y` is two units and cannot approve. Paste
+  mode always ends: at the end marker (even split across chunks), at Ctrl-C (paste discarded, interrupt
+  delivered), when the paste passes 1 MiB (discarded; the rest is swallowed to the end marker, never
+  typed), or after `pasteIdleMs` (default 2000, read from an injectable `now`) without a byte.
+- **Known limits, and `confirmConsent`.** A chunk boundary is all a terminal gives us. (1) On a
+  terminal WITHOUT bracketed paste, a one-character paste `y` into a focused approval is a one-key
+  chunk, taken as a keypress. (2) A host reading byte by byte (slow serial / ssh) makes every key
+  sole, so a multi-line non-bracketed paste could reach `\t`, `y`. For raw-byte-stream hosts set
+  `confirmConsent: true` (recommended there; default off): the first `y` / `n` only arms the
+  approval (the frame shows `y ×2`, or `labels.confirm`), and the same key alone in a LATER chunk on
+  the same frame acts; any other key disarms.
 - **Actions** are the shapes the web emits (`APPROVE` / `REJECT` with `payload.approved`, `SELECT`,
   `SUBMIT_TEXT` with an idempotency `key`), stamped with `viewedVersion`. What was typed is kept until
   the host answers `ok`; a refusal or a throw is a fixed sentence from `LU_MESSAGES`, never the host's

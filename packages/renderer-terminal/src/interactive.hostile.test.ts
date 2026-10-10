@@ -6,7 +6,12 @@ import type { Blueprint, Widget } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { inert } from "./inert";
-import { type InteractiveOptions, decodeKeys, interactiveTerminal } from "./interactive";
+import {
+  type InteractiveOptions,
+  createKeyDecoder,
+  decodeKeys,
+  interactiveTerminal,
+} from "./interactive";
 
 // The controls footer is the one place a VIEWER's keystrokes and the HOST's words reach the terminal
 // raw. These tests are the probes: each one fails on the code before its fix.
@@ -184,5 +189,90 @@ describe("a key is stamped, and judged, on the frame it was pressed on", () => {
     await term.send("y");
     expect(types(actions)).toEqual(["SELECT", "APPROVE"]);
     expect((actions[1]?.viewedVersion as { blueprintId: string }).blueprintId).toBe("e@v2");
+  });
+});
+
+describe("paste mode always ends, and a lone key is alone", () => {
+  const END = "\x1b[201~";
+  it("an end marker split at every point still ends the paste", async () => {
+    for (let n = 1; n < END.length; n++) {
+      const { term, actions } = rig(view("e@v1", text, approval));
+      await term.send("\r");
+      await term.send(`\x1b[200~hi${END.slice(0, n)}`);
+      await term.send(END.slice(n));
+      expect(term.frame()).toContain("hi");
+      await term.send("\x1b"); // back to nav: keys are live again
+      await term.send("\t");
+      expect(term.focused()).toBe("ok");
+      expect(actions).toEqual([]);
+      term.stop();
+    }
+  });
+  it("decoder: split marker yields one paste; an unclosed paste then Ctrl-C yields the interrupt", () => {
+    const d = createKeyDecoder();
+    expect(d("\x1b[200~hi\x1b[20")).toEqual([]);
+    expect(d("1~")).toEqual([{ name: "paste", text: "hi" }]);
+    expect(d("\x1b[200~abc")).toEqual([]);
+    expect(d("\x03")).toEqual([{ name: "interrupt" }]);
+    expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+  });
+  it("an unclosed paste cannot swallow Ctrl-C or approve", async () => {
+    let interrupted = 0;
+    const { term, actions } = rig(view("e@v1", approval), { onInterrupt: () => interrupted++ });
+    await term.send("\x1b[200~abc");
+    await term.send("y");
+    await term.send("\x03");
+    expect(interrupted).toBe(1);
+    expect(actions).toEqual([]);
+    await term.send("y");
+    expect(types(actions)).toEqual(["APPROVE"]);
+  });
+  it("an oversize paste is discarded and swallowed to its end, never typed", () => {
+    const d = createKeyDecoder();
+    expect(d(`\x1b[200~${"a".repeat((1 << 20) + 1)}`)).toEqual([]);
+    expect(d("y\ty")).toEqual([]);
+    expect(d(`${END}y`)).toEqual([{ name: "char", char: "y" }]);
+  });
+  it("an idle paste is abandoned by an injected clock, not a sleep", () => {
+    let t = 0;
+    const d = createKeyDecoder({ now: () => t, pasteIdleMs: 2000 });
+    expect(d("\x1b[200~abc")).toEqual([]);
+    t = 1999;
+    expect(d("def")).toEqual([]);
+    t = 1999 + 2001;
+    expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+  });
+  it("a dropped sequence or non-printable beside `y` disqualifies it", async () => {
+    for (const chunk of ["\x1b[Cy", "\x1b]52;c;AAAA\x07y", "y\x1b[C", "‮y", "\x00y"]) {
+      const { term, actions } = rig(view("e@v1", approval));
+      await term.send(chunk);
+      expect(actions).toEqual([]);
+      term.stop();
+    }
+    const { term, actions } = rig(view("e@v1", approval));
+    await term.send("y");
+    expect(types(actions)).toEqual(["APPROVE"]);
+  });
+});
+
+describe("confirmConsent asks twice", () => {
+  it("the first y arms, the same key in a later chunk acts, another key disarms", async () => {
+    const { term, actions } = rig(view("e@v1", approval), { confirmConsent: true });
+    await term.send("y");
+    expect(actions).toEqual([]);
+    expect(term.frame()).toContain("y ×2");
+    await term.send("n"); // a different key re-arms for n, does not act
+    expect(actions).toEqual([]);
+    await term.send("\t"); // disarm
+    await term.send("y");
+    expect(actions).toEqual([]);
+    await term.send("y");
+    expect(types(actions)).toEqual(["APPROVE"]);
+  });
+  it("a multi-key chunk never confirms", async () => {
+    const { term, actions } = rig(view("e@v1", approval), { confirmConsent: true });
+    await term.send("y");
+    await term.send("yy");
+    expect(actions).toEqual([]);
   });
 });
