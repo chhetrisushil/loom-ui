@@ -15,9 +15,14 @@ import { LU_MESSAGES, LU_MESSAGE_KEYS } from "./messages";
 //   1. the static text and the text-bearing attributes of an `html` template (Lit);
 //   2. text assigned or set on an element: `.textContent =`, `.title =`, `.placeholder =`,
 //      `.setAttribute("aria-label" | "title" | "placeholder" | "alt", …)`;
+//   2c. a capitalised single word returned from a function (`return "Loading"`).
 //   3. any other string that reads as prose (two or more words) outside the places that are not
 //      shown to a reader: imports, comparisons, `throw`/`Error`/`console`, CSS, type literals,
 //      property names, selectors.
+// KNOWN LIMIT: a single-word literal is caught only in the positions above (a `??`/`||` fallback, a
+// text-bearing property, an element text/attribute setter, a returned capitalised word). A bare
+// lower-case word (`const s = "loading"`) or one passed through a variable is NOT caught: a general
+// single-word rule would flag every enum value, event name and CSS keyword. Reviewers cover the rest.
 // A hit means: add the text to `LU_MESSAGES` and ask for it by key.
 
 interface Hit {
@@ -48,6 +53,8 @@ const CSS_LIKE = /var\(|rgba?\(|\d\s*px|#[0-9a-f]{3,8}\b|^\d/i;
 /** Stands for a `${…}` hole in a template when its static text is read on its own. */
 const HOLE = "\u0000";
 const PROSE = /[A-Za-z]{2,}[ ]+[A-Za-z]{2,}/;
+/** A single capitalised word, as an English label would be (`Loading`), not an identifier-ish token. */
+const CAPITAL_WORD = /^[A-Z][a-z]{2,}$/;
 const HAS_WORD = /[A-Za-z]{2,}/;
 // Console / diagnostics callees whose arguments are for the developer.
 const DEV_CALLEES = /^(console|Error|TypeError|RangeError|assert|expect)\b/;
@@ -187,6 +194,22 @@ function findHardcodedEnglish(source: string, fileName = "x.ts"): Hit[] {
       HAS_WORD.test(n.initializer.text)
     )
       add(n.initializer, n.initializer.text, `${n.name.text}: literal`);
+    // 2c. a capitalised single word returned (or an arrow's expression body): `return "Loading"`
+    if (
+      ((ts.isReturnStatement(n) && n.expression !== undefined) ||
+        (ts.isArrowFunction(n) && !ts.isBlock(n.body))) &&
+      (() => {
+        const e = ts.isReturnStatement(n) ? n.expression : (n as ts.ArrowFunction).body;
+        return (
+          e !== undefined &&
+          (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) &&
+          CAPITAL_WORD.test(e.text)
+        );
+      })()
+    ) {
+      const e = ts.isReturnStatement(n) ? n.expression : (n as ts.ArrowFunction).body;
+      add(e as ts.Node, (e as ts.StringLiteral).text, "returned word");
+    }
     // 3. prose anywhere
     if (
       (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) &&
@@ -246,9 +269,13 @@ const SCANNED = [
 
 /**
  * The text that is NOT a user-visible fixed word, each with the reason. `file` is relative to
- * `packages/`; `text` must be contained in the hit. A stale entry (matching nothing) fails below.
+ * `packages/`; `text` must EQUAL the hit's text exactly (no substring match). A stale entry (matching nothing) fails below.
  */
-const ALLOWED: ReadonlyArray<{ file: string; text: string; why: string }> = [
+type Allowance = { file: string; why: string } & (
+  | { text: string; textStart?: undefined }
+  | { textStart: string; text?: undefined }
+);
+const ALLOWED: ReadonlyArray<Allowance> = [
   {
     file: "renderer-lit/src/dom/renderBlueprintDom.ts",
     text: "heading",
@@ -261,34 +288,39 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; why: string }> = [
   },
   {
     file: "renderer-lit/src/dom/renderBlueprintDom.ts",
-    text: "malformed node at",
+    text: "`malformed node at ${path}`",
     why: "a developer finding delivered to onFail / RecomposeReport, never drawn",
   },
   {
     file: "renderer-lit/src/dom/renderBlueprintDom.ts",
-    text: "dispose failed for one or more widgets",
+    text: "renderBlueprintDom: dispose failed for one or more widgets",
     why: "a developer error thrown to the host",
   },
   {
     file: "renderer-lit/src/dom/tree.ts",
-    text: "no renderer for",
+    text: '`no renderer for "${widget.kind}"`',
     why: "a developer finding delivered to onFail / RecomposeReport, never drawn",
   },
   {
     file: "renderer-lit/src/dom/tree.ts",
-    text: "container renderer for role",
+    text: '`container renderer for role "${role}" at ${path} failed: ${e instanceof Error ? e.message : String(e)}`',
     why: "a developer finding delivered to onFail / RecomposeReport, never drawn",
   },
   { file: "renderer-lit/src/rtl.ts", text: "mirror", why: "a direction-mode keyword, not text" },
   {
     file: "renderer-lit/src/sandbox/protocol.ts",
-    text: "<!doctype html>",
+    textStart: "`<!doctype html>",
     why: "the sandbox frame's HTML document, not renderer chrome",
   },
   {
     file: "renderer-lit/src/widgets/lu-timeseries.ts",
-    text: "<div style=",
+    textStart: '`<div style="color:${colorFor(i)}">',
     why: "tooltip markup around DATA (series labels, formatted values), no fixed words",
+  },
+  {
+    file: "renderer-lit/src/widgets/lu-timeseries.ts",
+    textStart: '`<div style="margin-bottom:2px;',
+    why: "tooltip markup around DATA (the formatted time tick), no fixed words",
   },
   {
     file: "renderer-lit/src/widgets/lu-chat.ts",
@@ -301,6 +333,16 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; why: string }> = [
     why: "a media KIND token, translated where it is drawn (lu.media.kind.*)",
   },
 ];
+
+/**
+ * An allowance silences ONE known hit: same file and the hit's text EQUAL to `text`. Only a whole
+ * multi-line markup template (the sandbox frame, a tooltip) is matched by its full literal opening
+ * (`textStart`), because its body is long and incidental; a new literal never starts that way.
+ */
+function matches(a: Allowance, h: { file: string; text: string }): boolean {
+  if (a.file !== h.file) return false;
+  return a.text !== undefined ? h.text === a.text : h.text.startsWith(a.textStart);
+}
 
 describe("renderer sources carry no inline user-visible English (U14)", () => {
   it("scans a real, non-trivial set of sources", () => {
@@ -315,9 +357,7 @@ describe("renderer sources carry no inline user-visible English (U14)", () => {
       ...h,
     }))
   );
-  const unallowed = found.filter(
-    (h) => !ALLOWED.some((a) => a.file === h.file && h.text.includes(a.text))
-  );
+  const unallowed = found.filter((h) => !ALLOWED.some((a) => matches(a, h)));
 
   it("every fixed word is a catalogue key (add the text to LU_MESSAGES and ask for it by key)", () => {
     expect(
@@ -328,7 +368,7 @@ describe("renderer sources carry no inline user-visible English (U14)", () => {
   it("every allowance still matches something (no stale entries)", () => {
     for (const a of ALLOWED)
       expect(
-        found.some((h) => h.file === a.file && h.text.includes(a.text)),
+        found.some((h) => matches(a, h)),
         `${a.file}: ${a.text}`
       ).toBe(true);
   });
@@ -353,6 +393,11 @@ describe("the scanner is not vacuous: it fails on an injected literal in every c
   it("a single-word fallback and a text-bearing property", () => {
     expect(hits('const l = props.label ?? "Approve";')).toContain("fallback literal");
     expect(hits('const o = { label: "Close" };')).toContain("label: literal");
+  });
+  it("a returned capitalised single word", () => {
+    expect(hits('function f() { return "Loading"; }')).toContain("returned word");
+    expect(hits('const f = () => "Loading";')).toContain("returned word");
+    expect(hits('function f() { return "loading-state"; }')).toEqual([]);
   });
   it("prose anywhere", () => {
     expect(hits('return "Media unavailable right now";')).toContain("prose literal");

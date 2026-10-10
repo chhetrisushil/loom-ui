@@ -10,6 +10,11 @@ describe("messages", () => {
     expect(fill("{constructor}", {})).toBe("{constructor}");
     expect(fill("plain")).toBe("plain");
   });
+  it("lookupMessage: an empty or whitespace-only translation is unset (falls through)", () => {
+    expect(lookupMessage({ messages: { k: "" } }, "k", "en")).toBe("en");
+    expect(lookupMessage({ messages: { k: "  " }, translate: () => "t" }, "k", "en")).toBe("t");
+    expect(lookupMessage({ translate: () => "" }, "k", "en")).toBe("en");
+  });
   it("lookupMessage: catalogue, then translate, then English; a throwing translate is English", () => {
     expect(lookupMessage(undefined, "k", "en")).toBe("en");
     expect(lookupMessage({ messages: { k: "m" }, translate: () => "t" }, "k", "en")).toBe("m");
