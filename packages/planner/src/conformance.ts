@@ -109,6 +109,8 @@ export interface ConformanceFixture {
   /** Counts model calls; when given, the kit asserts the second compose adds none. */
   readonly modelCalls?: () => number;
   readonly surface?: ComposeInput["surface"];
+  /** Forwarded as `unit` into the compose and revise inputs, for a planner with `variants`. */
+  readonly unit?: string;
   /** See {@link ScopeProbe}. */
   readonly scopeProbe?: ScopeProbe;
   /** See {@link DenialProbe}. */
@@ -429,6 +431,7 @@ export async function checkPlannerConformance(
     capabilities: fx.capabilities,
     surface,
     ...(fx.containers !== undefined && { containers: fx.containers }),
+    ...(fx.unit !== undefined && { unit: fx.unit }),
   };
 
   // With a probe, watch whether compose asked the ctx at all and whether the decider actually ran:
@@ -665,6 +668,7 @@ export async function checkPlannerConformance(
         capabilities: fx.capabilities,
         surface,
         ...(fx.containers !== undefined && { containers: fx.containers }),
+        ...(fx.unit !== undefined && { unit: fx.unit }),
       } satisfies ReviseInput,
       ctx
     )

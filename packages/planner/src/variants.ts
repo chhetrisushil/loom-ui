@@ -99,6 +99,18 @@ const VARIANT_ID = /^[A-Za-z0-9_.:-]{1,48}$/;
 export function assertVariants(v: PlanVariants): void {
   if ((v.policy === undefined) === (v.rollout === undefined))
     throw new Error("PlanVariants: set exactly one of `policy` and `rollout`");
+  if (v.rollout !== undefined) {
+    const r = v.rollout as Partial<PlanVariantRollout> | null;
+    if (
+      typeof r?.source?.resolve !== "function" ||
+      typeof r.resolve !== "function" ||
+      typeof r.policyId !== "string" ||
+      r.policyId === ""
+    )
+      throw new Error(
+        "PlanVariants: `rollout` needs a `source` with a resolve function, a `resolve` function and a non-empty `policyId`"
+      );
+  }
   const ids = Object.keys(v.variants);
   if (ids.length === 0) throw new Error("PlanVariants: at least one variant is required");
   for (const id of ids) {

@@ -201,7 +201,7 @@ that never existed writes a tombstone), so the host decides who may erase what.
 `eraseViewerEverywhere({ viewerId })` is the per-data-subject form: it enumerates the seen streams
 (`listStreams`; refused with `seen-enumeration-unavailable` without it) and erases that viewer in
 every experience, returning per-experience results (`complete` only when all succeeded; idempotent
-and resumable). Coverage is the streams that exist when enumeration runs: a stream created afterwards (a new view during the erase) is not covered, so the host serializes erasure against new views for that subject or reruns; an orphan key with no stream (crash between `getOrCreate` and the first append) is not destroyed, and holds no data.
+and resumable). Each failed result's `refusal` is a lineage `Refused`, so it now also serializes `kind` and `finding` keys beside the original fields: additive, nothing removed. Coverage is the streams that exist when enumeration runs: a stream created afterwards (a new view during the erase) is not covered, so the host serializes erasure against new views for that subject or reruns; an orphan key with no stream (crash between `getOrCreate` and the first append) is not destroyed, and holds no data.
 
 *Reclaiming blobs: `collectSeenGarbage(log, { graceMs, ownsContentStore: true })`.* MARK-AND-SWEEP, not
 a refcount (there is no transaction across the event log and the `ContentStore`, so a counter drifts and

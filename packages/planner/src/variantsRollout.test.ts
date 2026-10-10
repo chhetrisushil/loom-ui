@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { plannerProvenance } from "./provenance";
 import { ReferencePlanner } from "./reference";
-import type { Planner, PlannerModel } from "./spi";
+import type { PlannerModel } from "./spi";
 import {
   capabilitiesFixture,
   intentFixture,
@@ -227,6 +227,58 @@ describe("ReferencePlanner variants through a rollout registry (R18)", () => {
     // the log's own stamp stays the truth: the replay does not re-claim propensity or a rollout
     expect(again.report.variant?.propensity).toBeUndefined();
     expect(again.report.variant?.rollout).toBeUndefined();
+    // the registry's CURRENT version (v2) did not choose; a replay never reports a version
+    expect(again.report.variant?.policy.version).toBeUndefined();
+    expect(again.report.variant?.policy.id).toBe(ID);
+  });
+
+  it("replay with NO live version still serves the recorded variant, and reports no version", async () => {
+    const reg = await registry();
+    const ctx = recordingContext();
+    let gone = false;
+    const source = {
+      resolve: (id: string) => (gone ? Promise.resolve(undefined) : reg.resolve(id)),
+    };
+    const v: PlanVariants = {
+      rollout: { source, policyId: ID, resolve },
+      variants: rolloutVariants(reg).variants,
+    };
+    const p = new ReferencePlanner({ model: model(), modelId: "m", variants: v });
+    const first = await p.compose({ ...input, unit: "user-9" }, ctx);
+    expect(first.report.variant?.policy.version).toBe("1");
+    gone = true;
+    const again = await p.compose({ ...input, unit: "user-9" }, ctx);
+    // the log answers, so the recorded variant is served with no claim about who chose it
+    expect(again.report.variant?.id).toBe(first.report.variant?.id);
+    expect(again.report.variant?.policy).toEqual({ id: ID });
+  });
+
+  it("bucketSecret reaches decideWithRollout: the same unit lands on different arms with and without it", async () => {
+    const reg = await registry();
+    await reg.promote({
+      id: ID,
+      version: "2",
+      report: report("2"),
+      mode: "canary",
+      canaryFraction: 0.5,
+      now: 5,
+    });
+    const salt = (await reg.resolve(ID))?.salt as string;
+    const secret = "server-secret";
+    const unit = Array.from({ length: 500 }, (_, i) => `s${i}`).find(
+      (u) => rolloutBucket(salt, u) < 0.5 && rolloutBucket(salt, u, secret) >= 0.5
+    ) as string;
+    expect(unit).toBeDefined();
+    const run = async (sec?: string) => {
+      const p = new ReferencePlanner({
+        model: model(),
+        modelId: "m",
+        variants: rolloutVariants(reg, sec),
+      });
+      return (await p.compose({ ...input, unit }, recordingContext())).report.variant;
+    };
+    expect(await run()).toMatchObject({ id: "tabs", policy: { version: "2" } });
+    expect(await run(secret)).toMatchObject({ id: "flat", policy: { version: "1" } });
   });
 
   it("a registry with no live version is a finding, not a crash; no model call", async () => {
@@ -312,7 +364,24 @@ describe("ReferencePlanner variants through a rollout registry (R18)", () => {
     );
   });
 
-  it("checkPlannerConformance still passes (zero findings) with a rollout-driven planner; the host wrapper supplies the unit", async () => {
+  it("construction: a malformed rollout throws", () => {
+    const reg = new PolicyRegistry({ kv: new InMemoryPolicyKv(), scope: "t" });
+    const mk = (rollout: unknown) =>
+      new ReferencePlanner({
+        model: model(),
+        modelId: "m",
+        variants: { rollout, variants: { flat: {} } } as unknown as PlanVariants,
+      });
+    expect(() => mk({ source: reg, policyId: ID, resolve })).not.toThrow();
+    expect(() => mk({ source: {}, policyId: ID, resolve })).toThrow(/rollout/);
+    expect(() => mk({ policyId: ID, resolve })).toThrow(/rollout/);
+    expect(() => mk({ source: reg, policyId: ID })).toThrow(/rollout/);
+    expect(() => mk({ source: reg, policyId: ID, resolve: "x" })).toThrow(/rollout/);
+    expect(() => mk({ source: reg, policyId: "", resolve })).toThrow(/rollout/);
+    expect(() => mk({ source: reg, policyId: 3, resolve })).toThrow(/rollout/);
+  });
+
+  it("checkPlannerConformance still passes (zero findings) with a rollout-driven planner; the fixture supplies the unit", async () => {
     const reg = await registry();
     const scripted = scriptedModel([
       conformanceCompose,
@@ -324,21 +393,18 @@ describe("ReferencePlanner variants through a rollout registry (R18)", () => {
         ],
       }),
     ]);
-    const inner = new ReferencePlanner({
+    const planner = new ReferencePlanner({
       model: scripted,
       modelId: "m",
       variants: rolloutVariants(reg),
     });
-    const planner: Planner = {
-      compose: (i, c) => inner.compose({ ...i, unit: "conf-unit" }, c),
-      revise: (i, c) => inner.revise({ ...i, unit: "conf-unit" }, c),
-    };
     const found = await checkPlannerConformance(planner, {
       intent: intentFixture,
       catalog: planningCatalog,
       capabilities: capabilitiesFixture,
       meta: metaFixture,
       revision: { text: "add an insight" },
+      unit: "conf-unit",
       ctx: recordingContext(),
       modelCalls: () => scripted.calls,
     });
