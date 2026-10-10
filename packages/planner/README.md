@@ -281,6 +281,17 @@ run's policy made the recorded choice). A recorded variant the planner no longer
 (`variant-unknown`, no model call). `PlanResult.report.variant.decisionId` is the learnable decision;
 `plannerProvenance` stamps it as `Provenance.policyDecisionId`.
 
+**Through a rollout registry (loom R18).** Pass `variants: { rollout: { source, policyId, resolve,
+bucketSecret? }, variants }` INSTEAD of `policy` (exactly one; both or neither throws at construction)
+and the choice is made with `decideWithRollout`, with `unit` as the traffic key. The decision records
+the version that ACTED, its propensity and the rollout stamp (mode, bucket, shadow arm, `fellBack`),
+so a shadow candidate never serves, a canary unit gets the candidate's variant stamped with the
+candidate's version, and `linkFromLedger` / U11 rewards attribute to the right version.
+`report.variant.policy` is then the acting `{ id, version }` and `report.variant.rollout` the stamp.
+Like `propensity`, both are claimed only for a choice this run made; a replay serves the recorded
+choice and the log keeps its stamp. A registry with no live version is a `variant-policy-failed`
+finding, no model call.
+
 ## Streaming a turn (U1)
 
 Optional and generic, and ONE governed call: there is no second model path. Pass

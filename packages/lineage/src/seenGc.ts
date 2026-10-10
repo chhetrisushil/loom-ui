@@ -73,7 +73,12 @@ export type SeenGcResult =
 
 const no = (code: string, message: string): SeenGcResult => ({
   ok: false,
-  refusal: { code, message },
+  refusal: {
+    kind: "refused",
+    finding: { code, severity: "error", message },
+    code,
+    message,
+  },
 });
 
 /** Run one collection pass over `log`'s content store. See the header for the contract. */
