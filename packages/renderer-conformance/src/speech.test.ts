@@ -1,3 +1,4 @@
+import { stripUnsafeChars } from "@loom-ui/core/chat-ui";
 import { describe, expect, it } from "vitest";
 import type { MountedRenderer, RendererAdapter } from "./adapter";
 import { checkRendererConformance } from "./run";
@@ -26,6 +27,34 @@ const faulty = (f: Fault): RendererAdapter => ({
 });
 const textOf = (fn: (t: string, v: MountOptions["values"]) => string) =>
   faulty({ view: (m, v) => ({ ...m, text: async () => fn(await m.text(), v) }) });
+
+// A renderer that forgets to sanitise ONE source: after the honest render, the cleaned text of that
+// source is swapped for the raw string it came from.
+const walkTitles = (n: unknown, out: string[] = []): string[] => {
+  if (typeof n !== "object" || n === null) return out;
+  const o = n as { title?: unknown; children?: unknown[]; node?: unknown };
+  if (typeof o.title === "string") out.push(o.title);
+  walkTitles(o.node, out);
+  for (const c of o.children ?? []) walkTitles(c, out);
+  return out;
+};
+const cleaned = (raw: string): string => stripUnsafeChars(raw).replace(/\s+/g, " ").trim();
+const unsanitised = (
+  raws: (bp: Parameters<RendererAdapter["mount"]>[0], o: MountOptions) => string[]
+): RendererAdapter => ({
+  ...speechAdapter,
+  async mount(bp, o) {
+    const m = await speechAdapter.mount(bp, o);
+    return {
+      ...m,
+      text: async () => {
+        let t = await m.text();
+        for (const r of raws(bp, o)) t = t.replace(cleaned(r), r);
+        return t;
+      },
+    };
+  },
+});
 
 const FAULTS: Array<[string, string, RendererAdapter]> = [
   [
@@ -57,6 +86,16 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
     textOf((t) => t.split(". ").reverse().join(". ")),
   ],
   ["untrusted-text", "passes an escape sequence through", textOf((t) => `${t}\u001b[2J`)],
+  [
+    "untrusted-text",
+    "draws a widget title unsanitised",
+    unsanitised((bp) => walkTitles(bp.layout)),
+  ],
+  [
+    "untrusted-text",
+    "draws a translated word unsanitised",
+    unsanitised((_bp, o) => Object.values(o.i18n?.messages ?? {}) as string[]),
+  ],
   ["untrusted-text", "interprets markup", textOf((t) => t.replace(/<\/?b>/g, ""))],
   [
     "media-refs",

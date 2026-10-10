@@ -42,6 +42,15 @@ const LINE_BREAKS = /\r\n?|\u2028|\u2029/g;
 const BLANK_RUNS = /\n{3,}/g;
 
 /**
+ * `text` with the UNSAFE class removed (controls other than tab/newline/CR, invisible and reordering
+ * code points, TAG characters) and nothing else: no line-break folding, no cut. The ONE set every
+ * surface strips with — a renderer that must also drop a line break does so itself.
+ */
+export function stripUnsafeChars(text: string): string {
+  return text.replace(UNSAFE, "");
+}
+
+/**
  * `text` made safe to DRAW: untrusted text in, text out. Not a sanitiser for HTML (nothing here
  * produces HTML) and not a filter for meaning. Bounded to `max` UTF-16 units (a cut ends in `…`).
  * Non-strings become `""`. Total, linear, never throws.

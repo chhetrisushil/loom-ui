@@ -153,6 +153,10 @@ enforced from here). They are stamped and staleness-checked like any other actio
 the human approval: never treat one as consent to a gated step. Only renderer-owned widget actions
 (e.g. `APPROVE` from `ApprovalCard`) are.
 
+The host must dedupe approvals: a renderer may emit a second `APPROVE` / `REJECT` for the same
+pending approval (a double click), so the host's handler keys on the pending approval and answers it
+once. (The terminal renderer additionally ignores a repeat until the frame moves.)
+
 A2UI Buttons emit `{ type: "A2UI_ACTION", payload: { action, context } }` and sandbox frames emit
 `{ type: "SANDBOX_ACTION", payload: { action, context } }` through the same `onAction`. When
 `onAction` is wired, the DOM `a2ui-action` event is NOT fired (it carries no provenance, and a host

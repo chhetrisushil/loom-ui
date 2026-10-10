@@ -1,6 +1,6 @@
 import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
 import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, blueprint$, stack } from "@loom/blueprint-runtime";
+import { MetricCard, blueprint$, customWidget$, stack } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { renderExperience } from "./status";
@@ -37,5 +37,48 @@ describe("a frame carries no terminal control sequence", () => {
     expect(out).toContain("Title é 日本");
     expect(out).toContain("Sec[2Jtion"); // the ESC is gone; the rest is inert text
     expect(out.split("\n").length).toBeGreaterThan(4);
+  });
+});
+
+describe("table columns are measured on the text that is printed", () => {
+  it("a cell full of stripped controls does not push its column wider than what is drawn", () => {
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "e" });
+    store.setValue(
+      "t",
+      {
+        columns: ["name", "n"],
+        rows: [
+          ["a\u001b[2J\u001b[2J\u200b\u200b\u200b", "1"],
+          ["bb", "2"],
+        ],
+      },
+      { state: "ready" }
+    );
+    const bp = blueprint$({
+      id: "e@v",
+      title: "T",
+      projections: [HYDRATION_PROJECTION_ID],
+      layout: stack({
+        children: [
+          customWidget$({
+            kind: "Table",
+            id: "tb",
+            title: "Tbl",
+            binding: {
+              projectionId: HYDRATION_PROJECTION_ID,
+              path: hydrationPath("t"),
+              status: { path: hydrationStatusPath("t") },
+            },
+          }),
+        ],
+      }),
+    });
+    const rows = renderExperience(bp, store)
+      .split("\n")
+      .filter((l) => /^\s*(name|a\[2J\[2J|bb)/.test(l));
+    expect(rows).toHaveLength(3);
+    // the second column starts at the same offset in the header and in every row
+    const second = rows.map((l) => l.search(/\s(n|1|2)$/));
+    expect(new Set(second).size).toBe(1);
   });
 });

@@ -43,6 +43,7 @@ import {
   type TerminalWidgetRenderer,
   defaultTerminalRegistry,
 } from "@loom/plugin-renderer-terminal";
+import { inert } from "./inert";
 
 const LEVEL_KEY = {
   ok: "lu.level.ok",
@@ -287,10 +288,12 @@ const TABLE_COL_MAX = 24;
 const table = (host: boolean, x: Env) =>
   guarded(host, "Table", (w, v, l) => {
     const t = v as TableValue;
-    const labels = t.columns.map(tableColumnLabel);
+    // Widths are computed over the text that will be PRINTED: loom's traversal strips controls
+    // from the whole frame afterwards, which would otherwise misalign a hostile cell.
+    const labels = t.columns.map((c) => inert(tableColumnLabel(c)));
     const formats = t.columns.map(tableColumnFormat);
     const cellText = (c: TableCell): string =>
-      c === null ? "—" : typeof c === "number" ? formatted(x, c, undefined, undefined) : c;
+      c === null ? "—" : typeof c === "number" ? formatted(x, c, undefined, undefined) : inert(c);
     const body = t.rows.slice(0, TABLE_ROWS).map((row) =>
       labels.map((_, i) => {
         const c = row[i] ?? null;
