@@ -12,9 +12,10 @@ import type {
   TableValue,
   TimeSeriesValue,
 } from "@loom-ui/core/browser";
+import { pluralForms } from "@loom-ui/core/messages";
 import { type SemanticFormat, effectiveFormat, measure } from "./format";
-import { t } from "./i18n";
 import { tPlural } from "./plural";
+import { LEVEL_KEY, say } from "./say";
 
 /**
  * A spoken summary of a rendered value — the accessible name a screen reader gets. `props` is
@@ -49,7 +50,7 @@ export function describeValue(
     }
     case "Timeline": {
       const n = (value as unknown[]).length;
-      return `${title}: ${n} ${tPlural("entry", n, { one: "entry", other: "entries" })}`;
+      return `${title}: ${n} ${tPlural("lu.plural.entry", n, pluralForms("lu.plural.entry"))}`;
     }
     case "TimeSeries": {
       const v = value as TimeSeriesValue;
@@ -61,13 +62,13 @@ export function describeValue(
       });
       // The kind comes first, as for a table ("table with N rows"): the series names alone say
       // WHAT is plotted, not that it is a line chart a reader cannot see.
-      return `${title}: ${t("line chart")}, ${parts.join(", ")}`;
+      return `${title}: ${say("lu.a11y.lineChart")}, ${parts.join(", ")}`;
     }
     case "BarChart": {
       const v = value as BarChartValue;
       const unit = v.unit ?? p?.unit;
       const fmt = effectiveFormat(v.format ?? p?.format, unit);
-      return `${title}: ${t("bar chart")}, ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${spokenUnit(fmt, unit)}`;
+      return `${title}: ${say("lu.a11y.barChart")}, ${v.bars.map((b) => `${b.label} ${measure(b.value, fmt)}`).join(", ")}${spokenUnit(fmt, unit)}`;
     }
     case "Kpi": {
       const v = value as KpiValue;
@@ -82,8 +83,8 @@ export function describeValue(
         delta === null || direction === undefined || direction === "none"
           ? ""
           : direction === "flat"
-            ? `, ${t("unchanged")}`
-            : `, ${t(direction)} ${measure(Math.abs(delta), DELTA_FORMAT)}`;
+            ? `, ${say("lu.a11y.unchanged")}`
+            : `, ${say(direction === "up" ? "lu.a11y.up" : "lu.a11y.down")} ${measure(Math.abs(delta), DELTA_FORMAT)}`;
       // The label is a caption beside the title, heard with it — never in its place.
       const name = v.label ? `${title}, ${v.label}` : title;
       return `${name}: ${measure(v.value, fmt)}${spokenUnit(fmt, unit)}${change}`;
@@ -92,7 +93,7 @@ export function describeValue(
       return `${title}: ${tableWith((value as TableValue).rows.length)}`;
     case "StatusCard": {
       const v = value as StatusCardValue;
-      return `${title}: ${t(v.level)}, ${v.headline}${v.detail ? `. ${v.detail}` : ""}`;
+      return `${title}: ${say(LEVEL_KEY[v.level])}, ${v.headline}${v.detail ? `. ${v.detail}` : ""}`;
     }
     default:
       return title;
@@ -100,7 +101,10 @@ export function describeValue(
 }
 /** One phrase for every table, so Table, DataTable and their <caption>s read alike. */
 function tableWith(rows: number): string {
-  return `${t("table with")} ${rows} ${tPlural("row", rows, { one: "row", other: "rows" })}`;
+  return say("lu.a11y.tableWith", {
+    rows,
+    noun: tPlural("lu.plural.row", rows, pluralForms("lu.plural.row")),
+  });
 }
 /** The unit as spoken after a figure: core's `unitSuffix` rule, so it matches what is shown. */
 function spokenUnit(fmt: SemanticFormat | undefined, unit: string | undefined): string {
@@ -108,14 +112,14 @@ function spokenUnit(fmt: SemanticFormat | undefined, unit: string | undefined): 
   return suffix === undefined ? "" : ` ${suffix}`;
 }
 export function emptyStateText(): string {
-  return t("No data");
+  return say("lu.empty.noData");
 }
 export function loadingStateText(title: string): string {
-  return `${title}: ${t("loading")}`;
+  return `${title}: ${say("lu.state.loading")}`;
 }
 export function errorStateText(title: string): string {
-  return `${title}: ${t("error")}`;
+  return `${title}: ${say("lu.state.error")}`;
 }
 export function staleStateText(title: string): string {
-  return `${title}: ${t("stale")}`;
+  return `${title}: ${say("lu.state.stale")}`;
 }

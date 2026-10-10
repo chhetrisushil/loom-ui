@@ -3,6 +3,7 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { measure } from "../format";
+import { say } from "../say";
 import { LuWidget } from "./base";
 
 /** loom's `TimelineRenderer` entry shape: `{ timestamp?, message?, level? }`. */
@@ -209,10 +210,10 @@ export class LuApproval extends LuWidget {
       ${
         pending
           ? html`<div class="actions">
-              <button @click=${this.approve}>${props.approveLabel ?? "Approve"}</button>
-              <button @click=${this.reject}>${props.rejectLabel ?? "Reject"}</button>
+              <button @click=${this.approve}>${props.approveLabel ?? say("lu.approval.approve")}</button>
+              <button @click=${this.reject}>${props.rejectLabel ?? say("lu.approval.reject")}</button>
             </div>`
-          : html`<div class="resolved">No pending approval</div>`
+          : html`<div class="resolved">${say("lu.approval.none")}</div>`
       }`;
   }
 }

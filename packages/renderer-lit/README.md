@@ -175,7 +175,175 @@ listening to both would act twice); without `onAction` it still fires, **depreca
 
 - `currentLocale()`, `setLocale(next)`, `onLocaleChange(listener)`, `isRtl(locale?)`,
   `localeLabel(locale)` — the locale a widget formats with, a change signal so an element
-  re-renders on change, and the RTL question; loading message catalogs stays with the host app.
+  re-renders on change, and the RTL question.
+- `configureI18n(override)`, `LU_MESSAGES`, `LU_MESSAGE_KEYS` — the host's words for every fixed
+  string; see "Localising the renderer" below. Loading message catalogs stays with the host app.
+
+### Localising the renderer
+
+Every fixed, user-visible English string this package draws (empty states, aria-labels, placeholders,
+buttons, status lines) is a key in ONE catalogue, `LU_MESSAGES` in `@loom-ui/core`, re-exported here
+with the typed key list `LU_MESSAGE_KEYS` and the `LuMessageKey` / `LuI18n` types. English is the
+default, so with no override the output is unchanged. A host installs its words once, before mounting:
+
+```ts
+import { configureI18n, LU_MESSAGE_KEYS } from "@loom-ui/renderer-lit";
+
+configureI18n({
+  locale: "de-DE", // numbers, dates, plural categories
+  messages: { "lu.empty.noData": "Keine Daten", "lu.chat.send": "Senden" }, // a catalogue ...
+  translate: (key, english) => myFormatter(key, english), // ... and/or a function; undefined = English
+});
+```
+
+- The catalogue is consulted first, then `translate(key, english)` (a message-format library plugs in
+  here), then the English default. A `translate` that throws is English, never a broken render.
+- A message may carry `{name}` placeholders (`lu.table.showing` is `Showing {shown} of {total} {noun}`);
+  keep them in the translation. A placeholder with no value is left as written.
+- A counted noun is `<base>.<category>` (`lu.plural.row.one` / `.other`, and `.few` / `.many` / ... for
+  a locale that has them). The locale's plural category selects the form only when the host translated
+  it; otherwise English rules choose, so the English text stays grammatical.
+- Calling `configureI18n` again swaps the override and re-renders every mounted element;
+  `configureI18n(undefined)` removes it. The locale also changes through `setLocale`.
+- Text that is DATA (titles, labels, headlines, cells, chat messages) is the experience's own words and
+  is never touched. Developer diagnostics (`onFail` findings, thrown errors) stay English.
+- Defaults live in `@loom-ui/core`'s `LU_MESSAGES`; a test (`i18nFitness.test.ts`) fails on any new
+  inline English literal in a renderer source and on any key no renderer uses.
+
+The keys this renderer asks for (the English default beside each; `{x}` is a placeholder):
+
+| Key | English default |
+| --- | --- |
+| `lu.empty.noData` | `No data` |
+| `lu.state.loading` | `loading` |
+| `lu.state.error` | `error` |
+| `lu.state.stale` | `stale` |
+| `lu.state.emptyView` | `empty view` |
+| `lu.state.noComponentCode` | `no component code` |
+| `lu.state.unknownComponent` | `unknown component: {name}` |
+| `lu.state.noValue` | `— no value` |
+| `lu.state.sourceShownAs` | `{type}, shown as {kind}` |
+| `lu.dom.noRenderer` | `[No renderer for {kind}]` |
+| `lu.dom.rendererError` | `[Renderer error for {kind}]` |
+| `lu.dom.rendererErrorDetail` | `[Renderer error for {kind}: {detail}]` |
+| `lu.dom.projectionMissing` | `[Projection "{id}" is not registered]` |
+| `lu.approval.approve` | `Approve` |
+| `lu.approval.reject` | `Reject` |
+| `lu.approval.none` | `No pending approval` |
+| `lu.a11y.lineChart` | `line chart` |
+| `lu.a11y.barChart` | `bar chart` |
+| `lu.a11y.tableWith` | `table with {rows} {noun}` |
+| `lu.a11y.unchanged` | `unchanged` |
+| `lu.a11y.up` | `up` |
+| `lu.a11y.down` | `down` |
+| `lu.a11y.rightAxis` | `R` |
+| `lu.plural.row.one` | `row` |
+| `lu.plural.row.other` | `rows` |
+| `lu.plural.entry.one` | `entry` |
+| `lu.plural.entry.other` | `entries` |
+| `lu.level.ok` | `ok` |
+| `lu.level.warning` | `warning` |
+| `lu.level.critical` | `critical` |
+| `lu.table.showing` | `Showing {shown} of {total} {noun}` |
+| `lu.table.showMore` | `Show {n} more` |
+| `lu.container.tab` | `Tab` |
+| `lu.container.step` | `Step` |
+| `lu.container.steps` | `Steps` |
+| `lu.container.back` | `Back` |
+| `lu.container.next` | `Next` |
+| `lu.container.stepOf` | `Step {current} / {total}: {label}` |
+| `lu.locale.language` | `Language` |
+| `lu.locale.noOthers` | `No other languages are available yet` |
+| `lu.range.title` | `Time range` |
+| `lu.range.24h` | `24h` |
+| `lu.range.7d` | `7d` |
+| `lu.range.30d` | `30d` |
+| `lu.range.90d` | `90d` |
+| `lu.range.12m` | `12m` |
+| `lu.range.custom` | `Custom` |
+| `lu.range.from` | `From` |
+| `lu.range.to` | `To` |
+| `lu.media.kind.image` | `image` |
+| `lu.media.kind.audio` | `audio` |
+| `lu.media.kind.video` | `video` |
+| `lu.media.kind.file` | `file` |
+| `lu.media.notLoaded` | `Media renderer not loaded` |
+| `lu.media.untrusted` | `untrusted content` |
+| `lu.media.tooLarge` | `Media too large to display` |
+| `lu.media.blocked` | `Untrusted media blocked` |
+| `lu.media.unavailable` | `Media unavailable` |
+| `lu.media.loading` | `Loading media` |
+| `lu.media.upload.uploading` | `Uploading…` |
+| `lu.media.upload.attached` | `Attached` |
+| `lu.media.upload.notAccepted` | `That file type is not accepted` |
+| `lu.media.upload.tooLarge` | `That file is too large` |
+| `lu.media.upload.failed` | `Upload failed` |
+| `lu.media.upload.unavailable` | `Uploads are not available` |
+| `lu.media.upload.stale` | `The view changed; choose the file again` |
+| `lu.media.upload.attach` | `Attach a file` |
+| `lu.chat.notLoaded` | `Chat renderer not loaded` |
+| `lu.chat.empty` | `No messages yet.` |
+| `lu.chat.loadEarlier` | `Load earlier messages` |
+| `lu.chat.loading` | `Loading…` |
+| `lu.chat.replying` | `The assistant is replying…` |
+| `lu.chat.closed` | `This conversation is closed.` |
+| `lu.chat.restrictedMessage` | `Restricted message` |
+| `lu.chat.restricted` | `Restricted` |
+| `lu.chat.edit` | `Edit` |
+| `lu.chat.editThis` | `Edit this message` |
+| `lu.chat.editYour` | `Edit your message` |
+| `lu.chat.editHint` | `Sent as a new message. Ctrl+Enter sends, Escape cancels.` |
+| `lu.chat.send` | `Send` |
+| `lu.chat.cancel` | `Cancel` |
+| `lu.chat.sending` | `Sending…` |
+| `lu.chat.typeFirst` | `Type a message first.` |
+| `lu.chat.who.assistant` | `Assistant` |
+| `lu.chat.who.notice` | `Notice` |
+| `lu.chat.who.you` | `You` |
+| `lu.chat.who.user` | `User` |
+| `lu.chat.who.userNamed` | `User "{name}"` |
+| `lu.chat.status.replying` | `replying` |
+| `lu.chat.status.interrupted` | `interrupted` |
+| `lu.chat.status.failed` | `failed` |
+| `lu.chat.status.rejected` | `not accepted` |
+| `lu.chat.status.editOf` | `edit of turn {turn}` |
+| `lu.chat.line.restricted` | `[restricted {role} turn]` |
+| `lu.chat.line.restrictedFrom` | `[restricted {role} turn from {by}]` |
+| `lu.chat.line.ref` | `(ref {id})` |
+| `lu.chat.line.tools` | `[tools: {tools}]` |
+| `lu.chat.reason.model-error` | `The assistant ran into a problem.` |
+| `lu.chat.reason.denied` | `That was not permitted.` |
+| `lu.chat.reason.turn-failed` | `The turn could not be completed.` |
+| `lu.chat.reason.cancelled` | `The turn was cancelled.` |
+| `lu.chat.reason.too-long` | `The message was too long.` |
+| `lu.chat.reason.prompt-too-large` | `The message was too large to answer.` |
+| `lu.chat.reason.malformed` | `The message was not understood.` |
+| `lu.chat.reason.unauthenticated` | `The message could not be verified.` |
+| `lu.chat.reason.replayed` | `The message was already received.` |
+| `lu.chat.reason.stale` | `The message arrived too late.` |
+| `lu.chat.reason.not-a-participant` | `You are not a participant in this conversation.` |
+| `lu.chat.reason.edit-invalid` | `That edit could not be applied to the earlier message.` |
+| `lu.chat.reason.generic` | `The message was not processed.` |
+| `lu.chat.dispatch.stale` | `The view changed. Review it and send again.` |
+| `lu.chat.dispatch.unavailable` | `Sending is not available here.` |
+| `lu.chat.dispatch.failed` | `Not sent. Try again.` |
+| `lu.input.message` | `Message` |
+| `lu.input.hint` | `Press Ctrl+Enter to send.` |
+| `lu.input.sent` | `Sent` |
+| `lu.input.tooLong` | `That message is too long.` |
+| `lu.input.form` | `Form` |
+| `lu.input.submit` | `Submit` |
+| `lu.input.choose` | `Choose` |
+| `lu.input.chooseEllipsis` | `Choose…` |
+| `lu.input.fixFields` | `Fix the marked fields.` |
+| `lu.input.formUnavailable` | `This form is not available.` |
+| `lu.input.choiceUnavailable` | `This choice is not available.` |
+| `lu.input.error.required` | `This field is required.` |
+| `lu.input.error.tooLong` | `This is too long.` |
+| `lu.input.error.range` | `This is out of range.` |
+| `lu.input.error.option` | `Choose one of the options.` |
+| `lu.input.error.unknownField` | `This field is not part of the form.` |
+| `lu.input.error.invalid` | `This is not valid.` |
 
 ### A2UI and sandbox support
 
@@ -312,15 +480,14 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   border-box`, so `width: 100%` plus padding or a border never overflows its container.
 - **Accessible descriptions name the kind.** A chart's name reads `<title>: line chart, <series…>`
   / `<title>: bar chart, <bars…>` (and a table's `<title>: table with N rows`, singular `1 row`).
-  Every phrase passes through the package's `t()` seam, and counted nouns (`row`/`rows`,
-  `entry`/`entries`, the table footer's "Showing N of M rows") are keyed `row.one` / `row.other`
+  Every phrase is a catalogue key asked through the package's `t()` seam, and counted nouns (`row`/`rows`,
+  `entry`/`entries`, the table footer's "Showing N of M rows") are keyed `lu.plural.row.one` / `lu.plural.row.other`
   (plus `few`/`many`/… where a locale has them). The active locale's plural category
   (`Intl.PluralRules`: French 0 is `one`, Japanese has only `other`, Russian has one/few/many)
   selects the form ONLY when `t(<key>.<category>)` returns a translation, i.e. anything other than
   the English fallback. Otherwise the category is chosen by the English rules, so the English text
-  is always grammatical: `ja` and `fr` read "1 row" and "0 rows", never "1 rows" or "0 row". Today
-  `t` is an identity function with no host override, so the spoken text is English; a way for a
-  host to supply translations is a separate capability this package does not have yet.
+  is always grammatical: `ja` and `fr` read "1 row" and "0 rows", never "1 rows" or "0 row". A host
+  supplies translations with `configureI18n` (see "Localising the renderer").
 - **A container renderer's failure never loses children.** A container renderer that throws on
   mount or `update` is disposed and the container falls back to the plain container in place;
   children stay mounted and subscribed, with a `mount-failed`/`patch-failed` finding reported.

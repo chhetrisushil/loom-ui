@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { t } from "../i18n";
+import { say } from "../say";
 
 // The DEFAULT registry's stand-in for the chat kinds (U8). The real widgets are the opt-in entry
 // `@loom-ui/renderer-lit/chat`; a page that composed a transcript or an input without registering
@@ -34,7 +34,7 @@ export class LuChatMissing extends LitElement {
     );
   }
   render() {
-    return html`<div role="note" data-chat-state="not-loaded">${t("Chat renderer not loaded")}</div>`;
+    return html`<div role="note" data-chat-state="not-loaded">${say("lu.chat.notLoaded")}</div>`;
   }
 }
 

@@ -309,3 +309,15 @@ export type {
   SeenState,
   SnapshotOptions,
 } from "./seen";
+// U14: the fixed-words catalogue and its host override.
+export {
+  LU_MESSAGES,
+  LU_MESSAGE_KEYS,
+  createSay,
+  fill,
+  lookupMessage,
+  pluralForms,
+  sayEnglish,
+  selectPlural,
+} from "./messages";
+export type { LuI18n, LuMessageKey, LuMessageVars, PluralForms, Say } from "./messages";

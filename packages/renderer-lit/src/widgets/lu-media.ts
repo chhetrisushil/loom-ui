@@ -18,7 +18,8 @@ import {
 } from "@loom-ui/core/media";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { t } from "../i18n";
+
+import { say } from "../say";
 import { titleText } from "../title";
 import { LuWidget } from "./base";
 
@@ -235,7 +236,7 @@ abstract class LuMedia extends LuWidget {
   protected override label(): string {
     const ref = this.ref;
     if (ref !== undefined && this.state().state === "ready")
-      return `${this.title_}: ${describeMedia(this.kind, ref)}`;
+      return `${this.title_}: ${describeMedia(this.kind, ref, say)}`;
     return super.label();
   }
 
@@ -267,18 +268,18 @@ abstract class LuMedia extends LuWidget {
     switch (r.state) {
       case "ready":
         return html`<div data-media-state="ready" data-media-kind=${this.kind.toLowerCase()} ?data-untrusted=${r.trusted !== true}>
-          ${r.trusted === true ? nothing : html`<span class="untrusted" role="note">${t("untrusted content")}</span>`}
+          ${r.trusted === true ? nothing : html`<span class="untrusted" role="note">${say("lu.media.untrusted")}</span>`}
           ${this.drawResolved(ref, r.url as string)}
           ${this.caption === undefined ? nothing : html`<div class="meta" data-caption>${this.caption}</div>`}
         </div>`;
       case "too-large":
-        return html`<div class="placeholder" data-media-state="too-large" role="note">${t("Media too large to display")}${ref.size === undefined ? nothing : html` (${formatBytes(ref.size)})`}</div>`;
+        return html`<div class="placeholder" data-media-state="too-large" role="note">${say("lu.media.tooLarge")}${ref.size === undefined ? nothing : html` (${formatBytes(ref.size)})`}</div>`;
       case "blocked":
-        return html`<div class="placeholder" data-media-state="blocked" role="note">${t("Untrusted media blocked")}</div>`;
+        return html`<div class="placeholder" data-media-state="blocked" role="note">${say("lu.media.blocked")}</div>`;
       case "unavailable":
-        return html`<div class="placeholder" data-media-state="unavailable" role="note">${t("Media unavailable")}</div>`;
+        return html`<div class="placeholder" data-media-state="unavailable" role="note">${say("lu.media.unavailable")}</div>`;
       default:
-        return html`<div class="placeholder" data-media-state="resolving" role="status" aria-busy="true">${t("Loading media")}</div>`;
+        return html`<div class="placeholder" data-media-state="resolving" role="status" aria-busy="true">${say("lu.media.loading")}</div>`;
     }
   }
 }
@@ -289,7 +290,7 @@ export class LuImage extends LuMedia {
   protected readonly purpose = "display" as const;
   protected drawResolved(ref: MediaRef, url: string): TemplateResult {
     // `alt` falls back to the file name, then the kind: never an empty (decorative) alt for content.
-    const alt = this.alt || this.safeName || t("image");
+    const alt = this.alt || this.safeName || say("lu.media.kind.image");
     return html`<figure><img
       src=${url}
       alt=${alt}
@@ -307,7 +308,7 @@ export class LuAudio extends LuMedia {
   readonly kind = "Audio";
   protected readonly purpose = "display" as const;
   protected drawResolved(ref: MediaRef, url: string): TemplateResult {
-    const label = this.alt || this.safeName || describeMedia("Audio", ref);
+    const label = this.alt || this.safeName || describeMedia("Audio", ref, say);
     return html`<audio controls preload="none" src=${url} aria-label=${label} @error=${this.failed}></audio>`;
   }
 }
@@ -317,7 +318,7 @@ export class LuVideo extends LuMedia {
   readonly kind = "Video";
   protected readonly purpose = "display" as const;
   protected drawResolved(ref: MediaRef, url: string): TemplateResult {
-    const label = this.alt || this.safeName || describeMedia("Video", ref);
+    const label = this.alt || this.safeName || describeMedia("Video", ref, say);
     return html`<video controls preload="none" playsinline src=${url} aria-label=${label} @error=${this.failed}></video>`;
   }
 }
@@ -328,7 +329,8 @@ export class LuFile extends LuMedia {
   protected readonly purpose = "download" as const;
   protected drawResolved(ref: MediaRef, url: string): TemplateResult {
     const named = checkFileName(ref.name, ref.mediaType);
-    const shown = ref.name === undefined || this.safeName === "" ? t("file") : named.display;
+    const shown =
+      ref.name === undefined || this.safeName === "" ? say("lu.media.kind.file") : named.display;
     const meta = [ref.mediaType, ref.size === undefined ? "" : formatBytes(ref.size)]
       .filter((s) => s !== "")
       .join(", ");
@@ -488,19 +490,19 @@ export class LuMediaInput extends LuWidget {
   private statusText(): { text: string; error: boolean } | undefined {
     switch (this.phase) {
       case "uploading":
-        return { text: t("Uploading…"), error: false };
+        return { text: say("lu.media.upload.uploading"), error: false };
       case "attached":
-        return { text: t("Attached"), error: false };
+        return { text: say("lu.media.upload.attached"), error: false };
       case "type":
-        return { text: t("That file type is not accepted"), error: true };
+        return { text: say("lu.media.upload.notAccepted"), error: true };
       case "size":
-        return { text: t("That file is too large"), error: true };
+        return { text: say("lu.media.upload.tooLarge"), error: true };
       case "failed":
-        return { text: t("Upload failed"), error: true };
+        return { text: say("lu.media.upload.failed"), error: true };
       case "unavailable":
-        return { text: t("Uploads are not available"), error: true };
+        return { text: say("lu.media.upload.unavailable"), error: true };
       case "stale":
-        return { text: t("The view changed; choose the file again"), error: true };
+        return { text: say("lu.media.upload.stale"), error: true };
       default:
         return undefined;
     }
@@ -510,7 +512,7 @@ export class LuMediaInput extends LuWidget {
     const label =
       titleText((this.widget.props as { label?: unknown }).label) ??
       titleText(this.widget.title) ??
-      t("Attach a file");
+      say("lu.media.upload.attach");
     const accept = (this.accept ?? []).join(",");
     const s = this.statusText();
     return html`<div role="group" aria-label=${label} data-media-input data-phase=${this.phase}>

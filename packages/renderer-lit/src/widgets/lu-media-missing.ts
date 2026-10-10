@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { t } from "../i18n";
+import { say } from "../say";
 
 // The DEFAULT registry's stand-in for the media kinds (U9). The real widgets are the opt-in entry
 // `@loom-ui/renderer-lit/media`; a page that composed media without registering them sees ONE fixed
@@ -34,7 +34,7 @@ export class LuMediaMissing extends LitElement {
     );
   }
   render() {
-    return html`<div role="note" data-media-state="not-loaded">${t("Media renderer not loaded")}</div>`;
+    return html`<div role="note" data-media-state="not-loaded">${say("lu.media.notLoaded")}</div>`;
   }
 }
 

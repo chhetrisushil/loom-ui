@@ -11,7 +11,16 @@ export * from "./dom/index";
 export type { TitleChrome } from "./widgets/base";
 export { measure, tick, timeTick } from "./format";
 export type { SemanticFormat } from "./format";
-export { currentLocale, isRtl, localeLabel, onLocaleChange, setLocale } from "./i18n";
+export {
+  configureI18n,
+  currentLocale,
+  isRtl,
+  localeLabel,
+  onLocaleChange,
+  setLocale,
+} from "./i18n";
+export { LU_MESSAGES, LU_MESSAGE_KEYS } from "@loom-ui/core/messages";
+export type { LuI18n, LuMessageKey } from "@loom-ui/core/messages";
 export {
   type FrameMessage,
   SANDBOX_ALLOW,

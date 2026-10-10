@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { localized, t } from "../i18n";
+import { localized } from "../i18n";
+import { say } from "../say";
 
 export type TimeRangePreset = "24h" | "7d" | "30d" | "90d" | "12m";
 export interface TimeRange {
@@ -16,11 +17,11 @@ export interface TimeRange {
 // Labels are resolved per render, not once at module load: t() must run after the
 // locale is active, and again after the user switches it.
 const presets = (): { key: TimeRangePreset; label: string }[] => [
-  { key: "24h", label: t("24h") },
-  { key: "7d", label: t("7d") },
-  { key: "30d", label: t("30d") },
-  { key: "90d", label: t("90d") },
-  { key: "12m", label: t("12m") },
+  { key: "24h", label: say("lu.range.24h") },
+  { key: "7d", label: say("lu.range.7d") },
+  { key: "30d", label: say("lu.range.30d") },
+  { key: "90d", label: say("lu.range.90d") },
+  { key: "12m", label: say("lu.range.12m") },
 ];
 
 @customElement("lu-time-range-picker")
@@ -100,7 +101,7 @@ export class LuTimeRangePicker extends LitElement {
   render() {
     const active = this.activePreset;
     return html`
-      <span class="icon" title=${t("Time range")}>🕒</span>
+      <span class="icon" title=${say("lu.range.title")}>🕒</span>
       <div class="seg">
         ${presets().map(
           (p) => html`<button
@@ -112,15 +113,15 @@ export class LuTimeRangePicker extends LitElement {
           </button>`
         )}
         <button class=${this.isCustom ? "active" : ""} @click=${this.toggleCustom}>
-          ${t("Custom")}
+          ${say("lu.range.custom")}
         </button>
       </div>
       ${
         this.customOpen
           ? html`<span class="custom">
-            <input type="date" .value=${this.dateStr(this.value?.from)} @change=${this.onFrom} aria-label=${t("From")} />
+            <input type="date" .value=${this.dateStr(this.value?.from)} @change=${this.onFrom} aria-label=${say("lu.range.from")} />
             <span>→</span>
-            <input type="date" .value=${this.dateStr(this.value?.to)} @change=${this.onToDate} aria-label=${t("To")} />
+            <input type="date" .value=${this.dateStr(this.value?.to)} @change=${this.onToDate} aria-label=${say("lu.range.to")} />
           </span>`
           : nothing
       }

@@ -19,7 +19,8 @@ import {
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import { t } from "../i18n";
+
+import { say } from "../say";
 import { LuWidget } from "./base";
 import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
 import type { MediaHostOptions } from "./lu-media";
@@ -341,7 +342,7 @@ export class LuChat extends LuWidget {
     // The media elements are the opt-in `@loom-ui/renderer-lit/media` entry. Without it the part is
     // DESCRIBED (type, name, size) and nothing is loaded; no address is ever printed.
     if (typeof customElements === "undefined" || customElements.get(tag) === undefined)
-      return html`<p class="fixed" data-media-state="not-loaded">${describeMedia(kind, part.ref)}</p>`;
+      return html`<p class="fixed" data-media-state="not-loaded">${describeMedia(kind, part.ref, say)}</p>`;
     const widget = { id: `${entry.id}.p${i}`, kind, title: "", props: {} };
     switch (kind) {
       case "Image":
@@ -356,15 +357,15 @@ export class LuChat extends LuWidget {
   }
 
   private entry(e: ChatEntry, v: ChatValue): TemplateResult {
-    const speaker = chatSpeaker(e, v);
-    const note = chatStatusNote(e);
+    const speaker = chatSpeaker(e, v, say);
+    const note = chatStatusNote(e, say);
     const own = isOwnChatEntry(e, v);
     if (e.status === "restricted") {
       // A bare placeholder: who and which turn, nothing the viewer is not cleared for.
       const by = chatActorLabel(e);
-      return html`<article data-role=${e.role} data-status="restricted" data-turn=${e.turn} aria-label=${t("Restricted message")}>
-        <header><span class="who">${e.role === "assistant" ? t("Assistant") : by === "" ? t("User") : `${t("User")} "${by}"`}</span></header>
-        <p class="fixed" role="note">${t("Restricted")}</p>
+      return html`<article data-role=${e.role} data-status="restricted" data-turn=${e.turn} aria-label=${say("lu.chat.restrictedMessage")}>
+        <header><span class="who">${e.role === "assistant" ? say("lu.chat.who.assistant") : by === "" ? say("lu.chat.who.user") : say("lu.chat.who.userNamed", { name: by })}</span></header>
+        <p class="fixed" role="note">${say("lu.chat.restricted")}</p>
       </article>`;
     }
     const editing = this.editing?.turn === e.turn && e.role === "user";
@@ -390,7 +391,7 @@ export class LuChat extends LuWidget {
       }
       ${
         e.status === "failed" || e.status === "rejected"
-          ? html`<p class="fixed" role="note" data-fixed>${chatReasonText(e.reason)}${e.errorId === undefined ? nothing : html` (${t("ref")} ${e.errorId})`}</p>`
+          ? html`<p class="fixed" role="note" data-fixed>${chatReasonText(e.reason, say)}${e.errorId === undefined ? nothing : html` ${say("lu.chat.line.ref", { id: e.errorId })}`}</p>`
           : nothing
       }
       ${
@@ -400,7 +401,7 @@ export class LuChat extends LuWidget {
       }
       ${
         canEdit && !editing
-          ? html`<button type="button" data-edit-button=${e.turn} @click=${() => this.startEdit(e)} aria-label=${t("Edit this message")}>${t("Edit")}</button>`
+          ? html`<button type="button" data-edit-button=${e.turn} @click=${() => this.startEdit(e)} aria-label=${say("lu.chat.editThis")}>${say("lu.chat.edit")}</button>`
           : nothing
       }
     </article>`;
@@ -411,14 +412,14 @@ export class LuChat extends LuWidget {
     const failed =
       this.editPhase === "failed" || this.editPhase === "stale" || this.editPhase === "unavailable";
     const text = sending
-      ? t("Sending…")
+      ? say("lu.chat.sending")
       : this.editPhase === "invalid"
-        ? t("Type a message first.")
+        ? say("lu.chat.typeFirst")
         : failed
           ? failureText(this.editPhase as DispatchResult)
           : "";
     return html`<div class="editor" data-editor>
-      <label for="edit-field">${t("Edit your message")}</label>
+      <label for="edit-field">${say("lu.chat.editYour")}</label>
       <textarea id="edit-field" data-edit-field rows="3" .value=${this.draft} ?readonly=${sending}
         aria-describedby="edit-hint edit-status"
         @input=${(ev: Event) => {
@@ -426,10 +427,10 @@ export class LuChat extends LuWidget {
           if (this.editPhase !== "sending") this.editPhase = "idle";
         }}
         @keydown=${this.onEditKeydown}></textarea>
-      <div class="hint" id="edit-hint">${t("Sent as a new message. Ctrl+Enter sends, Escape cancels.")}</div>
+      <div class="hint" id="edit-hint">${say("lu.chat.editHint")}</div>
       <div class="actions">
-        <button type="button" ?disabled=${sending} @click=${() => void this.sendEdit()}>${t("Send")}</button>
-        <button type="button" @click=${() => this.cancelEdit(this.editing?.turn)}>${t("Cancel")}</button>
+        <button type="button" ?disabled=${sending} @click=${() => void this.sendEdit()}>${say("lu.chat.send")}</button>
+        <button type="button" @click=${() => this.cancelEdit(this.editing?.turn)}>${say("lu.chat.cancel")}</button>
       </div>
       <div class="status" id="edit-status" role=${failed || this.editPhase === "invalid" ? "alert" : "status"} ?data-error=${failed || this.editPhase === "invalid"}>${text}</div>
     </div>`;
@@ -442,11 +443,11 @@ export class LuChat extends LuWidget {
     const emptyText =
       typeof (this.widget.props as { emptyText?: unknown }).emptyText === "string"
         ? oneLineChatText((this.widget.props as { emptyText: string }).emptyText, 200)
-        : t("No messages yet.");
+        : say("lu.chat.empty");
     return html`<section aria-label=${this.title_} data-chat>
       ${
         v.older !== undefined
-          ? html`<button class="older" type="button" data-older ?disabled=${this.loadingOlder} @click=${this.loadOlder}>${this.loadingOlder ? t("Loading…") : t("Load earlier messages")}</button>`
+          ? html`<button class="older" type="button" data-older ?disabled=${this.loadingOlder} @click=${this.loadOlder}>${this.loadingOlder ? say("lu.chat.loading") : say("lu.chat.loadEarlier")}</button>`
           : nothing
       }
       <div class="log" role="log" tabindex="0" aria-live="polite" aria-relevant="additions text" aria-busy=${streaming ? "true" : "false"} aria-label=${this.title_}>
@@ -457,8 +458,8 @@ export class LuChat extends LuWidget {
           (e) => this.entry(e, v)
         )}
       </div>
-      <p class="typing" role="status">${v.running === true && !streaming && v.state !== "closed" ? t("The assistant is replying…") : ""}</p>
-      ${v.state === "closed" ? html`<p class="closed" role="note">${t("This conversation is closed.")}</p>` : nothing}
+      <p class="typing" role="status">${v.running === true && !streaming && v.state !== "closed" ? say("lu.chat.replying") : ""}</p>
+      ${v.state === "closed" ? html`<p class="closed" role="note">${say("lu.chat.closed")}</p>` : nothing}
     </section>`;
   }
 }

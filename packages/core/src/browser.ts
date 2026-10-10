@@ -69,3 +69,5 @@ export {
   roleChildProblems,
 } from "./containerRoles";
 export type { ContainerRoleSpec, RoleChild, RoleChildren } from "./containerRoles";
+// The fixed-words catalogue (U14) is its own subpath, `@loom-ui/core/messages`: a page that draws no fixed
+// words (the hydration client) must not carry the ~8 kB catalogue.

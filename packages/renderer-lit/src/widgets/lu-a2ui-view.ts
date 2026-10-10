@@ -2,7 +2,8 @@ import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type TemplateResult, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { type A2UIRender, type A2UIView, planView } from "../a2ui/plan";
-import { localized, t } from "../i18n";
+import { localized } from "../i18n";
+import { say } from "../say";
 
 // ── The A2UI declarative interpreter ──────────────────────────────────────────
 //
@@ -62,7 +63,7 @@ export class LuA2UIView extends LitElement {
   `;
 
   render() {
-    if (!this.view) return html`<div class="unknown">${t("empty view")}</div>`;
+    if (!this.view) return html`<div class="unknown">${say("lu.state.emptyView")}</div>`;
     return this.paint(planView(this.view, this.data));
   }
 
@@ -84,10 +85,7 @@ export class LuA2UIView extends LitElement {
           @click=${() => this.emitAction(node.action, node.context)}
         >${node.label}</button>`;
       case "unknown":
-        // A richer i18n layer might interpolate `t("unknown component: {name}", { name })`; this
-        // package's `t` is identity-only (no params), so the substitution is done
-        // at the call site before handing the string to `t`.
-        return html`<span class="unknown">${t(`unknown component: ${node.component}`)}</span>`;
+        return html`<span class="unknown">${say("lu.state.unknownComponent", { name: node.component })}</span>`;
       default:
         return nothing;
     }

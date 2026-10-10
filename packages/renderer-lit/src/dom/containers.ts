@@ -1,6 +1,7 @@
 import { STEPPER_ROLE, TABS_ROLE } from "@loom-ui/core/browser";
 import { RendererRegistry } from "@loom/blueprint-runtime";
-import { t } from "../i18n";
+
+import { say } from "../say";
 import type {
   DomContainerHandle,
   DomContainerProps,
@@ -132,7 +133,7 @@ export function tabsContainer(): DomContainerRenderer {
         tab.setAttribute("aria-selected", String(i === current));
         tab.setAttribute("aria-controls", props.children[i]?.element.id ?? "");
         tab.tabIndex = i === current ? 0 : -1;
-        const label = labelOf(props, i, t("container.tab", "Tab"));
+        const label = labelOf(props, i, say("lu.container.tab"));
         if (tab.textContent !== label) tab.textContent = label;
       });
     };
@@ -160,20 +161,20 @@ export function stepperContainer(): DomContainerRenderer {
     let current = 0;
     const nav = document.createElement("nav");
     nav.dataset.chrome = "stepper";
-    nav.setAttribute("aria-label", t("container.steps", "Steps"));
+    nav.setAttribute("aria-label", say("lu.container.steps"));
     const dots = document.createElement("ol");
     dots.dataset.chromePart = "steps";
     const back = document.createElement("button");
     back.type = "button";
     back.dataset.chromeAction = "back";
-    back.textContent = t("container.back", "Back");
+    back.textContent = say("lu.container.back");
     const position = document.createElement("span");
     position.dataset.chromePart = "position";
     position.setAttribute("aria-live", "polite");
     const next = document.createElement("button");
     next.type = "button";
     next.dataset.chromeAction = "next";
-    next.textContent = t("container.next", "Next");
+    next.textContent = say("lu.container.next");
     nav.append(dots, back, position, next);
     host.insertBefore(nav, props.body);
 
@@ -184,7 +185,7 @@ export function stepperContainer(): DomContainerRenderer {
       while (dots.children.length > n) dots.lastElementChild?.remove();
       while (dots.children.length < n) dots.appendChild(document.createElement("li"));
       [...dots.children].forEach((li, i) => {
-        const label = labelOf(props, i, t("container.step", "Step"));
+        const label = labelOf(props, i, say("lu.container.step"));
         if (li.textContent !== label) li.textContent = label;
         if (i === current) li.setAttribute("aria-current", "step");
         else li.removeAttribute("aria-current");
@@ -192,7 +193,11 @@ export function stepperContainer(): DomContainerRenderer {
       position.textContent =
         n === 0
           ? ""
-          : `${t("container.step", "Step")} ${current + 1} / ${n}: ${labelOf(props, current, t("container.step", "Step"))}`;
+          : say("lu.container.stepOf", {
+              current: current + 1,
+              total: n,
+              label: labelOf(props, current, say("lu.container.step")),
+            });
       back.disabled = current === 0;
       next.disabled = n === 0 || current >= n - 1;
     };

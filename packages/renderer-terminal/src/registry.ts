@@ -5,9 +5,12 @@ import {
   DELTA_FORMAT,
   type KpiValue,
   LocalizedText,
+  type LuI18n,
+  type LuMessageKey,
   type MediaKind,
   type MediaPolicy,
   type MediaRef,
+  type Say,
   type SemanticFormat,
   type StatusCardValue,
   type TableCell,
@@ -17,6 +20,7 @@ import {
   checkKindValue,
   checkMediaUrl,
   cleanMediaText,
+  createSay,
   deltaDirection,
   describeMedia,
   effectiveFormat,
@@ -24,9 +28,12 @@ import {
   formatSemanticNumber,
   isActiveMediaType,
   isSameOriginMediaUrl,
+  lookupMessage,
   maxBytesFor,
   oneLineChatText,
   optionsProblem,
+  pluralForms,
+  selectPlural,
   tableColumnFormat,
   tableColumnLabel,
   unitSuffix,
@@ -36,6 +43,12 @@ import {
   type TerminalWidgetRenderer,
   defaultTerminalRegistry,
 } from "@loom/plugin-renderer-terminal";
+
+const LEVEL_KEY = {
+  ok: "lu.level.ok",
+  warning: "lu.level.warning",
+  critical: "lu.level.critical",
+} as const satisfies Record<string, LuMessageKey>;
 
 const SPARK = "▁▂▃▄▅▆▇█";
 /**
@@ -69,6 +82,11 @@ export interface TerminalRegistryOptions {
   readonly chrome?: TitleChrome;
   /** How media prints. Default: handle only, everything untrusted. */
   readonly media?: TerminalMediaOptions;
+  /**
+   * The host override for every fixed word the terminal prints (see `LU_MESSAGE_KEYS`) and the locale
+   * its numbers and plurals use. Default: English, locale `en-US` — see {@link DEFAULT_TERMINAL_LOCALE}.
+   */
+  readonly i18n?: LuI18n;
 }
 
 /** A non-empty string is a title; `""` (or a stray non-string) is none, so the kind stands in. */
@@ -77,12 +95,30 @@ const titleText = (w: Widget): string | undefined =>
 const title = (w: Widget): string => titleText(w) ?? w.kind;
 const pad = (s: string, n: number): string => (s.length >= n ? s.slice(0, n) : s.padEnd(n));
 
-/** One fixed, deterministic locale for every terminal number: the same grouping/rounding/currency
- * rules the DOM renderer's `measure()` applies for its reader, without varying with the host's
- * own locale. */
-const LOCALE = "en-US";
-/** Plural category of a count, in the same fixed locale as every terminal number. */
-const PLURALS = new Intl.PluralRules(LOCALE);
+/**
+ * The terminal's default locale for every number and plural: one fixed, deterministic tag, so the
+ * same value prints the same bytes on every machine (logs, snapshots, CI) instead of varying with the
+ * host's own locale. A host that wants another passes `i18n: { locale }`.
+ */
+export const DEFAULT_TERMINAL_LOCALE = "en-US";
+
+/** What a renderer needs to speak: the locale, and the host's words by key. */
+interface Env {
+  readonly locale: string;
+  readonly say: Say;
+  /** A counted noun (`lu.plural.row`) in `locale`'s grammar when the host translated it, else English. */
+  readonly plural: (base: "lu.plural.row", n: number) => string;
+}
+
+function envOf(i18n: LuI18n | undefined): Env {
+  const locale = i18n?.locale ?? DEFAULT_TERMINAL_LOCALE;
+  return {
+    locale,
+    say: createSay(i18n),
+    plural: (base, n) =>
+      selectPlural(locale, base, n, pluralForms(base), (k, f) => lookupMessage(i18n, k, f)),
+  };
+}
 
 /**
  * A number exactly as the web's `measure()` would print it for the same value, format and unit —
@@ -97,12 +133,13 @@ const PLURALS = new Intl.PluralRules(LOCALE);
  * re-derived here.)
  */
 function formatted(
+  x: Env,
   v: number,
   format: SemanticFormat | undefined,
   unit: string | undefined
 ): string {
   const fmt = effectiveFormat(format, unit);
-  const text = formatSemanticNumber(v, fmt, LOCALE);
+  const text = formatSemanticNumber(v, fmt, x.locale);
   const suffix = unitSuffix(fmt, unit);
   return suffix === undefined ? text : `${text} ${suffix}`;
 }
@@ -180,7 +217,7 @@ function padLabelWithMarker(label: string, marker: string, width: number): strin
   return `${truncatedLabel}${marker}`;
 }
 
-const timeSeries = (host: boolean) =>
+const timeSeries = (host: boolean, x: Env) =>
   guarded(host, "TimeSeries", (w, v, l) => {
     const { series } = v as TimeSeriesValue;
     const props = w.props as { unit?: string; format?: SemanticFormat };
@@ -193,14 +230,14 @@ const timeSeries = (host: boolean) =>
       const last = values.length > 0 ? (values[values.length - 1] as number) : Number.NaN;
       // Same precedence as the web's `formatOf` (lu-timeseries.ts): this series' own format, else
       // the widget's; a unit resolves only when neither format does.
-      const text = formatted(last, s.format ?? props.format, s.unit ?? props.unit);
+      const text = formatted(x, last, s.format ?? props.format, s.unit ?? props.unit);
       const marker = splitAxes && s.axis === "right" ? RIGHT_AXIS_MARKER : "";
       return `${hang(host)}${padLabelWithMarker(s.label, marker, 12)} ${sparkline(values)}  ${text}`;
     });
     return (host ? lines : [`${title(w)}:`, ...lines]).join("\n");
   });
 
-const barChart = (host: boolean) =>
+const barChart = (host: boolean, x: Env) =>
   guarded(host, "BarChart", (w, v, l) => {
     const { bars, format, unit } = v as BarChartValue;
     const props = w.props as { unit?: string; format?: SemanticFormat };
@@ -218,13 +255,13 @@ const barChart = (host: boolean) =>
     }
     const lines = bars.map((b) => {
       const filled = Number.isFinite(b.value) ? Math.round((Math.abs(b.value) / max) * 20) : 0;
-      const text = formatted(b.value, chartFormat, chartUnit);
+      const text = formatted(x, b.value, chartFormat, chartUnit);
       return `${hang(host)}${pad(b.label, 12)} ${"█".repeat(filled)}${"·".repeat(20 - filled)} ${text}`;
     });
     return (host ? lines : [`${title(w)}:`, ...lines]).join("\n");
   });
 
-const kpi = (host: boolean) =>
+const kpi = (host: boolean, x: Env) =>
   guarded(host, "Kpi", (w, v, l) => {
     const k = v as KpiValue;
     const props = w.props as { unit?: string; format?: SemanticFormat };
@@ -234,9 +271,9 @@ const kpi = (host: boolean) =>
     const change =
       delta === null
         ? ""
-        : `  ${arrow}${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, LOCALE)}`;
+        : `  ${arrow}${formatSemanticNumber(Math.abs(delta), DELTA_FORMAT, x.locale)}`;
     // The label is a caption beside the title, as on the web — the title stays.
-    const text = `${formatted(k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}`;
+    const text = `${formatted(x, k.value, k.format ?? props.format, k.unit ?? props.unit)}${change}`;
     // Host-owned title: the caption (still information) trails the figure instead.
     if (host) return k.label ? `${text}  (${k.label})` : text;
     return `${k.label ? `${title(w)} (${k.label})` : title(w)}: ${text}`;
@@ -247,18 +284,20 @@ const TABLE_ROWS = 20;
 /** Widest a terminal column grows before its cells are cut. */
 const TABLE_COL_MAX = 24;
 
-const table = (host: boolean) =>
+const table = (host: boolean, x: Env) =>
   guarded(host, "Table", (w, v, l) => {
     const t = v as TableValue;
     const labels = t.columns.map(tableColumnLabel);
     const formats = t.columns.map(tableColumnFormat);
     const cellText = (c: TableCell): string =>
-      c === null ? "—" : typeof c === "number" ? formatted(c, undefined, undefined) : c;
+      c === null ? "—" : typeof c === "number" ? formatted(x, c, undefined, undefined) : c;
     const body = t.rows.slice(0, TABLE_ROWS).map((row) =>
       labels.map((_, i) => {
         const c = row[i] ?? null;
         const f = formats[i];
-        return typeof c === "number" && f !== undefined ? formatted(c, f, undefined) : cellText(c);
+        return typeof c === "number" && f !== undefined
+          ? formatted(x, c, f, undefined)
+          : cellText(c);
       })
     );
     // Single pass per column (never Math.max(...spread)); capped so one long cell cannot push
@@ -273,23 +312,25 @@ const table = (host: boolean) =>
     const out = [...(host ? [] : [`${title(w)}:`]), line(labels), ...body.map(line)];
     if (t.rows.length > TABLE_ROWS) {
       const more = t.rows.length - TABLE_ROWS;
-      // The terminal's one fixed locale (see LOCALE) decides the plural, like its numbers.
-      out.push(`${hang(host)}… ${more} more ${PLURALS.select(more) === "one" ? "row" : "rows"}`);
+      // The terminal's locale (see DEFAULT_TERMINAL_LOCALE) decides the plural, like its numbers.
+      out.push(
+        `${hang(host)}${x.say("lu.terminal.table.moreRows", { n: more, noun: x.plural("lu.plural.row", more) })}`
+      );
     }
     return out.join("\n");
   });
 
-const statusCard = (host: boolean) =>
+const statusCard = (host: boolean, x: Env) =>
   guarded(host, "StatusCard", (w, v, l) => {
     const s = v as StatusCardValue;
-    return l(w, `[${s.level}] ${s.headline}${s.detail ? ` — ${s.detail}` : ""}`);
+    return l(w, `[${x.say(LEVEL_KEY[s.level])}] ${s.headline}${s.detail ? ` — ${s.detail}` : ""}`);
   });
 
 // Never bound, so never `guarded`: loom calls a channel-less widget's renderer directly, with
 // `value === undefined`, and the text lives in props (a string after compile; an uncompiled
 // LocalizedText shows its fallback, never its key).
 const note =
-  (host: boolean): TerminalWidgetRenderer =>
+  (host: boolean, x: Env): TerminalWidgetRenderer =>
   (w) => {
     const raw = w.props.text;
     const parsed = LocalizedText.safeParse(raw);
@@ -301,15 +342,20 @@ const note =
 
 // The A2UI tree and the sandboxed component are web surfaces: an interpreter this CommonJS
 // package cannot import, and code that cannot run in a terminal. Say so, don't fake it.
-const a2uiView = (host: boolean) =>
-  guarded(host, "A2UIView", (w, _v, l) => l(w, "[A2UI view — rendered on the web]"));
-const sandboxView = (host: boolean) =>
-  guarded(host, "SandboxView", (w, _v, l) => l(w, "[sandboxed component — rendered on the web]"));
+const a2uiView = (host: boolean, x: Env) =>
+  guarded(host, "A2UIView", (w, _v, l) => l(w, x.say("lu.terminal.a2ui")));
+const sandboxView = (host: boolean, x: Env) =>
+  guarded(host, "SandboxView", (w, _v, l) => l(w, x.say("lu.terminal.sandbox")));
 
 // ── Media (U9) ─────────────────────────────────────────────────────────────────
 // `Image 'chart.png' (image/png, 1 KiB) [untrusted] ref#1a2b3c4d` — the SAME one-line
 // description the web surface speaks (`describeMedia`), a trust marker, and a link or a non-reversible tag.
-const mediaLine = (host: boolean, kind: MediaKind, media: TerminalMediaOptions | undefined) =>
+const mediaLine = (
+  host: boolean,
+  x: Env,
+  kind: MediaKind,
+  media: TerminalMediaOptions | undefined
+) =>
   guarded(host, kind, (w, v, l) => {
     const ref = v as MediaRef;
     const policy = media?.policy;
@@ -329,25 +375,24 @@ const mediaLine = (host: boolean, kind: MediaKind, media: TerminalMediaOptions |
     // capability, and terminal output is copied and logged). A usable link is the host's `media.link`.
     const tag = `ref#${createHash("sha256").update(ref.address).digest("hex").slice(0, 8)}`;
     const where = tooLarge
-      ? "too large to open"
+      ? x.say("lu.terminal.media.tooLarge")
       : active
-        ? "blocked (active content type)"
+        ? x.say("lu.terminal.media.blocked")
         : (offered ?? tag);
     const alt = kind === "Image" ? cleanMediaText(ref.alt, 200) : "";
     return l(
       w,
-      `${describeMedia(kind, ref)}${alt === "" ? "" : ` — ${alt}`}${trusted ? "" : " [untrusted]"} ${where}`
+      `${describeMedia(kind, ref, x.say)}${alt === "" ? "" : ` — ${alt}`}${trusted ? "" : ` ${x.say("lu.terminal.untrusted")}`} ${where}`
     );
   });
 
 // A media input is a web control (a file picker): say so, don't fake it. Static, so never `guarded`.
 const mediaInput =
-  (host: boolean): TerminalWidgetRenderer =>
+  (host: boolean, x: Env): TerminalWidgetRenderer =>
   (w) => {
     const t = titleText(w);
-    return t !== undefined && !host
-      ? `${t}: [file upload — available on the web]`
-      : "[file upload — available on the web]";
+    const body = x.say("lu.terminal.fileUpload");
+    return t !== undefined && !host ? `${t}: ${body}` : body;
   };
 
 // ── Chat and inputs (U8) ───────────────────────────────────────────────────────
@@ -355,16 +400,16 @@ const mediaInput =
 // status note, fixed failure sentence + reference id, restricted entries as bare placeholders, media
 // described without an address), under the title. Untrusted text is cleaned to one bounded line per
 // turn: a terminal escape (ESC) or a bidi override in a turn cannot reach the screen.
-const chatTranscript = (host: boolean) =>
+const chatTranscript = (host: boolean, x: Env) =>
   guarded(host, "Chat", (w, v) => {
     const chat = v as ChatValue;
-    const lines = chatTranscriptLines(chat);
+    const lines = chatTranscriptLines(chat, { say: x.say });
     const out: string[] = [];
-    if (chat.older !== undefined) out.push("… earlier messages are available");
-    out.push(...(lines.length === 0 ? ["(no messages)"] : lines));
+    if (chat.older !== undefined) out.push(x.say("lu.terminal.chat.earlier"));
+    out.push(...(lines.length === 0 ? [x.say("lu.terminal.chat.empty")] : lines));
     if (chat.running === true && !chat.entries.some((e) => e.status === "streaming"))
-      out.push("(the assistant is replying…)");
-    if (chat.state === "closed") out.push("(conversation closed)");
+      out.push(x.say("lu.terminal.chat.replying"));
+    if (chat.state === "closed") out.push(x.say("lu.terminal.chat.closed"));
     const indent = hang(host);
     return [...(host ? [] : [`${title(w)}:`]), ...out.map((l) => `${indent}${l}`)].join("\n");
   });
@@ -379,18 +424,18 @@ const propText = (raw: unknown): string => {
 // An input is a prompt in a terminal: say what it asks, so an interactive host can collect the answer
 // (and send it through the same write-back as the web). Static, so never `guarded`.
 const textPrompt =
-  (host: boolean): TerminalWidgetRenderer =>
+  (host: boolean, x: Env): TerminalWidgetRenderer =>
   (w) => {
-    const label = propText(w.props.label) || "Message";
-    const multi = w.props.multiline === true ? " (multi-line)" : "";
-    const body = `> ${label}${multi} [text input — answer on an interactive surface]`;
+    const label = propText(w.props.label) || x.say("lu.input.message");
+    const multi = w.props.multiline === true ? x.say("lu.terminal.multiline") : "";
+    const body = `> ${label}${multi} ${x.say("lu.terminal.textInput")}`;
     return host ? body : `${title(w)}: ${body}`;
   };
 
 const formPrompt =
-  (host: boolean): TerminalWidgetRenderer =>
+  (host: boolean, x: Env): TerminalWidgetRenderer =>
   (w) => {
-    const label = propText(w.props.label) || "Form";
+    const label = propText(w.props.label) || x.say("lu.input.form");
     const fields =
       fieldsProblem(w.props.fields) === undefined
         ? (w.props.fields as ReadonlyArray<{
@@ -404,20 +449,20 @@ const formPrompt =
       (f) =>
         `${hang(host)}  ${oneLineChatText(f.label, 60)}${f.required === true ? "*" : ""} (${f.type})`
     );
-    const head = `> ${label} [form — answer on an interactive surface]`;
+    const head = `> ${label} ${x.say("lu.terminal.formInput")}`;
     return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
   };
 
 const selectPrompt =
-  (host: boolean): TerminalWidgetRenderer =>
+  (host: boolean, x: Env): TerminalWidgetRenderer =>
   (w) => {
-    const label = propText(w.props.label) || "Choose";
+    const label = propText(w.props.label) || x.say("lu.input.choose");
     const options =
       optionsProblem(w.props.options) === undefined
         ? (w.props.options as ReadonlyArray<{ label: string }>)
         : [];
     const rows = options.map((o, i) => `${hang(host)}  ${i + 1}) ${oneLineChatText(o.label, 60)}`);
-    const head = `> ${label} [choice — answer on an interactive surface]`;
+    const head = `> ${label} ${x.say("lu.terminal.selectInput")}`;
     return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
   };
 
@@ -426,24 +471,25 @@ export function createLoomUiTerminalRegistry(
   opts: TerminalRegistryOptions = {}
 ): RendererRegistry<TerminalWidgetRenderer> {
   const host = opts.chrome === "host";
+  const x = envOf(opts.i18n);
   return new RendererRegistry<TerminalWidgetRenderer>()
-    .register("TimeSeries", timeSeries(host))
-    .register("BarChart", barChart(host))
-    .register("Kpi", kpi(host))
-    .register("Table", table(host))
-    .register("StatusCard", statusCard(host))
-    .register("Note", note(host))
-    .register("A2UIView", a2uiView(host))
-    .register("SandboxView", sandboxView(host))
-    .register("Image", mediaLine(host, "Image", opts.media))
-    .register("Audio", mediaLine(host, "Audio", opts.media))
-    .register("Video", mediaLine(host, "Video", opts.media))
-    .register("File", mediaLine(host, "File", opts.media))
-    .register("MediaInput", mediaInput(host))
-    .register("Chat", chatTranscript(host))
-    .register("TextInput", textPrompt(host))
-    .register("FormInput", formPrompt(host))
-    .register("SelectInput", selectPrompt(host));
+    .register("TimeSeries", timeSeries(host, x))
+    .register("BarChart", barChart(host, x))
+    .register("Kpi", kpi(host, x))
+    .register("Table", table(host, x))
+    .register("StatusCard", statusCard(host, x))
+    .register("Note", note(host, x))
+    .register("A2UIView", a2uiView(host, x))
+    .register("SandboxView", sandboxView(host, x))
+    .register("Image", mediaLine(host, x, "Image", opts.media))
+    .register("Audio", mediaLine(host, x, "Audio", opts.media))
+    .register("Video", mediaLine(host, x, "Video", opts.media))
+    .register("File", mediaLine(host, x, "File", opts.media))
+    .register("MediaInput", mediaInput(host, x))
+    .register("Chat", chatTranscript(host, x))
+    .register("TextInput", textPrompt(host, x))
+    .register("FormInput", formPrompt(host, x))
+    .register("SelectInput", selectPrompt(host, x));
 }
 
 export const loomUiTerminalRegistry: RendererRegistry<TerminalWidgetRenderer> =

@@ -13,8 +13,9 @@ import {
   timeTickIndices,
 } from "../charts/svg";
 import { effectiveFormat, tick as formatTick, measure, timeTick, unitSuffix } from "../format";
-import { t } from "../i18n";
+
 import { dirFor } from "../rtl";
+import { say } from "../say";
 import { hideTooltip, showTooltip } from "../tooltip";
 import { LuWidget } from "./base";
 
@@ -181,7 +182,7 @@ export class LuTimeseries extends LuWidget {
                 (s, i) =>
                   html`<span
                     ><span class="swatch" style="background:${colorFor(i)}"></span
-                    >${s.label}${onRight(s) ? ` (${t("R")})` : ""}</span
+                    >${s.label}${onRight(s) ? ` (${say("lu.a11y.rightAxis")})` : ""}</span
                   >`
               )}
             </div>`

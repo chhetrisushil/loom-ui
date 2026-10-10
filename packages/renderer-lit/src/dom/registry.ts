@@ -6,6 +6,7 @@ import type {
   Widget,
   WidgetAction,
 } from "@loom/blueprint-runtime";
+import { say } from "../say";
 
 // ── The DOM renderer contract ─────────────────────────────────────────────────
 // loom's `RendererRegistry<T>` is generic over the renderer type; this is the DOM shape its own
@@ -126,8 +127,10 @@ export function placeholderFor(
   el.dataset.placeholder = reason;
   el.textContent =
     reason === "missing"
-      ? `[No renderer for ${kind}]`
-      : `[Renderer error for ${kind}${detail ? `: ${detail}` : ""}]`;
+      ? say("lu.dom.noRenderer", { kind })
+      : detail
+        ? say("lu.dom.rendererErrorDetail", { kind, detail })
+        : say("lu.dom.rendererError", { kind });
   return el;
 }
 
@@ -136,6 +139,6 @@ export function projectionPlaceholder(projectionId: string): HTMLElement {
   const el = document.createElement("div");
   el.dataset.placeholder = "projection";
   el.dataset.projectionId = projectionId;
-  el.textContent = `[Projection "${projectionId}" is not registered]`;
+  el.textContent = say("lu.dom.projectionMissing", { id: projectionId });
   return el;
 }

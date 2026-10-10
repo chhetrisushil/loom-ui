@@ -124,14 +124,17 @@ describe("lu-table", () => {
     expect(more?.querySelector("button")?.textContent?.trim()).toBe("Show 5 more");
     const calledWith = spy.mock.calls.map(([k]) => k);
     expect(calledWith).toEqual(
-      expect.arrayContaining(["Showing", "of", "row.other", "Show", "more"])
+      expect.arrayContaining(["lu.table.showing", "lu.plural.row.other", "lu.table.showMore"])
     );
     spy.mockRestore();
   });
   it("'Showing N of M rows' counts its noun through tPlural (the catalogue's row.* forms apply)", async () => {
     // The footer renders only while some rows are hidden, so `total` is always > 200 in
     // practice; drive tPlural's category through the widget with a catalogue that translates it.
-    const cat: Record<string, string> = { "row.one": "ROW", "row.other": "ROWS" };
+    const cat: Record<string, string> = {
+      "lu.plural.row.one": "ROW",
+      "lu.plural.row.other": "ROWS",
+    };
     const spy = vi.spyOn(i18n, "t").mockImplementation((k, fb) => cat[k] ?? fb ?? k);
     const rows = Array.from({ length: 205 }, (_, i) => [`r${i}`]);
     const el = await mount("lu-table", {
@@ -144,7 +147,10 @@ describe("lu-table", () => {
     spy.mockRestore();
   });
   it("lu-data-table's 'Showing N of M rows' goes through t()/tPlural like lu-table's", async () => {
-    const cat: Record<string, string> = { Showing: "SHOWING", of: "OF", "row.other": "ROWS" };
+    const cat: Record<string, string> = {
+      "lu.table.showing": "SHOWING {shown} OF {total} {noun}",
+      "lu.plural.row.other": "ROWS",
+    };
     const spy = vi.spyOn(i18n, "t").mockImplementation((k, fb) => cat[k] ?? fb ?? k);
     const rows = Array.from({ length: 205 }, (_, i) => ({ id: `r${i}` }));
     const el = await mount("lu-data-table", {

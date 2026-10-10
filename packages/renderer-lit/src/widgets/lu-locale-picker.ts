@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { currentLocale, localeLabel, localized, setLocale, t } from "../i18n";
+import { currentLocale, localeLabel, localized, setLocale } from "../i18n";
+import { say } from "../say";
 
 /**
  * Language picker. Shared by the studio and the authoring shell, so both read the
@@ -51,9 +52,9 @@ export class LuLocalePicker extends LitElement {
     const soleOption = locales.length < 2;
     return html`
       <select
-        aria-label=${t("Language")}
+        aria-label=${say("lu.locale.language")}
         ?disabled=${soleOption}
-        title=${soleOption ? t("No other languages are available yet") : t("Language")}
+        title=${soleOption ? say("lu.locale.noOthers") : say("lu.locale.language")}
         @change=${(e: Event) => setLocale((e.target as HTMLSelectElement).value)}
       >
         ${locales.map(

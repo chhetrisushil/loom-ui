@@ -1,7 +1,7 @@
 import type { ActionOutcome } from "@loom-ui/core/browser";
 import type { WidgetAction } from "@loom/blueprint-runtime";
 import { css } from "lit";
-import { t } from "../i18n";
+import { say } from "../say";
 
 // Shared by the chat and input widgets (U8).
 
@@ -32,11 +32,11 @@ export async function dispatch(
 export function failureText(result: DispatchResult): string {
   switch (result) {
     case "stale":
-      return t("The view changed. Review it and send again.");
+      return say("lu.chat.dispatch.stale");
     case "unavailable":
-      return t("Sending is not available here.");
+      return say("lu.chat.dispatch.unavailable");
     default:
-      return t("Not sent. Try again.");
+      return say("lu.chat.dispatch.failed");
   }
 }
 
