@@ -1,10 +1,11 @@
 import { type TemplateResult, css, html, type nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import type { A2UIView } from "../a2ui/plan";
-import { t } from "../i18n";
+
 import { LuWidget } from "./base";
 import "./lu-a2ui-view";
 import "./lu-sandbox";
+import { say } from "../say";
 
 // ── Registry kinds for the two embedded surfaces ─────────────────────────────
 // `lu-a2ui-view` (a declarative agent-authored component tree) and `lu-sandbox` (untrusted
@@ -51,7 +52,7 @@ export class LuSandboxWidget extends LuWidget {
   protected renderReady(): TemplateResult | typeof nothing {
     const code = (this.widget.props as { code?: unknown }).code;
     if (typeof code !== "string" || code.length === 0)
-      return html`<span class="missing">${t("no component code")}</span>`;
+      return html`<span class="missing">${say("lu.state.noComponentCode")}</span>`;
     return html`<lu-sandbox .code=${code} .data=${this.value} .onAction=${this.onAction}></lu-sandbox>`;
   }
 }

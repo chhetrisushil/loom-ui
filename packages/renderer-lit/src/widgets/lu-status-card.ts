@@ -2,7 +2,8 @@ import type { StatusCardValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
 import { describeValue } from "../a11y";
-import { t } from "../i18n";
+
+import { LEVEL_KEY, say } from "../say";
 import { LuWidget } from "./base";
 
 // A level dot, a headline and optional detail. The description also lives in a visually-hidden
@@ -92,7 +93,7 @@ export class LuStatusCard extends LuWidget {
       <div class="card">
         <span class="dot ${v.level}" data-level=${v.level} aria-hidden="true"></span>
         <div>
-          <div class="level-text ${v.level}" data-level-text>${t(v.level)}</div>
+          <div class="level-text ${v.level}" data-level-text>${say(LEVEL_KEY[v.level])}</div>
           <div class="headline">${v.headline}</div>
           ${v.detail ? html`<div class="detail">${v.detail}</div>` : nothing}
         </div>

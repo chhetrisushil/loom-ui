@@ -10,6 +10,7 @@ import {
   staleStateText,
 } from "../a11y";
 import { localized } from "../i18n";
+import { say } from "../say";
 import { titleText } from "../title";
 
 /**
@@ -102,7 +103,7 @@ export abstract class LuWidget extends LitElement {
   protected get sourceLabel(): string | undefined {
     const source = this.widget?.source;
     if (!source?.degradedFrom?.length) return undefined;
-    return `${source.type}, shown as ${this.widget.kind}`;
+    return say("lu.state.sourceShownAs", { type: source.type, kind: this.widget.kind });
   }
 
   /**
@@ -202,7 +203,7 @@ export abstract class LuWidget extends LitElement {
         class="state error"
         title=${s.finding ?? ""}
       >
-        ${this.titled(s.finding ?? "error")}
+        ${this.titled(s.finding ?? say("lu.state.error"))}
       </div>`;
     // "No data" is a result, not a failure: a POLITE live region (`role="status"`), exactly as
     // loom's React marker (ADR 0100 D3) — never `role="alert"`, and never the value renderer.
@@ -226,7 +227,7 @@ export abstract class LuWidget extends LitElement {
         class="state stale"
         title=${s.finding ?? ""}
       >
-        <span class="stale-marker">~</span> ${this.titled(s.finding ?? "stale")} — no value
+        <span class="stale-marker">~</span> ${this.titled(s.finding ?? say("lu.state.stale"))} ${say("lu.state.noValue")}
       </div>`;
     const marker = s.state === "stale" ? "~" : s.state === "pending" ? "⋯" : undefined;
     const unchecked = !hasKindContract(this.kind, this.contracts);

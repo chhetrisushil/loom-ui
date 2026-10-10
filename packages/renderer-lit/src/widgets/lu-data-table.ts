@@ -1,10 +1,12 @@
+import { pluralForms } from "@loom-ui/core/messages";
 import type { Widget } from "@loom/blueprint-runtime";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
-import { t } from "../i18n";
+
 import { tPlural } from "../plural";
+import { say } from "../say";
 import { LuWidget } from "./base";
 
 /** Cap DOM rows so a tool returning tens of thousands of rows can't build hundreds of
@@ -205,8 +207,8 @@ export class LuDataTable extends LuWidget {
       ${
         shown < total
           ? html`<div class="more">
-              ${t("Showing")} ${shown} ${t("of")} ${total} ${tPlural("row", total, { one: "row", other: "rows" })}
-              <button @click=${this.showMore}>Show ${Math.min(ROW_STEP, total - shown)} more</button>
+              ${say("lu.table.showing", { shown, total, noun: tPlural("lu.plural.row", total, pluralForms("lu.plural.row")) })}
+              <button @click=${this.showMore}>${say("lu.table.showMore", { n: Math.min(ROW_STEP, total - shown) })}</button>
             </div>`
           : nothing
       }`;

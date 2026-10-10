@@ -1,4 +1,5 @@
 import { MAX_MEDIA_NAME_LENGTH, type MediaRef } from "./mediaRef";
+import { type Say, sayEnglish } from "./messages";
 
 // The text a reader sees about a media value: name cleaning, byte counts and the one-line description.
 // Its own module (re-exported by `media.ts`) so the chat widgets, which describe an attachment but never
@@ -46,8 +47,12 @@ export function formatBytes(bytes: number): string {
 }
 
 /** What a media value is, as one line of text (shared by the terminal surface and a screen reader). */
-export function describeMedia(kind: string, ref: MediaRef): string {
-  const label = kind === "File" ? "file" : kind.toLowerCase();
+export function describeMedia(kind: string, ref: MediaRef, say: Say = sayEnglish): string {
+  const lower = kind === "File" ? "file" : kind.toLowerCase();
+  const label =
+    lower === "image" || lower === "audio" || lower === "video" || lower === "file"
+      ? say(`lu.media.kind.${lower}`)
+      : lower;
   const name = cleanMediaText(ref.name);
   const meta = [ref.mediaType, ref.size === undefined ? "" : formatBytes(ref.size)].filter(
     (s) => s !== ""

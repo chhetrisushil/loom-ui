@@ -2,31 +2,31 @@ import { oneLineChatText } from "./chatText";
 import { type ChatEntry, type ChatValue, sameChatActor } from "./chatValue";
 import { mediaFamily } from "./mediaRef";
 import { describeMedia } from "./mediaText";
+import { type LuMessageKey, type Say, sayEnglish } from "./messages";
 
 // ── Words both renderers share ───────────────────────────────────────────────────────────────────
 
-/** The fixed words for a `reason` token. The token is the source's; the sentence is ours. */
-const REASON_TEXT: Readonly<Record<string, string>> = Object.freeze({
-  "model-error": "The assistant ran into a problem.",
-  denied: "That was not permitted.",
-  "turn-failed": "The turn could not be completed.",
-  cancelled: "The turn was cancelled.",
-  "too-long": "The message was too long.",
-  "prompt-too-large": "The message was too large to answer.",
-  malformed: "The message was not understood.",
-  unauthenticated: "The message could not be verified.",
-  replayed: "The message was already received.",
-  stale: "The message arrived too late.",
-  "not-a-participant": "You are not a participant in this conversation.",
-  "edit-invalid": "That edit could not be applied to the earlier message.",
-});
-const GENERIC_REASON = "The message was not processed.";
+/** The reason tokens with a fixed sentence (`lu.chat.reason.<token>`); any other token gets the generic one. */
+const REASONS = new Set([
+  "model-error",
+  "denied",
+  "turn-failed",
+  "cancelled",
+  "too-long",
+  "prompt-too-large",
+  "malformed",
+  "unauthenticated",
+  "replayed",
+  "stale",
+  "not-a-participant",
+  "edit-invalid",
+]);
 
 /** One fixed sentence for a failure / rejection reason; unknown tokens get the generic sentence, never their own text. */
-export function chatReasonText(reason: string | undefined): string {
-  return reason !== undefined && Object.hasOwn(REASON_TEXT, reason)
-    ? (REASON_TEXT[reason] as string)
-    : GENERIC_REASON;
+export function chatReasonText(reason: string | undefined, say: Say = sayEnglish): string {
+  return reason !== undefined && REASONS.has(reason)
+    ? say(`lu.chat.reason.${reason}` as LuMessageKey)
+    : say("lu.chat.reason.generic");
 }
 
 /** What a reader needs to tell whose turn a user entry is. */
@@ -54,22 +54,22 @@ export function chatActorLabel(entry: ChatEntry): string {
  * introduced by the word `User` and their name in quotes, so a name cannot pass itself off as a role
  * (`Assistant`, `Notice`, `You`): the role words are reserved to the roles.
  */
-export function chatSpeaker(entry: ChatEntry, who: ChatWho): string {
-  if (entry.role === "assistant") return "Assistant";
-  if (entry.role === "system") return "Notice";
-  if (isOwnChatEntry(entry, who)) return "You";
+export function chatSpeaker(entry: ChatEntry, who: ChatWho, say: Say = sayEnglish): string {
+  if (entry.role === "assistant") return say("lu.chat.who.assistant");
+  if (entry.role === "system") return say("lu.chat.who.notice");
+  if (isOwnChatEntry(entry, who)) return say("lu.chat.who.you");
   const name = chatActorLabel(entry);
-  return name === "" ? "User" : `User "${name}"`;
+  return name === "" ? say("lu.chat.who.user") : say("lu.chat.who.userNamed", { name });
 }
 
 /** The status note, in words (`interrupted`, `replying`, ...), or `""` for a plain complete entry. */
-export function chatStatusNote(entry: ChatEntry): string {
+export function chatStatusNote(entry: ChatEntry, say: Say = sayEnglish): string {
   const parts: string[] = [];
-  if (entry.status === "streaming") parts.push("replying");
-  else if (entry.status === "interrupted") parts.push("interrupted");
-  else if (entry.status === "failed") parts.push("failed");
-  else if (entry.status === "rejected") parts.push("not accepted");
-  if (entry.editOf !== undefined) parts.push(`edit of turn ${entry.editOf}`);
+  if (entry.status === "streaming") parts.push(say("lu.chat.status.replying"));
+  else if (entry.status === "interrupted") parts.push(say("lu.chat.status.interrupted"));
+  else if (entry.status === "failed") parts.push(say("lu.chat.status.failed"));
+  else if (entry.status === "rejected") parts.push(say("lu.chat.status.rejected"));
+  if (entry.editOf !== undefined) parts.push(say("lu.chat.status.editOf", { turn: entry.editOf }));
   return parts.join(", ");
 }
 
@@ -85,32 +85,39 @@ const kindOfType = (mediaType: string): string =>
  */
 export function chatTranscriptLines(
   value: ChatValue,
-  options: { maxText?: number } = {}
+  options: { maxText?: number; say?: Say } = {}
 ): string[] {
   const maxText = options.maxText ?? 2000;
+  const say = options.say ?? sayEnglish;
   const lines: string[] = [];
   for (const e of value.entries) {
     if (e.status === "restricted") {
       const by = chatActorLabel(e);
-      lines.push(`[restricted ${e.role} turn${by === "" ? "" : ` from ${by}`}]`);
+      lines.push(
+        by === ""
+          ? say("lu.chat.line.restricted", { role: e.role })
+          : say("lu.chat.line.restrictedFrom", { role: e.role, by })
+      );
       continue;
     }
-    const note = chatStatusNote(e);
-    const head = `${chatSpeaker(e, value)}${note === "" ? "" : ` (${note})`}`;
+    const note = chatStatusNote(e, say);
+    const head = `${chatSpeaker(e, value, say)}${note === "" ? "" : ` (${note})`}`;
     const body: string[] = [];
     for (const p of e.parts ?? []) {
       if (p.type === "text") {
         const t = oneLineChatText(p.text, maxText);
         if (t !== "") body.push(t);
-      } else body.push(`[${describeMedia(kindOfType(p.ref.mediaType), p.ref)}]`);
+      } else body.push(`[${describeMedia(kindOfType(p.ref.mediaType), p.ref, say)}]`);
     }
     if (e.status === "failed" || e.status === "rejected")
       body.push(
-        `${chatReasonText(e.reason)}${e.errorId === undefined ? "" : ` (ref ${e.errorId})`}`
+        `${chatReasonText(e.reason, say)}${e.errorId === undefined ? "" : ` ${say("lu.chat.line.ref", { id: e.errorId })}`}`
       );
     if (e.tools !== undefined && e.tools.length > 0)
       body.push(
-        `[tools: ${e.tools.map((t) => `${oneLineChatText(t.name, 64)} ${t.status}`).join(", ")}]`
+        say("lu.chat.line.tools", {
+          tools: e.tools.map((t) => `${oneLineChatText(t.name, 64)} ${t.status}`).join(", "),
+        })
       );
     lines.push(`${head}: ${body.join(" ")}`.trimEnd());
   }

@@ -249,3 +249,12 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   always `User "name"` (role words are reserved), the window reserves a slot for the live reply (500 max), the page publishes
   through `controller.publishValue` (viewer/inventory gate + contract), the ledger distinguishes in-flight from landed, and
   all authority checks (principal, head) run on the SERVER (the browser only forwards the stamped action).
+
+- Fixed words (U14): every fixed, user-visible English string a renderer prints is a key in `LU_MESSAGES`
+  (`@loom-ui/core/messages`, also on the main entry), never an inline literal. Ask `say(key, vars)` in
+  renderer-lit (`src/say.ts`, over the `t` seam) or the registry's `x.say` in renderer-terminal; the host overrides
+  with `configureI18n({ locale, messages, translate })` / `terminalRegistry({ i18n })`. The terminal's default locale
+  stays `en-US` (deterministic bytes). `core/src/i18nFitness.test.ts` fails on a new inline literal (an AST scan of the
+  renderer sources; a developer-only string needs an entry in its `ALLOWED` list with the reason), on a dead key, and
+  when a renderer README stops listing a key. The catalogue is its own subpath because it is ~8 kB the hydration
+  client must not carry.

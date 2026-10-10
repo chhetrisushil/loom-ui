@@ -36,8 +36,8 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
 - **Numeric parity with the web.** Every framework-kind renderer here formats a number exactly as
   `@loom-ui/renderer-lit`'s `measure()` would for the same value, format and unit — same rounding,
   grouping, currency symbol and unit suffix — via `@loom-ui/core`'s `formatSemanticNumber` and
-  `effectiveFormat`, at one fixed locale (`en-US`) so the terminal output does not vary with the
-  host's own locale.
+  `effectiveFormat`, at one fixed locale (`en-US` by default) so the terminal output does not vary with the
+  host's own locale; a host opts into another with `i18n.locale` (see "Localising the renderer").
 
 ## API
 
@@ -142,6 +142,92 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
   single-pass min/max (avoiding V8's argument-count ceiling); `Table` prints at most 20 rows before
   an `"… N more rows"` line, and every numeric column is width-capped so one long cell cannot push
   the rest of a row off-screen.
+
+## Localising the renderer
+
+Every fixed word the terminal prints is a key in the catalogue `LU_MESSAGES` (and the typed key list
+`LU_MESSAGE_KEYS`) exported by `@loom-ui/core`; English is the default. Pass a host override as
+`i18n` to `terminalRegistry`, `createLoomUiTerminalRegistry` or `renderExperience`:
+
+```ts
+import { renderExperience } from "@loom-ui/renderer-terminal";
+
+renderExperience(blueprint, store, {
+  i18n: {
+    locale: "de-DE", // numbers and plural categories; default "en-US" (DEFAULT_TERMINAL_LOCALE)
+    messages: { "lu.terminal.chat.empty": "(keine Nachrichten)" },
+    translate: (key, english) => undefined, // optional; undefined keeps English
+  },
+});
+```
+
+- **The default locale stays `en-US`**, not the process's locale: terminal output is logged, diffed and
+  snapshotted, so the same value must print the same bytes on every machine. A host that wants
+  another opts in with `i18n.locale`.
+- Lookup order is `messages`, then `translate(key, english)`, then English; a throwing `translate` is
+  English. `{name}` placeholders must be kept. A counted noun is `<base>.<category>`
+  (`lu.plural.row.one` / `.other`, `.few`, ...); the locale's category applies only to a translated form.
+- Not covered: bound data (titles, labels, cells, chat text), loom's own eight built-in kinds and
+  the `✗`/`○`/`~`/`⋯` status lines loom's traversal writes (loom's renderers), and developer diagnostics.
+
+The keys the terminal asks for (including the shared chat and media words from `@loom-ui/core`):
+
+| Key | English default |
+| --- | --- |
+| `lu.plural.row.one` | `row` |
+| `lu.plural.row.other` | `rows` |
+| `lu.level.ok` | `ok` |
+| `lu.level.warning` | `warning` |
+| `lu.level.critical` | `critical` |
+| `lu.terminal.table.moreRows` | `… {n} more {noun}` |
+| `lu.media.kind.image` | `image` |
+| `lu.media.kind.audio` | `audio` |
+| `lu.media.kind.video` | `video` |
+| `lu.media.kind.file` | `file` |
+| `lu.chat.who.assistant` | `Assistant` |
+| `lu.chat.who.notice` | `Notice` |
+| `lu.chat.who.you` | `You` |
+| `lu.chat.who.user` | `User` |
+| `lu.chat.who.userNamed` | `User "{name}"` |
+| `lu.chat.status.replying` | `replying` |
+| `lu.chat.status.interrupted` | `interrupted` |
+| `lu.chat.status.failed` | `failed` |
+| `lu.chat.status.rejected` | `not accepted` |
+| `lu.chat.status.editOf` | `edit of turn {turn}` |
+| `lu.chat.line.restricted` | `[restricted {role} turn]` |
+| `lu.chat.line.restrictedFrom` | `[restricted {role} turn from {by}]` |
+| `lu.chat.line.ref` | `(ref {id})` |
+| `lu.chat.line.tools` | `[tools: {tools}]` |
+| `lu.chat.reason.model-error` | `The assistant ran into a problem.` |
+| `lu.chat.reason.denied` | `That was not permitted.` |
+| `lu.chat.reason.turn-failed` | `The turn could not be completed.` |
+| `lu.chat.reason.cancelled` | `The turn was cancelled.` |
+| `lu.chat.reason.too-long` | `The message was too long.` |
+| `lu.chat.reason.prompt-too-large` | `The message was too large to answer.` |
+| `lu.chat.reason.malformed` | `The message was not understood.` |
+| `lu.chat.reason.unauthenticated` | `The message could not be verified.` |
+| `lu.chat.reason.replayed` | `The message was already received.` |
+| `lu.chat.reason.stale` | `The message arrived too late.` |
+| `lu.chat.reason.not-a-participant` | `You are not a participant in this conversation.` |
+| `lu.chat.reason.edit-invalid` | `That edit could not be applied to the earlier message.` |
+| `lu.chat.reason.generic` | `The message was not processed.` |
+| `lu.input.message` | `Message` |
+| `lu.input.form` | `Form` |
+| `lu.input.choose` | `Choose` |
+| `lu.terminal.a2ui` | `[A2UI view — rendered on the web]` |
+| `lu.terminal.sandbox` | `[sandboxed component — rendered on the web]` |
+| `lu.terminal.fileUpload` | `[file upload — available on the web]` |
+| `lu.terminal.untrusted` | `[untrusted]` |
+| `lu.terminal.media.tooLarge` | `too large to open` |
+| `lu.terminal.media.blocked` | `blocked (active content type)` |
+| `lu.terminal.chat.earlier` | `… earlier messages are available` |
+| `lu.terminal.chat.empty` | `(no messages)` |
+| `lu.terminal.chat.replying` | `(the assistant is replying…)` |
+| `lu.terminal.chat.closed` | `(conversation closed)` |
+| `lu.terminal.multiline` | ` (multi-line)` |
+| `lu.terminal.textInput` | `[text input — answer on an interactive surface]` |
+| `lu.terminal.formInput` | `[form — answer on an interactive surface]` |
+| `lu.terminal.selectInput` | `[choice — answer on an interactive surface]` |
 
 ## See also
 

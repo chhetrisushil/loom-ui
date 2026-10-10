@@ -41,6 +41,7 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "media.js",
   "mediaRef.js",
   "mediaText.js",
+  "messages.js",
   "paths.js",
   "streamText.js",
 ]);
@@ -71,17 +72,19 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // U8 raised these from 164 kB by 8 kB (index measured 162_143 -> 168_584): the ChatValue contract
     // (~6.4 kB) rides in `checkKindValue` for every page, as the MediaRef contract does. The chat widgets
     // themselves are NOT here: they are the opt-in `chat.js` entry below.
-    ["index.js", 172 * 1000],
-    ["dom/index.js", 172 * 1000],
+    // U14 raised every budget by 8 kB (containers 9 kB, whose graph is the smallest): the fixed-words
+    // catalogue (`messages.js`, ~7 kB: every English string once, under its key) rides with the renderer.
+    ["index.js", 180 * 1000],
+    ["dom/index.js", 180 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
     // U8 fix round 1: 80 -> 81 kB (the contract grew by `mode`: +130 bytes put it 26 over).
-    ["dom/containers.js", 81 * 1000],
+    ["dom/containers.js", 90 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
-    ["media.js", 180 * 1000],
+    ["media.js", 187 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
-    ["chat.js", 196 * 1000],
+    ["chat.js", 203 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

@@ -4,12 +4,14 @@ import {
   tableColumnFormat,
   tableColumnLabel,
 } from "@loom-ui/core/browser";
+import { pluralForms } from "@loom-ui/core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
-import { formattingLocale, t } from "../i18n";
+import { formattingLocale } from "../i18n";
 import { tPlural } from "../plural";
+import { say } from "../say";
 import { LuWidget } from "./base";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
@@ -203,9 +205,9 @@ export class LuTable extends LuWidget {
       ${
         shown < total
           ? html`<div class="more">
-              ${t("Showing")} ${shown} ${t("of")} ${total} ${tPlural("row", total, { one: "row", other: "rows" })}
+              ${say("lu.table.showing", { shown, total, noun: tPlural("lu.plural.row", total, pluralForms("lu.plural.row")) })}
               <button @click=${this.showMore}>
-                ${t("Show")} ${Math.min(ROW_STEP, total - shown)} ${t("more")}
+                ${say("lu.table.showMore", { n: Math.min(ROW_STEP, total - shown) })}
               </button>
             </div>`
           : nothing

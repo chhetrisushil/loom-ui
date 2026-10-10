@@ -134,7 +134,7 @@ describe("describeValue", () => {
     setLocale("en-US");
     const spy = vi.spyOn(i18n, "t");
     expect(describeValue("Kpi", { value: 3, deltaPct: 0 }, "Errors")).toBe("Errors: 3, unchanged");
-    expect(spy.mock.calls.map(([k]) => k)).toContain("unchanged");
+    expect(spy.mock.calls.map(([k]) => k)).toContain("lu.a11y.unchanged");
     spy.mockRestore();
   });
   it("a non-finite delta is spoken as no direction — neither up/down nor 'unchanged'", () => {
@@ -161,11 +161,11 @@ describe("describeValue", () => {
       "Bars: bar chart, a 1"
     );
     expect(spy.mock.calls.map(([k]) => k)).toEqual(
-      expect.arrayContaining(["line chart", "bar chart"])
+      expect.arrayContaining(["lu.a11y.lineChart", "lu.a11y.barChart"])
     );
     // The phrase is a t() key, not a literal: whatever `t` returns is what is spoken. (`t` is the
     // package's identity seam today — there is no host override yet — so this mocks it.)
-    spy.mockImplementation((k) => (k === "line chart" ? "Liniendiagramm" : k));
+    spy.mockImplementation((k) => (k === "lu.a11y.lineChart" ? "Liniendiagramm" : k));
     expect(describeValue("TimeSeries", ts, "Sales")).toBe("Sales: Liniendiagramm, Revenue 3");
     spy.mockRestore();
   });
@@ -199,23 +199,23 @@ describe("describeValue", () => {
       setLocale("en-US");
       // The FIRST plural key asked is the locale's own category; with no translation tPlural then
       // asks once more for the English-rule category (see plural.ts), which is not under test here.
-      return seen.filter((k) => k.startsWith("row.")).slice(0, 1);
+      return seen.filter((k) => k.startsWith("lu.plural.row.")).slice(0, 1);
     };
     it("English: one / other", () => {
-      expect(keys(1, "en")).toEqual(["row.one"]);
-      expect(keys(0, "en")).toEqual(["row.other"]);
-      expect(keys(2, "en")).toEqual(["row.other"]);
+      expect(keys(1, "en")).toEqual(["lu.plural.row.one"]);
+      expect(keys(0, "en")).toEqual(["lu.plural.row.other"]);
+      expect(keys(2, "en")).toEqual(["lu.plural.row.other"]);
     });
     it("Russian: one / few / many by the locale's own rules", () => {
-      expect(keys(1, "ru")).toEqual(["row.one"]);
-      expect(keys(21, "ru")).toEqual(["row.one"]);
-      expect(keys(3, "ru")).toEqual(["row.few"]);
-      expect(keys(5, "ru")).toEqual(["row.many"]);
+      expect(keys(1, "ru")).toEqual(["lu.plural.row.one"]);
+      expect(keys(21, "ru")).toEqual(["lu.plural.row.one"]);
+      expect(keys(3, "ru")).toEqual(["lu.plural.row.few"]);
+      expect(keys(5, "ru")).toEqual(["lu.plural.row.many"]);
     });
     it("French: zero is singular (a rule an n === 1 ternary cannot express)", () => {
-      expect(keys(0, "fr")).toEqual(["row.one"]);
-      expect(keys(1, "fr")).toEqual(["row.one"]);
-      expect(keys(2, "fr")).toEqual(["row.other"]);
+      expect(keys(0, "fr")).toEqual(["lu.plural.row.one"]);
+      expect(keys(1, "fr")).toEqual(["lu.plural.row.one"]);
+      expect(keys(2, "fr")).toEqual(["lu.plural.row.other"]);
     });
     it("a category the English text has no form for falls back to 'other'; a host's catalogue wins", () => {
       setLocale("ru");
@@ -225,7 +225,11 @@ describe("describeValue", () => {
       const spy = vi
         .spyOn(i18n, "t")
         .mockImplementation((k: string, fb?: string) =>
-          k === "row.few" ? "строки" : k === "table with" ? "таблица из" : (fb ?? k)
+          k === "lu.plural.row.few"
+            ? "строки"
+            : k === "lu.a11y.tableWith"
+              ? "таблица из {rows} {noun}"
+              : (fb ?? k)
         );
       expect(describeValue("Table", { columns: ["a"], rows: [["x"], ["y"], ["z"]] }, "T")).toBe(
         "T: таблица из 3 строки"

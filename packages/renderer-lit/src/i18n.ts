@@ -1,3 +1,5 @@
+import { type LuI18n, lookupMessage } from "@loom-ui/core/messages";
+
 // ── Locale shim ───────────────────────────────────────────────────────────────
 // Loading message catalogs and manifests is app infrastructure and stays with the host.
 // The widgets here only need: a locale to format with, a change signal so an
@@ -11,14 +13,32 @@ let locale: string =
     ? navigator.language
     : "en-US";
 const listeners = new Set<(locale: string) => void>();
+let override: LuI18n | undefined;
+function notify(): void {
+  for (const l of [...listeners]) l(locale);
+}
 
 /**
- * Today's translation seam: IDENTITY. There is no host override — a message catalogue is app
- * infrastructure this package does not load. `fallback` is the English text of a structured key
- * (`row.one`), so such a key never leaks as the spoken/visible string.
+ * The translation seam. With no host override it is IDENTITY (`fallback`, else the key). A host
+ * installs one with {@link configureI18n}: its `messages` catalogue, then its `translate` function,
+ * answer for the key; anything they do not answer stays English. `fallback` is the English text of a
+ * structured key (`lu.plural.row.one`), so such a key never leaks as the spoken/visible string.
+ * Widgets do not call this with literal text: they ask `say(key)` (see `say.ts`), whose English comes
+ * from the one catalogue in `@loom-ui/core`.
  */
 export function t(key: string, fallback?: string): string {
-  return fallback ?? key;
+  return lookupMessage(override, key, fallback ?? key);
+}
+
+/**
+ * The HOST override: a locale, a message catalogue and/or a translate function (see {@link LuI18n}).
+ * Call it before mounting; calling it again swaps the override and re-renders every mounted element.
+ * `configureI18n(undefined)` removes the override (English, the locale unchanged).
+ */
+export function configureI18n(next: LuI18n | undefined): void {
+  override = next;
+  if (next?.locale !== undefined && next.locale !== locale) locale = next.locale;
+  notify();
 }
 
 export function currentLocale(): string {
@@ -30,7 +50,7 @@ export function formattingLocale(): string {
 export function setLocale(next: string): void {
   if (next === locale) return;
   locale = next;
-  for (const l of [...listeners]) l(next);
+  notify();
 }
 export function onLocaleChange(listener: (locale: string) => void): () => void {
   listeners.add(listener);

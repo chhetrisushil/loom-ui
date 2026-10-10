@@ -16,7 +16,8 @@ import {
 } from "@loom-ui/core/chat-ui";
 import { type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { t } from "../i18n";
+
+import { say } from "../say";
 import { titleText } from "../title";
 import { LuWidget } from "./base";
 import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
@@ -100,8 +101,7 @@ export class LuTextInput extends LuInput {
     const v = validateTextValue(this.draft, this.max);
     if (!v.ok) {
       this.phase = "invalid";
-      this.problem =
-        v.error === "too-long" ? t("That message is too long.") : t("Type a message first.");
+      this.problem = v.error === "too-long" ? say("lu.input.tooLong") : say("lu.chat.typeFirst");
       return;
     }
     this.key ??= newSubmitKey();
@@ -124,9 +124,9 @@ export class LuTextInput extends LuInput {
   private statusText(): { text: string; error: boolean } {
     switch (this.phase) {
       case "sending":
-        return { text: t("Sending…"), error: false };
+        return { text: say("lu.chat.sending"), error: false };
       case "sent":
-        return { text: t("Sent"), error: false };
+        return { text: say("lu.input.sent"), error: false };
       case "invalid":
         return { text: this.problem, error: true };
       case "idle":
@@ -137,9 +137,9 @@ export class LuTextInput extends LuInput {
   }
 
   protected renderReady(): TemplateResult {
-    const name = label(this.widget, t("Message"));
+    const name = label(this.widget, say("lu.input.message"));
     const placeholder = textProp(this.widget, "placeholder", "");
-    const submitLabel = textProp(this.widget, "submitLabel", t("Send"));
+    const submitLabel = textProp(this.widget, "submitLabel", say("lu.chat.send"));
     const sending = this.phase === "sending";
     const s = this.statusText();
     const ph = placeholder === "" ? nothing : placeholder;
@@ -150,7 +150,7 @@ export class LuTextInput extends LuInput {
           ? html`<textarea id="field" data-field rows="3" maxlength=${this.max}
               placeholder=${ph} .value=${this.draft} ?readonly=${sending}
               aria-describedby="hint status" @input=${this.onInput} @keydown=${this.onKeydown}></textarea>
-            <div class="hint" id="hint">${t("Press Ctrl+Enter to send.")}</div>`
+            <div class="hint" id="hint">${say("lu.input.hint")}</div>`
           : html`<input id="field" data-field type="text" maxlength=${this.max}
               placeholder=${ph} .value=${this.draft} ?readonly=${sending}
               autocomplete="off" aria-describedby="status" @input=${this.onInput} />`
@@ -236,17 +236,17 @@ export class LuFormInput extends LuInput {
   private errorText(code: FieldError): string {
     switch (code) {
       case "required":
-        return t("This field is required.");
+        return say("lu.input.error.required");
       case "too-long":
-        return t("This is too long.");
+        return say("lu.input.error.tooLong");
       case "range":
-        return t("This is out of range.");
+        return say("lu.input.error.range");
       case "option":
-        return t("Choose one of the options.");
+        return say("lu.input.error.option");
       case "unknown":
-        return t("This field is not part of the form.");
+        return say("lu.input.error.unknownField");
       default:
-        return t("This is not valid.");
+        return say("lu.input.error.invalid");
     }
   }
 
@@ -274,7 +274,7 @@ export class LuFormInput extends LuInput {
           aria-invalid=${invalid ? "true" : "false"} aria-required=${f.required === true ? "true" : "false"} aria-describedby=${describedBy}
           .value=${typeof val === "string" ? val : ""}
           @change=${(e: Event) => this.set(f.name, (e.target as HTMLSelectElement).value)}>
-          <option value="">${t("Choose…")}</option>
+          <option value="">${say("lu.input.chooseEllipsis")}</option>
           ${(f.options ?? []).map((o) => html`<option value=${o.value} ?selected=${val === o.value}>${oneLineChatText(o.label, 200)}</option>`)}
         </select>`;
       default:
@@ -286,25 +286,25 @@ export class LuFormInput extends LuInput {
   }
 
   protected renderReady(): TemplateResult {
-    const name = label(this.widget, t("Form"));
-    const submitLabel = textProp(this.widget, "submitLabel", t("Submit"));
+    const name = label(this.widget, say("lu.input.form"));
+    const submitLabel = textProp(this.widget, "submitLabel", say("lu.input.submit"));
     const fields = this.fields;
     const sending = this.phase === "sending";
     const failed =
       this.phase === "failed" || this.phase === "stale" || this.phase === "unavailable";
     const text =
       this.phase === "sending"
-        ? t("Sending…")
+        ? say("lu.chat.sending")
         : this.phase === "sent"
-          ? t("Sent")
+          ? say("lu.input.sent")
           : this.phase === "invalid"
-            ? t("Fix the marked fields.")
+            ? say("lu.input.fixFields")
             : failed
               ? failureText(this.phase as DispatchResult)
               : "";
     const isError = this.phase === "invalid" || failed;
     if (fields === undefined)
-      return html`<div class="status" role="note" data-error>${t("This form is not available.")}</div>`;
+      return html`<div class="status" role="note" data-error>${say("lu.input.formUnavailable")}</div>`;
     return html`<form @submit=${this.onSubmit} novalidate role="group" aria-label=${name} data-form-input data-phase=${this.phase}>
       <div class="label">${name}</div>
       ${fields.map((f) => {
@@ -365,18 +365,18 @@ export class LuSelectInput extends LuInput {
   };
 
   protected renderReady(): TemplateResult {
-    const name = label(this.widget, t("Choose"));
-    const placeholder = textProp(this.widget, "placeholder", t("Choose…"));
+    const name = label(this.widget, say("lu.input.choose"));
+    const placeholder = textProp(this.widget, "placeholder", say("lu.input.chooseEllipsis"));
     const options = this.options;
     if (options === undefined)
-      return html`<div class="status" role="note" data-error>${t("This choice is not available.")}</div>`;
+      return html`<div class="status" role="note" data-error>${say("lu.input.choiceUnavailable")}</div>`;
     const failed =
       this.phase === "failed" || this.phase === "stale" || this.phase === "unavailable";
     const text =
       this.phase === "sending"
-        ? t("Sending…")
+        ? say("lu.chat.sending")
         : this.phase === "sent"
-          ? t("Sent")
+          ? say("lu.input.sent")
           : failed
             ? failureText(this.phase as DispatchResult)
             : "";
