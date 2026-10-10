@@ -17,7 +17,7 @@ import {
   validateTextValue,
 } from "@loom-ui/core/chat-ui";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 
 import { say } from "../say";
@@ -71,7 +71,6 @@ const mediaKindOf = (mediaType: string): string =>
     mediaType.startsWith(mediaFamily(k) as string)
   ) ?? "File";
 
-@customElement("lu-chat")
 export class LuChat extends LuWidget {
   readonly kind = "Chat";
   static styles = [

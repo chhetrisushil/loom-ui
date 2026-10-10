@@ -17,7 +17,7 @@ import {
   maxBytesFor,
 } from "@loom-ui/core/media";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 
 import { say } from "../say";
 import { titleText } from "../title";
@@ -284,7 +284,6 @@ abstract class LuMedia extends LuWidget {
   }
 }
 
-@customElement("lu-image")
 export class LuImage extends LuMedia {
   readonly kind = "Image";
   protected readonly purpose = "display" as const;
@@ -303,7 +302,6 @@ export class LuImage extends LuMedia {
   }
 }
 
-@customElement("lu-audio")
 export class LuAudio extends LuMedia {
   readonly kind = "Audio";
   protected readonly purpose = "display" as const;
@@ -313,7 +311,6 @@ export class LuAudio extends LuMedia {
   }
 }
 
-@customElement("lu-video")
 export class LuVideo extends LuMedia {
   readonly kind = "Video";
   protected readonly purpose = "display" as const;
@@ -323,7 +320,6 @@ export class LuVideo extends LuMedia {
   }
 }
 
-@customElement("lu-file")
 export class LuFile extends LuMedia {
   readonly kind = "File";
   protected readonly purpose = "download" as const;
@@ -363,7 +359,6 @@ type InputState =
   | "unavailable"
   | "stale";
 
-@customElement("lu-media-input")
 export class LuMediaInput extends LuWidget {
   readonly kind = "MediaInput";
   static styles = [

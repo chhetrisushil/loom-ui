@@ -1,10 +1,10 @@
 import { LitElement, css, html } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { property } from "lit/decorators.js";
 import { currentLocale, localeLabel, localized, setLocale } from "../i18n";
 import { say } from "../say";
 
 /**
- * Language picker. Shared by the studio and the authoring shell, so both read the
+ * Language picker. Shared by every surface that offers a language choice, so all read the
  * same list from the same place.
  *
  * The offered locales are a plain `locales` property (default `["en-US"]`)
@@ -16,7 +16,6 @@ import { say } from "../say";
  * HAS languages, or which one you are in. A disabled control showing "English"
  * answers both, and the header no longer changes shape when a locale file lands.
  */
-@customElement("lu-locale-picker")
 export class LuLocalePicker extends LitElement {
   @property({ attribute: false }) locales: string[] = ["en-US"];
 

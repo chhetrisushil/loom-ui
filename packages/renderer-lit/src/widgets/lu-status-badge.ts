@@ -1,9 +1,7 @@
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import { titleText } from "../title";
 import { LuWidget } from "./base";
 
-@customElement("lu-status-badge")
 export class LuStatusBadge extends LuWidget {
   readonly kind = "StatusBadge";
 

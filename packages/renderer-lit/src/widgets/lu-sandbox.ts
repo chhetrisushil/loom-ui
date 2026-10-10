@@ -1,6 +1,6 @@
 import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, css, html } from "lit";
-import { customElement, property, query, state } from "lit/decorators.js";
+import { property, query, state } from "lit/decorators.js";
 import {
   SANDBOX_ALLOW,
   buildSandboxSrcdoc,
@@ -16,7 +16,7 @@ import {
 // `../sandbox/protocol` (pure + tested); this element is the thin DOM wiring:
 // create the frame, drive it with the widget's data, and surface its actions as
 // the SAME composed `a2ui-action` event the declarative interpreter raises — so
-// the studio handles user-component actions identically.
+// the host handles user-component actions identically.
 //
 // The code and data crossing into the frame are the component's own render code
 // and the widget's already-client-visible canonical data: no host secret is ever
@@ -30,7 +30,6 @@ function clampFrameHeight(height: number): number {
   return Number.isFinite(height) ? Math.min(Math.max(height, 0), MAX_FRAME_HEIGHT) : 0;
 }
 
-@customElement("lu-sandbox")
 export class LuSandbox extends LitElement {
   /** The untrusted render code: a `(root, data, emit)` function body. */
   @property({ attribute: false }) code = "";

@@ -15,21 +15,56 @@ pnpm add @loom-ui/renderer-lit
 ```
 
 ```ts
-// The root entry carries both the custom elements (registered on import) and the DOM adapter —
-// `index.ts` re-exports everything `./dom` does, plus the elements, formatting, i18n and a11y
-// helpers.
+// The root entry carries both the element CLASSES and the DOM adapter — `index.ts` re-exports
+// everything `./dom` does, plus the classes, formatting, i18n and a11y helpers. Importing it
+// registers NOTHING (see "Registering elements" below).
 import { renderBlueprintDom, litRegistry, LuKpi, LuTimeRangePicker, measure } from "@loom-ui/renderer-lit";
 
 // `./dom` is the same adapter (`renderBlueprintDom`, `litRegistry`, …) through a narrower
-// subpath — no `LuKpi`/`measure`/i18n/a11y re-exports, just the adapter and its types. It still
-// registers every custom element as a side effect (it imports the widgets module for that).
+// subpath — no `LuKpi`/`measure`/i18n/a11y re-exports, just the adapter and its types. It carries
+// no widget class at all (a tree-shaking test pins that).
 import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/renderer-lit/dom";
 ```
 
+### Registering elements (U20 — a breaking change)
+
+Importing the package used to define every `lu-*` custom element as a side effect, so a host could
+not bundle one widget without all of them. Registration is now **explicit**. Importing a widget
+class, the root entry or `./dom` defines nothing; a registry that mounts an undefined tag logs one
+warning naming the fix and draws an inert element.
+
+**Migrating an existing host: add one line**, anywhere before the first render.
+
+```ts
+import "@loom-ui/renderer-lit/register"; // defines every lu-* element (the old behaviour)
+// or, to choose the moment:
+import { defineAll } from "@loom-ui/renderer-lit/register"; defineAll();
+```
+
+**To take only what you draw**, import the per-module entries (each defines its own elements and
+nothing else; `package.json` marks only these and `register` as side-effectful, so a bundler drops
+the rest):
+
+```ts
+import "@loom-ui/renderer-lit/elements/lu-kpi";   // <lu-kpi> only
+import "@loom-ui/renderer-lit/elements/lu-simple"; // lu-progress, lu-alert, lu-text, lu-list, lu-approval
+```
+
+Entries are named after the widget module: `lu-a2ui-view`, `lu-bar-chart`, `lu-chat`,
+`lu-chat-missing`, `lu-data-table`, `lu-embedded` (the A2UI / sandbox widgets, plus the two elements
+they nest), `lu-inputs`, `lu-kpi`, `lu-locale-picker`, `lu-media`, `lu-media-missing`,
+`lu-metric-card`, `lu-note`, `lu-sandbox`, `lu-simple`, `lu-status-badge`, `lu-status-card`,
+`lu-table`, `lu-time-range-picker`, `lu-timeseries`. `defineElement(tag, ctor)` (root entry) is the
+idempotent define they use. The opt-in `./media` and `./chat` registries
+(`createMediaLitRegistry`, `createChatLitRegistry`, `registerMediaWidgets`, `registerChatWidgets`)
+define their own elements when called, so those hosts need no change. Measured effect (minified, esm):
+`./dom` 178,969 -> 103,042 bytes, `./media` 186,244 -> 134,995, `./chat` 201,022 -> 149,815, a single
+`elements/lu-kpi` entry 62,501 against 166,282 for `register`.
+
 ## Key concepts
 
-- **One surface, two entry points.** The root entry (`index.ts`) defines and registers every
-  `lu-*` custom element (a `LitElement` subclass per kind), the formatting/i18n/a11y helpers, and
+- **One surface, two entry points.** The root entry (`index.ts`) exports every `lu-*` element class
+  (a `LitElement` subclass per kind; registered explicitly, see above), the formatting/i18n/a11y helpers, and
   re-exports everything the `./dom` subpath exports — so `renderBlueprintDom`, `litRegistry` and
   the DOM adapter's types are all importable from `@loom-ui/renderer-lit` directly. The `./dom`
   subpath is the same adapter alone, for a narrower import when you don't need the elements'
@@ -149,7 +184,7 @@ listening to both would act twice); without `onAction` it still fires, **depreca
   `DomRegistry`; `DomContainerProps`, `DomContainerChild`, `DomContainerHandle`,
   `DomContainerRenderer`, `DomContainerRegistry`; `RecomposeReport`, `RecomposeFinding`.
 
-### Custom elements (root entry, registered on import)
+### Custom elements (root entry exports the classes; register them explicitly)
 
 - Bound widgets: `LuMetricCard` (`lu-metric-card`), `LuStatusBadge` (`lu-status-badge`),
   `LuDataTable` (`lu-data-table`), `LuTimeseries` (`lu-timeseries`), `LuBarChart`

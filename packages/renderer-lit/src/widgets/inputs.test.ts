@@ -6,7 +6,7 @@ import {
 } from "@loom-ui/core/chat-ui";
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import "./lu-inputs";
+import "../elements/lu-inputs";
 
 // U8: the input widgets. One action per submit, stamped by the renderer and re-validated by the
 // host; the draft survives a failed send and the retry carries the same idempotency key.

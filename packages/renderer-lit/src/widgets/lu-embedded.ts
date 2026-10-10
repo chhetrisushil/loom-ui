@@ -1,11 +1,8 @@
 import { type TemplateResult, css, html, type nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import type { A2UIView } from "../a2ui/plan";
 
-import { LuWidget } from "./base";
-import "./lu-a2ui-view";
-import "./lu-sandbox";
 import { say } from "../say";
+import { LuWidget } from "./base";
 
 // ── Registry kinds for the two embedded surfaces ─────────────────────────────
 // `lu-a2ui-view` (a declarative agent-authored component tree) and `lu-sandbox` (untrusted
@@ -15,7 +12,6 @@ import { say } from "../say";
 // DECLARED props (`view`, `code`) on the kind's contract. The inner element is kept across value
 // updates: Lit's property bindings re-render the view / re-post to the frame, never rebuild it.
 
-@customElement("lu-a2ui-widget")
 export class LuA2UIWidget extends LuWidget {
   readonly kind = "A2UIView";
 
@@ -33,7 +29,6 @@ export class LuA2UIWidget extends LuWidget {
   }
 }
 
-@customElement("lu-sandbox-widget")
 export class LuSandboxWidget extends LuWidget {
   readonly kind = "SandboxView";
 

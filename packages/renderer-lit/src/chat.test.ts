@@ -10,7 +10,7 @@ import { builtinCatalog, catalogCoverage, customWidget$ } from "@loom/blueprint-
 import { describe, expect, it, vi } from "vitest";
 import { chatKindContracts, createChatLitRegistry, registerChatWidgets } from "./chat";
 import { createLitRegistry } from "./dom/litRegistry";
-import "./widgets/index";
+import "./register";
 
 describe("the opt-in chat entry", () => {
   it("registers exactly the chat kinds on top of the default registry, and keeps loom's built-ins covered", () => {

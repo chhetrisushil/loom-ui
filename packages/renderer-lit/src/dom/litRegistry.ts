@@ -1,9 +1,19 @@
 import type { ContractRegistry } from "@loom-ui/core/browser";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
-import "../widgets/index";
 import type { TitleChrome } from "../widgets/base";
 import type { MediaHostOptions } from "../widgets/lu-media";
 import type { DomRegistry, DomWidgetRenderer } from "./registry";
+
+const warned = new Set<string>();
+/** Say ONCE per tag that an element was mounted before it was defined (U20: registration is explicit). */
+function warnUndefined(tag: string): void {
+  if (typeof customElements === "undefined" || customElements.get(tag) !== undefined) return;
+  if (warned.has(tag)) return;
+  warned.add(tag);
+  console.warn(
+    `[loom-ui] <${tag}> is not a defined custom element, so it draws nothing. Register it: import "@loom-ui/renderer-lit/register" (every element), or an "@loom-ui/renderer-lit/elements/<module>" entry for just the ones you draw.`
+  );
+}
 
 /** A renderer that mounts `<tag>` and drives its `widget/value/status/onAction` properties. */
 export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): DomWidgetRenderer {
@@ -11,6 +21,7 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
   const contracts = opts.contracts;
   const media = opts.media;
   return (host, props) => {
+    warnUndefined(tag);
     const el = document.createElement(tag) as HTMLElement & {
       widget: unknown;
       value: unknown;
@@ -126,4 +137,4 @@ export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
   );
 }
 
-export const litRegistry: DomRegistry = createLitRegistry();
+export const litRegistry: DomRegistry = /* @__PURE__ */ createLitRegistry();

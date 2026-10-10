@@ -1,6 +1,6 @@
 import type { SemanticFormat, TimeSeriesValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { state } from "lit/decorators.js";
 import { chartHostStyles } from "../charts/frame";
 import {
   SERIES_COLORS,
@@ -31,7 +31,6 @@ const RIGHT_AXIS_MARGIN = 46;
 
 type Series = TimeSeriesValue["series"][number];
 
-@customElement("lu-timeseries")
 export class LuTimeseries extends LuWidget {
   readonly kind = "TimeSeries";
 

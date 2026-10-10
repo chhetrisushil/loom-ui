@@ -8,7 +8,7 @@ import {
 import type { Layout, Widget } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { frameworkKindContracts, litRegistry } from "../dom/litRegistry";
-import "./index";
+import "../register";
 
 // U10: a node the viewer may not see compiles to a static `Note` placeholder. Both renderers draw
 // it from the registry they already have — no new kind, no side channel — with an accessible name

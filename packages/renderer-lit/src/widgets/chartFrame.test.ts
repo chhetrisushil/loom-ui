@@ -2,7 +2,7 @@ import { customWidget$ } from "@loom/blueprint-runtime";
 import { type CSSResultGroup, css as css_ } from "lit";
 import { describe, expect, it } from "vitest";
 import { chartHostStyles } from "../charts/frame";
-import "./index";
+import "../register";
 import { LuBarChart } from "./lu-bar-chart";
 import { LuTimeseries } from "./lu-timeseries";
 

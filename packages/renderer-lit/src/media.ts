@@ -1,6 +1,6 @@
 // `@loom-ui/renderer-lit/media` — the media widgets (U9), opt-in.
 //
-// Importing this registers the `lu-image`, `lu-audio`, `lu-video`, `lu-file` and `lu-media-input`
+// Creating a registry here (or `registerMediaWidgets`) defines the `lu-image`, `lu-audio`, `lu-video`, `lu-file` and `lu-media-input`
 // elements. It is its own entry, like the reference containers, so a page that draws no media does
 // not pay for them. The kinds themselves (and their value contract) are universal and live in
 // `@loom-ui/core`; this entry is only how the web surface DRAWS them.
@@ -13,9 +13,9 @@
 
 import { MEDIA_INPUT_KIND, MEDIA_KINDS } from "@loom-ui/core/media";
 import type { CatalogEntry } from "@loom/blueprint-runtime";
+import { defineMedia } from "./define/lu-media";
 import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";
 import type { DomRegistry } from "./dom/registry";
-import "./widgets/lu-media";
 
 export { LuAudio, LuFile, LuImage, LuMediaInput, LuVideo } from "./widgets/lu-media";
 export type { MediaHostOptions } from "./widgets/lu-media";
@@ -42,6 +42,7 @@ export function registerMediaWidgets(
   registry: DomRegistry,
   opts: LitRegistryOptions = {}
 ): DomRegistry {
+  defineMedia();
   for (const kind of [...MEDIA_KINDS, MEDIA_INPUT_KIND])
     registry.register(kind, elementRenderer(TAGS[kind] as string, opts));
   return registry;

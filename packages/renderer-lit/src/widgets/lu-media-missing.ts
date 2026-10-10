@@ -1,5 +1,5 @@
 import { LitElement, css, html } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { property } from "lit/decorators.js";
 import { say } from "../say";
 
 // The DEFAULT registry's stand-in for the media kinds (U9). The real widgets are the opt-in entry
@@ -9,7 +9,6 @@ import { say } from "../say";
 
 let warned = false;
 
-@customElement("lu-media-missing")
 export class LuMediaMissing extends LitElement {
   @property({ attribute: false }) widget?: { kind?: string };
   static styles = css`

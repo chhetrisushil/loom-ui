@@ -1,6 +1,5 @@
 import type { StatusCardValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 
 import { LEVEL_KEY, say } from "../say";
@@ -9,7 +8,6 @@ import { LuWidget } from "./base";
 // A level dot, a headline and optional detail. The description also lives in a visually-hidden
 // `role="status" aria-live="polite"` region, so a CHANGE of status is announced without
 // stealing focus — unlike loom's StatusBadge, which stays a bare string.
-@customElement("lu-status-card")
 export class LuStatusCard extends LuWidget {
   readonly kind = "StatusCard";
 

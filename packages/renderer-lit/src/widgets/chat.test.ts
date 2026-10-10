@@ -2,7 +2,7 @@ import type { ChatValue } from "@loom-ui/core/chat";
 import { EDIT_TURN_ACTION, LOAD_OLDER_ACTION, isSubmitKey } from "@loom-ui/core/chat";
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import "./lu-chat";
+import "../elements/lu-chat";
 
 // U8: the transcript widget. Everything in a turn is untrusted TEXT: it must never become an element,
 // a restricted entry draws a bare placeholder, a failure is a fixed sentence, and a live reply is a
@@ -294,7 +294,7 @@ describe("lu-chat: media parts", () => {
   });
 
   it("are drawn through the media widgets and the HOST's resolver when they are registered", async () => {
-    await import("./lu-media");
+    await import("../elements/lu-media");
     const asked: string[] = [];
     const resolver = async (r: { ref: { address: string } }) => {
       asked.push(r.ref.address);

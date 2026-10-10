@@ -1,6 +1,6 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
-import "./index";
+import "../register";
 
 // G17: a chart's accessible description names its kind, not just its series.
 const b = { projectionId: "h", path: "values.h" };

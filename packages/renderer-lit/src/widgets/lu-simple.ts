@@ -1,7 +1,6 @@
 // Five compact built-in elements: the loom kinds with no bespoke Lit widget, matching loom's
 // React renderers' semantics (`plugins/renderer-react/src/renderers/*.tsx` in loom).
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import { measure } from "../format";
 import { say } from "../say";
 import { LuWidget } from "./base";
@@ -33,7 +32,6 @@ function describeEntry(entry: unknown): string {
   return String(entry);
 }
 
-@customElement("lu-progress")
 export class LuProgress extends LuWidget {
   readonly kind = "ProgressBar";
 
@@ -64,7 +62,6 @@ export class LuProgress extends LuWidget {
 
 const ALERT_SEVERITIES = new Set(["info", "warning", "error", "critical"]);
 
-@customElement("lu-alert")
 export class LuAlert extends LuWidget {
   readonly kind = "AlertCard";
 
@@ -90,7 +87,6 @@ export class LuAlert extends LuWidget {
   }
 }
 
-@customElement("lu-text")
 export class LuText extends LuWidget {
   readonly kind = "StreamingText";
 
@@ -124,7 +120,6 @@ export class LuText extends LuWidget {
   }
 }
 
-@customElement("lu-list")
 export class LuList extends LuWidget {
   readonly kind = "Timeline";
 
@@ -168,7 +163,6 @@ export class LuList extends LuWidget {
   }
 }
 
-@customElement("lu-approval")
 export class LuApproval extends LuWidget {
   readonly kind = "ApprovalCard";
 

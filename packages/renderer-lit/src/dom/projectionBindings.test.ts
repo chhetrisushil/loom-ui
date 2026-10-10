@@ -8,7 +8,7 @@ import {
 import { HydrationStore } from "@loom-ui/hydration";
 import { InMemoryProjectionRuntime, type Projection } from "@loom/projection-runtime";
 import { afterEach, describe, expect, it } from "vitest";
-import "../widgets/index";
+import "../register";
 import { litRegistry } from "./litRegistry";
 import { buildStateMap, renderBlueprintDom } from "./renderBlueprintDom";
 

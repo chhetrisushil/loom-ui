@@ -14,6 +14,7 @@ import {
   frameworkKindContracts,
   litRegistry,
 } from "./litRegistry";
+import "../register";
 
 // The opt-in entries' kinds (`@loom-ui/renderer-lit/media`, `/chat`): the default registry draws a fixed placeholder for them.
 const MEDIA = new Set<string>([

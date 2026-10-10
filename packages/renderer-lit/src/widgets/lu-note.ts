@@ -1,6 +1,5 @@
 import { isLocalizedText } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { customElement } from "lit/decorators.js";
 import { titleText } from "../title";
 import { LuWidget } from "./base";
 
@@ -15,7 +14,6 @@ function noteText(value: unknown): string {
 // reaching a Note is a contract violation (its kind contract is `z.undefined()`, per
 // `kindValueContracts`), not something to render around silently: that case still goes through
 // the standard matrix, which turns the failed `checkKindValue` into the usual error state.
-@customElement("lu-note")
 export class LuNote extends LuWidget {
   readonly kind = "Note";
 

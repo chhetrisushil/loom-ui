@@ -1,6 +1,6 @@
 import type { BarChartValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { state } from "lit/decorators.js";
 import { chartHostStyles } from "../charts/frame";
 import { SERIES_COLORS, linearScale, niceTicks } from "../charts/svg";
 import {
@@ -27,7 +27,6 @@ function finiteMax(bars: readonly { readonly value: number }[]): number {
   return max;
 }
 
-@customElement("lu-bar-chart")
 export class LuBarChart extends LuWidget {
   readonly kind = "BarChart";
 

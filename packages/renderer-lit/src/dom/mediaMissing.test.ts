@@ -1,7 +1,7 @@
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createLitRegistry } from "./litRegistry";
-import "../widgets/index";
+import "../register";
 
 describe("the default registry and media kinds (no media entry loaded)", () => {
   it("draws one fixed placeholder, never an address, and warns once how to fix it", async () => {

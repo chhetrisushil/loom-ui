@@ -258,3 +258,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   renderer sources; a developer-only string needs an entry in its `ALLOWED` list with the reason), on a dead key, and
   when a renderer README stops listing a key. The catalogue is its own subpath because it is ~8 kB the hydration
   client must not carry.
+- renderer-lit registers NOTHING on import (U20): widget class modules are pure; `src/define/<module>.ts` holds the
+  idempotent `defineX()`, `src/elements/<module>.ts` the side-effect entry, `src/register.ts` the register-all.
+  package.json `sideEffects` names only `elements/*` and `register`. A new widget needs a `define/` + `elements/` file
+  (and a line in `defineAll.ts`); `treeShaking.test.ts` bundles each entry and fails if it pulls another widget.
+  `genericity.test.ts` also bans consumer nouns (`studio`, example-app names), with a planted-file non-vacuity check.
