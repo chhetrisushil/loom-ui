@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@loom-ui/hydration": "workspace:*",
+    "@loom-ui/renderer-conformance": "workspace:*",
     "@types/node": "catalog:",
     "esbuild": "0.21.5",
     "happy-dom": "catalog:",

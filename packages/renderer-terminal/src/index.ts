@@ -9,3 +9,17 @@ export type { TerminalMediaOptions, TerminalRegistryOptions, TitleChrome } from 
 export { kindValueCheck, kindValueCheckFor, renderExperience } from "./status";
 export type { RenderExperienceOptions } from "./status";
 export { watch } from "./watch";
+export { decodeKeys, diffFrames, interactiveTerminal, paintPatches } from "./interactive";
+export type {
+  Control,
+  ControlKind,
+  InteractiveLabels,
+  InteractiveOptions,
+  InteractiveTerminal,
+  Key,
+  KeyName,
+  LinePatch,
+  PaintStats,
+  TerminalInput,
+  TerminalOutput,
+} from "./interactive";

@@ -588,3 +588,9 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   surface for the same framework kinds.
 - [../../README.md](../../README.md) — root overview, including the full container-renderer
   ownership rules and recompose semantics.
+
+## Conformance
+
+`src/conformance.test.ts` runs `@loom-ui/renderer-conformance` against this renderer (with the chat
+and media entries registered); `src/conformanceAdapter.test-support.ts` is the adapter. A third-party
+renderer does the same: see [../renderer-conformance/README.md](../renderer-conformance/README.md).

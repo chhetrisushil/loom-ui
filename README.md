@@ -19,6 +19,7 @@ in the path.
 | `@loom-ui/planner` | Planner SPI (`compose`/`revise` → operations) with a reference planner, drift re-authoring and a conformance kit | [packages/planner](packages/planner/README.md) |
 | `@loom-ui/renderer-lit` | A loom DOM renderer adapter plus Lit elements registered under loom's kinds and the framework's own kinds | [packages/renderer-lit](packages/renderer-lit/README.md) |
 | `@loom-ui/renderer-terminal` | String renderers for every framework kind, merged over loom's terminal registry, with hydration status | [packages/renderer-terminal](packages/renderer-terminal/README.md) |
+| `@loom-ui/renderer-conformance` | The renderer conformance kit: one set of contract checks any renderer (Lit, terminal, a third party's) runs through a small adapter | [packages/renderer-conformance](packages/renderer-conformance/README.md) |
 
 Full detail on each package's own README, below. Design: `loom/docs/requirements/2026-09-21-loom-ui-design.md`. Contributor notes: `AGENTS.md`.
 

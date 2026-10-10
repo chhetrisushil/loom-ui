@@ -229,6 +229,52 @@ The keys the terminal asks for (including the shared chat and media words from `
 | `lu.terminal.formInput` | `[form — answer on an interactive surface]` |
 | `lu.terminal.selectInput` | `[choice — answer on an interactive surface]` |
 
+## Interactive terminal and incremental render
+
+`renderExperience` stays a snapshot: a string in, a string out, byte for byte what it always was.
+`interactiveTerminal(blueprint, { store, ... })` is the opt-in live session over the same renderer.
+Its frame is that snapshot followed by a controls footer when the Blueprint has actionable widgets;
+with none, the frame IS the snapshot.
+
+```ts
+import { interactiveTerminal } from "@loom-ui/renderer-terminal";
+
+const term = interactiveTerminal(blueprint, {
+  store,                       // the HydrationStore; changes repaint
+  input: process.stdin,         // anything with on("data"); raw mode is set while live
+  output: process.stdout,       // anything with write(); omit for a headless frame()
+  onAction: (a) => writeBack.handle(a), // WidgetAction + viewedVersion; may return an ActionOutcome
+});
+term.update(revisedBlueprint); // incremental: only the changed lines are rewritten
+term.stop();
+```
+
+- **Incremental render.** The first paint clears the screen and writes the frame; afterwards each
+  change diffs the new frame against the last (`diffFrames`) and writes only the changed lines as
+  cursor-addressed rewrites (`paintPatches`). `onPaint` reports `{ mode: "full" | "patch" | "none",
+  changedLines, totalLines }`. A change that leaves the frame as it was writes nothing.
+- **Controls.** `ApprovalCard` (only while an approval is pending, like the web), `SelectInput` and
+  `TextInput`. Tab / Shift-Tab (or the arrows) move focus. Approvals take `y` / `n` only: Enter is
+  never consent. A select opens a list (Enter), picks by digit or arrows + Enter, Escape backs out.
+  A text input starts on Enter, edits with Backspace, sends on Enter, Escape cancels.
+- **Actions** are the shapes the web emits (`APPROVE` / `REJECT` with `payload.approved`, `SELECT`,
+  `SUBMIT_TEXT` with an idempotency `key`), stamped with `viewedVersion`. What was typed is kept until
+  the host answers `ok`; a refusal or a throw is a fixed sentence from `LU_MESSAGES`, never the host's
+  text. No `onAction` = "not available here"; nothing is pretended to be sent.
+- **No TTY needed.** `input` / `output` are injected; `send("\t")` and `press({ name: "enter" })`
+  feed keys and resolve when the effect, including the action, has settled. `decodeKeys` is the pure
+  parser: unknown escape sequences are dropped whole, control characters and bidi overrides are never
+  typed text. Ctrl-C calls `onInterrupt` (default `stop`).
+- `labels` overrides the footer's key legend and focus marker (symbols by default); every other word
+  uses the host's `i18n`. Form inputs are not driven here (use a surface with fields).
+
+`renderExperience` also strips control characters other than newline, C1 controls and bidi overrides
+from the whole frame: a title, heading or cell can be model- or user-authored, and an ESC would
+otherwise reach the terminal as an escape sequence.
+
+The renderer runs the shared conformance kit (`@loom-ui/renderer-conformance`) in
+`src/conformance.test.ts`.
+
 ## See also
 
 - [../core/README.md](../core/README.md) — the framework kinds and number semantics this package
