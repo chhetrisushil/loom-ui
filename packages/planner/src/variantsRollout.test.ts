@@ -232,7 +232,7 @@ describe("ReferencePlanner variants through a rollout registry (R18)", () => {
     expect(again.report.variant?.policy.id).toBe(ID);
   });
 
-  it("replay with NO live version still serves the recorded variant, and reports no version", async () => {
+  it("replay with the registry unavailable serves the recorded variant and claims no version (the post-promote test above guards `fresh`)", async () => {
     const reg = await registry();
     const ctx = recordingContext();
     let gone = false;
