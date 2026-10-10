@@ -364,38 +364,210 @@ check("empty-states", "an empty table, chart or transcript still says what it is
 );
 
 // ── untrusted text ─────────────────────────────────────────────────────────────────────────────
+// Every place untrusted text can enter a surface gets the SAME hostile string: markup, an ANSI
+// CSI, a C1 CSI, OSC 8 (hyperlink) and OSC 52 (clipboard) strings closed by BEL, CR, backspace,
+// NUL, a bidi isolate, a zero-width space and a bidi override. A surface that interprets control
+// characters must carry none of them; every surface must show the markup as literal characters.
+const BEL = String.fromCharCode(7);
+const NUL = String.fromCharCode(0);
+const HOSTILE = [
+  "Q<b>m</b>",
+  `${ESC}[2J`,
+  "\u009b31m",
+  `${ESC}]8;;http://evil.example${BEL}link${ESC}]8;;${BEL}`,
+  `${ESC}]52;c;cGF5${BEL}`,
+  "\r\b",
+  NUL,
+  "\u2066",
+  "\u200b",
+  BIDI,
+  "z",
+].join("");
+const FORBIDDEN: ReadonlyArray<[string, string]> = [
+  ["an escape character", ESC],
+  ["a C1 control (0x9b)", "\u009b"],
+  ["a BEL", BEL],
+  ["a carriage return", "\r"],
+  ["a backspace", "\b"],
+  ["a NUL", NUL],
+  ["a bidi isolate", "\u2066"],
+  ["a zero-width space", "\u200b"],
+  ["a bidi override", BIDI],
+];
+const MESSAGE_KEYS = [
+  "lu.approval.approve",
+  "lu.approval.reject",
+  "lu.input.choose",
+  "lu.input.message",
+  "lu.chat.who.assistant",
+  "lu.chat.who.user",
+  "lu.empty.noData",
+  "lu.state.loading",
+];
+
 check(
   "untrusted-text",
   "untrusted text is shown as text: markup literal, control sequences never interpreted",
   (adapter) =>
     withSession(adapter, async (s) => {
-      const evil = `plain<b>m</b>${ESC}[2Jtail${BIDI}rev`;
       const strict = adapter.capabilities?.interpretsControlCharacters === true;
-      const probes: Array<[string, Record<string, unknown>, unknown]> = [
-        ["Note", { text: evil }, undefined],
-        ["Table", {}, { columns: ["c"], rows: [[evil]] }],
-        ["StatusCard", {}, { level: "ok", headline: evil }],
-      ];
-      for (const [kind, props, value] of probes) {
-        if (!adapter.kinds.includes(kind)) continue;
-        const w =
-          value === undefined
-            ? unbound(kind, `x-${kind}`, "Probe", props)
-            : bound(kind, `x-${kind}`, "Probe", `h-x-${kind}`, props);
-        const m = await s.mount(
-          viewOf([w]),
-          value === undefined ? {} : { [`h-x-${kind}`]: { value, state: "ready" } }
-        );
-        const out = await m.text();
-        must(has(out, "plain"), `${kind}: the text itself vanished: ${show(out)}`);
+      // `shown: false` = the kind need not draw this text at all (a column header, say), but if it
+      // does, it must not carry a control.
+      const verify = (where: string, out: string, shown = true): void => {
         must(
-          has(out, "<b>m</b>"),
-          `${kind}: markup in a text was not shown literally: ${show(out)}`
+          !shown || has(out, "Q<b>m</b>"),
+          `${where}: markup in a text was not shown literally (or the text vanished): ${show(out)}`
         );
-        if (strict) {
-          must(!out.includes(ESC), `${kind}: an escape character reached the surface`);
-          must(!out.includes(BIDI), `${kind}: a bidi override reached the surface`);
-        }
+        if (strict)
+          for (const [name, ch] of FORBIDDEN)
+            must(!out.includes(ch), `${where}: ${name} reached the surface: ${show(out)}`);
+      };
+      const probe = async (
+        where: string,
+        kinds: readonly string[],
+        view: () => ReturnType<typeof viewOf>,
+        values: Record<string, HandleEntry> = {},
+        i18n?: import("@loom-ui/core").LuI18n,
+        shown = true
+      ): Promise<void> => {
+        if (!kinds.every((k) => adapter.kinds.includes(k))) return;
+        verify(where, await (await s.mount(view(), values, i18n)).text(), shown);
+      };
+      const ready = (h: string, value: unknown): Record<string, HandleEntry> => ({
+        [h]: { value, state: "ready" },
+      });
+
+      await probe("Note text", ["Note"], () =>
+        viewOf([unbound("Note", "n", "Probe", { text: HOSTILE })])
+      );
+      await probe("Note title", ["Note"], () =>
+        viewOf([unbound("Note", "n", HOSTILE, { text: "body" })])
+      );
+      await probe("view title", ["Note"], () =>
+        viewOf([unbound("Note", "n", "Probe", { text: "body" })], HOSTILE)
+      );
+      await probe("container heading", ["Note"], () =>
+        viewOf([roleLayout("tabs", HOSTILE, [unbound("Note", "n", "Probe", { text: "body" })])])
+      );
+      await probe(
+        "Table cell",
+        ["Table"],
+        () => viewOf([bound("Table", "t", "Probe", "h-t")]),
+        ready("h-t", { columns: ["c"], rows: [[HOSTILE]] })
+      );
+      await probe(
+        "Table column",
+        ["Table"],
+        () => viewOf([bound("Table", "t", "Probe", "h-t")]),
+        ready("h-t", { columns: [HOSTILE], rows: [["x"]] }),
+        undefined,
+        false
+      );
+      await probe(
+        "StatusCard headline",
+        ["StatusCard"],
+        () => viewOf([bound("StatusCard", "c", "Probe", "h-c")]),
+        ready("h-c", { level: "ok", headline: HOSTILE })
+      );
+      await probe(
+        "BarChart label",
+        ["BarChart"],
+        () => viewOf([bound("BarChart", "b", "Probe", "h-b")]),
+        ready("h-b", { bars: [{ label: HOSTILE, value: 3 }] })
+      );
+      await probe(
+        "error message",
+        ["StatusBadge"],
+        () => viewOf([bound("StatusBadge", "e", "Probe", "h-e")]),
+        { "h-e": { state: "error", message: HOSTILE } }
+      );
+      await probe(
+        "media name",
+        ["Image"],
+        () => viewOf([bound("Image", "i", "Probe", "h-i")]),
+        ready("h-i", { address: ADDR, mediaType: "image/png", size: 2048, name: HOSTILE })
+      );
+      await probe("input label", ["TextInput"], () =>
+        viewOf([unbound("TextInput", "ti", "Probe", { label: HOSTILE })])
+      );
+      await probe("select label and option labels", ["SelectInput"], () =>
+        viewOf([
+          unbound("SelectInput", "sel", "Probe", {
+            label: HOSTILE,
+            options: [
+              { value: "a", label: HOSTILE },
+              { value: "b", label: "Beta" },
+            ],
+          }),
+        ])
+      );
+      await probe(
+        "chat turn",
+        ["Chat"],
+        () => viewOf([bound("Chat", "chat", "Chat", "h-chat")]),
+        ready("h-chat", {
+          mode: "owner",
+          entries: [
+            { id: "a", turn: 1, role: "assistant", status: "complete", parts: part(HOSTILE) },
+          ],
+        })
+      );
+
+      // The host's own catalogue words are as untrusted as a title: a translated word can carry
+      // anything. An interactive surface draws them in its controls too (an approval pending, a
+      // select and a text input with no label of their own, so the fixed words stand in).
+      if (adapter.capabilities?.i18n === true) {
+        const messages = Object.fromEntries(MESSAGE_KEYS.map((k) => [k, HOSTILE]));
+        const kinds = ["ApprovalCard", "SelectInput", "TextInput"].filter((k) =>
+          adapter.kinds.includes(k)
+        );
+        if (kinds.length > 0)
+          verify(
+            "i18n catalogue word in controls",
+            await (
+              await s.mount(
+                viewOf([
+                  ...(kinds.includes("ApprovalCard")
+                    ? [bound("ApprovalCard", "appr", "Deploy?", "h-appr")]
+                    : []),
+                  ...(kinds.includes("SelectInput")
+                    ? [
+                        unbound("SelectInput", "sel", undefined, {
+                          options: [{ value: "a", label: "Alpha" }],
+                        }),
+                      ]
+                    : []),
+                  ...(kinds.includes("TextInput") ? [unbound("TextInput", "ti", undefined)] : []),
+                ]),
+                ready("h-appr", { pending: true }),
+                { messages }
+              )
+            ).text()
+          );
+        if (adapter.kinds.includes("Chat"))
+          verify(
+            "i18n catalogue word in a transcript",
+            await (
+              await s.mount(
+                viewOf([bound("Chat", "chat", "Chat", "h-chat")]),
+                ready("h-chat", {
+                  mode: "owner",
+                  entries: [
+                    { id: "a", turn: 1, role: "assistant", status: "complete", parts: part("hi") },
+                  ],
+                }),
+                { messages }
+              )
+            ).text()
+          );
+        if (adapter.kinds.includes("StatusBadge"))
+          verify(
+            "i18n catalogue word in a loading row",
+            await (
+              await s.mount(viewOf([bound("StatusBadge", "sb", "Probe", "h-sb")]), {}, { messages })
+            ).text(),
+            false
+          );
       }
     })
 );
@@ -542,7 +714,12 @@ check("actions", "controls emit the WidgetAction shapes every renderer shares", 
           (approve.payload as { approved?: unknown } | undefined)?.approved === true,
         `approve: unexpected action ${JSON.stringify(approve)}`
       );
-      const reject = await drive(m, "appr", { kind: "reject" });
+      // A renderer may answer a pending approval once (a repeat is a double-submit), so the other
+      // intent is driven on a fresh mount of the same pending approval.
+      const m2 = await s.mount(viewOf([w]), {
+        "h-appr": { value: { pending: true }, state: "ready" },
+      });
+      const reject = await drive(m2, "appr", { kind: "reject" });
       must(
         reject.type === "REJECT" &&
           reject.widgetId === "appr" &&

@@ -57,8 +57,11 @@ export const terminalAdapter: RendererAdapter = {
         await focus(id);
         if (intent.kind === "approve") await term.send("y");
         else if (intent.kind === "reject") await term.send("n");
-        else if (intent.kind === "text") await term.send(`\r${intent.text}\r`);
-        else {
+        else if (intent.kind === "text") {
+          await term.send("\r");
+          await term.send(`\x1b[200~${intent.text}\x1b[201~`);
+          await term.send("\r");
+        } else {
           await term.send("\r");
           const options = (optionsOf(blueprint, id) as Array<{ value: string }>).map(
             (o) => o.value

@@ -9,6 +9,7 @@ import {
   SELECT_ACTION,
   SUBMIT_TEXT_ACTION,
   newSubmitKey,
+  stripUnsafeChars,
   validateSelectValue,
   validateTextValue,
 } from "@loom-ui/core/chat-ui";
@@ -19,11 +20,9 @@ import type { HandleEntry, InvokeIntent, RendererAdapter } from "./adapter";
 // is the worked example for README "Writing a renderer": it implements `RendererAdapter` over loom's
 // `Blueprint` and nothing else of loom-ui's, and passes the whole conformance kit.
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
-const INERT = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
+// Core's ONE unsafe set (controls incl. ESC/C1, bidi, zero-width, TAG), then whitespace folded.
 const clean = (s: unknown): string =>
-  String(s ?? "")
-    .replace(INERT, " ")
+  stripUnsafeChars(String(s ?? ""))
     .replace(/\s+/g, " ")
     .trim();
 const BINDING = /^values\.(.+)$/;
@@ -48,7 +47,9 @@ export const speechAdapter: RendererAdapter = {
   capabilities: { update: true, invoke: true, i18n: true, interpretsControlCharacters: true },
   mount(initial, { values, onAction, i18n }) {
     const data = new Map(Object.entries(values));
-    const say = createSay(i18n as LuI18n | undefined);
+    const base = createSay(i18n as LuI18n | undefined);
+    // A host's translated word is as untrusted as a title.
+    const say = ((key: never, vars?: never) => clean(base(key, vars))) as typeof base;
     const nf = new Intl.NumberFormat(i18n?.locale ?? "en-US");
     let bp: Blueprint = initial;
     let live = true;

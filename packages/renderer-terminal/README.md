@@ -257,6 +257,17 @@ term.stop();
   `TextInput`. Tab / Shift-Tab (or the arrows) move focus. Approvals take `y` / `n` only: Enter is
   never consent. A select opens a list (Enter), picks by digit or arrows + Enter, Escape backs out.
   A text input starts on Enter, edits with Backspace, sends on Enter, Escape cancels.
+- **Consent is deliberate.** `y` / `n` and every submit act only when they are the SOLE key of
+  their input chunk, on the frame they were pressed on: a key that changes mode or submits ends the
+  chunk (the rest is dropped), so a paste can never navigate to an approval and answer it. The
+  session turns on bracketed paste (`ESC[?2004h`, off again on `stop`) and a pasted span is TEXT
+  only: it is appended to an open draft (newlines kept), otherwise it is nothing. A consent key
+  queued behind an in-flight action is refused ("The view changed.") if the blueprint or a control's
+  binding status moved since it was pressed, and `viewedVersion` is stamped from that frame, not
+  from whatever is current when the key finally runs. After an `APPROVE` / `REJECT` is dispatched for
+  a pending approval, further `y` / `n` for it are ignored until the frame moves (the host answered,
+  or a new version landed): the HOST must still dedupe by its own key, since another session can
+  answer too. `press(...keys)` treats each key as its own arrival; `send(chunk)` and real input are chunks.
 - **Actions** are the shapes the web emits (`APPROVE` / `REJECT` with `payload.approved`, `SELECT`,
   `SUBMIT_TEXT` with an idempotency `key`), stamped with `viewedVersion`. What was typed is kept until
   the host answers `ok`; a refusal or a throw is a fixed sentence from `LU_MESSAGES`, never the host's
@@ -268,9 +279,14 @@ term.stop();
 - `labels` overrides the footer's key legend and focus marker (symbols by default); every other word
   uses the host's `i18n`. Form inputs are not driven here (use a surface with fields).
 
-`renderExperience` also strips control characters other than newline, C1 controls and bidi overrides
-from the whole frame: a title, heading or cell can be model- or user-authored, and an ESC would
-otherwise reach the terminal as an escape sequence.
+`renderExperience` and the interactive frame (controls footer included) strip core's one unsafe set
+(`stripUnsafeChars`, the class `sanitizeChatText` removes: C0/C1 controls, ESC, bidi overrides and
+isolates, zero-width and invisible marks, soft hyphen, TAG characters) plus tab, CR and U+2028/9 from
+the whole frame; only newline survives. A title, heading, cell, translated word or typed draft can
+be model- or user-authored, and an ESC would otherwise reach the terminal as an escape sequence.
+"Inert" means STRIPPED, not parsed: the printable bytes after a removed ESC (such as
+`]8;;http://…`) may remain visible. They are harmless text. A typed `Key.char` must be exactly one
+printable code point or it is ignored.
 
 The renderer runs the shared conformance kit (`@loom-ui/renderer-conformance`) in
 `src/conformance.test.ts`.

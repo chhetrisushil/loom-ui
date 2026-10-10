@@ -189,6 +189,9 @@ describe("focus and actions", () => {
     await term.send("\r"); // Enter is NOT consent
     expect(actions).toEqual([]);
     await term.send("y");
+    await term.send("n"); // a repeat answer to the same pending approval is ignored
+    expect(actions.map((a) => a.type)).toEqual(["APPROVE"]);
+    store.setValue("h-ok", { pending: true }, { state: "ready" }); // the frame moved
     await term.send("n");
     expect(actions.map((a) => [a.type, a.widgetId, a.payload])).toEqual([
       ["APPROVE", "ok", { approved: true }],
@@ -203,16 +206,20 @@ describe("focus and actions", () => {
     expect(term.frame()).toMatch(/› 1\) Europe/);
     await term.send("\x1b");
     expect(actions).toEqual([]);
-    await term.send("\r2");
+    await term.send("\r");
+    await term.send("2");
     expect(actions[0]).toMatchObject({
       type: SELECT_ACTION,
       widgetId: "sel",
       payload: { value: "us" },
     });
     expect(isSubmitKey((actions[0]?.payload as { key: string }).key)).toBe(true);
-    await term.send("\r\x1b[B\r");
+    await term.send("\r");
+    await term.send("\x1b[B");
+    await term.send("\r");
     expect((actions[1]?.payload as { value: string }).value).toBe("us");
-    await term.send("\r9"); // no 9th option: nothing is sent
+    await term.send("\r");
+    await term.send("9"); // no 9th option: nothing is sent
     expect(actions).toHaveLength(2);
   });
 
@@ -239,24 +246,31 @@ describe("focus and actions", () => {
 
   it("an empty submission and an unavailable host send nothing / pretend nothing", async () => {
     const empty = rig(view(text));
-    await empty.term.send("\r\r");
+    await empty.term.send("\r");
+    await empty.term.send("\r");
     expect(empty.actions).toEqual([]);
     expect(empty.term.frame()).toContain("Type a message first.");
 
     const store = newStore();
     const term = interactiveTerminal(view(text), { store });
-    await term.send("\rhi\r");
+    await term.send("\r");
+    await term.send("hi");
+    await term.send("\r");
     expect(term.frame()).toContain("Sending is not available here.");
   });
 
   it("a refusal or a throw is shown as a fixed sentence, never the host's text", async () => {
     const refused = rig(view(text), () => ({ ok: false, reason: "stale" }));
-    await refused.term.send("\rhi\r");
+    await refused.term.send("\r");
+    await refused.term.send("hi");
+    await refused.term.send("\r");
     expect(refused.term.frame()).toContain("The view changed.");
     const threw = rig(view(text), () => {
       throw new Error("db password hunter2");
     });
-    await threw.term.send("\rhi\r");
+    await threw.term.send("\r");
+    await threw.term.send("hi");
+    await threw.term.send("\r");
     expect(threw.term.frame()).toContain("Not sent. Try again.");
     expect(threw.term.frame()).not.toContain("hunter2");
   });
@@ -292,7 +306,8 @@ describe("injected streams", () => {
       onAction: (a) => void actions.push(a),
     });
     expect(raw).toEqual([true]);
-    ee.emit("data", Buffer.from("\r1"));
+    ee.emit("data", Buffer.from("\r"));
+    ee.emit("data", Buffer.from("1"));
     await vi.waitFor(() => expect(actions).toHaveLength(1));
     term.stop();
     term.stop(); // idempotent

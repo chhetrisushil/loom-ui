@@ -41,7 +41,14 @@ function readable(root: ParentNode): string {
     }
     const el = node as Element;
     if (el.tagName === "STYLE" || el.tagName === "SCRIPT") return;
-    for (const a of ["aria-label", "title", "alt"]) {
+    // Every attribute that carries something a viewer, a screen reader or a link-follower is given
+    // counts as READ: names, form values and placeholders, link targets, and data-* hooks.
+    for (const a of el.getAttributeNames()) {
+      if (
+        !["aria-label", "title", "alt", "value", "placeholder", "href"].includes(a) &&
+        !a.startsWith("data-")
+      )
+        continue;
       const v = el.getAttribute(a);
       if (v) parts.push(v);
     }

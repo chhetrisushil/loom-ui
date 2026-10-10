@@ -6,6 +6,7 @@ import {
   type WidgetValueCheck,
   renderBlueprintToString,
 } from "@loom/plugin-renderer-terminal";
+import { inert } from "./inert";
 import { type TerminalRegistryOptions, terminalRegistry } from "./registry";
 
 // ── The status matrix is loom's ───────────────────────────────────────────────
@@ -91,16 +92,6 @@ export function renderExperience(
     })
   );
 }
-
-/**
- * Control characters other than newline (an ESC begins a terminal escape sequence: clear the screen,
- * retitle the window, move the cursor), C1 controls, and bidi overrides. A title, a label or a cell
- * can be model- or user-authored, so the frame as a whole is made inert, not only the kinds that
- * clean their own text. Idempotent; a printable character is never touched.
- */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
-const CONTROLS = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
-const inert = (frame: string): string => frame.replace(CONTROLS, "");
 
 function readProjection(read: RenderExperienceOptions["projectionState"], id: string): unknown {
   if (read === undefined) return undefined;

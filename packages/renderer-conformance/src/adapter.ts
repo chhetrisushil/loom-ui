@@ -32,6 +32,9 @@ export interface MountedRenderer {
   /**
    * Everything a viewer can READ right now, as one string: visible text plus accessible names. It
    * SETTLES first (await any scheduled render) so the kit never sleeps. Order is reading order.
+   * EVERY rendered attribute a viewer or assistive tech is given counts as read — values,
+   * placeholders, link targets, data-* — not only visible text, so a hostile string hiding in one
+   * is caught like any other.
    */
   text(): string | Promise<string>;
   /** Publish a handle's new value / status, as the hydration store would. */
