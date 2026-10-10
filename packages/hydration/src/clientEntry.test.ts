@@ -244,6 +244,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     console.info(`@loom-ui/hydration/client browser bundle (minified, esm): ${bytes} bytes`);
     // 64 -> 72 KiB for U8: the ChatValue contract (~6 kB) rides in `checkKindValue` exactly as the
     // MediaRef contract does, plus the ~2 kB conversation connection.
-    expect(bytes).toBeLessThan(72 * 1024);
+    // 72 -> 74 KiB for loom 2704704 (#556): `@loom/core`'s `schedule$` gained the DST sub-hourly
+    // warning (~0.8 kB minified). The client takes the whole core barrel (CJS, not tree-shaken).
+    expect(bytes).toBeLessThan(74 * 1024);
   });
 });
