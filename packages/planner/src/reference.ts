@@ -194,26 +194,28 @@ export class ReferencePlanner implements Planner {
     const ids = Object.keys(vs.variants).sort();
     // Capture the policy's own answer so the report can say what propensity THIS run produced.
     let produced: { action: string; propensity?: number } | undefined;
-    // Rollout only: the stamp the decision was (or, on a replay, would have been) recorded with,
-    // and the action the decider actually ran for (absent on a replay: the log answered).
+    // Rollout only: the stamp the decision was recorded with and the action the decider ran for
+    // (both absent on a replay: the log answered).
     let stamped: PolicyStamp | undefined;
     let ran: string | undefined;
     let id: string;
     try {
       if (vs.rollout !== undefined) {
         const capture = {
-          decide: <T>(did: string, decider: () => T | Promise<T>, o?: DecideOptionsLike) => {
-            stamped = o?.policy as PolicyStamp | undefined;
-            return ctx.decide<T>(
+          decide: <T>(did: string, decider: () => T | Promise<T>, o?: DecideOptionsLike) =>
+            ctx.decide<T>(
               did,
               async () => {
                 const a = await decider();
                 ran = a as string;
+                // Read the stamp only once loom's decider has returned: loom (>= #529) fills
+                // `o.policy` INSIDE the decider, after the registry read and every `select`. Read
+                // here, it exists only when the decider ran, i.e. exactly when THIS run acted.
+                stamped = o?.policy as PolicyStamp | undefined;
                 return a;
               },
               o
-            );
-          },
+            ),
         };
         id = await decideWithRollout(
           capture as never,
@@ -262,10 +264,9 @@ export class ReferencePlanner implements Planner {
       );
     const p = produced as { action: string; propensity?: number } | undefined;
     // A rollout names the version that ACTED, and only a run whose decider ran witnessed that. On a
-    // replay the log answered: any stamp seen here is what the registry would say NOW (loom
-    // resolves and selects before `ctx.decide`; a later loom moves that inside it and produces no
-    // stamp at all), so it is ignored and `version` is omitted. The loom log's DECISION_RECORDED
-    // stamp is the truth, and `linkFromLedger` / `settleRewards` join on it.
+    // replay the log answered and the decider never ran, so no stamp is read and `version` is
+    // omitted. The loom log's DECISION_RECORDED stamp is the truth, and `linkFromLedger` /
+    // `settleRewards` join on it.
     const acted = vs.rollout !== undefined ? stamped : undefined;
     const fresh = vs.rollout !== undefined && ran === id && acted !== undefined;
     return {
