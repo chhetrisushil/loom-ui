@@ -203,6 +203,10 @@ configureI18n({
 - A counted noun is `<base>.<category>` (`lu.plural.row.one` / `.other`, and `.few` / `.many` / ... for
   a locale that has them). The locale's plural category selects the form only when the host translated
   it; otherwise English rules choose, so the English text stays grammatical.
+- `configureI18n` is a **module-level singleton**: one locale/catalogue per page (per loaded module
+  instance of the renderer). Two hosts on one page share it; the terminal renderer's `i18n` option, by
+  contrast, is per registry. An empty or whitespace-only entry counts as unset (it falls through to
+  `translate`, then English) rather than blanking the control.
 - Calling `configureI18n` again swaps the override and re-renders every mounted element;
   `configureI18n(undefined)` removes it. The locale also changes through `setLocale`.
 - Text that is DATA (titles, labels, headlines, cells, chat messages) is the experience's own words and

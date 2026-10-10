@@ -231,11 +231,12 @@ export function lookupMessage(i18n: LuI18n | undefined, key: string, english: st
     i18n.messages !== undefined && Object.hasOwn(i18n.messages, key)
       ? i18n.messages[key]
       : undefined;
-  if (typeof own === "string") return own;
+  // An empty or whitespace-only entry is "unset", not a translation: it would blank an aria-label or a button.
+  if (typeof own === "string" && own.trim() !== "") return own;
   if (i18n.translate !== undefined) {
     try {
       const r = i18n.translate(key, english);
-      if (typeof r === "string") return r;
+      if (typeof r === "string" && r.trim() !== "") return r;
     } catch {
       // a broken host translator never breaks a render: English
     }
