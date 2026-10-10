@@ -259,7 +259,9 @@ export class ChatFeed {
   /**
    * A history page (`GET .../history`): `{ entries, nextCursor?, done, closed? }`. `backward`
    * pages arrive newest first (initial load, "load earlier"); `forward` pages oldest first (catch-up
-   * after a gap). A malformed page changes nothing.
+   * after a gap). A malformed page changes nothing. `direction` MUST be the one the page was fetched
+   * with: loom's history route defaults to `forward` (oldest first) when the query has no
+   * `direction`, so a page fetched without it and folded as `backward` comes out reversed.
    */
   applyHistory(page: unknown, direction: "backward" | "forward"): ChatFeedResult {
     if (!isRecord(page)) return refuse("history-invalid", "a history page is { entries, done }");
@@ -542,8 +544,10 @@ function insertSorted(list: ChatEntry[], entry: ChatEntry): void {
  * provider of kind `loom-effect` binds it to a `Chat` widget for the first paint / a split-hydration
  * payload, with the browser's `connectConversation` taking over afterwards. Exactly the fold a
  * browser runs (the same wire parsing, sanitising, bare placeholders, bounds), so the two cannot
- * disagree. `direction` is the page's own (default `backward`: the newest page). A malformed page
- * is an empty transcript, never a throw.
+ * disagree. `direction` is the page's own (default `backward`: the newest page, which is what a first
+ * paint fetches). Fetch it with `?direction=backward`: loom's route defaults to `forward` (oldest
+ * first) when `direction` is omitted, and a forward page folded as `backward` comes out reversed.
+ * A malformed page is an empty transcript, never a throw.
  */
 export function chatValueFromHistory(
   page: unknown,
