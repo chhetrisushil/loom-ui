@@ -261,9 +261,11 @@ export class ReferencePlanner implements Planner {
         `the recorded variant "${String(id).slice(0, 48)}" is not offered by this planner; the model was not called`
       );
     const p = produced as { action: string; propensity?: number } | undefined;
-    // A rollout names the version that ACTED. On a replay the decider did not run, so the stamp
-    // here is only what the registry would say now: the version is still reported, but the
-    // propensity and rollout fields are claimed only for a choice THIS run made.
+    // A rollout names the version that ACTED, and only a run whose decider ran witnessed that. On a
+    // replay the log answered: any stamp seen here is what the registry would say NOW (loom
+    // resolves and selects before `ctx.decide`; a later loom moves that inside it and produces no
+    // stamp at all), so it is ignored and `version` is omitted. The loom log's DECISION_RECORDED
+    // stamp is the truth, and `linkFromLedger` / `settleRewards` join on it.
     const acted = vs.rollout !== undefined ? stamped : undefined;
     const fresh = vs.rollout !== undefined && ran === id && acted !== undefined;
     return {
@@ -276,10 +278,9 @@ export class ReferencePlanner implements Planner {
           id,
           policy:
             vs.rollout !== undefined
-              ? {
-                  id: acted?.id ?? vs.rollout.policyId,
-                  version: acted?.version ?? "",
-                }
+              ? fresh
+                ? { id: acted.id, version: acted.version }
+                : { id: vs.rollout.policyId }
               : {
                   id: (vs.policy as Policy<string>).id,
                   version: (vs.policy as Policy<string>).version,

@@ -261,7 +261,14 @@ export interface PlanVariantReport {
   readonly decisionId: string;
   /** The chosen variant id. */
   readonly id: string;
-  readonly policy: { readonly id: string; readonly version: string };
+  /**
+   * The policy that chose. `version` is always present for a fixed `policy`. Under a `rollout` it is
+   * the version that ACTED and is present only when this run made the choice; on a replay it is
+   * OMITTED (the registry's current version is not the one that chose), and the loom log's
+   * DECISION_RECORDED stamp for `decisionId` is the truth that `linkFromLedger` / `settleRewards`
+   * join on.
+   */
+  readonly policy: { readonly id: string; readonly version?: string };
   /**
    * Under a `rollout` (R18): the version that ACTED is `policy.version`, and this is the rollout
    * stamp recorded with the decision (mode, bucket, `acted`, the `shadow` arm, `fellBack`). Present
