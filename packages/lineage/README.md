@@ -47,11 +47,27 @@ NOT passed as an `eventStore`. `retainedVersions(state, policy, branchSources)` 
 version is left out, so that blob becomes reclaimable; every other ref a line's events cite (anything an op carries) stays
 pinned, and so does every content ref found INSIDE a retained artifact's bytes (the sweep does not read blobs).
 It refuses (throws) over a store that cannot enumerate its lines, a line that does not fold, or a retained artifact it cannot
-read. A malformed policy THROWS (NaN, negative or fractional `keepLast`, an unparseable `keepSince`): a deletion policy never coerces.
+read. A malformed policy THROWS (NaN, negative or fractional `keepLast`; a `keepSince` that is not an ISO-8601 date/time string, a valid `Date` or epoch ms): a deletion policy never coerces.
+
+**Build `roots` with `rootsFor`, always.** `rootsFor({ lineages: [{ lineage, policy }, ...], seenLogs?, allowUnreadable?, extra? })`
+returns the ONE async iterable of addresses loom's `sweepUnpinnedContent({ roots: () => rootsFor(...), completeScan: true })` needs:
+every lineage's `pins(policy)`, every seen log's sealed value blobs, the versions each seen log's views still read (kept by the
+lineage that log is built over, which must be listed), and your `extra` (app tables; sync or async iterable), deduplicated. It
+validates every policy and the wiring up front, and fails closed: any source throwing makes the iterator throw before it
+yields anything, so a sweep never erases against a partial set. Passing a single lineage's `pins()` to a store several lineages
+share erases the others' artifacts; do not hand-compose it.
+
+```ts
+await sweepUnpinnedContent({
+  /* ... */
+  roots: () => rootsFor({ lineages: [{ lineage: a, policy }, { lineage: b }], seenLogs: [seen] }),
+  reclaimOrphans: { completeScan: true },
+});
+```
 
 **The root set must be complete.** With `reclaimOrphans: { completeScan: true }` loom erases every blob in the store that no
 root names, so `roots` must come from EVERY user of the store: this lineage's `pins`, every other lineage's `pins`, a `SeenLog`
-sharing the store, and loom's own execution scan. For a seen log, `lineage.pins(policy, await collectSeenRoots(seenLog))`
+sharing the store, and loom's own execution scan. For a seen log, `collectSeenRoots` (which `rootsFor` calls)
 adds its sealed value blobs and the versions its live views still read (it throws if anything in the live window was
 unreadable, rather than return an incomplete set). Which collector: with loom's sweep owning the store, use `pins` +
 `collectSeenRoots`; with ONE collector owning the store, `collectSeenGarbage(log, { lineageRetention: policy, ... })` does

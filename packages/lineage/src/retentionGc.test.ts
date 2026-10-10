@@ -329,11 +329,25 @@ describe("retention policy validation (a deletion policy never coerces)", () => 
     ["-Infinity", { keepLast: Number.NEGATIVE_INFINITY }],
     ["a string", { keepLast: "3" as unknown as number }],
     ["an unparseable keepSince", { keepSince: "last tuesday" }],
-    ["a non-string keepSince", { keepSince: 5 as unknown as string }],
+    ["a non-ISO keepSince (lenient Date.parse reads '1' as 2001)", { keepSince: "1" }],
+    ["a non-ISO keepSince date", { keepSince: "Oct 1 2026" }],
+    ["a boolean keepSince", { keepSince: true as unknown as string }],
+    ["an invalid Date keepSince", { keepSince: new Date(Number.NaN) }],
+    ["a NaN epoch keepSince", { keepSince: Number.NaN }],
     ["a non-function keep", { keep: true as unknown as () => boolean }],
   ])("throws on %s", async (_n, policy) => {
     const s = await state();
     expect(() => retainedVersions(s, policy)).toThrow(/RetentionPolicy/);
+  });
+  it.each([
+    ["a date", "2026-10-01"],
+    ["a date-time", "2026-10-01T00:00:00Z"],
+    ["an offset date-time", "2026-10-01T12:30:15.5+05:30"],
+    ["a Date", new Date("2026-10-01")],
+    ["epoch ms", 1_790_000_000_000],
+  ])("accepts keepSince as %s", async (_n, keepSince) => {
+    const s = await state();
+    expect(() => retainedVersions(s, { keepSince })).not.toThrow();
   });
   it("pins() throws on a bad policy rather than sweeping with it", async () => {
     const { lin } = await rig();

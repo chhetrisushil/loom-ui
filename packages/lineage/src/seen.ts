@@ -22,7 +22,7 @@ import {
   encodeValue,
 } from "@loom/plugin-content";
 import { z } from "zod";
-import type { Lineage, LineageResult, Refused } from "./lineage";
+import type { Lineage, LineageResult, Refusal, Refused } from "./lineage";
 import {
   MAX_SEALED_ADDRESS_CHARS,
   type SeenKeyStore,
@@ -221,6 +221,29 @@ const refused = (code: string, message: string): { ok: false; refusal: SeenRefus
     message,
   },
 });
+
+/**
+ * Why a snapshot's version could not be loaded or re-cited, said accurately: it is not a version of
+ * the line (`seen-version-unknown`), its artifact was reclaimed (`seen-artifact-missing`), or anything
+ * else (`seen-version-unreadable`, with the underlying code). Nothing is recorded in any case.
+ */
+const versionRefusal = (refusal: Refusal) => {
+  const finding =
+    refusal.kind === "refused"
+      ? refusal.finding
+      : { code: refusal.kind, message: "the line moved while recording" };
+  if (finding.code === "version-unknown")
+    return refused("seen-version-unknown", "the snapshot's version is not a version of this line");
+  if (finding.code === "artifact-missing")
+    return refused(
+      "seen-artifact-missing",
+      "the snapshot's version exists but its artifact is gone (already reclaimed); nothing is recorded"
+    );
+  return refused(
+    "seen-version-unreadable",
+    `the snapshot's version could not be loaded (${finding.code}): ${finding.message}`
+  );
+};
 
 export interface SeenView {
   readonly sequence: number;
@@ -422,19 +445,11 @@ export class SeenLog {
       );
     }
     const art = await this.lineage.get(experienceId, snapshot.versionHash);
-    if (!art.ok)
-      return refused(
-        "seen-version-unknown",
-        "the snapshot's version is not a version of this line"
-      );
+    if (!art.ok) return versionRefusal(art.refusal);
     // The record will cite this version for as long as the view is in retention: tell the store it
     // was just re-cited (touch, no put) so a collector racing this write spares the artifact.
     const cited = await this.lineage.cite(experienceId, [snapshot.versionHash]);
-    if (!cited.ok)
-      return refused(
-        "seen-version-unknown",
-        "the snapshot's version is not a version of this line"
-      );
+    if (!cited.ok) return versionRefusal(cited.refusal);
 
     // Restamp + drop what the recording viewer may not see, with core's one redactor.
     const checked = redactSeen(snapshot.entries, art.value, {
