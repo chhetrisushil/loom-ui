@@ -201,9 +201,10 @@ A semantic node binds either a hydrated **handle** (`binding`) or **any other lo
 
 ### Framework kinds and number formatting
 
-- `FRAMEWORK_KINDS` — the kinds this package adds beside loom's built-ins: `TimeSeries`,
-  `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`, and the media kinds
-  `Image`, `Audio`, `Video`, `File`, `MediaInput` (see "Media" below).
+- `FRAMEWORK_KINDS` — the kinds this package adds beside loom's built-ins (the charts and tables such as
+  `TimeSeries`, `BarChart`, `Kpi`, `Table`, plus `StatusCard`, `Note`, `A2UIView`, `SandboxView`, the media kinds
+  in "Media" below and the chat kinds). It is an OPEN set that grows with each vocabulary slice: a host that renders a
+  subset should assert its kinds are present (`arrayContaining`), never pin the length or the whole list.
 - `kindValueContracts`, `kindValueContract(kind)`, `checkKindValue(kind, value)` — the zod
   contract per kind (loom's built-ins included) and the check a renderer runs before drawing a
   value; `undefined` (not hydrated yet) or an unknown kind always passes.
