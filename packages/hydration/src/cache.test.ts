@@ -176,3 +176,45 @@ describe("HydrationCache variants — params and kinds together", () => {
     expect(c.get(spec, undefined, { kinds: ["Kpi", "MetricCard"] })).toBeUndefined();
   });
 });
+
+describe("HydrationCache is bounded (U17)", () => {
+  const spec = (h: string) =>
+    providerSpec(h, [mcpStep("s", `t.${h}`)], { cachePolicy: { ttlSeconds: 10, scope: "global" } });
+
+  it("evicts the least recently used entry past maxEntries; a get promotes", () => {
+    const c = new HydrationCache(() => 0, { maxEntries: 2 });
+    c.set(spec("a"), undefined, 1);
+    c.set(spec("b"), undefined, 2);
+    expect(c.get(spec("a"), undefined)).toEqual({ value: 1 }); // a is now the most recent
+    c.set(spec("c"), undefined, 3); // evicts b, not a
+    expect(c.size).toBe(2);
+    expect(c.get(spec("b"), undefined)).toBeUndefined();
+    expect(c.get(spec("a"), undefined)).toEqual({ value: 1 });
+    expect(c.get(spec("c"), undefined)).toEqual({ value: 3 });
+  });
+
+  it("never exceeds the cap however many distinct questions are asked", () => {
+    const c = new HydrationCache(() => 0, { maxEntries: 50 });
+    for (let i = 0; i < 5_000; i++) c.set(spec(`h${i}`), undefined, i);
+    expect(c.size).toBe(50);
+    expect(c.get(spec("h4999"), undefined)).toEqual({ value: 4999 });
+    expect(c.get(spec("h0"), undefined)).toBeUndefined();
+  });
+
+  it("re-setting a key does not grow the cache or evict a neighbour", () => {
+    const c = new HydrationCache(() => 0, { maxEntries: 2 });
+    c.set(spec("a"), undefined, 1);
+    c.set(spec("b"), undefined, 2);
+    c.set(spec("b"), undefined, 3);
+    expect(c.size).toBe(2);
+    expect(c.get(spec("a"), undefined)).toEqual({ value: 1 });
+  });
+
+  it("has a generous default and refuses a nonsensical cap", () => {
+    expect(() => new HydrationCache(() => 0, { maxEntries: 0 })).toThrow(RangeError);
+    expect(() => new HydrationCache(() => 0, { maxEntries: 1.5 })).toThrow(RangeError);
+    const c = new HydrationCache(() => 0);
+    for (let i = 0; i < 2_000; i++) c.set(spec(`h${i}`), undefined, i);
+    expect(c.size).toBe(2_000); // small data: nothing is evicted
+  });
+});

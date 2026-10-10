@@ -6,13 +6,14 @@ import {
 } from "@loom-ui/core/browser";
 import { pluralForms } from "@loom-ui/core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
 import { formattingLocale } from "../i18n";
 import { tPlural } from "../plural";
 import { say } from "../say";
 import { LuWidget } from "./base";
+import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
 const INITIAL_ROWS = 200;
@@ -46,6 +47,9 @@ export class LuTable extends LuWidget {
   @state() private sortCol: number | null = null;
   @state() private sortDir: 1 | -1 = -1;
   @state() private visibleRows = INITIAL_ROWS;
+  /** U17: windowed rendering (see `./virtual`). Off by default; set by `createLitRegistry({ virtualize })`. */
+  @property({ attribute: false }) virtualize?: boolean | VirtualizeOptions;
+  private readonly rowsWindow = new VirtualRows(this);
 
   // Per-column numeric detection is O(rows×cols); memoised per value, not per sort click.
   private numericFor: unknown;
@@ -118,6 +122,11 @@ export class LuTable extends LuWidget {
       font-variant-numeric: tabular-nums;
       text-align: end;
     }
+    tbody.virtual td {
+      box-sizing: border-box;
+      height: var(--lu-row-h);
+      padding-block: 0;
+    }
     .more {
       display: flex;
       align-items: center;
@@ -170,9 +179,16 @@ export class LuTable extends LuWidget {
       });
     }
     const total = rows.length;
-    const shown = Math.min(this.visibleRows, total);
-    const windowed = shown < total ? rows.slice(0, shown) : rows;
-    return html`<table>
+    const virt = resolveVirtualize(this.virtualize);
+    const win = this.rowsWindow.plan(total, virt);
+    const shown = win === undefined ? Math.min(this.visibleRows, total) : total;
+    const windowed =
+      win !== undefined
+        ? rows.slice(win.start, win.end)
+        : shown < total
+          ? rows.slice(0, shown)
+          : rows;
+    return html`<table aria-rowcount=${win !== undefined ? total + 1 : nothing}>
         <caption class="sr-only">${describeValue("Table", v, this.title_)}</caption>
         <thead>
           <tr>
@@ -188,9 +204,10 @@ export class LuTable extends LuWidget {
             )}
           </tr>
         </thead>
-        <tbody>
+        <tbody class=${win !== undefined ? "virtual" : ""} style=${win !== undefined && virt ? `--lu-row-h:${virt.rowHeight}px` : ""}>
+          ${win !== undefined ? padRow(win.padTop, labels.length) : nothing}
           ${windowed.map(
-            (r) => html`<tr>
+            (r, i) => html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
               ${labels.map((_, i) => {
                 const c = at(r, i);
                 return html`<td class=${numeric[i] ? "num" : ""}>
@@ -199,6 +216,7 @@ export class LuTable extends LuWidget {
               })}
             </tr>`
           )}
+          ${win !== undefined ? padRow(win.padBottom, labels.length) : nothing}
         </tbody>
       </table>
       ${
@@ -224,6 +242,7 @@ export class LuTable extends LuWidget {
       this.sortDir = -1;
     }
     this.visibleRows = INITIAL_ROWS;
+    if (resolveVirtualize(this.virtualize) !== undefined) this.rowsWindow.reset();
   }
 }
 

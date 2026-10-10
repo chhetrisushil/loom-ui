@@ -197,6 +197,31 @@ listening to both would act twice); without `onAction` it still fires, **depreca
 - App-level (unbound) elements: `LuTimeRangePicker` (`lu-time-range-picker`, types `TimeRange`,
   `TimeRangePreset`), `LuLocalePicker` (`lu-locale-picker`).
 
+### Scale (U17)
+
+All opt-in; with none of it configured nothing changes.
+
+- **Visibility (`onVisible`).** `renderBlueprintDom(..., { onVisible })` watches every BOUND widget's host
+  with ONE shared `IntersectionObserver` (disconnected by `dispose()`; `visibilityRootMargin`, default
+  `"100px"`) and calls `onVisible(widget)` on entry into view, on each re-entry, and when a binding changes
+  while on screen. This is what fetches a P2 hydration handle:
+  `onVisible: (w) => { const h = w.binding && handleOfPath(w.binding.path); if (h) controller.markVisible(h); }`
+  (`handleOfPath` from `@loom-ui/hydration/client`; the renderer knows nothing of hydration). With no
+  `IntersectionObserver` every bound widget is reported at mount (fail open: a P2 handle that never loads is worse
+  than one that loads early).
+- **Update coalescing.** `coalesceUpdates(handle, { schedule? })` wraps a render handle: any number of
+  `update(blueprint)` calls between two frames are ONE reconcile of the newest Blueprint (default scheduler
+  `animationFrameScheduler`: next frame, or a 250 ms deadline in a hidden tab). Each call resolves with the report of
+  the pass that landed. Per widget, `createLitRegistry({ coalesce: animationFrameScheduler })` holds value updates
+  until the frame and hands the element only the newest pair (the first value, at mount, is never delayed).
+- **Virtualization.** `createLitRegistry({ virtualize: true | { rowHeight, overscan, minRows } })`. `lu-table` and
+  `lu-data-table` mount only the rows near the scroll position (fixed row height, default 30 px; 8 rows overscan; windowing
+  starts above 200 rows) with two spacer rows, `aria-rowcount` / `aria-rowindex` for assistive tech, scroll reset on
+  sort, and a re-render only when the mounted window changes; every row is reachable by scrolling, so there is no
+  "show more". `lu-chat` (variable-height turns) lets the browser skip layout and paint of off-screen turns
+  (`content-visibility: auto`) past `minRows` entries, so stick-to-bottom and the load-earlier anchor keep working.
+  `virtualWindow(total, rowHeight, scrollTop, viewport, overscan)` is the pure core, exported.
+
 ### Number and value formatting
 
 - `measure(value, format?): string`, `tick(value, format?): string` — the reader (accessible name)

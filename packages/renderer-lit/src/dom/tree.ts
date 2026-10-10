@@ -22,6 +22,7 @@ import {
   type DomWidgetHandle,
   placeholderFor,
 } from "./registry";
+import type { Observed, VisibilityTracker } from "./visibility";
 
 // ── The entry tree ────────────────────────────────────────────────────────────
 // The adapter mounts a blueprint into a tree of ENTRIES that mirrors the DOM one-for-one: a
@@ -51,6 +52,8 @@ export interface MountContext {
   readonly blueprintId?: () => string;
   /** Host-declared compile fingerprint (`compileFingerprint`), stamped as `viewedVersion.compile`. */
   readonly compile?: string;
+  /** U17: reports bound widgets entering the viewport; absent when the host passed no `onVisible`. */
+  readonly visibility?: VisibilityTracker;
 }
 
 /**
@@ -94,6 +97,8 @@ export interface WidgetEntry {
   viewedBlueprintId: string;
   /** Identity of the live render; cleared on dispose/teardown so a dead widget's actions drop. */
   token: object | undefined;
+  /** U17: the visibility observation of a bound widget (`DomRenderOptions.onVisible`); stopped on dispose. */
+  observed: Observed | undefined;
 }
 export interface ContainerEntry {
   readonly kind: "container";
@@ -467,6 +472,8 @@ export function showError(entry: WidgetEntry, message: string): void {
   entry.unsubscribe = undefined;
   entry.handle = undefined;
   entry.token = undefined;
+  entry.observed?.stop();
+  entry.observed = undefined;
   entry.host.replaceChildren(placeholderFor(entry.widget.kind, "error", message));
 }
 
@@ -549,6 +556,15 @@ export function renderInto(
     return;
   }
   subscribeEntry(entry, ctx);
+  observeEntry(entry, ctx);
+}
+
+/** U17: watch a bound widget's host so the host app hears when it scrolls into view. */
+function observeEntry(entry: WidgetEntry, ctx: MountContext): void {
+  entry.observed?.stop();
+  entry.observed = undefined;
+  if (ctx.visibility === undefined || entry.widget.binding === undefined) return;
+  entry.observed = ctx.visibility.observe(entry.host, () => entry.widget);
 }
 
 /**
@@ -574,6 +590,7 @@ export function mountWidget(
     delivered: undefined,
     viewedBlueprintId: "",
     token: undefined,
+    observed: undefined,
   };
   track?.(entry);
   renderInto(entry, ctx, onFail);
@@ -809,6 +826,8 @@ export function disposeEntry(entry: Entry, onError: (widgetId: string, e: unknow
   }
   entry.handle = undefined;
   entry.token = undefined;
+  entry.observed?.stop();
+  entry.observed = undefined;
 }
 
 /** Every widget entry under `entry`, document order. */

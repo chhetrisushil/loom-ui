@@ -2,6 +2,7 @@ import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loom-ui
 import {
   type Blueprint,
   type IdentityReport,
+  type Widget,
   type WidgetAction,
   preservesBlueprintNodes,
   resolveWidgetStatus,
@@ -23,6 +24,7 @@ import {
   mountContainer,
   widgetEntriesOf,
 } from "./tree";
+import { createVisibilityTracker } from "./visibility";
 
 export interface DomRenderOptions {
   readonly projectionRuntime: ProjectionRuntime;
@@ -61,6 +63,22 @@ export interface DomRenderOptions {
    * `renderBlueprintDom` and never re-read from `update`'s `next`.
    */
   readonly title?: "heading" | "none";
+  /**
+   * U17: called when a BOUND widget scrolls into view (and again on each later re-entry, and when its
+   * binding changes while it is on screen). One shared `IntersectionObserver` watches the widgets' host
+   * elements and is disconnected by `dispose()`. This is how a P2 hydration handle gets fetched:
+   *
+   * ```ts
+   * onVisible: (w) => { const h = w.binding && handleOfPath(w.binding.path); if (h) controller.markVisible(h); }
+   * ```
+   *
+   * (`handleOfPath` is `@loom-ui/hydration/client`'s; the renderer itself knows nothing of hydration.)
+   * Without an `IntersectionObserver` every bound widget is reported at once (fail open). Absent
+   * `onVisible`, nothing is observed. Fixed for the handle's lifetime.
+   */
+  readonly onVisible?: (widget: Widget) => void;
+  /** `rootMargin` for the visibility observer: how far outside the viewport still counts as visible. Default `"100px"`. */
+  readonly visibilityRootMargin?: string;
 }
 export interface DomRenderHandle {
   readonly element: HTMLElement;
@@ -141,7 +159,15 @@ export function renderBlueprintDom(
     opts.projectionRuntime,
     opts.executionId
   );
+  const visibility =
+    opts.onVisible === undefined
+      ? undefined
+      : createVisibilityTracker({
+          onVisible: opts.onVisible,
+          ...(opts.visibilityRootMargin !== undefined && { rootMargin: opts.visibilityRootMargin }),
+        });
   const ctx: MountContext = {
+    ...(visibility && { visibility }),
     registry: opts.registry,
     ...(opts.containers && { containers: opts.containers }),
     projectionRuntime: opts.projectionRuntime,
@@ -310,6 +336,7 @@ export function renderBlueprintDom(
       try {
         disposeEntry(state.root, (_id, e) => errors.push(e));
       } finally {
+        visibility?.disconnect();
         element.remove();
       }
       if (errors.length > 0) {

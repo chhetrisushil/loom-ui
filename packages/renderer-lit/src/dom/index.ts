@@ -6,6 +6,12 @@ export {
   litRegistry,
 } from "./litRegistry";
 export type { LitRegistryOptions } from "./litRegistry";
+export {
+  FRAME_FALLBACK_MS,
+  animationFrameScheduler,
+  coalesceUpdates,
+} from "./coalesce";
+export type { CoalesceOptions, CoalescedUpdates, FrameScheduler } from "./coalesce";
 export { renderBlueprintDom } from "./renderBlueprintDom";
 export type { DomRenderHandle, DomRenderOptions } from "./renderBlueprintDom";
 export { placeholderFor, projectionPlaceholder } from "./registry";

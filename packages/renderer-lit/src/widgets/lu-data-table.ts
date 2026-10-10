@@ -1,13 +1,14 @@
 import { pluralForms } from "@loom-ui/core/messages";
 import type { Widget } from "@loom/blueprint-runtime";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { state } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
 
 import { tPlural } from "../plural";
 import { say } from "../say";
 import { LuWidget } from "./base";
+import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual";
 
 /** Cap DOM rows so a tool returning tens of thousands of rows can't build hundreds of
  * thousands of cells and jank the main thread. The full set is still sorted; only the DOM is
@@ -39,6 +40,9 @@ export class LuDataTable extends LuWidget {
   @state() private sortCol: string | null = null;
   @state() private sortDir: 1 | -1 = -1;
   @state() private visibleRows = INITIAL_ROWS;
+  /** U17: windowed rendering (see `./virtual`). Off by default; set by `createLitRegistry({ virtualize })`. */
+  @property({ attribute: false }) virtualize?: boolean | VirtualizeOptions;
+  private readonly rowsWindow = new VirtualRows(this);
 
   // Memoize the derived columns and the per-column numeric detection so neither is recomputed
   // (both O(rows×cols)) on every sort click — only when the value or the widget changes.
@@ -106,6 +110,11 @@ export class LuDataTable extends LuWidget {
     }
     tr:hover td {
       background: rgba(99, 102, 241, 0.06);
+    }
+    tbody.virtual td {
+      box-sizing: border-box;
+      height: var(--lu-row-h);
+      padding-block: 0;
     }
     .more {
       display: flex;
@@ -177,9 +186,16 @@ export class LuDataTable extends LuWidget {
       });
     }
     const total = sorted.length;
-    const shown = Math.min(this.visibleRows, total);
-    const windowed = shown < total ? sorted.slice(0, shown) : sorted;
-    return html`<table>
+    const virt = resolveVirtualize(this.virtualize);
+    const win = this.rowsWindow.plan(total, virt);
+    const shown = win === undefined ? Math.min(this.visibleRows, total) : total;
+    const windowed =
+      win !== undefined
+        ? sorted.slice(win.start, win.end)
+        : shown < total
+          ? sorted.slice(0, shown)
+          : sorted;
+    return html`<table aria-rowcount=${win !== undefined ? total + 1 : nothing}>
         <caption class="sr-only">${describeValue("DataTable", rows, this.title_, this.widget.props)}</caption>
         <thead>
           <tr>
@@ -190,9 +206,10 @@ export class LuDataTable extends LuWidget {
             )}
           </tr>
         </thead>
-        <tbody>
+        <tbody class=${win !== undefined ? "virtual" : ""} style=${win !== undefined && virt ? `--lu-row-h:${virt.rowHeight}px` : ""}>
+          ${win !== undefined ? padRow(win.padTop, columns.length) : nothing}
           ${windowed.map(
-            (r) => html`<tr>
+            (r, i) => html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
               ${columns.map((c) => {
                 const v = cell(r, c);
                 return html`<td class=${numeric.get(c) ? "num" : ""}>
@@ -201,6 +218,7 @@ export class LuDataTable extends LuWidget {
               })}
             </tr>`
           )}
+          ${win !== undefined ? padRow(win.padBottom, columns.length) : nothing}
         </tbody>
       </table>
       ${
@@ -225,6 +243,7 @@ export class LuDataTable extends LuWidget {
       this.sortDir = -1;
     }
     this.visibleRows = INITIAL_ROWS; // re-window from the top on a new sort
+    if (resolveVirtualize(this.virtualize) !== undefined) this.rowsWindow.reset();
   }
 }
 

@@ -47,8 +47,8 @@ export type {
 export { executeProvider } from "./provider";
 export { stepReferences, terminalSteps, topoWaves } from "./plan";
 export type { DriftRecord, ExecuteOptions, InputDriftMode, ProviderOutcome } from "./provider";
-export { HydrationCache } from "./cache";
-export type { CacheVariant } from "./cache";
+export { DEFAULT_CACHE_MAX_ENTRIES, HydrationCache } from "./cache";
+export type { CacheVariant, HydrationCacheOptions } from "./cache";
 export type { HandleLoadResult } from "./scheduler";
 export { HydrationController } from "./controller";
 export type { ControllerOptions, DriftReport } from "./controller";

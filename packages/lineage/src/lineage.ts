@@ -35,6 +35,7 @@ import {
   EXPERIENCE_REVERTED,
   type SummaryClass,
 } from "./events";
+import { type RetentionPolicy, retainedVersions } from "./retention";
 import { type LineageState, type VersionRecord, foldLineage, payloadRefusal } from "./state";
 import { InMemoryLineageStore, LINEAGE_STREAM_PREFIX, type LineageStore } from "./store";
 
@@ -209,6 +210,73 @@ export class Lineage {
       throw new Error("Lineage.forEachContentRef: the LineageStore cannot enumerate its lines");
     for await (const id of this.events.listStreams())
       for (const rec of await this.events.read(id)) walkContentRefs(rec.payload, visit);
+  }
+
+  /**
+   * U17 — the content addresses a collector must KEEP, as the `roots` of loom's `sweepUnpinnedContent`:
+   * for every line, the artifact of each version `policy` retains (`retainedVersions`: the newest N,
+   * the head, the promoted version, the genesis, every fork's source) plus every OTHER content ref the
+   * line's events cite (anything an op carries). The artifact ref of a version the policy does not keep
+   * is deliberately absent, so that blob becomes reclaimable.
+   *
+   * USE IT INSTEAD OF scanning the lineage's streams, never as well: a scanned stream pins every
+   * version's artifact for ever (a bare ref is load-bearing to loom's sweep), so pass the lineage's
+   * `LineageStore` to neither `eventStores` nor `snapshotStores`. Mind the consequence: a reclaimed
+   * version's event stays in the log, `get` of it reports the missing artifact, and `verify` of a line
+   * that has had versions reclaimed reports them (and the versions derived from them) until the line
+   * is verified from a retained checkpoint. Reclaim only versions nobody needs to re-open.
+   *
+   * Two passes, one line in memory at a time. Throws if the store cannot enumerate its lines, or if
+   * any line fails to fold (a collector must refuse on a line it cannot read, never guess).
+   */
+  async *pins(policy: RetentionPolicy = {}): AsyncGenerator<string, void, undefined> {
+    if (this.events.listStreams === undefined)
+      throw new Error("Lineage.pins: the LineageStore cannot enumerate its lines");
+    // Pass 1: the versions other lines forked from (they must outlive their forks).
+    const forkedFrom = new Map<string, Set<string>>();
+    for await (const id of this.events.listStreams()) {
+      const fold = foldLineage(id, await this.events.read(id));
+      if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
+      for (const v of fold.state.versions.values()) {
+        if (v.from === undefined) continue;
+        const set = forkedFrom.get(v.from.experienceId) ?? new Set<string>();
+        forkedFrom.set(v.from.experienceId, set);
+        set.add(v.from.versionHash);
+      }
+    }
+    // Pass 2: the roots.
+    const yielded = new Set<string>();
+    const emit = (a: string): string | undefined => {
+      if (yielded.has(a)) return undefined;
+      yielded.add(a);
+      return a;
+    };
+    for await (const id of this.events.listStreams()) {
+      const records = await this.events.read(id);
+      const fold = foldLineage(id, records);
+      if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
+      const { keep } = retainedVersions(fold.state, policy, forkedFrom.get(id));
+      for (const rec of records) {
+        const p = rec.payload as {
+          ref?: { __loomContent?: unknown };
+          versionHash?: unknown;
+        } | null;
+        // The artifact ref of a version event is pinned only if its version is retained.
+        const artifact =
+          typeof p?.ref?.__loomContent === "string" ? p.ref.__loomContent : undefined;
+        // (a PROMOTED event cites the same artifact; it counts as a citation of that version too)
+        const droppedVersion = typeof p?.versionHash === "string" && !keep.has(p.versionHash);
+        const addresses: string[] = [];
+        walkContentRefs(rec.payload, (a) => {
+          if (a === artifact && droppedVersion) return;
+          addresses.push(a);
+        });
+        for (const a of addresses) {
+          const out = emit(a);
+          if (out !== undefined) yield out;
+        }
+      }
+    }
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────

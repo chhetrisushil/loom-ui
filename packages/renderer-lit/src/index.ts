@@ -29,6 +29,8 @@ export {
   hostMessage,
   parseFrameMessage,
 } from "./sandbox/protocol";
+export { resolveVirtualize, virtualWindow } from "./widgets/virtual";
+export type { RowWindow, VirtualizeOptions } from "./widgets/virtual";
 export { LuA2UIView } from "./widgets/lu-a2ui-view";
 export { LuBarChart } from "./widgets/lu-bar-chart";
 export { LuDataTable } from "./widgets/lu-data-table";

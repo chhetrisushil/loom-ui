@@ -51,10 +51,11 @@ describe("per-element entries", () => {
     it(`elements/${m}.js carries its own widget module (+ the shared base) and no other element's`, async () => {
       const { modules } = await widgetsIn(`elements/${m}.js`);
       expect(modules).toContain(m);
-      // `base` is the shared LuWidget; `lu-embedded` draws the two elements it nests.
+      // `base` is the shared LuWidget, `virtual` the windowing helper the tables and chat share; `lu-embedded` draws the two elements it nests.
       const allowed = new Set([
         "base",
         "chatShared",
+        "virtual",
         m,
         ...(m === "lu-embedded" ? ["lu-a2ui-view", "lu-sandbox"] : []),
       ]);

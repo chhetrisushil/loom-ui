@@ -74,7 +74,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // themselves are NOT here: they are the opt-in `chat.js` entry below.
     // U14 raised every budget by 8 kB (containers 9 kB, whose graph is the smallest): the fixed-words
     // catalogue (`messages.js`, ~7 kB: every English string once, under its key) rides with the renderer.
-    ["index.js", 180 * 1000],
+    // U17 raised index by 6 kB (measured 175_259 -> 180_313): windowed rendering (`virtual.ts`, shared by lu-table,
+    // lu-data-table and lu-chat), update coalescing and visibility reporting. `dom/index.js` stays under 180 kB (105_315).
+    ["index.js", 186 * 1000],
     ["dom/index.js", 180 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.

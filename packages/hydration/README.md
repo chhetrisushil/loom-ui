@@ -47,6 +47,10 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   (server) over that boundary; the server answers with the exact same `HandleLoadResult` shape the
   in-process controller publishes, so the two paths cannot disagree.
 - **`scopeInvoker` and `principal`.** When the invoker is a planner `scopeInvoker` (a `ctx.decide` scope), do not configure `principal`: the scope already carries the execution's principal and the call is refused otherwise.
+- **Bounded cache (U17).** `new HydrationCache(clock, { maxEntries })` evicts the least recently used result past
+  `maxEntries` (default `DEFAULT_CACHE_MAX_ENTRIES` = 10,000; a hit or a set refreshes an entry; a non-positive-integer
+  cap throws `RangeError`). An evicted result is a miss, exactly like an expired one: the next load calls the provider
+  again. Before this the cache only dropped an entry on a re-read after its TTL, so a long-lived ambient host grew without bound.
 - **Scheduling.** Both controllers schedule by priority: P0 loads immediately, P1 batches within a
   short window, P2 waits for `markVisible`. An identical step (same tool, same arguments) runs once
   per pass no matter how many handles share it.

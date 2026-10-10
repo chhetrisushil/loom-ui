@@ -181,6 +181,13 @@ function reconcileWidget(
       return;
     }
     acc.rebound.push(next.id);
+    // A binding added to a kept widget starts being watched; a changed one is reported again if on screen.
+    if (next.binding === undefined) {
+      entry.observed?.stop();
+      entry.observed = undefined;
+    } else if (entry.observed === undefined)
+      entry.observed = ctx.visibility?.observe(entry.host, () => entry.widget);
+    else entry.observed.rebound();
   }
 }
 
