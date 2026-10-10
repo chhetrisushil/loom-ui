@@ -18,6 +18,7 @@ export type { OrderKeyOptions } from "./order";
 export {
   ExperienceNode,
   GRID_COLUMNS,
+  GRID_LINE_WARN_ABOVE,
   ContainerOwner,
   GridColumn,
   GridLine,

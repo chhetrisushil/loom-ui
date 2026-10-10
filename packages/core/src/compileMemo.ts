@@ -19,11 +19,24 @@ import type { Experience } from "./experience";
 //   catalog, baseCatalog   by IDENTITY (readonly zod-bearing objects: treat as immutable, build a
 //                      new one to change one)
 //   resolveLabel       a custom resolver is opaque (its output may follow a locale): memoized only
-//                      when the caller names its output in `resolveLabelKey`; the default
+//                      when the caller names its output in `resolveLabelKey` (scoped to THAT resolver's
+//                      identity, so two hosts with one key string never cross-serve); the default
 //                      (fallback text) needs none
 //   registry           NEVER memoized (a registry can gain renderers after the fact)
 //
-// Results are never shared: a structured clone goes in, and a clone comes out on every hit.
+// Results are never shared: a structured clone goes in, and a clone comes out on every hit
+// (measured, 500 nodes: compile 2.6 ms, structuredClone of the result 1.3 ms; so a hit is ~2x
+// cheaper than a compile, not free). A result `structuredClone` cannot copy is served UNCACHED.
+//
+// HITS REQUIRE HOLDING THE OBJECT. The content check is by reference, because the only cheaper
+// content check would be recomputing the version hash, and that costs ~9x a compile (24 ms, it
+// re-parses and canonicalises, and `mintVersionHash` lives in the Node-only `./log`). A host that
+// re-reads the experience each render gets a fresh object: that is a miss (a plain compile), and
+// it does not evict the entry held for the first object. Keep one sealed object per version.
+//
+// IMMUTABILITY: the catalogs (identity-keyed) and the experience's root / providers / maps
+// (reference-compared) must be treated as immutable. Mutating one in place is invisible to the
+// memo; build a new object to change one.
 
 export interface CompileMemoOptions {
   /** Most entries kept (least recently used evicted first). Default {@link DEFAULT_COMPILE_MEMO_MAX}. */
@@ -109,7 +122,9 @@ export class CompileMemo {
         opts.projections ?? null,
         sortedRecord(opts.declaredToolClasses),
         opts.undeclared ?? null,
-        opts.resolveLabel === undefined ? null : (opts.resolveLabelKey ?? null),
+        opts.resolveLabel === undefined
+          ? null
+          : [this.idOf(opts.resolveLabel), opts.resolveLabelKey ?? null],
         opts.title ?? null,
         opts.restrictedLabel ?? null,
         opts.viewer === undefined ? null : [opts.viewer.clearance ?? null],
@@ -143,6 +158,11 @@ export class CompileMemo {
 
   /** Remember a clone of `result` (the caller keeps the original). Evicts the LRU entry past `max`. */
   set(key: string, exp: Experience, result: CompileResult): void {
+    // The slot already belongs to ANOTHER object with this version hash (a reloaded copy, or a
+    // spread that kept a stale hash): do not evict the holder for it (that is clone churn for an
+    // alternating pair, and a stale-hash object must never displace the genuine one).
+    const held = this.entries.get(key);
+    if (held !== undefined && !sameContent(held.exp, exp)) return;
     let kept: CompileResult;
     try {
       kept = structuredClone(result);

@@ -480,3 +480,63 @@ describe("the commit retry path", () => {
     expect(await lin.verify("exp")).toEqual([]);
   });
 });
+
+describe("verify replays recorded history with legacy bind leniency", () => {
+  const setup = async () => {
+    const events = new InMemoryLineageStore();
+    const content = new InMemoryContentStore();
+    const lin = new Lineage({ events, content, now: clock() });
+    const v1 = ok(await lin.start(g(), by));
+    // A version recorded BEFORE bindProvider checked the handle: insertNode never did, so a node
+    // bound an undeclared handle and was then re-bound to another undeclared one.
+    const legacy = [
+      ins(node("a", "hx")).op,
+      { type: "bindProvider", nodeId: "a", handle: "hy" },
+    ] as const;
+    expect(replay(v1.experience, legacy).ok).toBe(false); // the write path is strict
+    const r = replay(v1.experience, legacy, { legacyBind: true });
+    if (!r.ok) throw new Error("fixture");
+    const stored = await putExperience(content, r.value);
+    if (!stored.ok) throw new Error("fixture");
+    await events.append("exp", 1, {
+      type: EXPERIENCE_COMPOSED,
+      at: "2026-10-06T00:00:09Z",
+      payload: {
+        experienceId: "exp",
+        versionHash: stored.experience.versionHash,
+        ref: stored.ref,
+        parents: [v1.experience.versionHash],
+        ops: legacy.map((op) => ({ op, by, at: "2026-10-06T00:00:09Z" })),
+        by,
+      },
+    });
+    return { lin, stored };
+  };
+
+  it("a recorded undeclared bind verifies clean, and so does its descendant", async () => {
+    const { lin, stored } = await setup();
+    expect(await lin.verify("exp")).toEqual([]);
+    ok(
+      await lin.compose({
+        experienceId: "exp",
+        expectedHead: stored.experience.versionHash,
+        ops: [ins(node("b", "hb"))],
+        by,
+      })
+    );
+    expect(await lin.verify("exp")).toEqual([]);
+  });
+
+  it("a NEW write of an undeclared bind is still refused", async () => {
+    const { lin, stored } = await setup();
+    const r = await lin.compose({
+      experienceId: "exp",
+      expectedHead: stored.experience.versionHash,
+      ops: [
+        { op: { type: "bindProvider", nodeId: "a", handle: "hz" }, by, at: "2026-10-06T00:00:10Z" },
+      ],
+      by,
+    });
+    expect(r.ok).toBe(false);
+  });
+});

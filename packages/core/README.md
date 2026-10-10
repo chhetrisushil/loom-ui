@@ -49,7 +49,11 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   for one surface, resolving every semantic node through the catalogue and validating as it goes.
   A SEALED experience's result is memoized per (version, options) in a small LRU (`CompileOptions.memo`:
   `false` = off, or your own `createCompileMemo({ max })`); every call gets a private copy. A custom
-  `resolveLabel` is memoized only with a `resolveLabelKey`, a `registry` never (see `compileMemo.ts` for the full key).
+  `resolveLabel` is memoized only with a `resolveLabelKey` (scoped to that resolver's identity), a
+  `registry` never (see `compileMemo.ts` for the full key). Hits require HOLDING the sealed object
+  (content is compared by reference; a re-read copy is a plain compile and does not evict the held
+  entry). Treat catalogs, `root` and `providers` as immutable (identity-keyed). A result that
+  cannot be structured-cloned is served uncached; a hit costs a clone (~half a compile).
 - **Content log (`./log`).** Composition is an event, not a database row: `seal`/`mintVersionHash`
   mint a content address over the artifact (parsed, then canonicalised), `putExperience` /
   `getExperience` round-trip it through loom's `ContentStore`, and an app emits
@@ -864,7 +868,8 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   silently dropped under `row`/`column` (ADR 0097 D5, no finding). `row`/`rowSpan`/`column` are
   stricter: the wrong parent or an out-of-range column is a hard `placement-outside-grid` /
   `placement-out-of-range` refusal from `apply`/`insertNode`/`moveNode`/`setPlacement` — never
-  silently dropped.
+  silently dropped. `row`/`rowSpan` are unbounded in the IR, but past `GRID_LINE_WARN_ABOVE`
+  (1000) `validateExperience` warns `grid-line-extreme`; nothing is rejected.
 - **One spelling of a role.** A container's `role` is checked against loom's own `isLayoutRole`
   (exported here as `LayoutRole`) — never re-implemented. A malformed role already in stored data
   is a warn (`role-invalid`), and `compile` leaves it off rather than refusing to compile.

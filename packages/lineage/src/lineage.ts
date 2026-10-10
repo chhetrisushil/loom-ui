@@ -1089,7 +1089,7 @@ function replayed(
  * `declassify*` op is gated, so a version that is already in the log replays with declassify
  * allowed. Refusing it here would report a legitimately host-authorized version as `ops-refused`.
  */
-const VERIFY_APPLY: ApplyOptions = { allowDeclassify: true };
+const VERIFY_APPLY: ApplyOptions = { allowDeclassify: true, legacyBind: true };
 
 /** Does any recorded op (or a prompt's materialized ops, nested) declassify? Iterative, bounded. */
 function recordsDeclassify(ops: readonly { op: unknown }[]): boolean {

@@ -7,8 +7,14 @@ import {
   resolveSurface,
   validateExperience,
 } from "./catalog";
+import { compile } from "./compile";
 import { type Experience, genesis } from "./experience";
-import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode } from "./node";
+import {
+  type ContainerNode,
+  GRID_LINE_WARN_ABOVE,
+  MAX_TREE_DEPTH,
+  type SemanticNode,
+} from "./node";
 import { testCatalog } from "./testCatalog.test-support";
 
 const meta = { author: "a", createdAt: "2026-09-21T00:00:00Z", sourceKind: "prompt" };
@@ -261,6 +267,23 @@ describe("validateExperience — placement (Blueprint IR 2.1.0)", () => {
       sem("c", "Metric", { span: 4 }),
     ]);
     expect(validateExperience(e, testCatalog, "web").findings).toEqual([]);
+  });
+
+  it("grid-line-extreme: 1000 is fine, 1001 warns (row and rowSpan), nothing is rejected", () => {
+    const at = (row: number, rowSpan = 1) =>
+      exp([sem("a", "Metric", { span: 4, row, rowSpan, column: 1 })]);
+    expect(GRID_LINE_WARN_ABOVE).toBe(1000);
+    expect(validateExperience(at(1000), testCatalog, "web").findings).toEqual([]);
+    for (const e of [at(1001), at(1, 1001)]) {
+      const v = validateExperience(e, testCatalog, "web");
+      expect(v.findings.map((f) => [f.code, f.nodeId, f.severity])).toEqual([
+        ["grid-line-extreme", "a", "warn"],
+      ]);
+      expect(v.ok).toBe(true);
+      expect(
+        compile(e, { surface: "web", catalog: testCatalog, memo: false } as never).blueprint
+      ).toBeDefined();
+    }
   });
 
   it("reports an off-grid placement once per node, with loom's wording", () => {
