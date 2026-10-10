@@ -4,6 +4,7 @@ import { compileFingerprint } from "./action";
 import { placeholderAlias } from "./alias";
 import { defineSemanticCatalog } from "./catalog";
 import { compile } from "./compile";
+import { declareHandle } from "./declareHandle.test-support";
 import { type Experience, genesis } from "./experience";
 import { mintVersionHash } from "./log";
 import type { ContainerNode, ProjectionBinding, SemanticNode } from "./node";
@@ -136,6 +137,7 @@ describe("P1-b: the class is sticky on the Experience", () => {
   it("a node rebound to a handle leaves its class on the projection", () => {
     const e = run([
       ins(pnode("a", { projection: proj({ sensitivity: "secret" }) })),
+      declareHandle("h"),
       { type: "bindProvider", nodeId: "a", handle: "h" },
       ins(pnode("b")),
     ]);

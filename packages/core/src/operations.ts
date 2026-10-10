@@ -59,7 +59,8 @@ export type Operation =
   | { type: "removeNode"; nodeId: string }
   | { type: "moveNode"; nodeId: string; newParentId: string; newOrder: string }
   | { type: "setProps"; nodeId: string; patch: Record<string, unknown> }
-  | { type: "setLabel"; nodeId: string; label: LocalizedText }
+  /** `label: null` clears the label (the key is removed, so the node hashes as if never labelled), as `setTitle`/`setRole` clear. */
+  | { type: "setLabel"; nodeId: string; label: LocalizedText | null }
   | { type: "setTitle"; nodeId: string; title: LocalizedText | null }
   | { type: "setRole"; nodeId: string; role: string | null }
   | {
@@ -77,6 +78,13 @@ export type Operation =
       priority?: Priority;
       sensitivity?: DataClass;
     }
+  /**
+   * Remove a semantic node's HANDLE binding, leaving the provider declared (retire it with
+   * `removeProvider`, which is refused while a node still binds it). The class the node carried on
+   * the handle stays on the handle (sticky, never lowered). A node with no handle binding (including
+   * one bound to a projection) is refused `not-bound`: nothing is silently dropped.
+   */
+  | { type: "unbindProvider"; nodeId: string }
   /**
    * Bind a semantic node to a non-hydration projection (`SemanticNode.projection`), replacing any
    * handle binding. The class never drops: the node keeps the strictest of the class it carried
@@ -110,7 +118,8 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       newOrder: OrderKey,
     }),
     z.object({ type: z.literal("setProps"), nodeId: NodeId, patch: z.record(z.unknown()) }),
-    z.object({ type: z.literal("setLabel"), nodeId: NodeId, label: LocalizedText }),
+    // `label` is REQUIRED and `null` clears, as for `setTitle`.
+    z.object({ type: z.literal("setLabel"), nodeId: NodeId, label: LocalizedText.nullable() }),
     // `title` is REQUIRED — the op exists to change it; `null` clears (JSON keeps a null, it drops
     // an undefined, so "clear" must be spelled null to survive a recorded replay).
     z.object({ type: z.literal("setTitle"), nodeId: NodeId, title: LocalizedText.nullable() }),
@@ -135,6 +144,7 @@ export const Operation: z.ZodType<Operation> = z.lazy(() =>
       priority: Priority.optional(),
       sensitivity: Sensitivity.optional(),
     }),
+    z.object({ type: z.literal("unbindProvider"), nodeId: NodeId }),
     z.object({
       type: z.literal("bindProjection"),
       nodeId: NodeId,
@@ -406,7 +416,12 @@ function foldTools(exp: Experience): Experience {
     : { ...exp, ...(tools !== undefined && { toolClasses: tools }) };
 }
 
-const BEFORE_FOLD = new Set<string>(["removeProvider", "remapProvider", "bindProvider"]);
+const BEFORE_FOLD = new Set<string>([
+  "removeProvider",
+  "remapProvider",
+  "bindProvider",
+  "unbindProvider",
+]);
 const AFTER_FOLD = new Set<string>(["insertNode", "remapProvider", "bindProvider"]);
 
 export function apply(
@@ -653,13 +668,31 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
           `"${op.nodeId}" is a container; ${op.type} applies to semantic nodes`,
           op.nodeId
         );
+      // A handle must be declared (`remapProvider`, earlier in the same op list is fine) before a
+      // node binds it: an undeclared one renders a permanently empty widget (`unknown-handle`).
+      if (
+        op.type === "bindProvider" &&
+        !Object.prototype.hasOwnProperty.call(base.providers, op.handle)
+      )
+        return refuse(
+          "missing-provider",
+          `bindProvider: provider "${op.handle}" is not declared; remapProvider it first`,
+          op.nodeId
+        );
       // A rebind keeps whatever class the node carried on the handle it LEAVES, and the class it
       // ends up with joins the handle it lands on.
       const carried = op.type === "bindProvider" ? classesOf(target) : [];
       const root = rebuild(base.root, (n) => {
         if (n.id !== op.nodeId || n.kind !== "semantic") return n;
         if (op.type === "setProps") return { ...n, props: { ...n.props, ...op.patch } };
-        if (op.type === "setLabel") return { ...n, label: op.label };
+        if (op.type === "setLabel") {
+          // Cleared = key REMOVED (rebuilt, not deleted), so the node hashes as if never labelled.
+          if (op.label === null)
+            return Object.fromEntries(
+              Object.entries(n).filter(([k]) => k !== "label")
+            ) as unknown as ExperienceNode;
+          return { ...n, label: op.label };
+        }
         // `sensitivity` merges the way `priority` does: an op that does not mention it keeps the
         // class the node already carries, so re-binding a handle cannot silently declassify it.
         // A node leaving a classified PROJECTION for a handle carries that class with it.
@@ -695,6 +728,29 @@ function applyOp(base: Experience, rawOp: Operation, opts: ApplyOptions): OpResu
           ...(handleClasses !== undefined && { handleClasses }),
           ...(projectionClasses !== undefined && { projectionClasses }),
         }),
+      };
+    }
+    case "unbindProvider": {
+      const target = findNode(base.root, op.nodeId);
+      if (!target) return refuse("missing-node", `node "${op.nodeId}" not found`, op.nodeId);
+      if (target.kind !== "semantic")
+        return refuse(
+          "not-semantic",
+          `"${op.nodeId}" is a container; unbindProvider applies to semantic nodes`,
+          op.nodeId
+        );
+      if (target.binding === undefined)
+        return refuse("not-bound", `"${op.nodeId}" has no provider binding to remove`, op.nodeId);
+      // The handle keeps what the node carried on it (sticky): unbinding never declassifies.
+      const handleClasses = foldClasses(base.handleClasses, classesOf(target));
+      const root = rebuild(base.root, (n) => {
+        if (n.id !== op.nodeId || n.kind !== "semantic") return n;
+        const { binding: _left, ...rest } = n;
+        return rest;
+      });
+      return {
+        ok: true,
+        value: next(base, { root, ...(handleClasses !== undefined && { handleClasses }) }),
       };
     }
     case "bindProjection": {

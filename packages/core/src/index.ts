@@ -205,6 +205,13 @@ export {
   hydrationStatusPath,
 } from "./compile";
 export type { CompileOptions, CompileResult } from "./compile";
+export {
+  CompileMemo,
+  DEFAULT_COMPILE_MEMO_MAX,
+  createCompileMemo,
+  defaultCompileMemo,
+} from "./compileMemo";
+export type { CompileMemoOptions } from "./compileMemo";
 export { MIN_ALIAS_KEY_BYTES, PlaceholderKeyError, placeholderAlias } from "./alias";
 export type { AliasKey } from "./alias";
 export { planProjectionBindings } from "./projections";

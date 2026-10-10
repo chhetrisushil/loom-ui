@@ -2,6 +2,7 @@ import type { Layout, Widget } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog, validateExperience } from "./catalog";
 import { compile } from "./compile";
+import { declareHandle } from "./declareHandle.test-support";
 import { genesis } from "./experience";
 import { experienceHandles } from "./handles";
 import { mintVersionHash } from "./log";
@@ -273,7 +274,9 @@ describe("projection bindings: operations and content addresses", () => {
     expect(
       ((b2.value.root as ContainerNode).children[0] as SemanticNode).projection?.sensitivity
     ).toBe("sensitive");
-    const b3 = apply(b2.value, { type: "bindProvider", nodeId: "a", handle: "h2" });
+    const declared = apply(b2.value, declareHandle("h2"));
+    if (!declared.ok) throw new Error("declared");
+    const b3 = apply(declared.value, { type: "bindProvider", nodeId: "a", handle: "h2" });
     if (!b3.ok) throw new Error("b3");
     const n = (b3.value.root as ContainerNode).children[0] as SemanticNode;
     expect(n.projection).toBeUndefined();

@@ -1,5 +1,6 @@
 import { canonicalJson } from "@loom/core";
 import { describe, expect, it } from "vitest";
+import { declareHandle } from "./declareHandle.test-support";
 import { genesis } from "./experience";
 import { mintVersionHash } from "./log";
 import { type ContainerNode, MAX_TREE_DEPTH, type SemanticNode, findNode } from "./node";
@@ -93,8 +94,8 @@ describe("apply", () => {
       { type: "insertNode", parentId: "root", node: node("m1") },
       { type: "setProps", nodeId: "m1", patch: { unit: "ms" } },
       { type: "setLabel", nodeId: "m1", label: { key: "k", fallback: "p99" } },
-      { type: "bindProvider", nodeId: "m1", handle: "h1" },
       { type: "remapProvider", handle: "h1", spec },
+      { type: "bindProvider", nodeId: "m1", handle: "h1" },
     ] as const) {
       const r = apply(e, op);
       if (!r.ok) throw new Error(r.finding.message);
@@ -117,7 +118,11 @@ describe("apply", () => {
       const n = e.root.kind === "container" ? e.root.children[0] : undefined;
       return n && n.kind === "semantic" ? n.binding : undefined;
     };
-    const inserted = must(apply(g, { type: "insertNode", parentId: "root", node: node("m1") }));
+    const declared = must(apply(g, declareHandle("h1")));
+    const declared2 = must(apply(declared, declareHandle("h2")));
+    const inserted = must(
+      apply(declared2, { type: "insertNode", parentId: "root", node: node("m1") })
+    );
     const bound = must(
       apply(inserted, { type: "bindProvider", nodeId: "m1", handle: "h1", sensitivity: "secret" })
     );
