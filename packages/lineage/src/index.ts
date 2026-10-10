@@ -1,4 +1,5 @@
 export { Lineage } from "./lineage";
+export type { PinsExtra } from "./lineage";
 export type {
   Committed,
   HeadMoved,
@@ -66,8 +67,8 @@ export {
   seenKeySubject,
 } from "./seenCrypto";
 export type { SeenKeyStore } from "./seenCrypto";
-export { collectSeenGarbage } from "./seenGc";
+export { collectSeenGarbage, collectSeenRoots } from "./seenGc";
 export type { SeenGcOptions, SeenGcReport, SeenGcResult } from "./seenGc";
 
-export { DEFAULT_KEEP_LAST, retainedVersions } from "./retention";
+export { DEFAULT_KEEP_LAST, retainedVersions, validateRetentionPolicy } from "./retention";
 export type { Retained, RetentionPolicy } from "./retention";

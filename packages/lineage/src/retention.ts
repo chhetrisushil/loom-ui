@@ -13,10 +13,12 @@ export interface RetentionPolicy {
   /**
    * Keep the newest N versions of each line, counted in append order and including the head.
    * Default {@link DEFAULT_KEEP_LAST}. The head is ALWAYS kept, whatever this says (`0` keeps only
-   * what the other rules keep).
+   * what the other rules keep). `Infinity` keeps every version. Anything else that is not a
+   * non-negative integer THROWS: this policy decides what gets deleted, so a typo is never read as
+   * "keep nothing".
    */
   readonly keepLast?: number;
-  /** Also keep every version authored at or after this instant (ISO-8601, compared as a date). */
+  /** Also keep every version authored at or after this instant (ISO-8601, compared as a date). An unparseable value THROWS. */
   readonly keepSince?: string;
   /**
    * Keep the line's first version (default `true`): the genesis anchors `verify`'s replay and is the
@@ -29,6 +31,35 @@ export interface RetentionPolicy {
 
 export const DEFAULT_KEEP_LAST = 20;
 
+/**
+ * Refuse a policy that does not mean what its author meant. A deletion policy must not coerce: NaN,
+ * a negative or fractional `keepLast`, an unparseable `keepSince` or a non-boolean/-function rule
+ * all throw. `Infinity` is the one non-integer allowed (keep everything).
+ */
+export function validateRetentionPolicy(policy: RetentionPolicy): void {
+  const bad = (m: string): never => {
+    throw new RangeError(`RetentionPolicy: ${m}`);
+  };
+  const { keepLast, keepSince, keepGenesis, keep } = policy;
+  if (keepLast !== undefined) {
+    if (typeof keepLast !== "number") bad(`keepLast must be a number, got ${typeof keepLast}`);
+    else if (
+      keepLast !== Number.POSITIVE_INFINITY &&
+      !(Number.isSafeInteger(keepLast) && keepLast >= 0)
+    )
+      bad(
+        `keepLast must be a non-negative integer or Infinity (keep all), got ${String(keepLast)}`
+      );
+  }
+  if (keepSince !== undefined) {
+    if (typeof keepSince !== "string" || Number.isNaN(Date.parse(keepSince)))
+      bad(`keepSince must be a parseable ISO-8601 date string, got ${String(keepSince)}`);
+  }
+  if (keepGenesis !== undefined && typeof keepGenesis !== "boolean")
+    bad("keepGenesis must be a boolean");
+  if (keep !== undefined && typeof keep !== "function") bad("keep must be a function");
+}
+
 export interface Retained {
   /** Version hashes the policy keeps. */
   readonly keep: ReadonlySet<string>;
@@ -40,13 +71,14 @@ export interface Retained {
  * What to keep of one line. Always kept, regardless of the policy: the head, the promoted version (it
  * is what viewers are shown), and every version another line branched from (`branchSources`: a fork is
  * only as sound as its source, and `verify` rebuilds the source up to the fork point). Total: an empty
- * line keeps nothing.
+ * line keeps nothing. Throws on a malformed policy ({@link validateRetentionPolicy}).
  */
 export function retainedVersions(
   state: LineageState,
   policy: RetentionPolicy = {},
   branchSources: ReadonlySet<string> = new Set()
 ): Retained {
+  validateRetentionPolicy(policy);
   const keep = new Set<string>();
   const order = state.order;
   if (state.head !== null) keep.add(state.head);
@@ -54,7 +86,7 @@ export function retainedVersions(
   for (const h of branchSources) if (state.versions.has(h)) keep.add(h);
 
   const last = policy.keepLast ?? DEFAULT_KEEP_LAST;
-  const n = Number.isFinite(last) && last > 0 ? Math.floor(last) : 0;
+  const n = last === Number.POSITIVE_INFINITY ? order.length : last;
   for (let i = Math.max(0, order.length - n); i < order.length; i++) keep.add(order[i] as string);
 
   if ((policy.keepGenesis ?? true) && order.length > 0) keep.add(order[0] as string);

@@ -214,13 +214,20 @@ All opt-in; with none of it configured nothing changes.
   `animationFrameScheduler`: next frame, or a 250 ms deadline in a hidden tab). Each call resolves with the report of
   the pass that landed. Per widget, `createLitRegistry({ coalesce: animationFrameScheduler })` holds value updates
   until the frame and hands the element only the newest pair (the first value, at mount, is never delayed).
+  Known one-frame effect: a `patch` (the widget's definition changed, including a rebind to another binding path)
+  applies at once while its value is held to the frame, so for at most one frame the widget carries the NEW
+  definition with the PREVIOUS value. It is the same viewer's data (the registry never mixes viewers); a host that
+  cannot show that for a frame renders a rebinding without `coalesce`.
 - **Virtualization.** `createLitRegistry({ virtualize: true | { rowHeight, overscan, minRows } })`. `lu-table` and
   `lu-data-table` mount only the rows near the scroll position (fixed row height, default 30 px; 8 rows overscan; windowing
   starts above 200 rows) with two spacer rows, `aria-rowcount` / `aria-rowindex` for assistive tech, scroll reset on
   sort, and a re-render only when the mounted window changes; every row is reachable by scrolling, so there is no
   "show more". `lu-chat` (variable-height turns) lets the browser skip layout and paint of off-screen turns
   (`content-visibility: auto`) past `minRows` entries, so stick-to-bottom and the load-earlier anchor keep working.
-  `virtualWindow(total, rowHeight, scrollTop, viewport, overscan)` is the pure core, exported.
+  `virtualWindow(total, rowHeight, scrollTop, viewport, overscan)` is the pure core, exported. The host element must
+  be the scroll container (give `lu-table` / `lu-data-table` a definite `height` and `overflow: auto`); a host that
+  is not (no layout box, or its content is not taller than its box, so the page scrolls instead) falls back to the
+  classic rendering and its 200-row cap rather than leave rows blank.
 
 ### Number and value formatting
 

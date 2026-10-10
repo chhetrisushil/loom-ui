@@ -91,13 +91,15 @@ export function virtualWindow(
 
 /**
  * Tracks the host's scroll position and asks it to re-render ONLY when the mounted window changes
- * (a scroll of a few pixels inside the same window costs nothing). The host element is the scroller.
+ * (a scroll of a few pixels inside the same window costs nothing). The host element is the scroller; if it proves not to be, `plan` returns `undefined` (classic rendering).
  */
 export class VirtualRows implements ReactiveController {
   private lastStart = -1;
   private lastEnd = -1;
   private total = 0;
   private cfg: ResolvedVirtualize | undefined;
+  /** The row count at which the host proved NOT to be a scroll container (see {@link hostUpdated}); -1 = not degraded. */
+  private degradedAt = -1;
 
   constructor(private readonly host: ReactiveControllerHost & HTMLElement) {
     host.addController(this);
@@ -108,6 +110,22 @@ export class VirtualRows implements ReactiveController {
   }
   hostDisconnected(): void {
     this.host.removeEventListener("scroll", this.onScroll);
+  }
+
+  /**
+   * A window is only a pure function of the HOST's `scrollTop`, which holds only if the host is the
+   * scroll container. When it is not (the page scrolls, the host has no definite height, or it has no
+   * layout box at all), no `scroll` event ever reaches it and the rows past the first window would
+   * stay blank for ever. After a windowed render the spacers make the content taller than the host
+   * if and only if the host clips it, so `scrollHeight <= clientHeight` (or no height) means "not a
+   * scroller": fall back to the classic full rendering for this row count.
+   */
+  hostUpdated(): void {
+    if (this.lastStart < 0) return; // not windowed on this render
+    if (this.host.clientHeight > 0 && this.host.scrollHeight > this.host.clientHeight) return;
+    this.degradedAt = this.total;
+    this.lastStart = this.lastEnd = -1;
+    this.host.requestUpdate();
   }
 
   private viewport(): number {
@@ -132,8 +150,14 @@ export class VirtualRows implements ReactiveController {
     this.total = total;
     if (cfg === undefined || total <= cfg.minRows) {
       this.lastStart = this.lastEnd = -1;
+      this.degradedAt = -1;
       return undefined;
     }
+    if (this.degradedAt === total) {
+      this.lastStart = this.lastEnd = -1;
+      return undefined; // the host is not a scroller: classic rendering
+    }
+    this.degradedAt = -1;
     const w = virtualWindow(
       total,
       cfg.rowHeight,

@@ -427,6 +427,14 @@ export class SeenLog {
         "seen-version-unknown",
         "the snapshot's version is not a version of this line"
       );
+    // The record will cite this version for as long as the view is in retention: tell the store it
+    // was just re-cited (touch, no put) so a collector racing this write spares the artifact.
+    const cited = await this.lineage.cite(experienceId, [snapshot.versionHash]);
+    if (!cited.ok)
+      return refused(
+        "seen-version-unknown",
+        "the snapshot's version is not a version of this line"
+      );
 
     // Restamp + drop what the recording viewer may not see, with core's one redactor.
     const checked = redactSeen(snapshot.entries, art.value, {
@@ -865,8 +873,15 @@ export class SeenLog {
    * record that fails to parse, a sealed ref that fails to open under a PRESENT key). Those are not
    * absent either: whatever they cite is unrooted here, so a collector must refuse to sweep on a
    * non-zero count (see `collectSeenGarbage`).
+   *
+   * `visitVersion` (optional) is called with the (experience, version) of every live view: the seen log
+   * READS that version's artifact from the lineage, so a collector that reclaims old versions must
+   * keep it (see `collectSeenRoots`).
    */
-  async forEachLiveRef(visit: (address: string) => void): Promise<SeenUnreadable> {
+  async forEachLiveRef(
+    visit: (address: string) => void,
+    visitVersion?: (experienceId: string, versionHash: string) => void
+  ): Promise<SeenUnreadable> {
     if (this.events.listStreams === undefined)
       throw new Error("SeenLog.forEachLiveRef: the store cannot enumerate its streams");
     let streams = 0;
@@ -901,6 +916,7 @@ export class SeenLog {
           note(ex.records, `${key}@${rec.sequence}`);
           continue;
         }
+        visitVersion?.(experienceId, parsed.data.versionHash);
         for (const [i, e] of parsed.data.entries.entries()) {
           if (e.sealed === undefined) continue;
           const opened = this.openRef(enc, experienceId, viewerId, rec.sequence, i, e.sealed);

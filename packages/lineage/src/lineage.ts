@@ -35,7 +35,7 @@ import {
   EXPERIENCE_REVERTED,
   type SummaryClass,
 } from "./events";
-import { type RetentionPolicy, retainedVersions } from "./retention";
+import { type RetentionPolicy, retainedVersions, validateRetentionPolicy } from "./retention";
 import { type LineageState, type VersionRecord, foldLineage, payloadRefusal } from "./state";
 import { InMemoryLineageStore, LINEAGE_STREAM_PREFIX, type LineageStore } from "./store";
 
@@ -149,6 +149,14 @@ function walkContentRefs(root: unknown, visit: (address: string) => void): void 
   }
 }
 
+/** What else uses the lineage's content store, for {@link Lineage.pins}. */
+export interface PinsExtra {
+  /** Versions to retain whatever the policy says (e.g. the ones a seen log still records views of). */
+  readonly keepVersions?: Iterable<{ readonly experienceId: string; readonly versionHash: string }>;
+  /** Addresses of other users of the same store (e.g. a seen log's sealed value blobs). */
+  readonly keepAddresses?: Iterable<string> | AsyncIterable<string>;
+}
+
 const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
 
@@ -216,8 +224,10 @@ export class Lineage {
    * U17 — the content addresses a collector must KEEP, as the `roots` of loom's `sweepUnpinnedContent`:
    * for every line, the artifact of each version `policy` retains (`retainedVersions`: the newest N,
    * the head, the promoted version, the genesis, every fork's source) plus every OTHER content ref the
-   * line's events cite (anything an op carries). The artifact ref of a version the policy does not keep
-   * is deliberately absent, so that blob becomes reclaimable.
+   * line's events cite (anything an op carries) plus every content ref found INSIDE a retained
+   * artifact's own bytes (a node whose props hold a media ref: the sweep does not read blobs, so
+   * nothing else would root it). The artifact ref of a version the policy does not keep is
+   * deliberately absent, so that blob becomes reclaimable.
    *
    * USE IT INSTEAD OF scanning the lineage's streams, never as well: a scanned stream pins every
    * version's artifact for ever (a bare ref is load-bearing to loom's sweep), so pass the lineage's
@@ -226,36 +236,55 @@ export class Lineage {
    * that has had versions reclaimed reports them (and the versions derived from them) until the line
    * is verified from a retained checkpoint. Reclaim only versions nobody needs to re-open.
    *
-   * Two passes, one line in memory at a time. Throws if the store cannot enumerate its lines, or if
-   * any line fails to fold (a collector must refuse on a line it cannot read, never guess).
+   * THE ROOT SET MUST BE COMPLETE. With `reclaimOrphans: { completeScan: true }` loom erases every
+   * blob in the store that no root names. The lineage is only ONE user of its content store: pass
+   * the others through `extra` (a {@link SeenLog} sharing the store: `collectSeenRoots(log)`), and
+   * add any other lineage's `pins()` and loom's own execution scan to the same `roots`. A
+   * version a viewer's recorded view still names is kept via `extra.keepVersions`.
+   *
+   * RACES. A promote, a branch (and a seen-log record) TOUCH the artifact they newly cite
+   * (`ContentStore.touch`, SPI 1.4.0, ADR 0055 D6 amendment 2), so a sweep whose roots were computed
+   * a moment earlier still refuses to delete it. That also covers a fork made between this method's
+   * two passes. It needs a store with `touch`; loom's sweep refuses to erase through one without it.
+   *
+   * Two passes, one line in memory at a time. Throws if the store cannot enumerate its lines, if
+   * any line fails to fold, if a retained artifact cannot be read for a reason other than being
+   * already gone, or on a malformed policy (a collector must refuse, never guess).
    */
-  async *pins(policy: RetentionPolicy = {}): AsyncGenerator<string, void, undefined> {
+  async *pins(
+    policy: RetentionPolicy = {},
+    extra: PinsExtra = {}
+  ): AsyncGenerator<string, void, undefined> {
+    validateRetentionPolicy(policy);
     if (this.events.listStreams === undefined)
       throw new Error("Lineage.pins: the LineageStore cannot enumerate its lines");
-    // Pass 1: the versions other lines forked from (they must outlive their forks).
-    const forkedFrom = new Map<string, Set<string>>();
+    // Pass 1: the versions that must outlive their referrers: other lines' forks, and `extra`.
+    const kept = new Map<string, Set<string>>();
+    const addKept = (experienceId: string, versionHash: string) => {
+      const set = kept.get(experienceId) ?? new Set<string>();
+      kept.set(experienceId, set);
+      set.add(versionHash);
+    };
+    for (const v of extra.keepVersions ?? []) addKept(v.experienceId, v.versionHash);
     for await (const id of this.events.listStreams()) {
       const fold = foldLineage(id, await this.events.read(id));
       if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
-      for (const v of fold.state.versions.values()) {
-        if (v.from === undefined) continue;
-        const set = forkedFrom.get(v.from.experienceId) ?? new Set<string>();
-        forkedFrom.set(v.from.experienceId, set);
-        set.add(v.from.versionHash);
-      }
+      for (const v of fold.state.versions.values())
+        if (v.from !== undefined) addKept(v.from.experienceId, v.from.versionHash);
     }
     // Pass 2: the roots.
     const yielded = new Set<string>();
-    const emit = (a: string): string | undefined => {
-      if (yielded.has(a)) return undefined;
+    const pending: string[] = [];
+    const emit = (a: string) => {
+      if (yielded.has(a)) return;
       yielded.add(a);
-      return a;
+      pending.push(a);
     };
     for await (const id of this.events.listStreams()) {
       const records = await this.events.read(id);
       const fold = foldLineage(id, records);
       if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
-      const { keep } = retainedVersions(fold.state, policy, forkedFrom.get(id));
+      const { keep } = retainedVersions(fold.state, policy, kept.get(id));
       for (const rec of records) {
         const p = rec.payload as {
           ref?: { __loomContent?: unknown };
@@ -266,17 +295,53 @@ export class Lineage {
           typeof p?.ref?.__loomContent === "string" ? p.ref.__loomContent : undefined;
         // (a PROMOTED event cites the same artifact; it counts as a citation of that version too)
         const droppedVersion = typeof p?.versionHash === "string" && !keep.has(p.versionHash);
-        const addresses: string[] = [];
         walkContentRefs(rec.payload, (a) => {
           if (a === artifact && droppedVersion) return;
-          addresses.push(a);
+          emit(a);
         });
-        for (const a of addresses) {
-          const out = emit(a);
-          if (out !== undefined) yield out;
-        }
       }
+      // Refs that live only inside a retained artifact's bytes.
+      for (const h of keep) {
+        const v = fold.state.versions.get(h);
+        if (v === undefined) continue;
+        const art = await getExperience(this.content, v.ref as ContentRef);
+        if (!art.ok) {
+          if (art.finding.code === "artifact-missing") continue; // already gone: nothing inside to root
+          throw new Error(`Lineage.pins: "${id}" version ${h}: ${art.finding.message}`);
+        }
+        walkContentRefs(art.experience, emit);
+      }
+      while (pending.length > 0) yield pending.shift() as string;
     }
+    if (extra.keepAddresses !== undefined)
+      for await (const a of extra.keepAddresses) {
+        emit(a);
+        while (pending.length > 0) yield pending.shift() as string;
+      }
+  }
+
+  /**
+   * Tell the content store that `versionHashes` of `experienceId` were JUST re-cited (by a promote,
+   * a branch, a recorded view): `ContentStore.touch` on their artifacts, so a collector's
+   * conditional delete spares them (loom ADR 0055 D6 amendment 2). A store without `touch` is
+   * left alone (loom's sweep will not erase through one). Refuses when an artifact is already gone.
+   */
+  async cite(experienceId: string, versionHashes: readonly string[]): Promise<LineageResult<void>> {
+    const touch = this.content.touch;
+    if (touch === undefined) return { ok: true, value: undefined };
+    const s = await this.state(experienceId);
+    if (!s.ok) return s;
+    const refs: string[] = [];
+    for (const h of versionHashes) {
+      const v = s.value.versions.get(h);
+      if (v === undefined)
+        return refused("version-unknown", `"${h}" is not a version of "${experienceId}"`);
+      refs.push(v.ref.__loomContent);
+    }
+    const missing = await touch.call(this.content, refs);
+    if (missing.length > 0)
+      return refused("artifact-missing", `no content at ${missing[0]} (already reclaimed)`);
+    return { ok: true, value: undefined };
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────
@@ -805,7 +870,11 @@ export class Lineage {
     ]);
     if (!source.ok) return source;
     if (!carried.ok) return carried;
-    return this.commit(experienceId, null, async () => {
+    // The fork records its source by hash with no `put` of that artifact: touch the source (and the
+    // head whose classes it carries) BEFORE the append, so a concurrent sweep spares them.
+    const cited = await this.cite(from.experienceId, [from.versionHash, carriedFrom]);
+    if (!cited.ok) return cited;
+    const committed = await this.commit(experienceId, null, async () => {
       const sealed = sealed_(
         branchArtifact(source.value, carried.value, experienceId, { by, at: this.now() })
       );
@@ -827,6 +896,9 @@ export class Lineage {
         },
       };
     });
+    if (committed.ok)
+      await this.cite(from.experienceId, [from.versionHash, carriedFrom]).catch(() => undefined);
+    return committed;
   }
 
   /**
@@ -857,12 +929,19 @@ export class Lineage {
       const promotedPayload = { ref: v.ref, experienceId, versionHash, by };
       const badPayload = payloadRefusal(EXPERIENCE_PROMOTED, promotedPayload);
       if (badPayload !== undefined) return refused(badPayload.code, badPayload.message);
+      // The promotion cites an artifact that already exists, with no `put`: touch it BEFORE the
+      // append so a sweep that marked earlier cannot delete it, and AFTER to extend the window.
+      const cited = await this.cite(experienceId, [versionHash]);
+      if (!cited.ok) return cited;
       const out = await this.events.append(experienceId, s.value.sequence, {
         type: EXPERIENCE_PROMOTED,
         at: this.now(),
         payload: promotedPayload,
       });
-      if (out.ok) return { ok: true, value: { promoted: versionHash, sequence: out.sequence } };
+      if (out.ok) {
+        await this.cite(experienceId, [versionHash]).catch(() => undefined); // best effort: the write is durable
+        return { ok: true, value: { promoted: versionHash, sequence: out.sequence } };
+      }
     }
     return refused(
       "lineage-contended",
