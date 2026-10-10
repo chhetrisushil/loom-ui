@@ -262,3 +262,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   package.json `sideEffects` names only `elements/*` and `register`. A new widget needs a `define/` + `elements/` file
   (and a line in `defineAll.ts`); `treeShaking.test.ts` bundles each entry and fails if it pulls another widget.
   `genericity.test.ts` bans the consumer-specific nouns in its CONSUMER regex, with a planted-file non-vacuity check.
+- Scale (U17), all opt-in and default-off: `onVisible` (one IntersectionObserver per rendered tree, reports the WIDGET; the
+  host maps it to `markVisible`), `coalesceUpdates` / `createLitRegistry({ coalesce })` (latest wins per frame),
+  `createLitRegistry({ virtualize })` (windowed table rows; chat uses `content-visibility`), `HydrationCache` LRU
+  `maxEntries`, and `Lineage.pins(policy)` (the retention root set for loom's `sweepUnpinnedContent`; never scan the lineage
+  streams as well). Schedulers are injected so tests never sleep.

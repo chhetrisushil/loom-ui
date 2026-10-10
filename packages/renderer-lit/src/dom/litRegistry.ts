@@ -2,6 +2,8 @@ import type { ContractRegistry } from "@loom-ui/core/browser";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import type { TitleChrome } from "../widgets/base";
 import type { MediaHostOptions } from "../widgets/lu-media";
+import type { VirtualizeOptions } from "../widgets/virtual";
+import type { FrameScheduler } from "./coalesce";
 import type { DomRegistry, DomWidgetRenderer } from "./registry";
 
 const warned = new Set<string>();
@@ -20,6 +22,8 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
   const chrome = opts.chrome;
   const contracts = opts.contracts;
   const media = opts.media;
+  const coalesce = opts.coalesce;
+  const virtualize = opts.virtualize;
   return (host, props) => {
     warnUndefined(tag);
     const el = document.createElement(tag) as HTMLElement & {
@@ -30,24 +34,55 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
       chrome: TitleChrome;
       contracts?: ContractRegistry;
       media?: MediaHostOptions;
+      virtualize?: boolean | VirtualizeOptions;
     };
     if (chrome !== undefined) el.chrome = chrome;
     if (contracts !== undefined) el.contracts = contracts;
     if (media !== undefined) el.media = media;
+    if (virtualize !== undefined) el.virtualize = virtualize;
     el.widget = props.widget;
     el.value = props.value;
     el.status = props.status;
     el.onAction = props.onAction;
     host.appendChild(el);
+    // U17: with `coalesce`, values arriving between two frames are held and only the NEWEST pair is
+    // handed to the element at the frame, so a burst costs one render, not one per event.
+    let pending: { value: unknown; status: BindingStatus | undefined } | undefined;
+    let cancel: (() => void) | undefined;
+    let scheduled = false;
+    const apply = (): void => {
+      scheduled = false;
+      cancel = undefined;
+      const p = pending;
+      pending = undefined;
+      if (p === undefined) return;
+      el.value = p.value;
+      el.status = p.status;
+    };
     return {
       update: (value, status) => {
-        el.value = value;
-        el.status = status;
+        if (coalesce === undefined) {
+          el.value = value;
+          el.status = status;
+          return;
+        }
+        pending = { value, status };
+        if (!scheduled) {
+          scheduled = true;
+          const c = coalesce(apply); // may run synchronously: keep the canceller only if it has not
+          if (scheduled) cancel = c;
+        }
       },
       patch: (widget) => {
         el.widget = widget;
       },
-      dispose: () => el.remove(),
+      dispose: () => {
+        scheduled = false;
+        cancel?.();
+        cancel = undefined;
+        pending = undefined;
+        el.remove();
+      },
     };
   };
 }
@@ -100,6 +135,21 @@ export interface LitRegistryOptions {
    * unavailable state: nothing is loaded by default. Build them PER VIEWER SESSION.
    */
   readonly media?: MediaHostOptions;
+  /**
+   * U17: hold each widget's value updates until the scheduler runs them and hand the element only the
+   * newest, so a burst of store events inside one frame is one render. Pass `animationFrameScheduler`
+   * (from this package) for the usual one-render-per-frame. Absent (the default) every update is
+   * applied synchronously, exactly as before. The FIRST value, given at mount, is never delayed.
+   */
+  readonly coalesce?: FrameScheduler;
+  /**
+   * U17: windowed rendering for large row sets. `lu-table` and `lu-data-table` mount only the rows near
+   * the scroll position (fixed row height, spacer rows keep the scrollbar honest) instead of capping at
+   * 200 behind "show more"; `lu-chat` lets the browser skip layout and paint of off-screen turns. `true`
+   * takes the defaults; an object sets `rowHeight`, `overscan` and `minRows` (windowing starts above it).
+   * At or below `minRows`, and when this is absent (the default), rendering is exactly as before.
+   */
+  readonly virtualize?: boolean | VirtualizeOptions;
 }
 
 /** The widget registry, configured. A NEW registry each call; `litRegistry` is `createLitRegistry()`. */

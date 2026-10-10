@@ -36,6 +36,22 @@ const lineage = new Lineage({ events, content, readPolicy: {
 } });
 ```
 
+## Retention: which versions to keep (U17)
+
+Every version stores its whole artifact, and a scanned lineage stream pins every one of them for ever (loom's
+`sweepUnpinnedContent` treats a bare ref as load-bearing). `lineage.pins(policy)` is the replacement root set: an async
+iterable of the content addresses a collector must keep, to be passed as `roots` while the lineage's `LineageStore` is
+NOT passed as an `eventStore`. `retainedVersions(state, policy, branchSources)` is the pure policy: the newest
+`keepLast` (default 20), the head, the promoted version, the genesis (`keepGenesis`), `keepSince`, a host
+`keep(version)` predicate, and always every version another line branched from. The artifact ref of every other
+version is left out, so that blob becomes reclaimable; every other ref a line's events cite (anything an op carries) stays pinned.
+It refuses (throws) over a store that cannot enumerate its lines or a line that does not fold.
+
+Known limit: reclaiming a version leaves its event in the log, so `get` of it reports the missing artifact and `verify` of
+a line with reclaimed versions reports them (and what derives from them), because `verify` replays from the genesis.
+Reclaim only versions nobody needs to re-open. Verifying from a retained checkpoint (a tombstone event so the fold
+knows a version was reclaimed on purpose) is the follow-up; it is loom-ui code and needs no loom change.
+
 ## Design
 
 **Storage is two loom seams.** Artifact bytes go in a `ContentStore` (`putExperience`, unchanged).

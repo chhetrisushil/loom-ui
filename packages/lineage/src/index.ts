@@ -68,3 +68,6 @@ export {
 export type { SeenKeyStore } from "./seenCrypto";
 export { collectSeenGarbage } from "./seenGc";
 export type { SeenGcOptions, SeenGcReport, SeenGcResult } from "./seenGc";
+
+export { DEFAULT_KEEP_LAST, retainedVersions } from "./retention";
+export type { Retained, RetentionPolicy } from "./retention";

@@ -169,6 +169,26 @@ describe("HydrationController scheduling", () => {
     expect(store.status("h")?.state).toBe("ready");
   });
 
+  it("an evicted handle re-fetches from the provider (a bounded cache is a miss, never a wrong answer)", async () => {
+    const cache = new HydrationCache(undefined, { maxEntries: 1 });
+    const { inv, ctl, store } = rig(undefined, { cache });
+    const exp = withNodes([node("a", "h1", "P0"), node("b", "h2", "P0")], ["h1", "h2"]);
+    ctl.load(exp);
+    await flush();
+    expect(tools(inv).sort()).toEqual(["tool.h1", "tool.h2"]);
+    expect(cache.size).toBe(1); // one of the two was evicted
+    store.remove("h1");
+    store.remove("h2");
+    ctl.recompose(exp);
+    await flush();
+    // Exactly one handle was answered from the cache; the evicted one went back to the provider.
+    expect(tools(inv)).toHaveLength(3);
+    expect(store.status("h1")?.state).toBe("ready");
+    expect(store.status("h2")?.state).toBe("ready");
+    expect(store.value("h1")).toEqual({ v: "tool.h1" });
+    expect(store.value("h2")).toEqual({ v: "tool.h2" });
+  });
+
   it("recompose aborts in-flight loads for handles no longer bound and removes them; keeps the rest; loads new ones", async () => {
     let release: (() => void) | undefined;
     const { inv, ctl, store } = rig((input) => {

@@ -115,9 +115,39 @@ function variantKey(
   }
 }
 
+/** The default cap on cached results (U17). Generous: a surface with fewer live questions never notices it. */
+export const DEFAULT_CACHE_MAX_ENTRIES = 10_000;
+
+export interface HydrationCacheOptions {
+  /**
+   * The most results held at once (default {@link DEFAULT_CACHE_MAX_ENTRIES}). Past it the LEAST
+   * RECENTLY USED entry is evicted (a `get` hit or a `set` makes an entry most recent). An evicted
+   * entry is simply a miss: the next load for it calls the provider again, exactly as an expired one
+   * does. Before U17 the map grew without bound in a long-lived host, since an entry never re-read was
+   * never dropped.
+   */
+  readonly maxEntries?: number;
+}
+
 export class HydrationCache {
+  // A Map iterates in insertion order, so re-inserting on use keeps the least recently used entry
+  // FIRST: eviction and promotion are both O(1).
   private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
-  constructor(private readonly clock: () => number = Date.now) {}
+  private readonly maxEntries: number;
+  constructor(
+    private readonly clock: () => number = Date.now,
+    opts: HydrationCacheOptions = {}
+  ) {
+    const max = opts.maxEntries ?? DEFAULT_CACHE_MAX_ENTRIES;
+    if (!Number.isInteger(max) || max < 1)
+      throw new RangeError(`HydrationCache maxEntries must be a positive integer, got ${max}`);
+    this.maxEntries = max;
+  }
+
+  /** How many results are held now (expired ones count until they are read or evicted). */
+  get size(): number {
+    return this.entries.size;
+  }
 
   private key(
     spec: ProviderSpec,
@@ -148,6 +178,9 @@ export class HydrationCache {
       this.entries.delete(k);
       return undefined;
     }
+    // Promote: most recently used goes to the back of the iteration order.
+    this.entries.delete(k);
+    this.entries.set(k, e);
     return { value: e.value };
   }
 
@@ -159,7 +192,13 @@ export class HydrationCache {
   ): void {
     const k = this.key(spec, principalId, variant);
     if (k === undefined || spec.cachePolicy.ttlSeconds <= 0) return;
+    this.entries.delete(k);
     this.entries.set(k, { value, expiresAt: this.clock() + spec.cachePolicy.ttlSeconds * 1000 });
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next();
+      if (oldest.done === true) break;
+      this.entries.delete(oldest.value);
+    }
   }
 
   invalidate(handle?: string): void {

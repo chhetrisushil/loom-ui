@@ -24,6 +24,7 @@ import { say } from "../say";
 import { LuWidget } from "./base";
 import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
 import type { MediaHostOptions } from "./lu-media";
+import { type VirtualizeOptions, resolveVirtualize } from "./virtual";
 
 // ── Chat (U8): a transcript ──────────────────────────────────────────────────────────────────────
 //
@@ -98,6 +99,10 @@ export class LuChat extends LuWidget {
       .older {
         align-self: center;
         margin: 0 0 6px;
+      }
+      .log[data-windowed] article {
+        content-visibility: auto;
+        contain-intrinsic-size: auto var(--lu-entry-h, 96px);
       }
       article {
         margin: 0 0 10px;
@@ -196,6 +201,13 @@ export class LuChat extends LuWidget {
 
   /** Host seams for media parts (the same options the media widgets take). */
   @property({ attribute: false }) media?: MediaHostOptions;
+  /**
+   * U17: long transcripts. Entries are variable height (markdown-free text, media, tool lines), so the
+   * window is the BROWSER'S: past `minRows` entries each article is `content-visibility: auto` with an
+   * intrinsic size estimate, so off-screen turns are not laid out or painted, while the DOM, the scroll
+   * geometry, "stick to the bottom" and the "load earlier" anchor all keep working unchanged. Off by default.
+   */
+  @property({ attribute: false }) virtualize?: boolean | VirtualizeOptions;
   @state() private editing: { turn: number; key: string } | undefined;
   @state() private draft = "";
   @state() private editPhase: "idle" | "sending" | "invalid" | DispatchResult = "idle";
@@ -435,6 +447,11 @@ export class LuChat extends LuWidget {
     </div>`;
   }
 
+  private windowed(entries: number): boolean {
+    const virt = resolveVirtualize(this.virtualize);
+    return virt !== undefined && entries > virt.minRows;
+  }
+
   protected renderReady(): TemplateResult {
     const v = this.chat;
     if (v === undefined) return html`<section></section>`;
@@ -449,7 +466,7 @@ export class LuChat extends LuWidget {
           ? html`<button class="older" type="button" data-older ?disabled=${this.loadingOlder} @click=${this.loadOlder}>${this.loadingOlder ? say("lu.chat.loading") : say("lu.chat.loadEarlier")}</button>`
           : nothing
       }
-      <div class="log" role="log" tabindex="0" aria-live="polite" aria-relevant="additions text" aria-busy=${streaming ? "true" : "false"} aria-label=${this.title_}>
+      <div class="log" ?data-windowed=${this.windowed(v.entries.length)} role="log" tabindex="0" aria-live="polite" aria-relevant="additions text" aria-busy=${streaming ? "true" : "false"} aria-label=${this.title_}>
         ${v.entries.length === 0 ? html`<p class="empty">${emptyText}</p>` : nothing}
         ${repeat(
           v.entries,
