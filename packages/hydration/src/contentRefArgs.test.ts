@@ -498,3 +498,68 @@ describe("contentRefArgs is required at every entry point", () => {
     }
   });
 });
+
+// ── F5: a refusal is told to the client as its own public code, and the finding codes tell the cases apart ──
+
+describe("a content-reference refusal has its own public code", () => {
+  it("a literal is `media-arg-literal` in the findings and `content-ref-refused` as the outcome's finding", async () => {
+    const { r } = await run({ image: ADDR });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("content-ref-refused");
+    expect(codesOf(r)).toContain("media-arg-literal");
+    expect(codesOf(r)).not.toContain("media-arg-param-refused");
+  });
+
+  it("a foreign param the gate refuses is `media-arg-param-refused`, not `media-arg-literal`", async () => {
+    const { r } = await run({}, { params: { image: ADDR }, acceptContentRefParam: () => false }, [
+      "image",
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.finding.code).toBe("content-ref-refused");
+    expect(codesOf(r)).toContain("media-arg-param-refused");
+    expect(codesOf(r)).not.toContain("media-arg-literal");
+  });
+
+  it("a refusal mixed with another failure stays provider-failed", async () => {
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => {
+      throw new Error("down");
+    });
+    const r = await executeProvider(
+      providerSpec("h", [mcpStep("s1", "describe", { image: ADDR }), mcpStep("s2", "other", {})]),
+      { invoker: inv, contentRefArgs: table }
+    );
+    expect(!r.ok && r.finding.code).toBe("provider-failed");
+  });
+
+  it("serveHandle tells the client `content-ref-refused` (same text for a literal and a foreign param); onFinding gets the real code", async () => {
+    const seen: string[] = [];
+    const onFinding = (_h: string, f: { code: string }) => void seen.push(f.code);
+    const e = exp(literalSpec());
+    const lit = await serveHandle(e, req(e), {
+      invoker: reply(),
+      now: 1,
+      contentRefArgs: table,
+      onFinding,
+    });
+    const e2 = exp(paramSpec("global"));
+    const par = await serveHandle(e2, req(e2, { image: ADDR }), {
+      invoker: reply(),
+      now: 1,
+      contentRefArgs: table,
+      onFinding,
+    });
+    for (const out of [lit, par]) {
+      expect(out.state).toBe("error");
+      if (out.state !== "error") continue;
+      expect(out.finding.code).toBe("content-ref-refused");
+      expect(JSON.stringify(out)).not.toContain("00112233");
+    }
+    expect(lit.state === "error" && par.state === "error" && lit.finding.message).toBe(
+      par.state === "error" ? par.finding.message : ""
+    );
+    expect(seen).toContain("media-arg-literal");
+    expect(seen).toContain("media-arg-param-refused");
+  });
+});

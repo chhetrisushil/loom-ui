@@ -117,7 +117,7 @@ export function checkContentRefs(
       return {
         paramFilled,
         finding: bad(
-          "media-arg-literal",
+          "media-arg-param-refused",
           `step "${node.stepId}": the param for "${name}" fills a content-reference argument and the host did not accept it`
         ),
       };

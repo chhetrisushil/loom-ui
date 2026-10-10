@@ -244,10 +244,15 @@ function observedRawShape(raw: unknown): { observedRawShape?: Shape } {
   }
 }
 
+/** The PUBLIC code of a step refused by the content-reference guard (literal, unproven ref, or a param the gate refused). */
+export const CONTENT_REF_REFUSED = "content-ref-refused";
+const isContentRefRefusal = (f: Finding): boolean => f.code.startsWith("media-arg-");
+
 /**
  * The first finding (graph order) when every step that failed ON ITS OWN failed with the same
  * one of `schema-drift` / `upstream-empty` — the rest were skipped as its dependents
- * (`dependency-failed`). `undefined` for anything else.
+ * (`dependency-failed`) — or when every one of them was refused by the content-reference guard
+ * (then `content-ref-refused`, whichever `media-arg-*` case it was). `undefined` for anything else.
  */
 function onlyFailure(
   steps: readonly MCPToolNode[],
@@ -257,7 +262,16 @@ function onlyFailure(
   for (const step of steps) {
     const f = failed.get(step.stepId);
     if (f === undefined || f.code === "dependency-failed") continue;
+    if (isContentRefRefusal(f)) {
+      if (first !== undefined && first.code !== CONTENT_REF_REFUSED) return undefined;
+      first ??= err(
+        CONTENT_REF_REFUSED,
+        "a content-reference argument was refused: a content address is a capability and only a reference the host vouches for is accepted"
+      );
+      continue;
+    }
     if (f.code !== "schema-drift" && f.code !== "upstream-empty") return undefined;
+    if (first?.code === CONTENT_REF_REFUSED) return undefined;
     if (first !== undefined && f.code !== first.code) return undefined;
     first ??= f;
   }
