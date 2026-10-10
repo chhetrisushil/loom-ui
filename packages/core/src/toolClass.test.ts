@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { declareHandle } from "./declareHandle.test-support";
 import { type Experience, type ProviderSpec, genesis } from "./experience";
 import { experienceHandles } from "./handles";
 import { mintVersionHash } from "./log";
@@ -207,7 +208,11 @@ describe("a LEGACY experience (classified node, no stored class map)", () => {
 
   it("bindProvider away keeps the class on the handle it left", () => {
     const e = run(
-      [{ type: "bindProvider", nodeId: "a", handle: "h2" }, ins(node("c", "h"))],
+      [
+        declareHandle("h2"),
+        { type: "bindProvider", nodeId: "a", handle: "h2" },
+        ins(node("c", "h")),
+      ],
       legacy()
     );
     expect(classOf(e, "h")).toBe("secret");

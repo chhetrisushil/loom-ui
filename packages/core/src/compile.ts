@@ -22,6 +22,7 @@ import {
   validateExperience,
 } from "./catalog";
 import type { DeclaredToolClasses, UndeclaredToolPolicy } from "./classes";
+import { type CompileMemo, defaultCompileMemo } from "./compileMemo";
 import type { Experience, Finding } from "./experience";
 import { experienceHandles } from "./handles";
 import { loomCatalogFor } from "./loomCatalog";
@@ -147,6 +148,18 @@ export interface CompileOptions {
   readonly requirePlaceholderKey?: boolean;
   /** The placeholder's title and text. Default: `{ key: "restricted", fallback: "Restricted" }`. */
   readonly restrictedLabel?: LocalizedText;
+  /**
+   * Names what a custom `resolveLabel` returns (e.g. the locale and bundle revision), so the
+   * compile memo may reuse a result: two calls with the same key MUST resolve every label alike.
+   * A custom `resolveLabel` without it is never memoized; the default resolver needs none.
+   */
+  readonly resolveLabelKey?: string;
+  /**
+   * The per-version memo (see `compileMemo.ts`): `undefined` = the shared default (a small LRU),
+   * `false` = off, a `CompileMemo` = your own. Only a SEALED experience is memoized; every result
+   * is a private copy, so mutating one never reaches another caller.
+   */
+  readonly memo?: CompileMemo | false;
 }
 
 /** The default `CompileOptions.restrictedLabel`. */
@@ -190,6 +203,17 @@ export interface CompileResult {
 }
 
 export function compile(exp: Experience, opts: CompileOptions): CompileResult {
+  const memo = opts.memo === false ? undefined : (opts.memo ?? defaultCompileMemo);
+  const key = memo?.keyOf(exp, opts);
+  if (memo === undefined || key === undefined) return compileUncached(exp, opts);
+  const hit = memo.get(key, exp);
+  if (hit !== undefined) return hit;
+  const result = compileUncached(exp, opts); // a throw (PlaceholderKeyError) is never remembered
+  memo.set(key, exp, result);
+  return result;
+}
+
+function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
   const findings: Finding[] = [];
   // Resolved once, ahead of the depth probe below, so the title override applies identically on
   // both the early "too deep" return and the normal path — it is a function of `opts` and `exp`,

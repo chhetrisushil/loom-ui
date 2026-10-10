@@ -200,6 +200,7 @@ function foldOp(ctx: Ctx, op: Operation, prompt: string | undefined, depth: numb
     case "setRole":
     case "setPlacement":
     case "bindProjection":
+    case "unbindProvider":
       changed(ctx, op.nodeId, entry());
       return;
     case "bindProvider": {

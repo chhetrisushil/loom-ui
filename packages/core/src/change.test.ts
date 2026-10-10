@@ -7,6 +7,7 @@ import {
   describeChange,
   experienceClassFloor,
 } from "./change";
+import { declareHandle } from "./declareHandle.test-support";
 import { type Experience, genesis } from "./experience";
 import type { SemanticNode } from "./node";
 import { type Operation, apply } from "./operations";
@@ -89,6 +90,8 @@ describe("describeChange — what changed", () => {
     );
     const b = run(
       a,
+      declareHandle("h5"),
+      declareHandle("h3"),
       { type: "setPlacement", nodeId: "m1", column: 3 },
       { type: "setProps", nodeId: "m2", patch: { unit: "ms" } },
       { type: "bindProvider", nodeId: "m4", handle: "h5" },
@@ -103,7 +106,7 @@ describe("describeChange — what changed", () => {
   });
 
   it("reports provider and intent changes", () => {
-    const a = run(v0, insert(bound("m1", "h1")), {
+    const a = run(v0, insert(bound("m1", "h1")), declareHandle("h1"), {
       type: "bindProvider",
       nodeId: "m1",
       handle: "h1",
@@ -213,7 +216,7 @@ describe("describeChange — viewer-safe", () => {
   });
 
   it("a node that BECAME classified is restricted for a viewer who saw it before", () => {
-    const before = run(v0, insert(bound("m", "h")));
+    const before = run(v0, insert(bound("m", "h")), declareHandle("h"));
     const after = run(before, {
       type: "bindProvider",
       nodeId: "m",

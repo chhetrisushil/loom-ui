@@ -147,12 +147,11 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   no field), `placement-outside-grid`, `invalid-operation` (the placed node fails the node schema),
   `placement-out-of-range`. `setTitle`: `missing-node`, `not-container`. `setRole`: `missing-node`,
   `not-container`, `invalid-operation` (a role that is not `isLayoutRole`). `setProps` / `setLabel` /
-  `bindProvider`: `missing-node`, `not-semantic`. `remapProvider`: `handle-mismatch` (`spec.handle` ≠
+  `bindProvider` / `unbindProvider`: `missing-node`, `not-semantic`; `bindProvider` also `missing-provider` (the handle is not declared: `remapProvider` it first, earlier in the same list is fine); `unbindProvider` also `not-bound` (no handle binding). `setLabel` with `label: null` clears. `remapProvider`: `handle-mismatch` (`spec.handle` ≠
   `handle`). `removeProvider`: `missing-provider`, `provider-still-bound`. `declassifyHandle`: `declassify-not-allowed` (the call did not pass `{ allowDeclassify: true }`; it lowers a sticky class and is trusted-caller-only). `prompt`: whatever its
   `materialized` ops return, plus `declassify-in-prompt` when any of them (at any nesting) is a `declassifyHandle`. `applyAt` only: `stale-base-version` (the declared base is not the artifact). Note `not-container` (`setTitle` / `setRole` on a semantic node) is a different code
-  from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `bindProvider`
-  does not check that the handle is declared; `validateExperience` reports a binder with no provider
-  as `unknown-handle`.
+  from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `validateExperience` still
+  reports a binder with no provider as `unknown-handle` (an `insertNode` of a bound node is not checked by `apply`).
 - A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.

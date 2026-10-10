@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { declareHandle } from "./declareHandle.test-support";
 import { genesis } from "./experience";
 import { experienceHandles } from "./handles";
 import { mintVersionHash } from "./log";
@@ -52,7 +53,7 @@ describe("a handle's class is sticky (U10 fix round 1)", () => {
 
   it("a rebind away from a classified handle leaves that handle classified", () => {
     let e = run([ins(node("a", "h", "secret"))]);
-    e = run([{ type: "bindProvider", nodeId: "a", handle: "h2" }], e);
+    e = run([declareHandle("h2"), { type: "bindProvider", nodeId: "a", handle: "h2" }], e);
     e = run([ins(node("c", "h"))], e);
     expect(classOf(e, "h")).toBe("secret");
   });

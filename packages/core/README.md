@@ -41,12 +41,15 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   value-free, and the host owns its contract's cost. An optional `version` is folded into the
   hydration cache key; a contract without one needs `HydrationCache.invalidate()` after a change.
 - **Operations.** An `Operation` is one of `insertNode`, `removeNode`, `moveNode`, `setProps`,
-  `setLabel`, `setTitle`, `setRole`, `setPlacement`, `bindProvider`, `declassifyHandle`,
+  `setLabel` (`label: null` clears), `setTitle`, `setRole`, `setPlacement`, `bindProvider`, `unbindProvider`, `declassifyHandle`,
   `remapProvider`, `removeProvider`, `prompt`. `apply`/`replay` are deterministic and never throw on bad input —
   every refusal is a typed `Finding` (the full code list is in the root README's "Op refusal
   codes").
 - **Compile.** `compile(exp, opts)` turns a sealed or unsealed Experience into a loom `Blueprint`
   for one surface, resolving every semantic node through the catalogue and validating as it goes.
+  A SEALED experience's result is memoized per (version, options) in a small LRU (`CompileOptions.memo`:
+  `false` = off, or your own `createCompileMemo({ max })`); every call gets a private copy. A custom
+  `resolveLabel` is memoized only with a `resolveLabelKey`, a `registry` never (see `compileMemo.ts` for the full key).
 - **Content log (`./log`).** Composition is an event, not a database row: `seal`/`mintVersionHash`
   mint a content address over the artifact (parsed, then canonicalised), `putExperience` /
   `getExperience` round-trip it through loom's `ContentStore`, and an app emits
