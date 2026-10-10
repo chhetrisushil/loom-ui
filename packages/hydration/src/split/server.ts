@@ -251,6 +251,7 @@ const FIXED_CODES: ReadonlySet<string> = new Set([
   "upstream-empty",
   "dependency-failed",
   "provider-failed",
+  "content-ref-refused",
   "empty-graph",
   "graph-cycle",
   "aborted",
@@ -306,6 +307,8 @@ function publicText(code: string, severity: Finding["severity"]): string {
     case "invalid-params":
     case "invalid-time-token":
       return "the params were refused";
+    case "content-ref-refused":
+      return "a content-reference argument was refused";
     case "aborted":
       return "the load was aborted";
     case "invalid-request":

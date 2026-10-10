@@ -83,6 +83,7 @@ export {
   reviseMessages,
 } from "./prompt";
 export type { PreviousError } from "./prompt";
+export { plannerMessageText } from "./spi";
 export type {
   AttemptTrace,
   CapabilityRef,
@@ -93,7 +94,12 @@ export type {
   Planner,
   PlannerDelta,
   PlannerDeltaSink,
+  PlannerBinarySource,
+  PlannerContentPart,
+  PlannerMediaPart,
   PlannerMessage,
+  PlannerMessageContent,
+  PlannerTextPart,
   PlannerModel,
   PlannerModelRequest,
   PlannerUsage,

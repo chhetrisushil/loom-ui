@@ -20,6 +20,11 @@ import { terminalSteps } from "@loom-ui/hydration/client";
 import { MAX_DRAFT_CHILDREN, MAX_DRAFT_DEPTH, MAX_DRAFT_NODES, PLAIN_CONTAINERS } from "./contract";
 import type { CapabilityRef, ComposeInput, PlannerMessage, ReviseInput } from "./spi";
 
+/** What the planner itself writes: always text (assignable to `PlannerMessage`, whose content may be parts). */
+export interface PlannerTextMessage extends PlannerMessage {
+  readonly content: string;
+}
+
 export interface PreviousError {
   readonly error: string;
   readonly raw: string;
@@ -268,7 +273,7 @@ function sampleBlocks(caps: readonly CapabilityRef[]): string[] {
 export function composeMessages(
   input: ComposeInput,
   previous?: PreviousError
-): { system: string; messages: PlannerMessage[] } {
+): { system: string; messages: PlannerTextMessage[] } {
   const parts = [
     `INTENT: ${input.intent.objective}`,
     `CATALOGUE:\n${describeCatalog(input.catalog)}`,
@@ -392,7 +397,7 @@ export function describeExperience(
 export function reviseMessages(
   input: ReviseInput,
   previous?: PreviousError
-): { system: string; messages: PlannerMessage[] } {
+): { system: string; messages: PlannerTextMessage[] } {
   const parts = [
     // The node list carries labels and props the MODEL wrote on an earlier turn, and props a
     // tool's data may have reached; it is not operator prose either, so it is fenced like any

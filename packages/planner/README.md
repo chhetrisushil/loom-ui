@@ -104,7 +104,11 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   `scopeInvoker` — the scope already carries the execution's principal, and the call is refused
   otherwise (refusing beats running as someone else).
 - `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loom/llm`'s
-  `LlmProvider.complete` a model must satisfy, and its token-usage shape.
+  `LlmProvider.complete` a model must satisfy, and its token-usage shape. `PlannerMessage.content` is text OR
+  parts (`PlannerMessageContent`, mirroring loom R5's `LlmMessageContent`); the messages the planner itself writes are
+  always text. A model that reads message content uses `plannerMessageText(content)` (the local `textOf`: text and
+  tool-result text, never `[object Object]`; a `tainted()` wrapper throws). Type change: code that read
+  `message.content` as a `string` must narrow or call `plannerMessageText`.
 - `planDecisionId(kind, input): string` — the `ctx.decide` key `compose`/`revise` use: every input
   that shapes the prompt (intent/request, catalogue CONTENT, the offered capabilities including
   their tool-authored text, caller `context`, and `surface`), deliberately excluding a

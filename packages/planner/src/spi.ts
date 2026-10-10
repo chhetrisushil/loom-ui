@@ -7,7 +7,7 @@ import type {
   SemanticCatalog,
   Surface,
 } from "@loom-ui/core";
-import type { DataClass, TaintedValue } from "@loom/classify";
+import { type DataClass, type TaintedValue, isTainted } from "@loom/classify";
 import type { RolloutStamp } from "@loom/learning";
 
 /**
@@ -84,11 +84,86 @@ export interface DecideContext {
   ): Promise<T>;
 }
 
-/** Structural subset of `@loom/llm`'s `LlmProvider.complete`. */
+/** Where a media part's bytes are — structurally `@loom/llm`'s `LlmBinarySource`. */
+export type PlannerBinarySource =
+  | { readonly kind: "ref"; readonly ref: { readonly address: string; readonly size?: number } }
+  | { readonly kind: "data"; readonly data: string };
+/** A text part — structurally `@loom/llm`'s `LlmTextPart`. */
+export interface PlannerTextPart {
+  readonly type: "text";
+  readonly text: string;
+}
+/** An image / audio / file part — structurally `@loom/llm`'s media parts. */
+export interface PlannerMediaPart {
+  readonly type: "image" | "audio" | "file";
+  readonly mediaType: string;
+  readonly source: PlannerBinarySource;
+  readonly name?: string;
+  readonly untrusted?: { readonly origin: string };
+}
+/**
+ * One content part — structurally `@loom/llm`'s `LlmContentPart` (text, media, `tool_use`,
+ * `tool_result`; ADR 0120). `@loom-ui/planner` does not depend on `@loom/llm`, so the shape is
+ * mirrored and a loom provider's request flows through with no adapter.
+ */
+export type PlannerContentPart =
+  | PlannerTextPart
+  | PlannerMediaPart
+  | {
+      readonly type: "tool_use";
+      readonly id: string;
+      readonly name: string;
+      readonly input: unknown;
+    }
+  | {
+      readonly type: "tool_result";
+      readonly toolUseId: string;
+      readonly content: string | readonly (PlannerTextPart | PlannerMediaPart)[];
+      readonly isError?: boolean;
+    };
+/** Structurally `@loom/llm`'s `LlmMessageContent`: text, or parts. */
+export type PlannerMessageContent = string | readonly PlannerContentPart[];
+
+/** Structural subset of `@loom/llm`'s `LlmProvider.complete` message (content is text OR parts). */
 export interface PlannerMessage {
   readonly role: "system" | "user" | "assistant";
-  readonly content: string;
+  readonly content: PlannerMessageContent;
 }
+
+/**
+ * The text of a message's content — the local equivalent of `@loom/llm`'s `textOf`. A string is
+ * itself; parts contribute their `text` parts and a `tool_result`'s text, in order, and media and
+ * `tool_use` parts contribute nothing. Never `[object Object]`. A `tainted()` wrapper (untrusted
+ * data, not message text) is refused with a throw rather than flattened: unwrap it on purpose.
+ */
+export function plannerMessageText(content: PlannerMessageContent): string {
+  if (typeof content === "string") return content;
+  if (isTainted(content))
+    throw new Error(taintedMessage((content as TaintedValue<unknown>).__loomTainted.origin));
+  let out = "";
+  for (const p of content) {
+    if (isTainted(p))
+      throw new Error(taintedMessage((p as TaintedValue<unknown>).__loomTainted.origin));
+    if (p.type === "text") out += plain(p.text);
+    else if (p.type === "tool_result") {
+      const c: unknown = p.content;
+      if (isTainted(c))
+        throw new Error(taintedMessage((c as TaintedValue<unknown>).__loomTainted.origin));
+      if (typeof c === "string") out += c;
+      else
+        for (const r of c as readonly PlannerContentPart[])
+          if (r.type === "text") out += plain(r.text);
+    }
+  }
+  return out;
+}
+const taintedMessage = (origin: string): string =>
+  `plannerMessageText() was given tainted content from "${origin}": untrusted data, not message text; unwrap it deliberately and treat it as DATA`;
+const plain = (text: unknown): string => {
+  if (isTainted(text))
+    throw new Error(taintedMessage((text as TaintedValue<unknown>).__loomTainted.origin));
+  return text as string;
+};
 /**
  * Token accounting for one model call — the same shape as `@loom/llm`'s `LlmResponse.usage`,
  * so a loom provider's usage flows through with no adapter.

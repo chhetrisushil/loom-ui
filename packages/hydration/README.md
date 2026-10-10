@@ -80,8 +80,12 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   `contentRefArgsFrom(capabilities)` builds (persist it with the capability set; `parseContentRefTable` re-reads it), or the
   explicit opt-out `"none"` (an experience with media nodes then reports `media-content-refs-unguarded`). Before ANY call a
   step's marked argument must be absent / null, a `{{steps.…}}` reference to an output its tool declares to be a content
-  reference, or a param the host accepted; otherwise the step is refused (`media-arg-literal` / `media-arg-unproven-ref`) and
-  the call is NOT made. The same check runs BEFORE every cache lookup (in-process and split), asking the gate again: a cached
+  reference, or a param the host accepted; otherwise the step is refused (`media-arg-literal` / `media-arg-unproven-ref`, or
+  `media-arg-param-refused` for a param the gate refused: three distinct codes on `onFinding`) and
+  the call is NOT made. Behaviour change: when every failed step was such a refusal, the outcome's finding (and what a split client
+  receives) is the public code `content-ref-refused` with one fixed message, no longer the opaque `provider-failed`; it says nothing
+  of which argument, step or whether a reference exists. A refusal mixed with another failure stays `provider-failed`. A param the
+  gate refuses used to be reported as `media-arg-literal` and is now `media-arg-param-refused`. The same check runs BEFORE every cache lookup (in-process and split), asking the gate again: a cached
   value is never served to a principal whose gate refuses, nor after a revocation, and a result a param filled is cached per
   principal only, never globally. A param that fills a marked argument (in-process `setParams`, or a split client's params,
   which are client input) is refused unless `acceptContentRefParam({ handle, stepId, toolName, kind?, param, value,
