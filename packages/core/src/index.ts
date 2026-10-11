@@ -329,3 +329,5 @@ export {
   selectPlural,
 } from "./messages";
 export type { LuI18n, LuMessageKey, LuMessageVars, PluralForms, Say } from "./messages";
+export { providerGraphFindings } from "./providerGraph";
+export type { GraphProvider, GraphStep } from "./providerGraph";

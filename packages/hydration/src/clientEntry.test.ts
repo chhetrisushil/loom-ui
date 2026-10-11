@@ -247,6 +247,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     // MediaRef contract does, plus the ~2 kB conversation connection.
     // 72 -> 74 KiB for loom 2704704 (#556): `@loom/core`'s `schedule$` gained the DST sub-hourly
     // warning (~0.8 kB minified). The client takes the whole core barrel (CJS, not tree-shaken).
-    expect(bytes).toBeLessThan(74 * 1024);
+    // 74 -> 76 KiB for LU-2: `validateExperience` (in the client's core barrel) gained the
+    // provider-graph checks (`providerGraph.ts`, ~1.4 kB minified).
+    expect(bytes).toBeLessThan(76 * 1024);
   });
 });

@@ -43,6 +43,8 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "mediaText.js",
   "messages.js",
   "paths.js",
+  // LU-2: the zod-free provider-graph checks ride `core/browser` for a client-side presubmit preview.
+  "providerGraph.js",
   "streamText.js",
 ]);
 
@@ -83,7 +85,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // U8 fix round 1: 80 -> 81 kB (the contract grew by `mode`: +130 bytes put it 26 over).
     // LOOM_REF bump to a8e69f5b: 90 -> 91 kB (measured 90_366, 366 over). Its graph is the shared registry/i18n/virtual
     // code the U16/U17/#71 slices grew, which this smallest entry carries in full; index and dom/index stay under budget.
-    ["dom/containers.js", 91 * 1000],
+    // LU-2: 91 -> 94 kB (measured 93_006): `core/browser` now re-exports the zod-free `providerGraphFindings`
+    // (~2.6 kB) for a client-side presubmit preview, and this smallest entry takes the barrel in full.
+    ["dom/containers.js", 94 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 187 * 1000],
