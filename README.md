@@ -279,4 +279,4 @@ Every `lu-*` element reads `--lu-*` CSS custom properties (`--lu-text`, `--lu-te
 
 ## Consumers
 
-- [genUI](https://github.com/chhetrisushil/genUI) — generative dashboards and authoring; migrating onto loom-ui (loom `docs/requirements/2026-09-23-genui-migration-design.md`).
+- [genUI](https://github.com/chhetrisushil/genUI) — generative dashboards and authoring, the first consumer: its server composes through loom-ui, its web and TUI render the compiled Blueprint, and its private view model is deleted (migration phases 6.1–6.3, shipped 2026-10-12; loom `docs/requirements/2026-09-23-genui-migration-design.md`).
