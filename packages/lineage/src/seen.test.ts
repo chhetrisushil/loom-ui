@@ -129,6 +129,48 @@ for (const [name, makeStore] of backends) {
       });
     });
 
+    it("a broadcast audience records and reads as a viewer with no clearance, whoever the principal is", async () => {
+      const { log, snap } = await setup();
+      const values = { h: 1, hs: "top", hi: 2 };
+      // The wall's record: the principal is secret-cleared, the surface is broadcast.
+      okSeen(
+        await log.record({
+          experienceId: "e",
+          viewerId: "wall",
+          snapshot: snap(values),
+          viewer: cleared,
+          audience: "broadcast",
+        })
+      );
+      const hs = (r: { views: readonly { entries: readonly { source: unknown }[] }[] }) =>
+        JSON.stringify(r.views.map((v) => v.entries.map((e) => e.source)));
+      const wall = okSeen(await log.read({ experienceId: "e", viewerId: "wall", reader: cleared }));
+      expect(hs(wall)).toContain('"h"');
+      expect(hs(wall)).not.toContain('"hs"');
+      expect(hs(wall)).not.toContain('"hi"');
+      // The personal record of the same principal keeps everything; reading it AS the wall drops it.
+      okSeen(
+        await log.record({
+          experienceId: "e",
+          viewerId: "me",
+          snapshot: snap(values),
+          viewer: cleared,
+        })
+      );
+      const mine = okSeen(await log.read({ experienceId: "e", viewerId: "me", reader: cleared }));
+      expect(hs(mine)).toContain('"hs"');
+      const mineAsWall = okSeen(
+        await log.read({
+          experienceId: "e",
+          viewerId: "me",
+          reader: cleared,
+          audience: "broadcast",
+        })
+      );
+      expect(hs(mineAsWall)).not.toContain('"hs"');
+      expect(mineAsWall.views[0]?.restricted).toBe(true);
+    });
+
     it("a reader with lower clearance sees only what they may, learns nothing of the rest, and no blob is fetched for it", async () => {
       const { log, content, snap } = await setup();
       okSeen(

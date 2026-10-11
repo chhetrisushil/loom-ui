@@ -71,7 +71,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   value is broadcast/withheld); every withheld node is loom's IR 2.5.0 redacted widget (`Note`, `source`
   `{redacted,"1",redacted:true}`, `r_` alias, same cell, nothing else), finding `audience-withheld` vs
   `node-restricted` (server-side only; ONE Blueprint shape for both). A `"viewer"` compile is unchanged. `audience` is in the
-  compile memo key; hydration (`HydrationController`, `handleInventory`, `serveHandles`) takes the same `audience`.
+  compile memo key; hydration (`HydrationController`, `handleInventory`, `serveHandles`) takes the same `audience`; `HydrationScope.audience` makes a broadcast store its own state (mismatch throws); `describeChange`/`snapshotSeen`/`explainNode`/`Lineage.explain`/`SeenLog`/learning `ingest` take it too; `CompileResult.viewer`/`.clearance` = the effective viewer.
   `renderer-lit` draws `⊘ redacted` only (reconcile remounts on a redaction change); the conformance kit has an
   `audience` check. See the README "Audience".
 - The learning loop (U11): the planner's variant choice is a `decideWithPolicy` decision (`plan-variant:*`, SHA-256 id,

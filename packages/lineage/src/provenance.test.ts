@@ -130,6 +130,27 @@ describe("Lineage provenance and explain (U12)", () => {
     );
   });
 
+  it("a broadcast audience explains as a viewer with no clearance, whoever asked", async () => {
+    const lin = make();
+    const v1 = ok(await lin.start(g("e"), user));
+    ok(
+      await lin.compose({
+        experienceId: "e",
+        expectedHead: v1.experience.versionHash,
+        ops: [ins(node("a", "h"), agent), ins(node("s", "hs", "secret"), agent)],
+        by: agent,
+        summary: "Added a card and a secret card.",
+      })
+    );
+    expect(asAvail(ok(await lin.explain("e", "s", { viewer: cleared }))).available).toBe(true);
+    const wall = { viewer: cleared, audience: "broadcast" as const };
+    expect(ok(await lin.explain("e", "s", wall))).toEqual({ available: false });
+    // The plain node is explained, and the words that name the secret card are withheld.
+    const a = asAvail(ok(await lin.explain("e", "a", wall)));
+    expect(a.created).toBeDefined();
+    expect(a.why).toBeUndefined();
+  });
+
   it("a summaryClass stamped above the viewer withholds the words even when the floor is clean", async () => {
     const lin = make();
     const v1 = ok(await lin.start(g("e"), user));

@@ -1,11 +1,16 @@
 import { type Layout, type Widget, validateBlueprint } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
+import { compileFingerprint } from "./action";
 import { defineSemanticCatalog } from "./catalog";
+import { describeChange } from "./change";
 import { compile } from "./compile";
 import { createCompileMemo } from "./compileMemo";
 import { genesis } from "./experience";
 import { loomCatalogFor } from "./loomCatalog";
 import type { ContainerNode, SemanticNode } from "./node";
+import type { Operation, RecordedOperation } from "./operations";
+import { emptyLedger, explainNode, foldProvenance } from "./provenance";
+import { redactSeen, snapshotSeen } from "./seen";
 import { testCatalog } from "./testCatalog.test-support";
 import { effectiveViewer, isBroadcast } from "./viewer";
 
@@ -348,5 +353,77 @@ describe("audience: the compile memo never crosses audiences", () => {
     compile(exp, { ...opts, memo, viewer: v, audience: "broadcast" });
     compile(exp, { ...opts, memo, viewer: v, audience: "wallboard" as never });
     expect([memo.hits, memo.size]).toEqual([2, 2]);
+  });
+});
+
+describe("audience: every per-viewer output agrees with compile", () => {
+  const secretViewer = { clearance: "secret" as const };
+  const sealed = (e: ReturnType<typeof build>, v: string) => ({ ...e, versionHash: v });
+  const v0 = sealed(build([plainNode]), "sha256:v0");
+  const v1 = sealed(build([plainNode, secretNode]), "sha256:v1");
+
+  it("compile exposes the EFFECTIVE viewer and clearance", () => {
+    const wall = compile(exp, { ...opts, viewer: secretViewer, audience: "broadcast" });
+    expect(wall.viewer).toEqual({});
+    expect(wall.clearance).toBeUndefined();
+    const mine = compile(exp, { ...opts, viewer: secretViewer });
+    expect(mine.clearance).toBe("secret");
+    expect(mine.viewer).toEqual(secretViewer);
+  });
+
+  it("describeChange: a broadcast call never describes a classified node, whoever asked", () => {
+    const asked = describeChange(v0, v1, { viewer: secretViewer });
+    expect(asked.entries.some((e) => JSON.stringify(e).includes("payroll"))).toBe(true);
+    const wall = describeChange(v0, v1, { viewer: secretViewer, audience: "broadcast" });
+    expect(JSON.stringify(wall)).not.toContain("payroll");
+    expect(wall.restricted).toBe(true);
+  });
+
+  it("snapshotSeen / redactSeen: a broadcast snapshot never records a classified source as seen", () => {
+    const read = (s: { kind: string; handle?: string }) => ({
+      found: true,
+      value: { v: s.handle },
+      status: "ready",
+    });
+    const asked = snapshotSeen(v1, { viewer: secretViewer, read });
+    expect(JSON.stringify(asked)).toContain("h-payroll");
+    const wall = snapshotSeen(v1, { viewer: secretViewer, read, audience: "broadcast" });
+    expect(JSON.stringify(wall)).not.toContain("h-payroll");
+    expect(wall.restricted).toBe(true);
+    // The redactor a SeenLog uses on record / read agrees.
+    const again = redactSeen(asked.entries, v1, { viewer: secretViewer, audience: "broadcast" });
+    expect(JSON.stringify(again.entries)).not.toContain("h-payroll");
+    expect(again.restricted).toBe(true);
+  });
+
+  it("explainNode: a broadcast call is unavailable for a classified node, available for the plain one", () => {
+    const user = { source: "user" as const, agentId: "u" };
+    const rec: RecordedOperation = {
+      op: { type: "insertNode", parentId: "root", node: secretNode } as Operation,
+      by: user,
+      at: "2026-10-06T00:00:01Z",
+    };
+    const ledger = foldProvenance(emptyLedger({ versionHash: "sha256:v1", at: "t", by: user }), [
+      { versionHash: "sha256:v1", at: "t", by: user, ops: [rec] },
+    ]);
+    expect(explainNode(v1, "payroll", { viewer: secretViewer, ledger }).available).toBe(true);
+    expect(
+      explainNode(v1, "payroll", { viewer: secretViewer, ledger, audience: "broadcast" }).available
+    ).toBe(false);
+  });
+
+  it("two viewers' broadcast fingerprints are identical when stamped with the result's clearance", () => {
+    const stamp = (viewer?: { clearance?: "secret" | "internal" }) => {
+      const r = compile(exp, { ...opts, ...(viewer && { viewer }), audience: "broadcast" });
+      return compileFingerprint({ clearance: r.clearance, locale: "en", ...r.fingerprint });
+    };
+    expect(stamp({ clearance: "secret" })).toBe(stamp({ clearance: "internal" }));
+    expect(stamp({ clearance: "secret" })).toBe(stamp(undefined));
+    // The viewer surface still moves with clearance (control).
+    const mine = (clearance: "secret" | "internal") => {
+      const r = compile(exp, { ...opts, viewer: { clearance } });
+      return compileFingerprint({ clearance: r.clearance, locale: "en", ...r.fingerprint });
+    };
+    expect(mine("secret")).not.toBe(mine("internal"));
   });
 });

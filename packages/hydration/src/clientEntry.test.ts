@@ -172,6 +172,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "HYDRATION_PROJECTION_ID",
       "HYDRATION_PROJECTION_VERSION",
       "HYDRATION_SET_EVENT",
+      "HydrationAudienceMismatchError",
       "HydrationCache",
       "HydrationController",
       "HydrationStore",

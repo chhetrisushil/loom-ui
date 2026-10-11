@@ -14,6 +14,7 @@ import {
   isLayoutRole,
   validateBlueprint,
 } from "@loom/blueprint-runtime";
+import type { DataClass } from "@loom/classify";
 import {
   type SemanticCatalog,
   type Surface,
@@ -203,10 +204,22 @@ export interface CompileResult {
    */
   readonly restrictedHandles: readonly string[];
   /**
+   * The EFFECTIVE viewer this surface was compiled for (`effectiveViewer(opts.viewer, opts.audience)`):
+   * the requesting viewer on a viewer surface, a viewer with no clearance on a broadcast one. Pass
+   * it (not the requesting viewer) to `describeChange`, `snapshotSeen`, `explainNode` and the
+   * lineage / seen-log reads so a broadcast surface's companions never judge by the asker.
+   */
+  readonly viewer: Viewer;
+  /**
+   * `viewer.clearance`: feed THIS (not the requesting viewer's) to `compileFingerprint`, so a
+   * broadcast stamp is the same whoever asked.
+   */
+  readonly clearance: DataClass | undefined;
+  /**
    * The two lists above as OPAQUE aliases (same keyed hash as the placeholder ids), sorted. `findings`,
    * `restrictedProjectionNodes` and `restrictedHandles` are SERVER-SIDE: they name real node ids and
    * handles. `compileFingerprint` is hashed into a stamp the VIEWER carries (and its hash is not
-   * secret), so feed it these instead — `compileFingerprint({ clearance, locale, ...result.fingerprint })`
+   * secret), so feed it these instead — `compileFingerprint({ clearance: result.clearance, locale, ...result.fingerprint })`
    * — or a viewer can confirm a guessed handle against its own stamp.
    */
   readonly fingerprint: {
@@ -272,6 +285,8 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
       restrictedProjectionNodes: [],
       restrictedHandles: [],
       fingerprint: { restrictedHandles: [], restrictedProjectionNodes: [], placeholderNodes: [] },
+      viewer: viewer ?? {},
+      clearance: viewer?.clearance,
     };
   }
   const semantic = validateExperience(exp, opts.catalog, opts.surface);
@@ -412,6 +427,8 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
     ok: findings.every((f) => f.severity !== "error"),
     restrictedProjectionNodes,
     restrictedHandles: [...restrictedHandles].sort(),
+    viewer: viewer ?? {},
+    clearance: viewer?.clearance,
     fingerprint: {
       restrictedHandles: opaque([...restrictedHandles], "handle"),
       restrictedProjectionNodes: opaque(restrictedProjectionNodes, "node"),

@@ -16,6 +16,7 @@ import {
   handleKindsWithMedia,
   hasKindContract,
   hasMediaTypeNodes,
+  isBroadcast,
   isChatKind,
   isMediaKind,
   mergeReadPolicy,
@@ -40,7 +41,11 @@ import {
   paramsKey,
   relevantParams,
 } from "./params";
-import { type HydrationStore, isReservedHandle } from "./projection";
+import {
+  HydrationAudienceMismatchError,
+  type HydrationStore,
+  isReservedHandle,
+} from "./projection";
 import { type DriftRecord, type InputDriftMode, executeProvider, outcomeResult } from "./provider";
 import type { ReshaperRegistry } from "./reshape";
 import { partitionByViewer, restrictedFinding, snapshotViewer } from "./restricted";
@@ -241,16 +246,23 @@ export class HydrationController {
   private bound: ReadonlySet<string> = new Set();
 
   private readonly policy: ReadPolicy;
+  private readonly broadcast: boolean;
+  private readonly audience: Audience;
 
   constructor(private readonly opts: ControllerOptions) {
     assertContentRefConfig(opts.contentRefArgs, "HydrationController");
+    // Snapshotted ONCE: later mutation of `opts` must not lift the ceiling (see `setViewer`).
+    this.broadcast = isBroadcast(opts.audience);
+    this.audience = this.broadcast ? "broadcast" : "viewer";
+    if (this.broadcast !== isBroadcast(opts.store.scope.audience))
+      throw new HydrationAudienceMismatchError(this.broadcast);
     this.policy = mergeReadPolicy(opts.readPolicy, {
       ...(opts.declaredToolClasses !== undefined && {
         declaredToolClasses: opts.declaredToolClasses,
       }),
       ...(opts.undeclared !== undefined && { undeclared: opts.undeclared }),
     });
-    this.viewer = snapshotViewer(opts.viewer, opts.audience);
+    this.viewer = snapshotViewer(opts.viewer, this.audience);
     opts.store.guardAppend((handle) => this.appendRefusal(handle));
     this.clock = opts.clock ?? Date.now;
     this.cache = opts.cache ?? new HydrationCache(this.clock);
@@ -350,7 +362,7 @@ export class HydrationController {
    */
   setViewer(viewer: Viewer | undefined): { findings: Finding[] } {
     if (this.sched.isDisposed) return { findings: [disposedFinding("setViewer")] };
-    this.viewer = snapshotViewer(viewer, this.opts.audience);
+    this.viewer = snapshotViewer(viewer, this.audience);
     return this.current === undefined ? { findings: [] } : this.recompose(this.current);
   }
 
