@@ -1,4 +1,4 @@
-import type { MCPToolNode } from "@loom-ui/core";
+import { type MCPToolNode, providerGraphFindings } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
 import {
   resolveArguments,
@@ -33,6 +33,12 @@ describe("topoWaves", () => {
     ]);
     expect(waves.map((w) => w.map((s) => s.stepId))).toEqual([["a", "d"], ["b"], ["c"]]);
     expect(cycle).toEqual([]);
+  });
+  it("an out-of-graph dependsOn is only a WARN in the core validator and the step still runs", () => {
+    const g = [step("a", ["pruned"])];
+    const f = providerGraphFindings({ H: { handle: "H", executionGraph: g } });
+    expect(f.map((x) => [x.code, x.severity])).toEqual([["provider-dependency-unknown", "warn"]]);
+    expect(topoWaves(g).waves.map((w) => w.map((s) => s.stepId))).toEqual([["a"]]);
   });
   it("reports a cycle instead of looping or guessing", () => {
     const { waves, cycle } = topoWaves([step("a", ["b"]), step("b", ["a"]), step("c")]);

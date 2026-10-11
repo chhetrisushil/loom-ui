@@ -40,8 +40,37 @@ describe("providerGraphFindings", () => {
   it("flags a dangling dependsOn", () => {
     const f = providerGraphFindings({ H: prov("H", [step("x", ["ghost"])]) });
     expect(f.map((x) => x.code)).toEqual(["provider-dependency-unknown"]);
-    expect(f[0]?.severity).toBe("error");
+    // A WARN: the runtime treats an out-of-graph dependsOn as satisfied, so the plan still works.
+    expect(f[0]?.severity).toBe("warn");
     expect(f[0]?.message).toContain("ghost");
+  });
+
+  it("caps findings per provider: 50k dangling deps -> 8 named + one exact aggregate", () => {
+    const n = 50_000;
+    const f = providerGraphFindings({
+      H: prov("H", [
+        step(
+          "x",
+          Array.from({ length: n }, (_, i) => `ghost${i}`)
+        ),
+      ]),
+    });
+    expect(f).toHaveLength(9);
+    expect(f[8]?.message).toContain(`and ${n - 8} more`);
+    expect(f.every((x) => x.code === "provider-dependency-unknown")).toBe(true);
+    expect(providerGraphFindings({ H: prov("H", [step("x", ["g"])]) })).toHaveLength(1);
+  });
+
+  it("caps duplicate-step and template findings too, deterministically", () => {
+    const dups = Array.from({ length: 30 }, (_, i) => [step(`d${i}`), step(`d${i}`)]).flat();
+    const d = providerGraphFindings({ H: prov("H", dups) });
+    expect(d).toHaveLength(9);
+    expect(d[8]?.message).toContain("and 22 more");
+    const refs = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`k${i}`, tpl(`g${i}`)]));
+    const t = providerGraphFindings({ H: prov("H", [step("a", [], refs)]) });
+    expect(t).toHaveLength(9);
+    expect(t[8]?.message).toContain("and 22 more");
+    expect(providerGraphFindings({ H: prov("H", [step("a", [], refs)]) })).toEqual(t);
   });
 
   // case carried over from a consumer's governance suite: a cyclic execution graph
@@ -190,8 +219,20 @@ describe("validateExperience wiring", () => {
     expect(r.findings.map((f) => f.code)).toContain("provider-cycle");
   });
 
+  it("an out-of-graph dependsOn is a warn: the experience still validates ok", () => {
+    const r = validateExperience(
+      withProviders({ H: spec("H", [step("x", ["ghost"])]) }),
+      testCatalog,
+      surface
+    );
+    const f = r.findings.filter((x) => x.code === "provider-dependency-unknown");
+    expect(f).toHaveLength(1);
+    expect(f[0]?.severity).toBe("warn");
+    expect(r.ok).toBe(true);
+  });
+
   it("legacy data still loads: a violating experience compiles (ok:false) and still yields a blueprint", () => {
-    const e = withProviders({ H: spec("H", [step("x", ["ghost"])]) });
+    const e = withProviders({ H: spec("H", [step("x", ["y"]), step("y", ["x"])]) });
     const r = compile(e, {
       catalog: testCatalog,
       surface,
@@ -199,7 +240,7 @@ describe("validateExperience wiring", () => {
       hydrationProjectionVersion: "1",
     } as never);
     expect(r.ok).toBe(false);
-    expect(r.findings.map((f) => f.code)).toContain("provider-dependency-unknown");
+    expect(r.findings.map((f) => f.code)).toContain("provider-cycle");
     expect(r.blueprint).toBeDefined();
   });
 });

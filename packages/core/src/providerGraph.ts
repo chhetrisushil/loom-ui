@@ -14,7 +14,11 @@ import type { Finding } from "./experience";
 //     holding it (a self-reference included) — hydration resolves a template only against
 //     earlier-wave output, so anything else is `unresolved-step-reference` at load.
 //
-// All four are errors. Cost is O(V + E + size of arguments) per provider: Kahn's algorithm for
+// All are errors except `provider-dependency-unknown`, a WARN: hydration's scheduler treats a
+// `dependsOn` naming a step outside the graph as SATISFIED ("the planner may reference a step it
+// pruned"; `hydration/src/plan.ts`), so such a plan still runs — an error here would reject plans
+// that work. Findings per code are capped per provider (`FINDING_CAP` named, then one aggregate
+// "and N more" finding with the exact count), so a hostile graph yields a bounded report. Cost is O(V + E + size of arguments) per provider: Kahn's algorithm for
 // levels (the cycle test and the wave test are one pass) and an ITERATIVE walk of each step's
 // `arguments`; nothing recurses, so a graph or an argument tree of any depth cannot overflow the
 // stack.
@@ -44,6 +48,26 @@ const listIds = (ids: readonly string[]): string =>
         .slice(0, LIST_CAP)
         .map((i) => `"${i}"`)
         .join(", ")} and ${ids.length - LIST_CAP} more`;
+
+const FINDING_CAP = 8;
+/** First FINDING_CAP findings, then one aggregate carrying the exact remainder. Deterministic. */
+function capped(
+  items: readonly Finding[],
+  code: string,
+  where: string,
+  severity: Finding["severity"]
+): Finding[] {
+  if (items.length <= FINDING_CAP) return [...items];
+  const rest = items.length - FINDING_CAP;
+  return [
+    ...items.slice(0, FINDING_CAP),
+    {
+      code,
+      severity,
+      message: `${where}: and ${rest} more ${code} finding(s) not listed (${items.length} in total)`,
+    },
+  ];
+}
 
 const err = (code: string, message: string): Finding => ({ code, severity: "error", message });
 
@@ -75,10 +99,21 @@ function graphFindings(handle: string, steps: readonly GraphStep[]): Finding[] {
     if (index.has(s.stepId)) dupes.add(s.stepId);
     else index.set(s.stepId, i);
   });
-  for (const id of dupes)
-    out.push(err("provider-step-duplicate", `${where}: step id "${id}" appears more than once`));
+  out.push(
+    ...capped(
+      [...dupes].map((id) =>
+        err("provider-step-duplicate", `${where}: step id "${id}" appears more than once`)
+      ),
+      "provider-step-duplicate",
+      where,
+      "error"
+    )
+  );
 
   // Kahn over distinct ids; a duplicate id's dependencies are unioned onto the one id.
+  // (A duplicate id's level here — dependencies unioned — differs from the runtime's earliest-level
+  // placement, but that is moot: the graph is already a `provider-step-duplicate` error.)
+  const unknownDeps: Finding[] = [];
   const deps = new Map<string, Set<string>>();
   for (const s of steps) {
     let set = deps.get(s.stepId);
@@ -89,14 +124,14 @@ function graphFindings(handle: string, steps: readonly GraphStep[]): Finding[] {
     for (const d of s.dependsOn ?? []) {
       if (index.has(d)) set.add(d);
       else
-        out.push(
-          err(
-            "provider-dependency-unknown",
-            `${where}: step "${s.stepId}" depends on "${d}", which is not a step of this graph`
-          )
-        );
+        unknownDeps.push({
+          code: "provider-dependency-unknown",
+          severity: "warn",
+          message: `${where}: step "${s.stepId}" depends on "${d}", which is not a step of this graph (hydration treats it as satisfied, so the plan still runs)`,
+        });
     }
   }
+  out.push(...capped(unknownDeps, "provider-dependency-unknown", where, "warn"));
   const pending = new Map<string, number>();
   const dependents = new Map<string, string[]>();
   const queue: string[] = [];
@@ -133,6 +168,7 @@ function graphFindings(handle: string, steps: readonly GraphStep[]): Finding[] {
     );
 
   const stuckSet = new Set(stuck);
+  const tplFindings: Finding[] = [];
   for (const s of steps) {
     if (stuckSet.has(s.stepId)) continue; // its wave is undefined; the cycle is already reported
     const own = level.get(s.stepId) as number;
@@ -140,14 +176,14 @@ function graphFindings(handle: string, steps: readonly GraphStep[]): Finding[] {
       const refLevel = level.get(ref);
       if (refLevel === undefined && stuckSet.has(ref)) continue; // behind a reported cycle
       if (refLevel === undefined)
-        out.push(
+        tplFindings.push(
           err(
             "provider-template-unknown-step",
             `${where}: step "${s.stepId}" references "${ref}" in a {{steps…}} template, but the graph has no such step`
           )
         );
       else if (refLevel >= own)
-        out.push(
+        tplFindings.push(
           err(
             "provider-template-unknown-step",
             `${where}: step "${s.stepId}" references "${ref}" in a {{steps…}} template, but "${ref}" does not run before it — add it to dependsOn (directly or through another step)`
@@ -155,6 +191,7 @@ function graphFindings(handle: string, steps: readonly GraphStep[]): Finding[] {
         );
     }
   }
+  out.push(...capped(tplFindings, "provider-template-unknown-step", where, "error"));
   return out;
 }
 
