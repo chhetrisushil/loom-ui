@@ -198,9 +198,25 @@ compile(exp, { ...opts, viewer: { clearance: "secret" }, audience: "broadcast" }
   share an entry in the compile memo (`audience` is part of the key).
 - **The data boundary must agree.** Give `HydrationController`, `handleInventory` and `serveHandles` the
   same `audience`: a handle `compile` withheld is never loaded, cached or listed, and a client that
-  names it anyway is refused as `unknown-handle` even when the `viewer` is fully cleared. Call
-  `effectiveViewer(viewer, audience)` before the other per-viewer helpers (`describeChange`,
-  `snapshotSeen`, `explainNode`) so a broadcast surface's side outputs use the same ceiling.
+  names it anyway is refused as `unknown-handle` even when the `viewer` is fully cleared. The controller
+  snapshots the audience at construction (mutating the options object later cannot lift the ceiling).
+- **Hydration isolation is by (experience, principal, audience).** `HydrationScope` carries `audience`,
+  and a broadcast scope is a different projection state from the same principal's personal one, so a
+  wallboard bind (which removes the handles it withholds) can never erase, or read, the personal
+  surface's values. A `HydrationController` whose `audience` disagrees with its store's scope throws
+  `HydrationAudienceMismatchError`.
+- **Every per-viewer output takes the same `audience`.** `describeChange`, `snapshotSeen`, `redactSeen`,
+  `explainNode`, `Lineage.explain`, `SeenLog.record` / `read` and the learning `SignalIngestor.ingest` /
+  `seenLogExposure` accept `audience`; `"broadcast"` judges as a viewer with no clearance, whoever
+  `viewer` is, so a broadcast surface never describes, explains or records a classified node as seen
+  by the principal. `CompileResult.viewer` / `.clearance` carry the effective viewer for callers that
+  would rather pass it on directly. Stamp actions with the RESULT's clearance
+  (`compileFingerprint({ clearance: result.clearance, locale, ...result.fingerprint })`) so a broadcast
+  stamp is the same whoever asked.
+- **Unclassified stays visible on a broadcast surface**, which is exactly what a viewer with no clearance
+  sees. That includes an unclassified principal-scoped tool ("my queue"): it is loaded under the
+  requesting principal's authority and shown on the wall. Classify such tools, or set
+  `undeclared: "deny"` (with a `declaredToolClasses` table) on the read policy for a strict wallboard.
 - **Renderers** (`renderer-lit`, and loom's terminal traversal under `renderer-terminal`) draw only loom's
   constant `⊘ redacted` marker for a `source.redacted` widget: no renderer runs, nothing subscribes, and
   no kind, title, value or source attribute reaches the output, even for an unvalidated widget that still

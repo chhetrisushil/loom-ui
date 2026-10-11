@@ -66,7 +66,9 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 - `HYDRATION_PROJECTION_ID`, `HYDRATION_PROJECTION_VERSION`, `HYDRATION_SET_EVENT` — the fixed
   projection id/version and the internal set event it folds.
 - `hydrationProjection()`, `HydrationState`, `HandleSlice`, `HandleState`, `HandleStatus`,
-  `HydrationScope` — the loom `Projection` itself and its state shape.
+  `HydrationScope` — the loom `Projection` itself and its state shape. Isolation is by
+  (experience, principal, audience): `HydrationScope.audience` (`"broadcast"`) is its own state, and
+  `HydrationAudienceMismatchError` is thrown when a controller's `audience` differs from its store's.
 - `HydrationStore` — wraps a `projectionRuntime` and exposes `.state()` and
   `.runtimeSubscribe(fn)` for a renderer or `watch` to read/observe.
 - `isReservedHandle(handle)` — true for a handle name the projection itself reserves.

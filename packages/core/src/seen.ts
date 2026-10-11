@@ -4,7 +4,7 @@ import type { DeclaredToolClasses, UndeclaredToolPolicy } from "./classes";
 import type { Experience } from "./experience";
 import { walk } from "./node";
 import type { ProjectionCatalog } from "./projections";
-import { type Viewer, mayView, strictestClass } from "./viewer";
+import { type Audience, type Viewer, effectiveViewer, mayView, strictestClass } from "./viewer";
 
 // ── What a viewer SAW (U12) ───────────────────────────────────────────────────
 // A version is replayable by its ops, but a surface is the version PLUS the data hydrated into it,
@@ -96,6 +96,8 @@ export type SeenReader = (source: SeenSource) => SeenReading | undefined;
 export interface SnapshotOptions {
   /** Who was shown the surface. Absent = no clearance (fail-closed). */
   readonly viewer?: Viewer;
+  /** The surface's audience: `"broadcast"` records as a viewer with no clearance, whoever `viewer` is. */
+  readonly audience?: Audience;
   /** Reads what was delivered for a source. Called ONLY for sources the viewer may see. */
   readonly read: SeenReader;
   readonly projections?: ProjectionCatalog;
@@ -187,7 +189,11 @@ export function snapshotSeen(exp: Experience, opts: SnapshotOptions): SeenSnapsh
     const source = sourceOfNode(n);
     if (source === undefined) return;
     const view = inspected.nodes.get(n.id);
-    if (view === undefined || view.blocked || !mayView(opts.viewer, view.cls)) {
+    if (
+      view === undefined ||
+      view.blocked ||
+      !mayView(effectiveViewer(opts.viewer, opts.audience), view.cls)
+    ) {
       restricted = true;
       return;
     }
@@ -277,7 +283,12 @@ export function redactSeen(
   experience: Experience | undefined,
   opts: Pick<
     SnapshotOptions,
-    "viewer" | "projections" | "hydrationProjectionId" | "declaredToolClasses" | "undeclared"
+    | "viewer"
+    | "audience"
+    | "projections"
+    | "hydrationProjectionId"
+    | "declaredToolClasses"
+    | "undeclared"
   > = {}
 ): RedactedSeen {
   if (experience === undefined || !Array.isArray(entries))
@@ -317,7 +328,7 @@ export function redactSeen(
         }
         cls = strictestClass(cls, v.cls);
       }
-      if (!known || !mayView(opts.viewer, cls)) {
+      if (!known || !mayView(effectiveViewer(opts.viewer, opts.audience), cls)) {
         restricted = true;
         continue;
       }

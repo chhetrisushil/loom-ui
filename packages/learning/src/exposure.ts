@@ -1,3 +1,5 @@
+import type { Audience } from "@loom-ui/core";
+
 // ── Exposure (U11) ────────────────────────────────────────────────────────────
 // A signal is client input; "the viewer saw it" is the fact a reward leans on, so it is checked, not
 // believed. `SignalIngestor` REQUIRES a policy:
@@ -18,6 +20,8 @@ export interface ExposureQuery {
   readonly node?: string;
   /** The node is a restricted placeholder: only the version-level fact is checkable. */
   readonly restricted?: boolean;
+  /** The audience of the surface the signal came from: `"broadcast"` = judged on what a no-clearance viewer was shown. */
+  readonly audience?: Audience;
 }
 
 export interface ExposureCheck {
@@ -31,6 +35,8 @@ export interface SeenLogReader {
     readonly viewerId: string;
     /** Passed through; the real `SeenLog` is keyed by `viewerId` alone (see `seenLogExposure`). */
     readonly tenant?: string;
+    /** Forwarded from the query: a broadcast read sees only what a no-clearance viewer was shown. */
+    readonly audience?: Audience;
     readonly limit?: number;
   }): Promise<
     | {
@@ -76,6 +82,7 @@ export function seenLogExposure(
           experienceId: q.experienceId,
           viewerId: opts.viewerIdOf?.(q) ?? q.viewerId,
           tenant: q.tenant,
+          ...(q.audience !== undefined && { audience: q.audience }),
           limit: opts.limit ?? 50,
         });
       } catch {

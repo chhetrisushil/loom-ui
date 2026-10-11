@@ -1,4 +1,5 @@
 import {
+  type Audience,
   type DeclaredToolClasses,
   type Experience,
   MAX_SEEN_NODE_IDS,
@@ -11,6 +12,7 @@ import {
   type SeenSnapshot,
   type UndeclaredToolPolicy,
   type Viewer,
+  effectiveViewer,
   mergeReadPolicy,
   redactSeen,
 } from "@loom-ui/core";
@@ -401,6 +403,8 @@ export class SeenLog {
     readonly viewerId: string;
     readonly snapshot: SeenSnapshot;
     readonly viewer?: Viewer;
+    /** The audience the surface was drawn for: `"broadcast"` records only what a viewer with no clearance saw. */
+    readonly audience?: Audience;
     readonly projections?: ProjectionCatalog;
     readonly hydrationProjectionId?: string;
     readonly declaredToolClasses?: DeclaredToolClasses;
@@ -454,6 +458,7 @@ export class SeenLog {
     // Restamp + drop what the recording viewer may not see, with core's one redactor.
     const checked = redactSeen(snapshot.entries, art.value, {
       ...(input.viewer !== undefined && { viewer: input.viewer }),
+      ...(input.audience !== undefined && { audience: input.audience }),
       ...mergeReadPolicy(this.policy, input),
     });
     let total = 0;
@@ -502,7 +507,9 @@ export class SeenLog {
       experienceId,
       versionHash: snapshot.versionHash,
       viewerId,
-      ...(input.viewer?.clearance !== undefined && { clearance: String(input.viewer.clearance) }),
+      ...(effectiveViewer(input.viewer, input.audience)?.clearance !== undefined && {
+        clearance: String(effectiveViewer(input.viewer, input.audience)?.clearance),
+      }),
       entries: shapes.map((s, i) => ({ ...s, ...(refs[i] !== undefined && { ref: refs[i] }) })),
       omitted: snapshot.omitted,
       restricted: snapshot.restricted === true || checked.restricted,
@@ -740,6 +747,8 @@ export class SeenLog {
     readonly experienceId: string;
     readonly viewerId: string;
     readonly reader?: Viewer;
+    /** The audience the READ serves: `"broadcast"` reads as a viewer with no clearance. */
+    readonly audience?: Audience;
     readonly limit?: number;
     readonly until?: string;
     readonly projections?: ProjectionCatalog;
@@ -812,6 +821,7 @@ export class SeenLog {
         artifacts.get(p.versionHash),
         {
           ...(input.reader !== undefined && { viewer: input.reader }),
+          ...(input.audience !== undefined && { audience: input.audience }),
           ...mergeReadPolicy(this.policy, input),
         }
       );

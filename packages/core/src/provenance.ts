@@ -5,7 +5,7 @@ import type { Experience } from "./experience";
 import { type ExperienceNode, findNode } from "./node";
 import type { Operation, Provenance, RecordedOperation } from "./operations";
 import type { ProjectionCatalog } from "./projections";
-import { type Viewer, mayView, strictestClass } from "./viewer";
+import { type Audience, type Viewer, effectiveViewer, mayView, strictestClass } from "./viewer";
 
 // ── Per-node provenance and the "why is this here" explanation (U12) ──────────
 // Every recorded op already says WHO (`RecordedOperation.by`); what was missing is the other
@@ -342,6 +342,8 @@ export interface VersionNote {
 export interface ExplainOptions {
   /** Who the answer is for. Absent = no clearance (fail-closed). */
   readonly viewer?: Viewer;
+  /** The surface's audience: `"broadcast"` explains as a viewer with no clearance, whoever `viewer` is. */
+  readonly audience?: Audience;
   /** The ledger of `experience`'s version. */
   readonly ledger: ProvenanceLedger;
   /** The same projection catalogue `compile` takes (absent = every projection node is hidden). */
@@ -394,7 +396,12 @@ export function explainNode(
     const inspected = inspectExperience(experience, opts);
     if (!inspected.readable) return UNAVAILABLE;
     const view = inspected.nodes.get(nodeId);
-    if (view === undefined || view.blocked || !mayView(opts.viewer, view.cls)) return UNAVAILABLE;
+    if (
+      view === undefined ||
+      view.blocked ||
+      !mayView(effectiveViewer(opts.viewer, opts.audience), view.cls)
+    )
+      return UNAVAILABLE;
     const node = findNode(experience.root, nodeId);
     if (node === undefined) return UNAVAILABLE;
 
@@ -419,7 +426,11 @@ export function explainNode(
       v === undefined ? undefined : opts.notes?.get(v);
     const note = noteOf(ledgerNode?.created?.versionHash ?? origin?.versionHash);
     const textOk =
-      !inspected.anyBlocked && mayView(opts.viewer, strictestClass(floor, note?.summaryClass));
+      !inspected.anyBlocked &&
+      mayView(
+        effectiveViewer(opts.viewer, opts.audience),
+        strictestClass(floor, note?.summaryClass)
+      );
     const why = textOk ? untrustedSummary(note?.summary) : undefined;
     const prompt = textOk ? untrustedSummary(ledgerNode?.created?.prompt) : undefined;
 

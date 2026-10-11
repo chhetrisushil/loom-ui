@@ -1,3 +1,4 @@
+import type { Audience } from "@loom-ui/core";
 import { type InteractionSignal, validateSignalBatch } from "@loom-ui/core/signals";
 import type { ExposureCheck } from "./exposure";
 import {
@@ -112,7 +113,15 @@ export class SignalIngestor {
     this.maxViewers = Math.max(1, opts.maxViewers ?? 50_000);
   }
 
-  async ingest(input: { readonly viewer: Viewer; readonly raw: unknown }): Promise<IngestResult> {
+  /**
+   * `audience`: the audience of the surface the signals came from. `"broadcast"` judges exposure
+   * (and `visibleTo`) on what a viewer with no clearance was shown, not on the principal's own view.
+   */
+  async ingest(input: {
+    readonly viewer: Viewer;
+    readonly raw: unknown;
+    readonly audience?: Audience;
+  }): Promise<IngestResult> {
     const { viewer } = input;
     if (
       typeof viewer?.id !== "string" ||
@@ -161,13 +170,14 @@ export class SignalIngestor {
     };
     if (v.rejected > 0) reject("invalid", v.rejected);
 
-    const visible = link.visibleTo?.(viewer);
+    const visible = link.visibleTo?.(viewer, input.audience);
     const check = this.opts.exposure === "client-claimed" ? undefined : this.opts.exposure;
     const base = {
       viewerId: viewer.id,
       tenant: viewer.tenant,
       experienceId: batch.view.experienceId,
       versionHash: batch.view.versionHash,
+      ...(input.audience !== undefined && { audience: input.audience }),
     };
     const memo = new Map<string, Promise<boolean>>();
     const saw = (node: string | undefined, restricted: boolean): Promise<boolean> => {

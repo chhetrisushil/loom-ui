@@ -1,5 +1,6 @@
 import {
   type ApplyOptions,
+  type Audience,
   type DeclaredToolClasses,
   type Experience,
   type ExplainOptions,
@@ -555,6 +556,8 @@ export class Lineage {
     nodeId: string,
     opts: {
       readonly viewer?: Viewer;
+      /** The surface's audience: `"broadcast"` explains as a viewer with no clearance. */
+      readonly audience?: Audience;
       readonly versionHash?: string;
       readonly projections?: ProjectionCatalog;
       readonly hydrationProjectionId?: string;
@@ -574,6 +577,7 @@ export class Lineage {
     const viewOpts = {
       ledger,
       ...(opts.viewer !== undefined && { viewer: opts.viewer }),
+      ...(opts.audience !== undefined && { audience: opts.audience }),
       ...(policy.projections !== undefined && { projections: policy.projections }),
       ...(policy.hydrationProjectionId !== undefined && {
         hydrationProjectionId: policy.hydrationProjectionId,

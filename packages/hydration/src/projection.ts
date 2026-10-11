@@ -1,4 +1,4 @@
-import type { Finding } from "@loom-ui/core";
+import type { Audience, Finding } from "@loom-ui/core";
 import { type StreamedText, appendChunk } from "@loom-ui/core/browser";
 import type { EventEnvelope } from "@loom/core";
 import type { Projection, ProjectionRuntime } from "@loom/projection-runtime";
@@ -94,14 +94,38 @@ export interface HandleSlice {
 }
 
 /**
- * What a store's state belongs to. Isolation is by (experience, principal); two viewers of one
- * experience must not share a store — `values` holds whatever the viewer's own principal chain
+ * What a store's state belongs to. Isolation is by (experience, principal, audience); two viewers
+ * of one experience must not share a store — `values` holds whatever the viewer's own principal chain
  * was allowed to read, so a shared store is a cross-viewer data leak, not a cache win.
  * Omit `principalId` only where there is genuinely one viewer (a single-user CLI, a test).
  */
 export interface HydrationScope {
   readonly experienceId: string;
   readonly principalId?: string;
+  /**
+   * The audience the store's surface is drawn for (`@loom-ui/core` `Audience`). A broadcast
+   * surface and a viewer surface of the same principal are DIFFERENT scopes: a broadcast bind
+   * removes the handles it withholds, and that must never erase the personal surface's values.
+   * The controller refuses a store whose audience differs from its own ({@link HydrationAudienceMismatchError}).
+   */
+  readonly audience?: Audience;
+}
+
+// Same rule as `@loom-ui/core`'s `isBroadcast` (anything but absent / "viewer" is broadcast), restated
+// here because this module ships in the browser bundle and core's root entry is not browser-safe.
+const broadcastAudience = (a: unknown): boolean => a !== undefined && a !== "viewer";
+
+/** A controller and its store disagree about the audience (one broadcast, the other not). */
+export class HydrationAudienceMismatchError extends Error {
+  readonly code = "hydration-audience-mismatch" as const;
+  constructor(readonly controllerBroadcast: boolean) {
+    super(
+      controllerBroadcast
+        ? 'HydrationController: a broadcast controller needs a store scoped { audience: "broadcast" }'
+        : "HydrationController: a store scoped to a broadcast audience needs a broadcast controller"
+    );
+    this.name = "HydrationAudienceMismatchError";
+  }
 }
 
 export class HydrationStore {
@@ -127,10 +151,13 @@ export class HydrationStore {
     readonly scope: HydrationScope,
     opts: { register?: boolean } = {}
   ) {
-    this.executionId =
+    const base =
       scope.principalId === undefined
         ? scope.experienceId
         : `${scope.experienceId}:${scope.principalId}`;
+    // NUL cannot appear in a typed id suffix a principal could forge, so a principal named
+    // "p:broadcast" never lands on the broadcast scope of "p".
+    this.executionId = broadcastAudience(scope.audience) ? `${base}\u0000broadcast` : base;
     if (opts.register !== false) runtime.register(hydrationProjection());
   }
 

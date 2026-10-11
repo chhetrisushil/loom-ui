@@ -1,4 +1,4 @@
-import type { ProvenanceLedger } from "@loom-ui/core";
+import type { Audience, ProvenanceLedger } from "@loom-ui/core";
 
 // ── Decision linkage (U11) ────────────────────────────────────────────────────
 // A reward is attributed to a loom DECISION of a loom EXECUTION. The surface a viewer saw is a
@@ -33,9 +33,10 @@ export interface DecisionLink {
    * answer to "does this node exist?" never depends on what the viewer may not see. Absent = every
    * listed node counts for everyone (fine only when nothing in the version is classified).
    */
-  readonly visibleTo?: (viewer: { readonly id: string; readonly tenant: string }) =>
-    | ReadonlySet<string>
-    | undefined;
+  readonly visibleTo?: (
+    viewer: { readonly id: string; readonly tenant: string },
+    audience?: Audience
+  ) => ReadonlySet<string> | undefined;
 }
 
 export interface LinkQuery {

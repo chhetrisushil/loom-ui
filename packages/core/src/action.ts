@@ -101,7 +101,7 @@ export function viewedVersionOf(
 /** The viewer-dependent inputs a Blueprint's compile depends on besides the Experience itself. */
 export interface CompileFingerprintInput {
   /** The viewer's clearance (`Viewer.clearance`). */
-  readonly clearance?: string;
+  readonly clearance?: string | undefined;
   /**
    * The handles redacted for this viewer (order-insensitive). The fingerprint is NOT secret and the
    * viewer carries it on every action, so pass `CompileResult.fingerprint.restrictedHandles` (opaque

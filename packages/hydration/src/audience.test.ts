@@ -4,7 +4,7 @@ import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { HydrationCache } from "./cache";
 import { HydrationController } from "./controller";
-import { HydrationStore } from "./projection";
+import { HydrationAudienceMismatchError, HydrationStore } from "./projection";
 import { handleInventory, serveHandle, serveHandles } from "./split/index";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
@@ -49,7 +49,10 @@ const cleared = { clearance: "secret" as const };
 describe("audience at the data boundary", () => {
   it("the controller loads only unclassified handles for a broadcast audience, even for a cleared viewer", async () => {
     const clock = new ManualClock();
-    const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "exp-1" });
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), {
+      experienceId: "exp-1",
+      audience: "broadcast",
+    });
     const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (i) => ({
       v: (i as { toolName: string }).toolName,
     }));
@@ -156,5 +159,117 @@ describe("audience at the data boundary", () => {
       viewer: cleared,
     });
     expect(ok.state).toBe("ready");
+  });
+});
+
+describe("audience scope isolation (the same principal on two surfaces)", () => {
+  const mk = (
+    runtime: InMemoryProjectionRuntime,
+    audience: "viewer" | "broadcast",
+    clock: ManualClock,
+    inv: FakeInvoker
+  ) => {
+    const store = new HydrationStore(runtime, {
+      experienceId: "exp-1",
+      principalId: "alice",
+      audience,
+    });
+    const ctl = new HydrationController({
+      contentRefArgs: "none" as const,
+      invoker: inv,
+      store,
+      clock: clock.now,
+      setTimer: clock.setTimer,
+      cache: new HydrationCache(clock.now),
+      viewer: cleared,
+      audience,
+    });
+    return { store, ctl };
+  };
+
+  it("a broadcast bind does not erase the personal surface's secret value (one runtime, one principal)", async () => {
+    const clock = new ManualClock();
+    const runtime = new InMemoryProjectionRuntime();
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, (i) => ({
+      v: (i as { toolName: string }).toolName,
+    }));
+    const personal = mk(runtime, "viewer", clock, inv);
+    personal.ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    expect(personal.store.value("audit")).toEqual({ v: "tool.audit" });
+    const wall = mk(runtime, "broadcast", clock, inv);
+    expect(wall.store.executionId).not.toBe(personal.store.executionId);
+    wall.ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    // The wall never held the secret, and loading it did not touch the personal surface.
+    expect(wall.store.value("audit")).toBeUndefined();
+    expect(wall.store.handles()).not.toContain("audit");
+    expect(personal.store.value("audit")).toEqual({ v: "tool.audit" });
+    expect(personal.store.value("pay")).toEqual({ v: "tool.pay" });
+  });
+
+  it("a principal id that spells the suffix does not land on the broadcast scope", () => {
+    const runtime = new InMemoryProjectionRuntime();
+    const a = new HydrationStore(runtime, { experienceId: "e", principalId: "p:broadcast" });
+    const b = new HydrationStore(runtime, {
+      experienceId: "e",
+      principalId: "p",
+      audience: "broadcast",
+    });
+    expect(a.executionId).not.toBe(b.executionId);
+  });
+
+  it("the controller refuses a broadcast audience on a non-broadcast scope, and vice versa", () => {
+    const clock = new ManualClock();
+    const inv = new FakeInvoker();
+    const base = (store: HydrationStore, audience?: "broadcast") => ({
+      contentRefArgs: "none" as const,
+      invoker: inv,
+      store,
+      clock: clock.now,
+      setTimer: clock.setTimer,
+      ...(audience !== undefined && { audience }),
+    });
+    const rt = () => new InMemoryProjectionRuntime();
+    const plain = new HydrationStore(rt(), { experienceId: "e" });
+    const wall = new HydrationStore(rt(), { experienceId: "e", audience: "broadcast" });
+    expect(() => new HydrationController(base(plain, "broadcast"))).toThrow(
+      HydrationAudienceMismatchError
+    );
+    expect(() => new HydrationController(base(wall))).toThrow(HydrationAudienceMismatchError);
+    expect(() => new HydrationController(base(wall, "broadcast"))).not.toThrow();
+  });
+
+  it("mutating the options object after construction cannot lift the broadcast ceiling", async () => {
+    const clock = new ManualClock();
+    const inv = new FakeInvoker().on(MCP_INVOKE_TOOL_ID, () => ({ ok: 1 }));
+    const store = new HydrationStore(new InMemoryProjectionRuntime(), {
+      experienceId: "exp-1",
+      audience: "broadcast",
+    });
+    const o = {
+      contentRefArgs: "none" as const,
+      invoker: inv,
+      store,
+      clock: clock.now,
+      setTimer: clock.setTimer,
+      cache: new HydrationCache(clock.now),
+      viewer: {} as { clearance?: "secret" },
+      audience: "broadcast" as "broadcast" | "viewer",
+    };
+    const ctl = new HydrationController(o);
+    ctl.load(exp());
+    clock.advance(100);
+    await flush();
+    expect(inv.calls).toHaveLength(1);
+    o.audience = "viewer";
+    ctl.setViewer({ clearance: "secret" });
+    clock.advance(100);
+    await flush();
+    expect(inv.calls).toHaveLength(1);
+    expect(store.value("audit")).toBeUndefined();
+    expect(store.value("pay")).toBeUndefined();
   });
 });

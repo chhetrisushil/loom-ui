@@ -4,7 +4,14 @@ import type { Experience } from "./experience";
 import { type ExperienceNode, walk } from "./node";
 import type { Operation, RecordedOperation } from "./operations";
 import { type ProjectionCatalog, planProjectionBindings } from "./projections";
-import { type Viewer, mayView, strictestClass, weakestClass } from "./viewer";
+import {
+  type Audience,
+  type Viewer,
+  effectiveViewer,
+  mayView,
+  strictestClass,
+  weakestClass,
+} from "./viewer";
 
 // ── What changed between two versions, for a viewer ───────────────────────────
 // `describeChange(prev, next)` answers "what is different, in words an app can show" from the two
@@ -128,6 +135,8 @@ export interface ChangeDescription {
 export interface DescribeOptions {
   /** Who the description is for. Absent = no clearance (fail-closed). */
   readonly viewer?: Viewer;
+  /** The surface's audience: `"broadcast"` judges as a viewer with no clearance, whoever `viewer` is. */
+  readonly audience?: Audience;
   /** The ops that produced `next` from `prev`, when the caller has them. */
   readonly ops?: readonly RecordedOperation[];
   /** The planner's summary (untrusted; bounded here). */
@@ -401,7 +410,8 @@ export function describeChange(
   let compared = 0;
   const dropped: string[] = [];
   const added: string[] = [];
-  const seeable = (c: DataClass | undefined): boolean => mayView(opts.viewer, c);
+  const seeable = (c: DataClass | undefined): boolean =>
+    mayView(effectiveViewer(opts.viewer, opts.audience), c);
   try {
     const a = prev === null ? null : nodesOf(prev, opts);
     const b = nodesOf(next, opts);
@@ -514,7 +524,9 @@ export function describeChange(
   // The summary was written from the WHOLE experience, so it is judged against everything either
   // version holds (the floor) and whatever the planner read, not against this diff.
   const summaryOk =
-    !restricted && !blockedAny && mayView(opts.viewer, strictestClass(floor, opts.summaryClass));
+    !restricted &&
+    !blockedAny &&
+    mayView(effectiveViewer(opts.viewer, opts.audience), strictestClass(floor, opts.summaryClass));
   const said = summaryOk ? untrustedSummary(opts.summary) : undefined;
   const origin = originOf(opts.ops, visible.length > 0 && !(visible.length === 1 && restricted));
   const base: Omit<ChangeDescription, "attention"> = {

@@ -151,6 +151,115 @@ describe("U11 seenLogExposure over the real SeenLog (U12)", () => {
     expect((await ledger.fold(ref)).summary).toMatchObject({ viewers: 1, feedbackViewers: 1 });
   });
 
+  it("a broadcast audience judges exposure on what a no-clearance viewer was shown, not the principal's own view", async () => {
+    const content = new InMemoryContentStore();
+    const lineage = new Lineage({ events: new InMemoryLineageStore(), content });
+    const v1 = ok(
+      await lineage.start(
+        genesis({ experienceId: "e", intent: { objective: "o", source: "user" }, meta }),
+        user
+      )
+    );
+    const classified = {
+      ...node("s", "hs"),
+      binding: { handle: "hs", priority: "P1" as const, sensitivity: "secret" as const },
+    };
+    const v2 = ok(
+      await lineage.compose({
+        experienceId: "e",
+        expectedHead: v1.experience.versionHash,
+        ops: [ins(node("a", "ha")), ins(classified)],
+        by: user,
+      })
+    );
+    const log = new SeenLog({
+      keys: new InMemorySeenKeyStore(),
+      events: new InMemoryLineageStore(),
+      content,
+      lineage,
+      now: () => "2026-10-06T00:00:00Z",
+    });
+    const cleared = { clearance: "secret" as const };
+    const snap = snapshotSeen(v2.experience, {
+      viewer: cleared,
+      read: () => ({ found: true, value: 1, status: "ready" }),
+    });
+    // The principal's PERSONAL view recorded the secret node ...
+    ok(await log.record({ experienceId: "e", viewerId: "alice", snapshot: snap, viewer: cleared }));
+    // ... and a BROADCAST record for the same viewer id (the wall) must not have recorded it.
+    ok(
+      await log.record({
+        experienceId: "e",
+        viewerId: "alice-wall",
+        snapshot: snap,
+        viewer: cleared,
+        audience: "broadcast",
+      })
+    );
+    // The host's reader is secret-cleared (it reads on the principal's behalf).
+    const asPrincipal = {
+      read: (i: Parameters<SeenLog["read"]>[0]) => log.read({ ...i, reader: cleared }),
+    };
+    const strict = seenLogExposure(asPrincipal, { versionIsEnough: false });
+    const q = (viewerId: string, node: string, audience?: "broadcast") => ({
+      viewerId,
+      tenant: "t",
+      experienceId: "e",
+      versionHash: v2.experience.versionHash,
+      node,
+      ...(audience && { audience }),
+    });
+    expect(await strict.saw(q("alice", "s"))).toBe(true);
+    expect(await strict.saw(q("alice", "s", "broadcast"))).toBe(false);
+    expect(await strict.saw(q("alice", "a", "broadcast"))).toBe(true);
+    expect(await strict.saw(q("alice-wall", "s"))).toBe(false);
+    expect(await strict.saw(q("alice-wall", "a"))).toBe(true);
+  });
+
+  it("the ingestor forwards the audience to the exposure check and to visibleTo", async () => {
+    const seen: unknown[] = [];
+    const ref = { executionId: "x1", decisionId: "plan-variant:1" };
+    const links = new DecisionLinks();
+    const aud: unknown[] = [];
+    links.register("e", "v", {
+      tenant: "acme",
+      decisions: [ref],
+      nodes: { a: ref },
+      visibleTo: (_v, audience) => {
+        aud.push(audience);
+        return new Set(["a"]);
+      },
+    });
+    const ing = new SignalIngestor({
+      links,
+      ledger: new VoteLedger({
+        log: new InMemoryVoteLog(),
+        pseudonymKey: "0123456789abcdef0123456789abcdef",
+        clock: () => 0,
+      }),
+      clock: () => 0,
+      exposure: {
+        saw: (q) => {
+          seen.push(q.audience);
+          return true;
+        },
+      },
+    });
+    await ing.ingest({
+      viewer: { id: "alice", tenant: "acme" },
+      audience: "broadcast",
+      raw: {
+        v: SIGNAL_VERSION,
+        batchId: "b",
+        view: { experienceId: "e", versionHash: "v" },
+        signals: [{ kind: "exposure", node: "a" }],
+      },
+    });
+    expect(aud).toEqual(["broadcast"]);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((a) => a === "broadcast")).toBe(true);
+  });
+
   it("the tenant reaches the SeenLog read, and viewerIdOf maps (tenant, viewer) to a tenant-keyed id", async () => {
     const reads: Array<{ viewerId: string; tenant?: string }> = [];
     const spy = {
