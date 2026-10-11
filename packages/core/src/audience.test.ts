@@ -426,4 +426,19 @@ describe("audience: every per-viewer output agrees with compile", () => {
     };
     expect(mine("secret")).not.toBe(mine("internal"));
   });
+
+  it("a broadcast stamp differs from a no-clearance viewer's (their IR differs), and two broadcast viewers still match", () => {
+    const stampOf = (o: Partial<Parameters<typeof compile>[1]>) => {
+      const r = compile(exp, { ...opts, ...o });
+      return compileFingerprint({ clearance: r.clearance, locale: "en", ...r.fingerprint });
+    };
+    const wall = stampOf({ audience: "broadcast", viewer: { clearance: "secret" } });
+    const plainViewer = stampOf({ viewer: {} });
+    const noViewer = stampOf({});
+    expect(wall).not.toBe(plainViewer);
+    expect(wall).not.toBe(noViewer);
+    expect(stampOf({ audience: "broadcast", viewer: { clearance: "internal" } })).toBe(wall);
+    // An explicit "viewer" audience is the default: it does not move the stamp.
+    expect(stampOf({ audience: "viewer", viewer: {} })).toBe(plainViewer);
+  });
 });

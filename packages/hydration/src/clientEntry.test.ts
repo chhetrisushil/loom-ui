@@ -175,6 +175,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       "HydrationAudienceMismatchError",
       "HydrationCache",
       "HydrationController",
+      "HydrationScopeError",
       "HydrationStore",
       "LOOM_EFFECT_KIND",
       "SCHEMA_REPAIRED",

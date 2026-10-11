@@ -22,6 +22,8 @@ export type {
   ViewedBinding,
   ViewedVersion,
 } from "./action";
+// The audience rule, restated nowhere: hydration's scope key imports THIS (viewer.ts imports only types).
+export { isBroadcast } from "./viewer";
 export {
   DELTA_FORMAT,
   deltaDirection,

@@ -3,6 +3,7 @@ export {
   HYDRATION_PROJECTION_VERSION,
   HYDRATION_SET_EVENT,
   HydrationAudienceMismatchError,
+  HydrationScopeError,
   HydrationStore,
   hydrationProjection,
   isReservedHandle,

@@ -211,6 +211,8 @@ ref) to a per-(experience, viewer) stream. `read({ ..., reader })` returns the v
 of a time), redacted for the READER before any blob is fetched. An identical consecutive view is not
 re-recorded.
 
+**A broadcast surface needs its own `viewerId`.** Seen records are keyed by `(experienceId, viewerId)` and carry no audience marker, so a wallboard recorded under a person's id would interleave with that person's personal views (and `read` would show them as one history). Give a `"broadcast"` surface a `viewerId` of its own (for example `wallboard:<surface>`), and pass the compile result's `viewer` (the no-clearance effective viewer) as `viewer`.
+
 *Why a separate log, and not the lineage stream or the hydration store.* A lineage line is the shared
 history of an experience with one compare-and-set tip that every writer contends for and every reader
 (the change feed, fanned out to every viewer) folds; a view is per-viewer, frequent and carries data,
