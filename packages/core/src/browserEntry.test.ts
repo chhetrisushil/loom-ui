@@ -37,6 +37,7 @@ describe("@loom-ui/core/browser", () => {
       "kindValues.js",
       "mediaRef.js",
       "paths.js",
+      "providerGraph.js",
       "streamText.js",
     ]);
   });

@@ -23,6 +23,7 @@ import {
   treeDepth,
   walk,
 } from "./node";
+import { providerGraphFindings } from "./providerGraph";
 import { toolKey } from "./steps";
 
 // ── The semantic catalogue ────────────────────────────────────────────────────
@@ -276,6 +277,9 @@ export function validateExperience(
     checkSemantic(n, exp, catalog, surface, findings);
   });
   findings.push(...checkFloor(exp, exp.vocabularyFloor));
+  // Provider-graph integrity (cycles, dangling dependsOn / {{steps…}}). Not on any replay path:
+  // `apply` / `replay` / `seal` never call this, so a stored experience that violates it still loads.
+  findings.push(...providerGraphFindings(exp.providers));
   findings.push(...catalogContractFindings(catalog));
   findings.push(...contentRefArgumentFindings(exp, options.contentRefArgs));
   return { ok: findings.every((f) => f.severity !== "error"), findings, nodes };
