@@ -96,11 +96,28 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
     key, the node's own content), so a move on one side and an edit on the other is clean.
     Conflicts: `move/move` (reparented or reordered differently), `remove/edit`, `edit/edit`,
     `add/add`, `orphan` (a survivor's parent is gone, or two moves made a cycle: nothing is dropped
-    silently), `depth` (a tree, or the combined tree, past `MAX_TREE_DEPTH`).
+    silently), `depth` (a tree, or the combined tree, past `MAX_TREE_DEPTH`; or a value too deep to compare).
   - **Providers** merge by handle, each provider atomic: `provider/provider`.
   - **Classes** (`handleClasses`/`toolClasses`/`projectionClasses`) are the strictest anything either
     side or the base ever carried; a class is never lowered by a merge. `vocabularyFloor` is the
-    union of both sides' types. `intent` is merged three-way: `intent/intent`.
+    union of both sides' types.
+  - **Intent** is merged field by field (`intent/intent`, `ref` = the field), so a change on one side
+    to `sensitivity` never conflicts with an edit of `objective` on the other. The merged
+    `intent.sensitivity` is ALWAYS the strictest of base, ours and theirs, whatever else conflicted.
+  - **Declassification does not survive a merge** (intended, fail closed): classes are re-folded from
+    base and both sides, strictest wins, so a one-sided `declassifyHandle` / `declassifyProjection`
+    (or a lowered intent class) comes back. Each is reported as a `declassify/merge` conflict on the
+    `classes` plane (`ref` = the handle, `tool:<key>`, `projection:<id>` or `intent`); the node-level
+    `binding.sensitivity` of the nodes bound to it is raised to the effective class so it never
+    disagrees with the sticky `handleClasses`. **A declassification must be re-applied after a merge
+    with `declassifyHandle`.**
+  - **Order keys:** two sides inserting different nodes at the same gap mint the same key; the merge
+    re-keys such a tie (in node-id order, the render tie-break) so sibling keys are strictly
+    increasing and a later `orderKeyBetween` between them cannot throw. A tie one side already had
+    is kept as is.
+  - **Deep values:** a value too deep to compare (node props, a provider spec, an intent field, a
+    tree past `MAX_TREE_DEPTH`) is a `depth` conflict for that ref and ours is kept; the merge
+    never throws.
   - **Localization keys:** `message/message` when two branches give the SAME `LocalizedText.key`
     different `fallback` text from DIFFERENT nodes (read from `label`, `title` and any
     `LocalizedText` inside `props`). Every other plane merges such a pair cleanly, yet the result

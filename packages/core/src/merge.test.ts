@@ -15,6 +15,7 @@ import {
   normalize,
 } from "./node";
 import { type Operation, apply } from "./operations";
+import { orderKeyBetween } from "./order";
 import { testCatalog } from "./testCatalog.test-support";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────────────────────────
@@ -469,6 +470,214 @@ function treeDepthOk(n: ExperienceNode): boolean {
   return max <= MAX_TREE_DEPTH;
 }
 
+// ── review round: intent class, depth, order-key ties, declassification ─────────────────────────
+
+const withIntent = (e: Experience, intent: Experience["intent"]): Experience => ({ ...e, intent });
+const deepValue = (n: number): unknown => {
+  let v: unknown = "leaf";
+  for (let i = 0; i < n; i++) v = { v };
+  return v;
+};
+const spine = (n: number): ContainerNode => {
+  let cur: ContainerNode = row("d0", "V");
+  for (let i = 1; i < n; i++) cur = row(`d${i}`, "V", [cur]);
+  return cur;
+};
+
+describe("mergeExperiences: intent is merged per field and its class fails closed", () => {
+  it("a sensitivity raise on one side survives the other side's objective edit", () => {
+    const base = baseExperience();
+    const ours = withIntent(base, { ...base.intent, objective: "x" });
+    const theirs = withIntent(base, { ...base.intent, objective: "y", sensitivity: "secret" });
+    const m = mergeExperiences(base, ours, theirs);
+    expect(m.experience.intent.sensitivity).toBe("secret");
+    expect(m.experience.intent.objective).toBe("x");
+    expect(kinds(m)).toEqual(["intent/intent"]);
+    expect(m.conflicts[0]?.ref).toBe("objective");
+    const swapped = mergeExperiences(base, theirs, ours);
+    expect(swapped.experience.intent.sensitivity).toBe("secret");
+  });
+
+  it("two different classes resolve to the stricter, whichever side is ours", () => {
+    const base = baseExperience();
+    const a = withIntent(base, { ...base.intent, sensitivity: "internal" });
+    const b = withIntent(base, { ...base.intent, sensitivity: "secret" });
+    expect(mergeExperiences(base, a, b).experience.intent.sensitivity).toBe("secret");
+    expect(mergeExperiences(base, b, a).experience.intent.sensitivity).toBe("secret");
+  });
+
+  it("a one-sided sensitivity raise merges clean, next to an edit of another field", () => {
+    const base = baseExperience();
+    const ours = withIntent(base, { ...base.intent, objective: "Margin overview" });
+    const theirs = withIntent(base, { ...base.intent, sensitivity: "sensitive" });
+    const m = mergeExperiences(base, ours, theirs);
+    expect(m.conflicts).toEqual([]);
+    expect(m.experience.intent).toEqual({
+      objective: "Margin overview",
+      source: "user",
+      sensitivity: "sensitive",
+    });
+  });
+
+  it("a lowered intent class is not honoured, and is reported", () => {
+    const base = withIntent(baseExperience(), {
+      objective: "o",
+      source: "user",
+      sensitivity: "secret",
+    });
+    const ours = withIntent(base, { objective: "o", source: "user" });
+    const m = mergeExperiences(base, ours, base);
+    expect(m.experience.intent.sensitivity).toBe("secret");
+    expect(m.conflicts.map((c) => [c.kind, c.ref])).toEqual([["declassify/merge", "intent"]]);
+  });
+});
+
+describe("mergeExperiences: never throws on deep input", () => {
+  for (const n of [2000, 50_000]) {
+    it(`a ${n}-deep tree is a depth conflict, not a throw`, () => {
+      const base = baseExperience();
+      const tooDeep: Experience = { ...base, root: spine(n) };
+      for (const [o, t] of [
+        [tooDeep, base],
+        [base, tooDeep],
+        [tooDeep, tooDeep],
+      ] as const) {
+        const m = mergeExperiences(base, o, t);
+        expect(kinds(m)).toContain("depth");
+        expect(m.experience.root).toBe(o.root);
+      }
+    });
+  }
+
+  it("deep node props are a depth conflict for that node; the rest still merges", () => {
+    const base = baseExperience();
+    const ours = run(base, { type: "setProps", nodeId: "a", patch: { unit: "p" } });
+    const bad = deepValue(2000);
+    const theirs: Experience = {
+      ...base,
+      root: {
+        ...(base.root as ContainerNode),
+        children: (base.root as ContainerNode).children.map((c) =>
+          c.id === "a" ? ({ ...c, props: { deep: bad } } as SemanticNode) : c
+        ),
+      },
+    };
+    const m = mergeExperiences(base, ours, theirs);
+    expect(m.conflicts.map((c) => [c.kind, c.ref])).toEqual([["depth", "a"]]);
+    expect((findNode(m.experience.root, "a") as SemanticNode).props).toEqual({ unit: "p" });
+  });
+
+  it("a deep provider spec is a depth conflict for that handle, ours kept", () => {
+    const base = baseExperience();
+    const deepSpec = (ttl: number) =>
+      ({
+        ...spec("h-a", ttl),
+        extra: deepValue(2000),
+      }) as unknown as Experience["providers"][string];
+    const ours = { ...base, providers: { ...base.providers, "h-a": deepSpec(1) } };
+    const theirs = { ...base, providers: { ...base.providers, "h-a": spec("h-a", 2) } };
+    const m = mergeExperiences(base, ours, theirs);
+    expect(m.conflicts.map((c) => [c.plane, c.kind, c.ref])).toEqual([
+      ["provider", "depth", "h-a"],
+    ]);
+    expect(m.experience.providers["h-a"]).toBe(ours.providers["h-a"]);
+  });
+
+  it("a deep intent field is a depth conflict for that field, ours kept", () => {
+    const base = baseExperience();
+    const ours = withIntent(base, { ...base.intent, constraints: [deepValue(2000)] });
+    const theirs = withIntent(base, { ...base.intent, objective: "Other" });
+    const m = mergeExperiences(base, ours, theirs);
+    expect(m.conflicts.map((c) => [c.plane, c.kind, c.ref])).toEqual([
+      ["intent", "depth", "constraints"],
+    ]);
+    expect(m.experience.intent.constraints).toBe(ours.intent.constraints);
+    expect(m.experience.intent.objective).toBe("Other");
+  });
+});
+
+describe("mergeExperiences: order keys stay strictly increasing", () => {
+  const siblings = (e: Experience, parent: string): ExperienceNode[] =>
+    (findNode(e.root, parent) as ContainerNode).children;
+
+  it("two nodes inserted at the same gap get distinct keys, and a later insert between works", () => {
+    const base = baseExperience();
+    const ours = run(base, { type: "insertNode", parentId: "root", node: metric("o1", "K") });
+    const theirs = run(base, { type: "insertNode", parentId: "root", node: metric("t1", "K") });
+    const m = mergeExperiences(base, ours, theirs);
+    expect(m.conflicts).toEqual([]);
+    const kids = siblings(m.experience, "root");
+    const keys = kids.map((k) => k.order);
+    for (let i = 1; i < keys.length; i++)
+      expect((keys[i - 1] as string) < (keys[i] as string), keys.join()).toBe(true);
+    expect(new Set(kids.map((k) => k.id)).size).toBe(kids.length);
+    const swapped = mergeExperiences(base, theirs, ours);
+    const norm = (e: Experience) => siblings(e, "root").map((k) => [k.id, k.order]);
+    expect(norm(swapped.experience)).toEqual(norm(m.experience));
+    const [lo, hi] = [keys[keys.indexOf("K")], keys[keys.indexOf("K") + 1]] as [string, string];
+    expect(() => orderKeyBetween(lo, hi)).not.toThrow();
+    const again = apply(m.experience, {
+      type: "insertNode",
+      parentId: "root",
+      node: metric("mid", orderKeyBetween(lo, hi)),
+    });
+    expect(again.ok).toBe(true);
+  });
+
+  it("a tie that one side already had is left alone", () => {
+    const base = baseExperience();
+    const ours = run(
+      base,
+      { type: "insertNode", parentId: "root", node: metric("o1", "K") },
+      { type: "insertNode", parentId: "root", node: metric("o2", "K") }
+    );
+    const m = mergeExperiences(base, ours, base);
+    expect(hash(m.experience)).toBe(hash(ours));
+  });
+});
+
+describe("mergeExperiences: a declassification is not honoured, and says so", () => {
+  const classified = (): Experience =>
+    run(baseExperience(), {
+      type: "bindProvider",
+      nodeId: "a",
+      handle: "h-a",
+      sensitivity: "secret",
+    });
+
+  it("one-sided declassifyHandle: class kept, conflict names the handle, node-level class agrees", () => {
+    const base = classified();
+    const ours = must(
+      apply(base, { type: "declassifyHandle", handle: "h-a" }, { allowDeclassify: true })
+    );
+    expect((findNode(ours.root, "a") as SemanticNode).binding?.sensitivity).toBeUndefined();
+    const theirs = run(base, { type: "setProps", nodeId: "b", patch: { unit: "p" } });
+    for (const [o, t] of [
+      [ours, theirs],
+      [theirs, ours],
+    ] as const) {
+      const m = mergeExperiences(base, o, t);
+      expect(m.experience.handleClasses?.["h-a"]).toBe("secret");
+      expect((findNode(m.experience.root, "a") as SemanticNode).binding?.sensitivity).toBe(
+        "secret"
+      );
+      expect(m.conflicts.map((c) => [c.plane, c.kind, c.ref])).toEqual([
+        ["classes", "declassify/merge", "h-a"],
+      ]);
+    }
+  });
+
+  it("a merge with no declassification reports none", () => {
+    const base = classified();
+    const m = mergeExperiences(
+      base,
+      run(base, { type: "setProps", nodeId: "b", patch: { unit: "p" } }),
+      base
+    );
+    expect(m.conflicts).toEqual([]);
+  });
+});
+
 // ── properties, over a seeded generator (no clock, no Math.random: a failure replays) ────────────
 
 function rng(seed: number): () => number {
@@ -609,6 +818,48 @@ describe("mergeExperiences: properties (120 seeded cases)", () => {
         (f) => f.severity === "error"
       );
       expect(errs, `seed ${seed}`).toEqual([]);
+    }
+  });
+
+  it("varying intent class and depth: never throws, the intent class is the strictest, depth is a conflict", () => {
+    const classes = [undefined, "internal", "sensitive", "secret"] as const;
+    const rank = (c: string | undefined): number =>
+      c === undefined ? 0 : classes.indexOf(c as never);
+    for (const seed of cases) {
+      const next = rng(seed * 6700417);
+      const pick = <T>(xs: readonly T[]): T => xs[Math.floor(next() * xs.length)] as T;
+      const base = withIntent(propertyBase(), {
+        objective: "o",
+        source: "user",
+        ...(next() < 0.3 && { sensitivity: "internal" as const }),
+      });
+      const side = (name: string): Experience => {
+        const e = edit(base, name, next, 1 + Math.floor(next() * 3));
+        const sensitivity = next() < 0.6 ? pick(classes) : e.intent.sensitivity;
+        const objective = next() < 0.4 ? `o-${name}` : e.intent.objective;
+        const { sensitivity: _drop, ...rest } = e.intent;
+        return withIntent(e, {
+          ...rest,
+          objective,
+          ...(sensitivity !== undefined && { sensitivity }),
+        });
+      };
+      let x = side("x");
+      const y = side("y");
+      const deepSide = next() < 0.25;
+      if (deepSide) x = { ...x, root: spine(MAX_TREE_DEPTH + 1 + Math.floor(next() * 2000)) };
+      const m = mergeExperiences(base, x, y);
+      const strictest = [base, x, y].reduce(
+        (acc, e) => (rank(e.intent.sensitivity) > rank(acc) ? e.intent.sensitivity : acc),
+        undefined as string | undefined
+      );
+      expect(m.experience.intent.sensitivity, `seed ${seed}`).toBe(strictest);
+      if (deepSide)
+        expect(
+          m.conflicts.map((c) => c.kind),
+          `seed ${seed}`
+        ).toContain("depth");
+      expect(mergeExperiences(base, x, y), `seed ${seed}`).toEqual(m);
     }
   });
 
