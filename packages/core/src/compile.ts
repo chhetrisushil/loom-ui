@@ -60,7 +60,7 @@ import {
 } from "./alias";
 import { hydrationPath, hydrationStatusPath } from "./paths";
 import { type ProjectionCatalog, type ProjectionPlan, planProjectionBindings } from "./projections";
-import { type Viewer, mayView } from "./viewer";
+import { type Audience, type Viewer, effectiveViewer, isBroadcast, mayView } from "./viewer";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,
@@ -128,6 +128,25 @@ export interface CompileOptions {
    * hidden node is about): see `placeholderKey`. Its grid cell is unchanged.
    */
   readonly viewer?: Viewer;
+  /**
+   * WHO the surface is for (slice 7): `"viewer"` (default) = the requesting `viewer`, exactly as
+   * before. `"broadcast"` = a surface many or unknown viewers see at once (a wallboard, a shared
+   * screen): the effective clearance is the STRICTER of the viewer's and the broadcast ceiling, and
+   * the ceiling is the lowest class (UNCLASSIFIED content only), so every classified binding is
+   * withheld whoever asked, and an unrecognised class fails closed (withheld). The `viewer` is then
+   * used only to tell the two reasons apart in the (server-side) findings: `audience-withheld` (the
+   * viewer could see it, the audience may not) vs `node-restricted` (the viewer could not either).
+   *
+   * Every node withheld on a broadcast surface compiles to ONE shape, the loom IR 2.5.0 redacted
+   * widget: kind `Note`, `source: { type: "redacted", version: "1", redacted: true }`, an opaque
+   * `r_` alias id, the same grid cell, and no binding, title, props, degrade chain or original
+   * type, so the artifact says nothing of what was withheld nor which reason applied. (On a
+   * `"viewer"` surface the restricted placeholder is unchanged: a `Note` reading "Restricted".)
+   * The Blueprint has no `audience` field (loom ADR 0097 D5); it records the RESULT. Anything but
+   * `undefined` / `"viewer"` is read as broadcast (fail-closed). An explicit `title` override is the
+   * app's own text and is never gated, as for a viewer.
+   */
+  readonly audience?: Audience;
   /**
    * A secret the HOST holds (at least 16 bytes; a string is UTF-8). A restricted placeholder, and a
    * container collapsed over nothing but placeholders, is emitted under `r_` + a keyed hash
@@ -219,7 +238,10 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
   // both the early "too deep" return and the normal path — it is a function of `opts` and `exp`,
   // never of the (possibly-capped) tree.
   const resolveLabel = opts.resolveLabel ?? ((l: LocalizedText) => l.fallback);
-  const title = resolveBlueprintTitle(exp, opts, resolveLabel);
+  const broadcast = isBroadcast(opts.audience);
+  // The viewer whose clearance decides the surface: the requesting one, or (broadcast) none.
+  const viewer = effectiveViewer(opts.viewer, opts.audience);
+  const title = resolveBlueprintTitle(exp, opts, resolveLabel, viewer);
   if (title.leakAvoided)
     findings.push({
       code: "title-restricted",
@@ -259,24 +281,42 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
   // The strictest class of each handle (a handle carries one value for every node that binds it),
   // read once; a handle the viewer may not see is restricted for EVERY node that binds it.
   const restrictedHandles = new Set<string>();
+  // Broadcast only: the handles the requesting viewer COULD see but the audience may not.
+  const audienceHandles = new Set<string>();
   let classified = false;
   for (const use of experienceHandles(exp, opts.declaredToolClasses, opts.undeclared)) {
     if (use.sensitivity === undefined) continue;
     classified = true;
-    if (!mayView(opts.viewer, use.sensitivity)) restrictedHandles.add(use.handle);
+    if (!mayView(viewer, use.sensitivity)) {
+      restrictedHandles.add(use.handle);
+      if (broadcast && mayView(opts.viewer, use.sensitivity)) audienceHandles.add(use.handle);
+    }
   }
   const projectionPlan = planProjectionBindings(
     exp,
     opts.projections,
     opts.hydrationProjectionId,
-    opts.viewer
+    viewer
   );
   findings.push(...projectionPlan.findings);
+  // The same plan for the requesting viewer (its findings are dropped: they repeat the plan's),
+  // only to name WHY a projection-bound node is withheld.
+  const audienceNodes = new Set<string>();
+  if (broadcast) {
+    const asked = planProjectionBindings(
+      exp,
+      opts.projections,
+      opts.hydrationProjectionId,
+      opts.viewer
+    );
+    for (const [id, v] of projectionPlan.verdicts)
+      if (v.kind === "restricted" && asked.verdicts.get(id)?.kind === "ok") audienceNodes.add(id);
+  }
   if (projectionPlan.classified) classified = true;
   const restrictedNodes = [...projectionPlan.verdicts.values()].some(
     (v) => v.kind === "restricted"
   );
-  if (classified && opts.viewer === undefined)
+  if (classified && opts.viewer === undefined && !broadcast)
     findings.push({
       code: "viewer-not-supplied",
       severity: "warn",
@@ -299,7 +339,7 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
   // (both renderers draw it); a catalogue whose `Note` declares no props still gets the title,
   // and one warn that a host-chrome renderer will show an empty body.
   const placeholderHasText = (catalogByKind.get(PLACEHOLDER_KIND)?.props ?? []).includes("text");
-  if ((restrictedHandles.size > 0 || restrictedNodes) && !placeholderHasText)
+  if ((restrictedHandles.size > 0 || restrictedNodes) && !placeholderHasText && !broadcast)
     findings.push({
       code: "restricted-placeholder-no-text",
       severity: "warn",
@@ -307,6 +347,9 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
     });
   const redaction: Redaction = {
     handles: restrictedHandles,
+    broadcast,
+    audienceHandles,
+    audienceNodes,
     label: opts.restrictedLabel ?? RESTRICTED_LABEL,
     text: placeholderHasText,
     projections: projectionPlan,
@@ -386,11 +429,12 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
 function resolveBlueprintTitle(
   exp: Experience,
   opts: CompileOptions,
-  resolveLabel: (l: LocalizedText) => string
+  resolveLabel: (l: LocalizedText) => string,
+  viewer: Viewer | undefined
 ): { text: string; leakAvoided: boolean } {
   if (opts.title !== undefined)
     return { text: "omit" in opts.title ? "" : resolveLabel(opts.title), leakAvoided: false };
-  if (!mayView(opts.viewer, exp.intent.sensitivity)) return { text: "", leakAvoided: true };
+  if (!mayView(viewer, exp.intent.sensitivity)) return { text: "", leakAvoided: true };
   return { text: exp.intent.objective, leakAvoided: false };
 }
 
@@ -419,6 +463,11 @@ const PLACEHOLDER_KIND = "Note";
 
 interface Redaction {
   readonly handles: ReadonlySet<string>;
+  /** A broadcast surface: every withheld node is the IR 2.5.0 redacted widget. */
+  readonly broadcast: boolean;
+  /** Broadcast: handles / projection-bound node ids the requesting viewer could see (finding reason only). */
+  readonly audienceHandles: ReadonlySet<string>;
+  readonly audienceNodes: ReadonlySet<string>;
   readonly label: LocalizedText;
   /** Whether the placeholder kind's contract declares the `text` prop. */
   readonly text: boolean;
@@ -491,15 +540,36 @@ function barePlaceholder(
   id: string,
   resolveLabel: (l: LocalizedText) => string,
   redaction: Redaction,
-  findings: Finding[]
+  findings: Finding[],
+  forAudience = false
 ): Widget {
   // The finding is SERVER-SIDE and names the real id; the Blueprint carries only the alias.
-  findings.push({
-    code: "node-restricted",
-    severity: "warn",
-    message: `node "${id}" is restricted for this viewer`,
-    nodeId: id,
-  });
+  findings.push(
+    forAudience
+      ? {
+          code: "audience-withheld",
+          severity: "warn",
+          message: `node "${id}" is withheld from this broadcast audience`,
+          nodeId: id,
+        }
+      : {
+          code: "node-restricted",
+          severity: "warn",
+          message: `node "${id}" is restricted for this viewer`,
+          nodeId: id,
+        }
+  );
+  if (redaction.broadcast) {
+    // IR 2.5.0 (loom ADR 0097 amendment): the generic constants, never the original type; no
+    // title, props, binding or degrade chain. One shape for both reasons, so the artifact does not
+    // reveal whether the requesting viewer could have seen the node.
+    const out: Widget = {
+      ...customWidget$({ kind: PLACEHOLDER_KIND, id: redaction.alias.of(id), props: {} }),
+      source: { type: "redacted", version: "1", redacted: true },
+    };
+    redaction.bare.add(out);
+    return out;
+  }
   const text = resolveLabel(redaction.label);
   const out = customWidget$({
     kind: PLACEHOLDER_KIND,
@@ -596,9 +666,14 @@ function compileContainer(
   ) {
     // The container is ONE restricted node: the `node-restricted` findings of the children it
     // swallowed would name them (and their count), so only its own remains.
-    for (let i = findings.length - 1; i >= findingsBefore; i--)
-      if (findings[i]?.code === "node-restricted") findings.splice(i, 1);
-    return barePlaceholder(node.id, resolveLabel, redaction, findings);
+    // On a broadcast surface the container is withheld for the audience when any swallowed child was.
+    let forAudience = false;
+    for (let i = findings.length - 1; i >= findingsBefore; i--) {
+      const code = findings[i]?.code;
+      if (code === "audience-withheld") forAudience = true;
+      if (code === "node-restricted" || code === "audience-withheld") findings.splice(i, 1);
+    }
+    return barePlaceholder(node.id, resolveLabel, redaction, findings, forAudience);
   }
   // A container title resolves like a label: the locale is a compile input, and the blueprint
   // carries display text, never a message key. An empty resolution is no heading at all — every
@@ -666,7 +741,16 @@ function compileNode(
     verdict?.kind === "restricted" ||
     (node.binding !== undefined && redaction.handles.has(node.binding.handle))
   ) {
-    return barePlaceholder(node.id, resolveLabel, redaction, findings);
+    return barePlaceholder(
+      node.id,
+      resolveLabel,
+      redaction,
+      findings,
+      redaction.broadcast &&
+        (verdict?.kind === "restricted"
+          ? redaction.audienceNodes.has(node.id)
+          : node.binding !== undefined && redaction.audienceHandles.has(node.binding.handle))
+    );
   }
   const r = resolveSurface(opts.catalog, node.type, node.typeVersion, opts.surface, node.id);
   if (!r.ok) return undefined; // the finding was recorded by validateExperience; the node is omitted, never faked

@@ -1,4 +1,5 @@
 import {
+  type Audience,
   type ContentRefTable,
   type DeclaredToolClasses,
   type Experience,
@@ -63,6 +64,11 @@ export interface InventoryOptions {
    */
   readonly viewer?: Viewer;
   /**
+   * Who the surface is for (`@loom-ui/core` `Audience`, the value `compile` took). `"broadcast"`
+   * lists only unclassified handles, whoever the `viewer` is. Pass the same to `serveHandles`.
+   */
+  readonly audience?: Audience;
+  /**
    * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
    * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
@@ -96,7 +102,7 @@ export function handleInventory(
   } else {
     const split = partitionByViewer(
       experienceHandles(exp, opts.declaredToolClasses, opts.undeclared),
-      snapshotViewer(opts.viewer)
+      snapshotViewer(opts.viewer, opts.audience)
     );
     findings.push(...split.advisory);
     for (const use of split.allowed) {
@@ -177,6 +183,11 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds" | 
    * FAIL-CLOSED: absent = no clearance. Unclassified handles are unaffected.
    */
   readonly viewer?: Viewer;
+  /**
+   * Who the surface is for (the value `compile` took). `"broadcast"` refuses every classified
+   * handle exactly as `unknown-handle`, even a client naming one the requesting `viewer` may read.
+   */
+  readonly audience?: Audience;
   /**
    * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
    * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
@@ -548,7 +559,7 @@ function openPass(exp: Experience, opts: ServeOptions): ServePass {
     restricted: new Set(
       partitionByViewer(
         experienceHandles(exp, opts.declaredToolClasses, opts.undeclared),
-        snapshotViewer(opts.viewer)
+        snapshotViewer(opts.viewer, opts.audience)
       ).restricted.map((u) => u.handle)
     ),
     // U9: media-typed nodes mark their handle as media even with NO `outputKinds` (fail closed).

@@ -19,6 +19,7 @@ import {
   childSpecs,
   disposeEntry,
   elementOf,
+  isRedacted,
   isWidgetNode,
   layoutNodeId,
   mountContainer,
@@ -149,6 +150,9 @@ function reconcileWidget(
   if (deepEqual(prev, next)) return;
   if (
     prev.kind !== next.kind ||
+    // Redaction is a different draw, not a patch: a renderer must never be handed (or keep) the
+    // content of a widget the compiler withheld, nor a marker stay over a now-visible one.
+    isRedacted(prev) !== isRedacted(next) ||
     entry.handle === undefined ||
     typeof entry.handle.patch !== "function"
   ) {

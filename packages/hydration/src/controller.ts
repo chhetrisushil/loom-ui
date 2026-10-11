@@ -1,4 +1,5 @@
 import {
+  type Audience,
   type ContentRefTable,
   type DeclaredToolClasses,
   type Experience,
@@ -109,6 +110,13 @@ export interface ControllerOptions {
    * classified); unclassified handles are unaffected. Pass `{ clearance: "secret" }` for full access.
    */
   readonly viewer?: Viewer;
+  /**
+   * Who the surface is for, the SAME value `compile` takes (`@loom-ui/core` `Audience`). `"broadcast"`
+   * clamps the viewer to the audience's ceiling (unclassified data only): every handle `compile`
+   * withheld for the audience is never loaded, cached or written to the store, and `appendStream`
+   * and friends refuse it, whoever the `viewer` is. Absent / `"viewer"` = the viewer as given.
+   */
+  readonly audience?: Audience;
   /**
    * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
    * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
@@ -242,7 +250,7 @@ export class HydrationController {
       }),
       ...(opts.undeclared !== undefined && { undeclared: opts.undeclared }),
     });
-    this.viewer = snapshotViewer(opts.viewer);
+    this.viewer = snapshotViewer(opts.viewer, opts.audience);
     opts.store.guardAppend((handle) => this.appendRefusal(handle));
     this.clock = opts.clock ?? Date.now;
     this.cache = opts.cache ?? new HydrationCache(this.clock);
@@ -342,7 +350,7 @@ export class HydrationController {
    */
   setViewer(viewer: Viewer | undefined): { findings: Finding[] } {
     if (this.sched.isDisposed) return { findings: [disposedFinding("setViewer")] };
-    this.viewer = snapshotViewer(viewer);
+    this.viewer = snapshotViewer(viewer, this.opts.audience);
     return this.current === undefined ? { findings: [] } : this.recompose(this.current);
   }
 

@@ -7,7 +7,7 @@ import {
 } from "@loom-ui/core";
 import { SELECT_ACTION, SUBMIT_TEXT_ACTION } from "@loom-ui/core/chat-ui";
 import { HYDRATION_PROJECTION_ID } from "@loom-ui/hydration/client";
-import type { Blueprint, WidgetAction } from "@loom/blueprint-runtime";
+import type { Blueprint, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import type { HandleEntry, InvokeIntent, MountedRenderer, RendererAdapter } from "./adapter";
 import {
   GARBAGE,
@@ -265,13 +265,14 @@ function restrictedFixture(surface: string, adapter: RendererAdapter) {
     },
     providers: { "h-pay": provider("h-pay"), "h-pub": provider("h-pub") },
   };
-  const compileFor = (clearance: string) => {
+  const compileFor = (clearance: string, audience?: "broadcast") => {
     const r = compile(exp, {
       surface,
       catalog,
       hydrationProjectionId: HYDRATION_PROJECTION_ID,
       hydrationProjectionVersion: "1.0.0",
       viewer: { clearance },
+      ...(audience !== undefined && { audience }),
     } as never);
     must(r.ok, `the kit's own fixture did not compile for surface "${adapter.surface}"`);
     return r.blueprint;
@@ -309,6 +310,64 @@ check(
         has(cleared, String(PAY)) || has(cleared, "987,654"),
         `control: a cleared viewer's value is not shown: ${show(cleared)}`
       );
+    })
+);
+
+// ── audience: a broadcast surface never shows what it withheld ───────────────────────────────────
+check(
+  "audience",
+  "a widget withheld for the audience shows only the constant redaction marker, whatever it still carries",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      const { compileFor } = restrictedFixture(adapter.surface, adapter);
+      const values: Record<string, HandleEntry> = {
+        "h-pay": { value: PAY, state: "ready" },
+        "h-pub": { value: 424_242, state: "ready" },
+      };
+      const LEAKS = [String(PAY), "987,654", "Label pay", "h-pay"];
+      // The compile's own broadcast output, for a viewer who is FULLY cleared: the audience, not the
+      // viewer, withheld it. The store holds the value; the renderer must not go looking.
+      const wall = await (await s.mount(compileFor("secret", "broadcast"), values)).text();
+      must(has(wall, "redacted"), `no redaction marker on the broadcast surface: ${show(wall)}`);
+      for (const leak of LEAKS)
+        must(!has(wall, leak), `a withheld widget leaked "${leak}": ${show(wall)}`);
+      must(
+        has(wall, "424242") || has(wall, "424,242"),
+        `the unclassified sibling vanished: ${show(wall)}`
+      );
+      // Positive control: the same viewer's own surface shows the value, so the grep is not vacuous.
+      const own = await (await s.mount(compileFor("secret"), values)).text();
+      must(
+        has(own, String(PAY)) || has(own, "987,654"),
+        `control: the cleared viewer's own surface does not show the value: ${show(own)}`
+      );
+      // Defence in depth: a widget carrying `source.redacted` that STILL holds a title, props, a
+      // binding to live data and a degrade chain (an unvalidated or forged artifact) draws the
+      // marker and none of it. The marker decides before anything else is read.
+      if (!adapter.kinds.includes("MetricCard"))
+        throw new ConformanceSkip("the forged-widget half needs a MetricCard renderer");
+      const forged: Widget = {
+        ...bound("MetricCard", "forged", "SECRET-TITLE", "h-pay", { unit: "SECRET-UNIT" }),
+        source: {
+          type: "SecretType",
+          version: "9",
+          redacted: true,
+          degradedFrom: [{ type: "SecretChain", version: "3" }],
+        },
+      };
+      const out = await (await s.mount(viewOf([forged]), values)).text();
+      must(has(out, "redacted"), `a forged redacted widget drew no marker: ${show(out)}`);
+      for (const leak of [
+        "SECRET-TITLE",
+        "SECRET-UNIT",
+        "SecretType",
+        "SecretChain",
+        String(PAY),
+        "987,654",
+        "MetricCard",
+        "h-pay",
+      ])
+        must(!has(out, leak), `a redacted widget leaked "${leak}": ${show(out)}`);
     })
 );
 

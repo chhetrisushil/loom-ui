@@ -83,7 +83,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // U8 fix round 1: 80 -> 81 kB (the contract grew by `mode`: +130 bytes put it 26 over).
     // LOOM_REF bump to a8e69f5b: 90 -> 91 kB (measured 90_366, 366 over). Its graph is the shared registry/i18n/virtual
     // code the U16/U17/#71 slices grew, which this smallest entry carries in full; index and dom/index stay under budget.
-    ["dom/containers.js", 91 * 1000],
+    // Slice 7 (audience): 91 -> 92 kB (measured 91_238, 238 over): the redacted-widget draw (`drawRedacted`, loom's
+    // constant marker) and `describeWidgetStatus` ride in the shared tree every entry carries.
+    ["dom/containers.js", 92 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 187 * 1000],

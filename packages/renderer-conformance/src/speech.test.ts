@@ -56,6 +56,20 @@ const unsanitised = (
   },
 });
 
+/** The blueprint with every `source.redacted` mark dropped: a renderer that does not know IR 2.5.0. */
+const withoutRedaction = (bp: Parameters<RendererAdapter["mount"]>[0]) => {
+  const copy = structuredClone(bp);
+  const strip = (n: unknown): void => {
+    if (typeof n !== "object" || n === null) return;
+    const o = n as { source?: { redacted?: unknown }; node?: unknown; children?: unknown[] };
+    if (o.source) o.source.redacted = undefined;
+    strip(o.node);
+    for (const c of o.children ?? []) strip(c);
+  };
+  strip(copy.layout);
+  return copy;
+};
+
 const FAULTS: Array<[string, string, RendererAdapter]> = [
   [
     "unknown-kind",
@@ -64,6 +78,15 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
   ],
   ["kinds", "leaks [object Object]", textOf((t) => `${t} [object Object]`)],
   ["restricted", "dumps every stored value", textOf((t, v) => `${t} ${JSON.stringify(v)}`)],
+  ["audience", "dumps every stored value", textOf((t, v) => `${t} ${JSON.stringify(v)}`)],
+  [
+    "audience",
+    "draws a redacted widget as an ordinary one",
+    {
+      ...speechAdapter,
+      mount: (bp, o) => speechAdapter.mount(withoutRedaction(bp), o),
+    },
+  ],
   [
     "status-matrix",
     "never shows a finding",

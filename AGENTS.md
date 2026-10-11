@@ -66,6 +66,14 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   back to a random per-process key + a warn; a supplied key under 16 bytes throws `PlaceholderKeyError`; `requirePlaceholderKey` makes a missing key an error; never an unkeyed hash). `CompileResult.findings`,
   `restrictedProjectionNodes`, `restrictedHandles` and `inspectExperience` are SERVER-SIDE (real ids); the viewer's
   `compileFingerprint` is built from `result.fingerprint`. See the core README "Opaque ids".
+- Audience (slice 7): `CompileOptions.audience` (`"viewer"` default | `"broadcast"`). Broadcast = the stricter of the
+  viewer's clearance and the lowest-class ceiling (unclassified only), fail-closed (unknown class or audience
+  value is broadcast/withheld); every withheld node is loom's IR 2.5.0 redacted widget (`Note`, `source`
+  `{redacted,"1",redacted:true}`, `r_` alias, same cell, nothing else), finding `audience-withheld` vs
+  `node-restricted` (server-side only; ONE Blueprint shape for both). A `"viewer"` compile is unchanged. `audience` is in the
+  compile memo key; hydration (`HydrationController`, `handleInventory`, `serveHandles`) takes the same `audience`.
+  `renderer-lit` draws `⊘ redacted` only (reconcile remounts on a redaction change); the conformance kit has an
+  `audience` check. See the README "Audience".
 - The learning loop (U11): the planner's variant choice is a `decideWithPolicy` decision (`plan-variant:*`, SHA-256 id,
   propensity in the log) made BEFORE the plan; the plan id is keyed on the variant; `Provenance.policyDecisionId` is the
   learnable decision (the model call stays `decisionId`). The planner `unit` is a server-derived HMAC alias

@@ -169,3 +169,36 @@ describe("opaque ids on restricted placeholders, in the terminal", () => {
     expect(out).not.toContain("payroll");
   });
 });
+
+// IR 2.5.0: a node withheld for a BROADCAST audience is loom's redacted widget; loom's traversal
+// draws its constant marker and the framework's renderers are never consulted for it.
+describe("a node withheld for a broadcast audience, in the terminal", () => {
+  const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "u10" });
+  store.setValue("h-pay", 987654, { state: "ready" });
+
+  it("prints loom's constant marker, never the value, label, kind or the 'Restricted' words", () => {
+    const r = compile(exp, { ...opts, viewer: { clearance: "secret" }, audience: "broadcast" });
+    expect(r.ok).toBe(true);
+    const out = renderExperience(r.blueprint, store);
+    expect(out).toContain("⊘ redacted");
+    for (const s of ["987654", "Executive payroll", "MetricCard", "h-pay", "Restricted"])
+      expect(out, s).not.toContain(s);
+    // The control: the cleared viewer's own surface prints the value.
+    const own = compile(exp, { ...opts, viewer: { clearance: "secret" } });
+    expect(renderExperience(own.blueprint, store)).toContain("987654");
+  });
+
+  it("a forged redacted widget that still holds a title and binding prints the marker only", () => {
+    const own = compile(exp, { ...opts, viewer: { clearance: "secret" } });
+    const forged = structuredClone(own.blueprint);
+    const cell = (forged.layout as { children: Array<{ node: { source?: unknown } }> }).children[0];
+    (cell?.node as { source: unknown }).source = {
+      type: "Figure",
+      version: "1.0.0",
+      redacted: true,
+    };
+    const out = renderExperience(forged, store);
+    expect(out).toContain("⊘ redacted");
+    for (const s of ["987654", "Executive payroll"]) expect(out, s).not.toContain(s);
+  });
+});

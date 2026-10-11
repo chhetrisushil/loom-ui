@@ -16,6 +16,35 @@ export interface Viewer {
   readonly clearance?: DataClass;
 }
 
+/**
+ * WHO a surface is drawn for (loom-ui roadmap slice 7). `"viewer"` (the default) = the requesting
+ * viewer: their `clearance` decides what they see. `"broadcast"` = a surface many, or unknown,
+ * viewers see at once (a wallboard, a shared screen, a recording): the least-privileged ceiling
+ * applies whoever asked. See {@link effectiveViewer}.
+ */
+export type Audience = "viewer" | "broadcast";
+
+/** Is this a broadcast audience? FAIL-CLOSED: anything but `undefined` / `"viewer"` is broadcast. */
+export function isBroadcast(audience: unknown): boolean {
+  return audience !== undefined && audience !== "viewer";
+}
+
+/**
+ * The viewer whose clearance actually decides what a surface for `audience` may show: the STRICTER
+ * of the requesting viewer's clearance and the audience's ceiling. `"viewer"` has no ceiling, so
+ * it is the requesting viewer as given. `"broadcast"`'s ceiling is the lowest class, UNCLASSIFIED
+ * content only (this package's class order is secret > sensitive > internal, with no class below
+ * "internal" but none at all), and nothing is stricter than the lowest, so the result is a viewer
+ * with no clearance, whoever asked. A class this package does not recognise is withheld under
+ * broadcast like any other classified content (`mayView` refuses it).
+ */
+export function effectiveViewer(
+  viewer: Viewer | undefined,
+  audience: Audience | undefined
+): Viewer | undefined {
+  return isBroadcast(audience) ? {} : viewer;
+}
+
 const RANK: Record<DataClass, number> = { secret: 3, sensitive: 2, internal: 1 };
 
 /** Rank of a clearance: 0 for none, otherwise the class's rank. An unknown value ranks 0 (fail-closed). */

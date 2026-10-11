@@ -62,6 +62,7 @@ settle first (await your scheduler) so the kit never sleeps.
 | `status-matrix` | loading shows no value; ready shows it; stale keeps it; error shows the finding and no value; empty shows no value; recovery works |
 | `live-update` | a delivered change replaces what is shown; `dispose` stops following the data |
 | `incremental-update` | `update(next)` lands a revised Blueprint, keeps live data, drops removed widgets |
+| `audience` | a widget withheld for a broadcast audience (and a forged `source.redacted` widget that still carries a title, props and a binding) shows only the constant `⊘ redacted` marker: none of its label, value, kind, type or handle on the surface, attributes included |
 | `restricted` | a node compiled for a viewer who may not see it shows a bare placeholder and none of its label, value or id, even though the store holds the value (with a cleared-viewer positive control) |
 | `container-roles` | an unknown container role (`tabs`, `stepper`, app-defined) is the plain titled container: every panel reachable, in order |
 | `empty-states` | an empty table / chart / transcript still says what it is |

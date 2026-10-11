@@ -251,8 +251,8 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./values";
-export { mayView, strictestClass } from "./viewer";
-export type { Viewer } from "./viewer";
+export { effectiveViewer, isBroadcast, mayView, strictestClass } from "./viewer";
+export type { Audience, Viewer } from "./viewer";
 export {
   ATTENTION_LEVELS,
   CHANGE_KINDS,

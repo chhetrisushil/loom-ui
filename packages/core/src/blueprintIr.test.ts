@@ -16,12 +16,18 @@ import { describe, expect, it } from "vitest";
 // binding over an empty upstream (`upstream-empty`) and the Lit base draws it. 2.4.0 (loom ADR
 // 0101) added an optional `id` on every `Layout`, in the one node-id namespace widget ids share;
 // compile.ts emits each container node's `id` on its layout, the root included, so a renderer can
-// keep a container across a recompose. A further bump means reading the next ADR and deciding again.
+// keep a container across a recompose. 2.5.0 (loom ADR 0097 amendment, 2026-10-11) added an
+// optional `WidgetSource.redacted: true`: the compiler's mark that it WITHHELD a widget's content
+// for the surface's audience (no binding, title, props or degrade chain; the generic source
+// `redacted`/`1`; the renderers draw only a constant marker; `validateBlueprint` enforces it as
+// `redacted-invalid`). compile.ts now EMITS it: `CompileOptions.audience: "broadcast"` compiles
+// every withheld node to that widget (kind `Note`, an `r_` alias id, the same cell), and the Lit
+// renderer draws loom's marker for it. A `"viewer"` surface is byte-identical to 2.4.0 output. A further bump means reading the next ADR and deciding again.
 describe("the loom Blueprint IR this compiler targets", () => {
   it("is the version compile.ts was written against", () => {
     expect(
       BLUEPRINT_IR_VERSION,
       "loom's Blueprint IR changed — review compile.ts and bump deliberately"
-    ).toBe("2.4.0");
+    ).toBe("2.5.0");
   });
 });

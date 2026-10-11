@@ -1,4 +1,12 @@
-import { type Finding, type HandleUse, type Viewer, mayView } from "@loom-ui/core";
+import {
+  type Audience,
+  type Finding,
+  type HandleUse,
+  type Viewer,
+  effectiveViewer,
+  isBroadcast,
+  mayView,
+} from "@loom-ui/core";
 
 // ── Viewer enforcement at the data boundary ───────────────────────────────────
 // Hydration is where data actually flows, so it is the second place a binding's `sensitivity`
@@ -41,8 +49,16 @@ export function partitionByViewer(
   };
 }
 
-/** A copy of the viewer holding only a clearance read once; a throwing getter reads as none. */
-export function snapshotViewer(viewer: Viewer | undefined): Viewer | undefined {
+/**
+ * A copy of the viewer holding only a clearance read once; a throwing getter reads as none. For a
+ * broadcast `audience` the result is the audience's viewer (no clearance, whoever asked: the
+ * viewer is not even read), so a handle compile withheld for the audience is refused here too.
+ */
+export function snapshotViewer(
+  viewer: Viewer | undefined,
+  audience?: Audience
+): Viewer | undefined {
+  if (isBroadcast(audience)) return effectiveViewer(undefined, audience);
   if (viewer === undefined) return undefined;
   try {
     const clearance = viewer.clearance;

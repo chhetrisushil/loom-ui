@@ -57,6 +57,9 @@ export const speechAdapter: RendererAdapter = {
       "_tag" in n ? [n] : "node" in n ? widgets(n.node) : (n.children as never[]).flatMap(widgets);
 
     const speak = (w: Widget): string => {
+      // IR 2.5.0: withheld for the audience. Decided before anything else of the widget is read, so
+      // its title, props, binding and kind cannot reach the sentence; the words are a constant.
+      if (w.source?.redacted === true) return "⊘ redacted"; // loom's constant marker, as its own renderers draw it
       const title = clean(w.title ?? w.kind);
       const handle = BINDING.exec(w.binding?.path ?? "")?.[1];
       const e: HandleEntry | undefined = handle === undefined ? undefined : data.get(handle);
