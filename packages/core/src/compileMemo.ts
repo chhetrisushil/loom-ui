@@ -1,5 +1,6 @@
 import type { CompileOptions, CompileResult } from "./compile";
 import type { Experience } from "./experience";
+import { isBroadcast } from "./viewer";
 
 // ── A per-version compile memo ─────────────────────────────────────────────────────────────────
 // `compile` is a pure function of (the experience, its options). A host compiles the same sealed
@@ -12,6 +13,9 @@ import type { Experience } from "./experience";
 //                      An UNSEALED experience (`versionHash === ""`) is never memoized.
 //   surface, hydrationProjectionId/Version, undeclared, requirePlaceholderKey   by value
 //   viewer             `undefined` vs its `clearance` (the only field `mayView` reads)
+//   audience           `"viewer"` (and absent) vs broadcast: a broadcast surface and a viewer surface of
+//                      one experience must NEVER share an entry (a cleared viewer's view would leak
+//                      onto the wallboard)
 //   title, restrictedLabel   by value (JSON)
 //   placeholderKey     the key BYTES (hex); an unusable key is not memoized (compile throws)
 //   projections, declaredToolClasses   by CONTENT (a host raising a declaration in a rebuilt table
@@ -130,6 +134,9 @@ export class CompileMemo {
         opts.viewer === undefined ? null : [opts.viewer.clearance ?? null],
         placeholderKey,
         opts.requirePlaceholderKey === true,
+        // Normalised exactly as compile reads it: absent and "viewer" are one key, every other
+        // value is broadcast (fail-closed), so a typo can never serve a viewer entry.
+        isBroadcast(opts.audience) ? "broadcast" : "viewer",
       ]);
     } catch {
       return undefined; // unserializable option (a cycle, a BigInt): never guess

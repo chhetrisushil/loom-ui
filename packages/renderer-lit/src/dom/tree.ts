@@ -5,6 +5,7 @@ import {
   type Widget,
   type WidgetAction,
   asCell,
+  describeWidgetStatus,
   isLayoutId,
   isLayoutRole,
   isWidget,
@@ -477,12 +478,50 @@ export function showError(entry: WidgetEntry, message: string): void {
   entry.host.replaceChildren(placeholderFor(entry.widget.kind, "error", message));
 }
 
+/** IR 2.5.0: the compiler withheld this widget's content for the surface's audience. */
+export function isRedacted(widget: Widget): boolean {
+  return (widget.source as { redacted?: unknown } | undefined)?.redacted === true;
+}
+
+/**
+ * A redacted widget (loom ADR 0097 amendment, IR 2.5.0): ONLY loom's constant marker, drawn the way
+ * loom's own DOM renderer draws it. No renderer runs, nothing subscribes (even a binding an
+ * unvalidated widget still carries is never read), and the host carries neither `data-widget-kind`
+ * (the kind may itself be sensitive) nor a title or source attribute, on first draw or after a
+ * remount. The words come from `describeWidgetStatus`, which decides `redacted` before it reads
+ * anything else off the widget.
+ */
+function drawRedacted(entry: WidgetEntry): void {
+  const { widget, host } = entry;
+  const d = describeWidgetStatus(widget, undefined, undefined);
+  for (const a of [
+    "data-widget-kind",
+    "data-source-type",
+    "data-source-version",
+    "data-degraded",
+    "title",
+  ])
+    host.removeAttribute(a);
+  const marker = document.createElement("div");
+  marker.setAttribute("data-binding-marker", "redacted");
+  marker.setAttribute("role", "status");
+  marker.textContent = `⊘ ${d.tag === "invalid" ? "redacted" : d.message}`;
+  host.replaceChildren(marker);
+  host.setAttribute("data-binding-state", "redacted");
+  entry.handle = undefined;
+  entry.token = undefined;
+  entry.delivered = undefined;
+  entry.unsubscribe = undefined;
+  entry.observed?.stop();
+  entry.observed = undefined;
+}
+
 /** (Re)subscribe a widget to its binding's projection. Drops any previous subscription first. */
 export function subscribeEntry(entry: WidgetEntry, ctx: MountContext): void {
   entry.unsubscribe?.();
   entry.unsubscribe = undefined;
   const { widget, handle } = entry;
-  if (!widget.binding || !handle) return;
+  if (!widget.binding || !handle || isRedacted(widget)) return;
   const off = ctx.projectionRuntime.subscribeSelector<unknown, Slice>(
     widget.binding.projectionId,
     ctx.executionId,
@@ -510,6 +549,11 @@ export function renderInto(
   // The host is cleared unconditionally, so a REMOUNT in place needs no caller discipline: every
   // path below (placeholder, renderer output, error) starts from an empty host.
   host.replaceChildren();
+  if (isRedacted(widget)) {
+    drawRedacted(entry);
+    return;
+  }
+  host.removeAttribute("data-binding-state");
   // Set BEFORE the lookup: a kind with no renderer still labels its host with the kind it wanted.
   host.dataset.widgetKind = widget.kind;
   const renderer = ctx.registry.get(widget.kind);
