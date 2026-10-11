@@ -74,6 +74,8 @@ export {
 } from "./classes";
 export { DEFAULT_STEP_KIND, STEP_KIND_PATTERN, stepKind, toolKey } from "./steps";
 export type { OpResult, RecordedOperation } from "./operations";
+export { keyConflicts, mergeExperiences } from "./merge";
+export type { KeyConflict, MergeConflict, MergeConflictKind, MergeResult } from "./merge";
 export { experienceNodeIds, preservesNodes } from "./identity";
 export type { IdentityFinding, IdentityReport } from "./identity";
 export {
