@@ -84,6 +84,30 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
 - `RecordedOperation` — `{ op: Operation, by: Provenance, at: string }`: one op as a caller logs
   it, `at` an ISO-8601 string.
 
+### Merging two lines of edits
+
+- `mergeExperiences(base, ours, theirs): { experience, conflicts }` — the three-way merge of two
+  Experiences that both started at `base`. Pure and deterministic; it never throws and **always**
+  returns an ours-biased partial: where the sides disagree `ours` wins and the disagreement is
+  listed in `conflicts` (`{ plane, kind, ref, detail }`, `ref` = the node id, handle or key). The
+  partial is UNSEALED (`versionHash: ""`, `parents: []`): the caller sets the parents (normally the
+  two heads) and `seal`s it.
+  - **Layout** merges on stable node ids over three independent dimensions (parent, sibling order
+    key, the node's own content), so a move on one side and an edit on the other is clean.
+    Conflicts: `move/move` (reparented or reordered differently), `remove/edit`, `edit/edit`,
+    `add/add`, `orphan` (a survivor's parent is gone, or two moves made a cycle: nothing is dropped
+    silently), `depth` (a tree, or the combined tree, past `MAX_TREE_DEPTH`).
+  - **Providers** merge by handle, each provider atomic: `provider/provider`.
+  - **Classes** (`handleClasses`/`toolClasses`/`projectionClasses`) are the strictest anything either
+    side or the base ever carried; a class is never lowered by a merge. `vocabularyFloor` is the
+    union of both sides' types. `intent` is merged three-way: `intent/intent`.
+  - **Localization keys:** `message/message` when two branches give the SAME `LocalizedText.key`
+    different `fallback` text from DIFFERENT nodes (read from `label`, `title` and any
+    `LocalizedText` inside `props`). Every other plane merges such a pair cleanly, yet the result
+    has one key meaning two things. Only checked when both sides changed the layout. Equal order
+    keys keep the position they had in `ours`, then `theirs`.
+- `keyConflicts(ours, theirs, merged)` — the localization check on its own.
+
 ### Reading the tree
 
 - `walk`, `findNode`, `nodeIds`, `isContainer`, `treeDepth`, `normalize`, `rebuild` — traversal and
