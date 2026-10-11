@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 //   input it pulled in against the same forbidden set.
 
 const DIST = resolve(__dirname, "../dist");
+const ESM_DIST = resolve(DIST, "esm");
 const BUILTINS = new Set(builtinModules);
 const load = createRequire(__filename);
 
@@ -67,8 +68,51 @@ function forbidden(specifier: string, resolved: string): boolean {
   if (specifier.startsWith("node:") || BUILTINS.has(packageName(specifier))) return true;
   if (FORBIDDEN_PACKAGES.has(packageName(specifier))) return true;
   if (/quickjs/i.test(specifier) || /quickjs/i.test(resolved)) return true;
-  if (resolved.startsWith(`${DIST}/`)) return SERVER_FILES.has(relative(DIST, resolved));
+  if (resolved.startsWith(`${DIST}/`))
+    return SERVER_FILES.has(relative(DIST, resolved).replace(/^esm\//, ""));
   return false;
+}
+
+/**
+ * The same walk over the ESM build (`dist/esm`, what a bundler's `import` condition picks): every
+ * `import … from`, `export … from`, bare `import "…"` and dynamic `import("…")` reachable through
+ * RELATIVE specifiers. A bare specifier is not followed (its resolution is the bundler's, checked by
+ * the esbuild case below); it is only judged by name.
+ */
+function forbiddenReachEsm(entry: string): { violations: Reach[]; files: string[] } {
+  const seen = new Set<string>();
+  const violations: Reach[] = [];
+  const stack = [entry];
+  const re = /(?:\bfrom|\bimport)\s*\(?\s*["']([^"']+)["']/g;
+  while (stack.length > 0) {
+    const file = stack.pop() as string;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const from = relative(DIST, file);
+    for (const m of readFileSync(file, "utf8").matchAll(re)) {
+      const specifier = m[1] as string;
+      if (specifier.startsWith(".")) {
+        const base = resolve(file, "..", specifier);
+        const target = [`${base}.js`, resolve(base, "index.js"), base].find(
+          (c) => existsSync(c) && /\.js$/.test(c)
+        );
+        if (target === undefined) {
+          violations.push({ specifier: `unresolvable ${specifier}`, from });
+          continue;
+        }
+        if (SERVER_FILES.has(relative(ESM_DIST, target))) violations.push({ specifier, from });
+        stack.push(target);
+      } else if (
+        specifier.startsWith("node:") ||
+        BUILTINS.has(packageName(specifier)) ||
+        FORBIDDEN_PACKAGES.has(packageName(specifier)) ||
+        /quickjs/i.test(specifier)
+      ) {
+        violations.push({ specifier, from });
+      }
+    }
+  }
+  return { violations, files: [...seen].map((f) => relative(ESM_DIST, f)).sort() };
 }
 
 /** Every `require` reachable from `entry` that a browser bundle must not contain. */
@@ -134,6 +178,21 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     expect(reached).toContain("@loom/plugin-sandbox");
     expect(reached).toContain("@loom/plugin-mcp");
     expect(violations.some((v) => v.specifier.startsWith("node:"))).toBe(true);
+  });
+
+  it("the ESM build's module graph (what a bundler follows) reaches no server-only module", () => {
+    const { violations, files } = forbiddenReachEsm(resolve(ESM_DIST, "client.js"));
+    expect(violations).toEqual([]);
+    expect(files).toContain("client.js");
+    expect(files).toContain("split/client.js");
+    expect(files.some((f) => SERVER_FILES.has(f))).toBe(false);
+  });
+
+  it("the ESM walk is live: the ESM root entry DOES reach the server plane", () => {
+    const { violations } = forbiddenReachEsm(resolve(ESM_DIST, "index.js"));
+    const reached = new Set(violations.map((v) => packageName(v.specifier)));
+    expect(reached).toContain("@loom/plugin-sandbox");
+    expect(reached).toContain("@loom/plugin-mcp");
   });
 
   it("exports exactly the client surface", () => {
@@ -219,7 +278,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
 
   it("bundles for the browser, small", async () => {
     const out = await build({
-      entryPoints: [resolve(DIST, "client.js")],
+      // The ESM build: the entry a browser bundler resolves (`import` condition), and the only one it can tree-shake.
+      entryPoints: [resolve(ESM_DIST, "client.js")],
       bundle: true,
       minify: true,
       platform: "browser",
@@ -237,7 +297,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
       (f) =>
         /quickjs/i.test(f) ||
         FORBIDDEN_DIRS.some((d) => f.startsWith(`${d}/`)) ||
-        (f.startsWith(`${DIST}/`) && SERVER_FILES.has(relative(DIST, f)))
+        (f.startsWith(`${ESM_DIST}/`) && SERVER_FILES.has(relative(ESM_DIST, f)))
     );
     expect(pulled).toEqual([]);
     expect(inputs.length).toBeGreaterThan(1);
@@ -251,6 +311,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     // warning (~0.8 kB minified). The client takes the whole core barrel (CJS, not tree-shaken).
     // 74 -> 76 KiB for LU-2: `validateExperience` (in the client's core barrel) gained the
     // provider-graph checks (`providerGraph.ts`, ~1.4 kB minified).
-    expect(bytes).toBeLessThan(76 * 1024);
+    // 76 -> 56 KiB for ESM packaging (F3): the bundle starts from `dist/esm/client.js`, and @loom-ui/core now
+    // publishes ESM too, so the client no longer carries core's whole barrel (measured 54_239).
+    expect(bytes).toBeLessThan(56 * 1024);
   });
 });
