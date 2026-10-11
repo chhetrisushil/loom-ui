@@ -5,15 +5,57 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "module": "./dist/esm/index.js",
+  "sideEffects": false,
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./browser": { "types": "./dist/browser.d.ts", "default": "./dist/browser.js" },
-    "./log": { "types": "./dist/log.d.ts", "default": "./dist/log.js" },
-    "./media": { "types": "./dist/media.d.ts", "default": "./dist/media.js" },
-    "./chat": { "types": "./dist/chat.d.ts", "default": "./dist/chat.js" },
-    "./chat-ui": { "types": "./dist/chatUi.d.ts", "default": "./dist/chatUi.js" },
-    "./signals": { "types": "./dist/signals.d.ts", "default": "./dist/signals.js" },
-    "./messages": { "types": "./dist/messages.d.ts", "default": "./dist/messages.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "node": "./dist/browser.js",
+      "import": "./dist/esm/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./log": {
+      "types": "./dist/log.d.ts",
+      "node": "./dist/log.js",
+      "import": "./dist/esm/log.js",
+      "default": "./dist/log.js"
+    },
+    "./media": {
+      "types": "./dist/media.d.ts",
+      "node": "./dist/media.js",
+      "import": "./dist/esm/media.js",
+      "default": "./dist/media.js"
+    },
+    "./chat": {
+      "types": "./dist/chat.d.ts",
+      "node": "./dist/chat.js",
+      "import": "./dist/esm/chat.js",
+      "default": "./dist/chat.js"
+    },
+    "./chat-ui": {
+      "types": "./dist/chatUi.d.ts",
+      "node": "./dist/chatUi.js",
+      "import": "./dist/esm/chatUi.js",
+      "default": "./dist/chatUi.js"
+    },
+    "./signals": {
+      "types": "./dist/signals.d.ts",
+      "node": "./dist/signals.js",
+      "import": "./dist/esm/signals.js",
+      "default": "./dist/signals.js"
+    },
+    "./messages": {
+      "types": "./dist/messages.d.ts",
+      "node": "./dist/messages.js",
+      "import": "./dist/esm/messages.js",
+      "default": "./dist/messages.js"
+    }
   },
   "typesVersions": {
     "*": {
@@ -27,7 +69,7 @@
     }
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build && rm -rf dist/esm && tsc -p tsconfig.esm.json",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest run",

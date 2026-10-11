@@ -23,7 +23,40 @@ function reach(entry: string): Set<string> {
   return seen;
 }
 
+/** The ESM build's graph (`dist/esm`, what a bundler follows): `from "…"` / bare `import "…"` / `import("…")`. */
+function reachEsm(entry: string): Set<string> {
+  const seen = new Set<string>();
+  const stack = [entry];
+  while (stack.length > 0) {
+    const file = stack.pop() as string;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const m of readFileSync(file, "utf8").matchAll(
+      /(?:\bfrom|\bimport)\s*\(?\s*["']([^"']+)["']/g
+    )) {
+      const spec = m[1] as string;
+      if (spec.startsWith(".")) stack.push(resolve(file, "..", `${spec}.js`));
+      else seen.add(`pkg:${spec}`);
+    }
+  }
+  return seen;
+}
+
 describe("@loom-ui/core/browser", () => {
+  it("the ESM build reaches the same zod-free modules and no package", () => {
+    const esm = resolve(DIST, "esm");
+    const graph = [...reachEsm(resolve(esm, "browser.js"))];
+    expect(graph.filter((g) => g.startsWith("pkg:"))).toEqual([]);
+    const files = graph.map((g) => g.replace(`${esm}/`, "")).sort();
+    const cjs = [...reach(resolve(DIST, "browser.js"))]
+      .map((g) => g.replace(`${DIST}/`, ""))
+      .sort();
+    expect(files).toEqual(cjs);
+    expect([...reachEsm(resolve(esm, "signals.js"))].map((g) => g.replace(`${esm}/`, ""))).toEqual([
+      "signals.js",
+    ]);
+  });
+
   it("reaches no package at all: no zod, no loom runtime, only its own zod-free modules", () => {
     const graph = [...reach(resolve(DIST, "browser.js"))];
     expect(graph.filter((g) => g.startsWith("pkg:"))).toEqual([]);

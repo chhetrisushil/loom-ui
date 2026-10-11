@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 // a regression that re-imports the schemas blows through it by itself.
 
 const DIST = resolve(__dirname, "../dist");
-const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist"));
+const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist/esm"));
 /**
  * The ONLY core modules a browser bundle may contain — an allowlist, not a denylist, so a server
  * module added to core later (one that imports zod, or anything else heavy) is caught the moment
@@ -77,8 +77,12 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // catalogue (`messages.js`, ~7 kB: every English string once, under its key) rides with the renderer.
     // U17 raised index by 6 kB (measured 175_259 -> 180_313): windowed rendering (`virtual.ts`, shared by lu-table,
     // lu-data-table and lu-chat), update coalescing and visibility reporting. `dom/index.js` stays under 180 kB (105_315).
-    ["index.js", 186 * 1000],
-    ["dom/index.js", 180 * 1000],
+    // ESM packaging (F3): @loom-ui/core and /hydration now publish an ESM build (`dist/esm`, picked by the
+    // `import` condition), so the bundler drops every module an entry does not reach. Every budget below was
+    // lowered to ~4% over the new measurement (index 186 -> 177 kB, measured 170_171; dom/index 180 -> 84 kB,
+    // 80_252; dom/containers 93 -> 66 kB, 63_081; media 187 -> 122 kB, 117_079; chat 203 -> 141 kB, 135_267).
+    ["index.js", 177 * 1000],
+    ["dom/index.js", 84 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
     // U8 fix round 1: 80 -> 81 kB (the contract grew by `mode`: +130 bytes put it 26 over).
@@ -87,12 +91,12 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Slice 7 (audience): 91 -> 92 kB (measured 91_238, 238 over): the redacted-widget draw (`drawRedacted`, loom's
     // constant marker) and `describeWidgetStatus` ride in the shared tree every entry carries.
     // Slice 7 re-review: 92 -> 93 kB (measured 92_201, 201 over): `isBroadcast` is now core's one copy, so `viewer.js` (zod-free) joins the graph.
-    ["dom/containers.js", 93 * 1000],
+    ["dom/containers.js", 66 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
-    ["media.js", 187 * 1000],
+    ["media.js", 122 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
-    ["chat.js", 203 * 1000],
+    ["chat.js", 141 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

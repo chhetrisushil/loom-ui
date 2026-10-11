@@ -5,15 +5,29 @@
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "module": "./dist/esm/index.js",
+  "sideEffects": false,
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./client": { "types": "./dist/client.d.ts", "default": "./dist/client.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "node": "./dist/client.js",
+      "import": "./dist/esm/client.js",
+      "default": "./dist/client.js"
+    }
   },
   "typesVersions": {
-    "*": { "client": ["./dist/client.d.ts"] }
+    "*": {
+      "client": ["./dist/client.d.ts"]
+    }
   },
   "scripts": {
-    "build": "rm -f dist/split.js dist/split.js.map dist/split.d.ts dist/split.d.ts.map && tsc --build",
+    "build": "rm -f dist/split.js dist/split.js.map dist/split.d.ts dist/split.d.ts.map && tsc --build && rm -rf dist/esm && tsc -p tsconfig.esm.json",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest run",
