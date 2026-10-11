@@ -297,8 +297,13 @@ function foldInto(
  * written into the sticky map here — it will not be implied by `onto`'s tree. Unsealed result
  * (the caller seals); returns `onto` itself when `from` adds nothing.
  */
-export function carryClasses(from: Experience, onto: Experience): Experience {
-  const live = liveClasses(from.root);
+export function carryClasses(
+  from: Experience,
+  onto: Experience,
+  /** Precomputed live maps of `from.root`, for a tree the recursive walkers must not be given. */
+  pre?: { live: ReadonlyMap<string, DataClass>; liveP: ReadonlyMap<string, DataClass> }
+): Experience {
+  const live = pre?.live ?? liveClasses(from.root);
   const handles = foldInto(onto.handleClasses, [
     ...live,
     ...Object.entries(from.handleClasses ?? {}),
@@ -308,7 +313,7 @@ export function carryClasses(from: Experience, onto: Experience): Experience {
     ...Object.entries(from.toolClasses ?? {}),
   ]);
   const projections = foldInto(onto.projectionClasses, [
-    ...liveProjectionClasses(from.root),
+    ...(pre?.liveP ?? liveProjectionClasses(from.root)),
     ...Object.entries(from.projectionClasses ?? {}),
   ]);
   if (
