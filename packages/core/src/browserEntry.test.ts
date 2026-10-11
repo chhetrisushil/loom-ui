@@ -38,6 +38,7 @@ describe("@loom-ui/core/browser", () => {
       "mediaRef.js",
       "paths.js",
       "streamText.js",
+      "viewer.js",
     ]);
   });
 

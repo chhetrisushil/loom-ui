@@ -103,6 +103,12 @@ export interface CompileFingerprintInput {
   /** The viewer's clearance (`Viewer.clearance`). */
   readonly clearance?: string | undefined;
   /**
+   * `CompileResult.fingerprint.audience`. Only `"broadcast"` moves the fingerprint (a viewer surface,
+   * or none given, is exactly what it was before), so a wallboard's stamp never equals a no-clearance
+   * viewer's even though their clearance is the same.
+   */
+  readonly audience?: string | undefined;
+  /**
    * The handles redacted for this viewer (order-insensitive). The fingerprint is NOT secret and the
    * viewer carries it on every action, so pass `CompileResult.fingerprint.restrictedHandles` (opaque
    * aliases), never the real names: a plain hash of a handle list lets the viewer confirm a guess.
@@ -141,6 +147,8 @@ export function compileFingerprint(input: CompileFingerprintInput): string {
     // Tagged and appended only when present, so a fingerprint without them is unchanged.
     const rp = [...(input.restrictedProjectionNodes ?? [])].map(String).sort();
     if (rp.length > 0) parts.push(["rp", rp]);
+    if (input.audience !== undefined && input.audience !== "viewer")
+      parts.push(["aud", "broadcast"]);
     const pv = Object.entries(input.projectionVersions ?? {})
       .map(([k, v]): [string, string] => [String(k), String(v)])
       .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));

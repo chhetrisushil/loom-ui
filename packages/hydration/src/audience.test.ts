@@ -4,7 +4,7 @@ import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { describe, expect, it } from "vitest";
 import { HydrationCache } from "./cache";
 import { HydrationController } from "./controller";
-import { HydrationAudienceMismatchError, HydrationStore } from "./projection";
+import { HydrationAudienceMismatchError, HydrationScopeError, HydrationStore } from "./projection";
 import { handleInventory, serveHandle, serveHandles } from "./split/index";
 import { FakeInvoker, ManualClock, flush, mcpStep, providerSpec } from "./testing.test-support";
 
@@ -219,6 +219,27 @@ describe("audience scope isolation (the same principal on two surfaces)", () => 
       audience: "broadcast",
     });
     expect(a.executionId).not.toBe(b.executionId);
+  });
+
+  it("an id carrying NUL is refused, so no principal can forge another scope's key", () => {
+    const rt = new InMemoryProjectionRuntime();
+    expect(
+      () => new HydrationStore(rt, { experienceId: "e", principalId: "p\u0000broadcast" })
+    ).toThrow(HydrationScopeError);
+    expect(() => new HydrationStore(rt, { experienceId: "e\u0000x", principalId: "p" })).toThrow(
+      HydrationScopeError
+    );
+    expect(() => new HydrationStore(rt, { experienceId: "e", principalId: "p" })).not.toThrow();
+  });
+
+  it("isBroadcast truth table (the scope key uses core's rule, not a copy)", () => {
+    const key = (audience: unknown) =>
+      new HydrationStore(new InMemoryProjectionRuntime(), {
+        experienceId: "e",
+        audience: audience as never,
+      }).executionId;
+    for (const a of [undefined, "viewer"]) expect(key(a)).toBe("e");
+    for (const a of ["broadcast", null, "", "x", 0]) expect(key(a)).toBe("e\u0000broadcast");
   });
 
   it("the controller refuses a broadcast audience on a non-broadcast scope, and vice versa", () => {

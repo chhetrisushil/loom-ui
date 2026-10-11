@@ -1,7 +1,11 @@
-import type { Finding, Priority } from "@loom-ui/core";
-import { checkKindValue, hasKindContract } from "@loom-ui/core/browser";
+import type { Audience, Finding, Priority } from "@loom-ui/core";
+import { checkKindValue, hasKindContract, isBroadcast } from "@loom-ui/core/browser";
 import { type LoadParams, checkParams, paramsKey, pickParams } from "../params";
-import { type HydrationStore, isReservedHandle } from "../projection";
+import {
+  HydrationAudienceMismatchError,
+  type HydrationStore,
+  isReservedHandle,
+} from "../projection";
 import {
   type HandleLoadResult,
   HandleScheduler,
@@ -81,6 +85,12 @@ export interface HandleLoader {
 export interface SplitControllerOptions {
   readonly loader: HandleLoader;
   readonly store: HydrationStore;
+  /**
+   * The audience this controller draws for. When given it must agree with the store's
+   * `scope.audience` both ways, or the constructor throws `HydrationAudienceMismatchError` (as
+   * `HydrationController` always does). Omitted = the viewer audience: a broadcast store then throws.
+   */
+  readonly audience?: Audience;
   readonly setTimer?: TimerFn;
   readonly batchWindowMs?: number;
   /** Params every load starts from (e.g. `DEFAULT_TIME_RANGE`); `setParams` layers over them. */
@@ -180,6 +190,9 @@ export class SplitHydrationController {
    * unrepresentable `defaultParams`.
    */
   constructor(private readonly opts: SplitControllerOptions) {
+    const broadcast = isBroadcast(opts.audience);
+    if (broadcast !== isBroadcast(opts.store.scope.audience))
+      throw new HydrationAudienceMismatchError(broadcast);
     const loader: Partial<HandleLoader> | null | undefined = opts.loader;
     if (typeof loader?.load !== "function" || typeof loader.loadMany !== "function")
       throw new TypeError("SplitHydrationController: the loader must implement load and loadMany");

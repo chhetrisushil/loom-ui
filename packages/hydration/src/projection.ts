@@ -1,5 +1,5 @@
 import type { Audience, Finding } from "@loom-ui/core";
-import { type StreamedText, appendChunk } from "@loom-ui/core/browser";
+import { type StreamedText, appendChunk, isBroadcast } from "@loom-ui/core/browser";
 import type { EventEnvelope } from "@loom/core";
 import type { Projection, ProjectionRuntime } from "@loom/projection-runtime";
 
@@ -111,10 +111,6 @@ export interface HydrationScope {
   readonly audience?: Audience;
 }
 
-// Same rule as `@loom-ui/core`'s `isBroadcast` (anything but absent / "viewer" is broadcast), restated
-// here because this module ships in the browser bundle and core's root entry is not browser-safe.
-const broadcastAudience = (a: unknown): boolean => a !== undefined && a !== "viewer";
-
 /** A controller and its store disagree about the audience (one broadcast, the other not). */
 export class HydrationAudienceMismatchError extends Error {
   readonly code = "hydration-audience-mismatch" as const;
@@ -125,6 +121,17 @@ export class HydrationAudienceMismatchError extends Error {
         : "HydrationController: a store scoped to a broadcast audience needs a broadcast controller"
     );
     this.name = "HydrationAudienceMismatchError";
+  }
+}
+
+/** An `experienceId` or `principalId` contains NUL, the separator of the broadcast scope key. */
+export class HydrationScopeError extends Error {
+  readonly code = "hydration-scope-invalid" as const;
+  constructor(readonly field: "experienceId" | "principalId") {
+    super(
+      `HydrationStore: ${field} must not contain a NUL character (it separates the broadcast scope key)`
+    );
+    this.name = "HydrationScopeError";
   }
 }
 
@@ -151,13 +158,17 @@ export class HydrationStore {
     readonly scope: HydrationScope,
     opts: { register?: boolean } = {}
   ) {
+    // The key below joins with NUL; an id carrying one could forge another scope's key
+    // (principal "p\0broadcast" would land on the broadcast scope of "p").
+    if (scope.experienceId.includes("\u0000")) throw new HydrationScopeError("experienceId");
+    if (scope.principalId?.includes("\u0000")) throw new HydrationScopeError("principalId");
     const base =
       scope.principalId === undefined
         ? scope.experienceId
         : `${scope.experienceId}:${scope.principalId}`;
     // NUL cannot appear in a typed id suffix a principal could forge, so a principal named
     // "p:broadcast" never lands on the broadcast scope of "p".
-    this.executionId = broadcastAudience(scope.audience) ? `${base}\u0000broadcast` : base;
+    this.executionId = isBroadcast(scope.audience) ? `${base}\u0000broadcast` : base;
     if (opts.register !== false) runtime.register(hydrationProjection());
   }
 

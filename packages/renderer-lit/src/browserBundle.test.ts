@@ -44,6 +44,7 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "messages.js",
   "paths.js",
   "streamText.js",
+  "viewer.js",
 ]);
 
 async function bundle(entry: string) {
@@ -85,7 +86,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // code the U16/U17/#71 slices grew, which this smallest entry carries in full; index and dom/index stay under budget.
     // Slice 7 (audience): 91 -> 92 kB (measured 91_238, 238 over): the redacted-widget draw (`drawRedacted`, loom's
     // constant marker) and `describeWidgetStatus` ride in the shared tree every entry carries.
-    ["dom/containers.js", 92 * 1000],
+    // Slice 7 re-review: 92 -> 93 kB (measured 92_201, 201 over): `isBroadcast` is now core's one copy, so `viewer.js` (zod-free) joins the graph.
+    ["dom/containers.js", 93 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 187 * 1000],

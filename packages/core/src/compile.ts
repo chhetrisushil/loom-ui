@@ -223,6 +223,13 @@ export interface CompileResult {
    * — or a viewer can confirm a guessed handle against its own stamp.
    */
   readonly fingerprint: {
+    /**
+     * The audience the surface was drawn for. A broadcast surface and a no-clearance viewer's share a
+     * clearance and (often) the restricted lists but NOT the IR (the redacted widget vs the Note
+     * placeholder), so the audience is part of the fingerprint: a memo or stamp keyed by it can never
+     * serve one for the other. Spread with the rest of this object into `compileFingerprint`.
+     */
+    readonly audience: "viewer" | "broadcast";
     readonly restrictedHandles: readonly string[];
     readonly restrictedProjectionNodes: readonly string[];
     /**
@@ -284,7 +291,12 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
       ok: false,
       restrictedProjectionNodes: [],
       restrictedHandles: [],
-      fingerprint: { restrictedHandles: [], restrictedProjectionNodes: [], placeholderNodes: [] },
+      fingerprint: {
+        restrictedHandles: [],
+        restrictedProjectionNodes: [],
+        placeholderNodes: [],
+        audience: isBroadcast(opts.audience) ? "broadcast" : "viewer",
+      },
       viewer: viewer ?? {},
       clearance: viewer?.clearance,
     };
@@ -430,6 +442,7 @@ function compileUncached(exp: Experience, opts: CompileOptions): CompileResult {
     viewer: viewer ?? {},
     clearance: viewer?.clearance,
     fingerprint: {
+      audience: broadcast ? "broadcast" : "viewer",
       restrictedHandles: opaque([...restrictedHandles], "handle"),
       restrictedProjectionNodes: opaque(restrictedProjectionNodes, "node"),
       placeholderNodes: placeholderIdsOf(layout, redaction.bare),

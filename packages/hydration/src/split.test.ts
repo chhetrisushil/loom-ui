@@ -22,7 +22,7 @@ import {
 import { type DriftReport, HydrationController } from "./controller";
 import { defineDataProviders, mcpProvider } from "./dataProvider";
 import { loomEffectProvider } from "./loomEffectProvider";
-import { HydrationStore } from "./projection";
+import { HydrationAudienceMismatchError, HydrationStore } from "./projection";
 import type { HandleLoadResult } from "./scheduler";
 import {
   DEFAULT_MAX_CONCURRENT_CALLS,
@@ -1678,5 +1678,30 @@ describe("split vs in-process parity when things go wrong", () => {
       );
       ctl.dispose();
     }
+  });
+});
+
+describe("SplitHydrationController audience (matches the in-process controller)", () => {
+  const loader: HandleLoader = {
+    load: async () => ({ state: "empty" }) as unknown as HandleLoadResult,
+    loadMany: async () => [],
+  };
+  const store = (audience?: "broadcast") =>
+    new HydrationStore(new InMemoryProjectionRuntime(), {
+      experienceId: "e",
+      ...(audience !== undefined && { audience }),
+    });
+  it("throws HydrationAudienceMismatchError both ways, and accepts agreement", () => {
+    expect(
+      () => new SplitHydrationController({ loader, store: store(), audience: "broadcast" })
+    ).toThrow(HydrationAudienceMismatchError);
+    expect(() => new SplitHydrationController({ loader, store: store("broadcast") })).toThrow(
+      HydrationAudienceMismatchError
+    );
+    expect(
+      () =>
+        new SplitHydrationController({ loader, store: store("broadcast"), audience: "broadcast" })
+    ).not.toThrow();
+    expect(() => new SplitHydrationController({ loader, store: store() })).not.toThrow();
   });
 });
