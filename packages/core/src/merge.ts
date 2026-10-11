@@ -610,27 +610,41 @@ function loweredRefs(base: Experience, from: Experience, deep: boolean): Set<str
   return out;
 }
 
-/** Every stored class map folded strictest-first, without reading any tree. */
-function carryStored(from: Experience, onto: Experience): Experience {
-  const fold = (
-    a: Readonly<Record<string, DataClass>> | undefined,
-    b: Readonly<Record<string, DataClass>> | undefined
-  ): Record<string, DataClass> | undefined => {
-    if (b === undefined) return a === undefined ? undefined : { ...a };
-    const out: Record<string, DataClass> = { ...a };
-    for (const [k, c] of Object.entries(b))
-      out[k] = strictestClass(Object.hasOwn(out, k) ? out[k] : undefined, c) as DataClass;
-    return out;
-  };
-  const h = fold(onto.handleClasses, from.handleClasses);
-  const t = fold(onto.toolClasses, from.toolClasses);
-  const p = fold(onto.projectionClasses, from.projectionClasses);
-  return {
-    ...onto,
-    ...(h !== undefined && { handleClasses: h }),
-    ...(t !== undefined && { toolClasses: t }),
-    ...(p !== undefined && { projectionClasses: p }),
-  };
+/**
+ * The live node-level handle and projection classes of a tree, by an explicit stack: the
+ * recursive `liveClasses` would overflow on a tree past the depth cap.
+ */
+function liveClassesIterative(root: ExperienceNode): {
+  live: Map<string, DataClass>;
+  liveP: Map<string, DataClass>;
+} {
+  const live = new Map<string, DataClass>();
+  const liveP = new Map<string, DataClass>();
+  const stack: ExperienceNode[] = [root];
+  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+    if (n.kind === "semantic") {
+      if (n.binding?.sensitivity !== undefined)
+        live.set(
+          n.binding.handle,
+          strictestClass(live.get(n.binding.handle), n.binding.sensitivity) as DataClass
+        );
+      if (n.projection?.sensitivity !== undefined)
+        liveP.set(
+          n.projection.id,
+          strictestClass(liveP.get(n.projection.id), n.projection.sensitivity) as DataClass
+        );
+    }
+    if (isContainer(n)) for (const c of n.children) stack.push(c as ExperienceNode);
+  }
+  return { live, liveP };
+}
+
+/**
+ * `carryClasses` for a tree past the depth cap: the node-level classes of `from` (and the tool
+ * classes they imply) are read iteratively and folded, strictest wins, into the sticky maps.
+ */
+function carryDeep(from: Experience, onto: Experience): Experience {
+  return carryClasses(from, onto, liveClassesIterative(from.root));
 }
 
 /**
@@ -697,7 +711,9 @@ export function mergeExperiences(
   let experience: Experience;
   if (deep === undefined) {
     experience = carryClasses(base, carryClasses(theirs, carryClasses(ours, partial)));
-  } else experience = carryStored(base, carryStored(theirs, carryStored(ours, partial)));
+  } else experience = carryDeep(base, carryDeep(theirs, carryDeep(ours, partial)));
+  // (Over-deep: the returned root is ours, unrewritten. The strictest class lives in the sticky
+  // maps, which every reader consults; node-level `sensitivity` on such a result may be lower.)
 
   // A declassification on one side does not survive (the classes above are re-folded, strictest
   // wins). Say so, and keep the node-level class in step with the effective one.

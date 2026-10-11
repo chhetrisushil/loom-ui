@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateExperience } from "./catalog";
+import { effectiveClasses } from "./classes";
 import { declareHandle } from "./declareHandle.test-support";
 import { Experience, genesis } from "./experience";
 import { mintVersionHash, seal } from "./log";
@@ -872,4 +873,97 @@ describe("mergeExperiences: properties (120 seeded cases)", () => {
     expect(a.versionHash).toBe(hash(x));
     expect(a.versionHash).toMatch(/^sha256:/);
   });
+});
+
+describe("mergeExperiences: a too-deep input still carries every node-level class", () => {
+  const tool = (name: string) => ({
+    stepId: "s",
+    toolName: name,
+    toolVersion: "1",
+    toolSchemaHash: "x",
+    arguments: {},
+    dependsOn: [],
+    idempotent: true,
+  });
+  const base0 = (): Experience => {
+    const b = baseExperience();
+    return {
+      ...b,
+      providers: {
+        ...b.providers,
+        "h-a": { ...b.providers["h-a"], executionGraph: [tool("shared")] },
+        "h-b": { ...b.providers["h-b"], executionGraph: [tool("shared")] },
+      },
+    } as Experience;
+  };
+  const drop = (c: ExperienceNode, patch: Record<string, unknown>) => {
+    const out: Record<string, unknown> = { ...c, ...patch };
+    for (const k of Object.keys(patch)) if (patch[k] === undefined) delete out[k];
+    return out;
+  };
+  /** Node-level only: no sticky map is written, the way a hand-built or foreign tree arrives. */
+  const mark = (e: Experience, id: string, patch: Record<string, unknown>): Experience => ({
+    ...e,
+    root: {
+      ...e.root,
+      children: (e.root as ContainerNode).children.map((c) =>
+        c.id === id ? (drop(c, patch) as unknown as SemanticNode) : c
+      ),
+    } as ContainerNode,
+  });
+  const withSpine = (e: Experience, n: number): Experience => ({
+    ...e,
+    root: {
+      ...e.root,
+      children: [...(e.root as ContainerNode).children, spine(n)],
+    } as ContainerNode,
+  });
+  const secretBinding = { handle: "h-a", priority: "P1" as const, sensitivity: "secret" as const };
+  const secretProjection = {
+    id: "p1",
+    path: "$.x",
+    version: "1",
+    sensitivity: "secret" as const,
+  };
+
+  for (const n of [2000, 50_000]) {
+    for (const deepSide of ["ours", "theirs"] as const) {
+      const sides = (b: Experience, s: Experience) => {
+        const d = withSpine(b, n);
+        return deepSide === "ours" ? ([d, s] as const) : ([s, d] as const);
+      };
+      it(`${n}-deep ${deepSide}: a node-level handle class on the other side survives`, () => {
+        const base = base0();
+        const [o, t] = sides(base, mark(base, "a", { binding: secretBinding }));
+        const m = mergeExperiences(base, o, t);
+        expect(kinds(m)).toContain("depth");
+        expect(m.experience.handleClasses?.["h-a"]).toBe("secret");
+        if (n < 10_000) expect(effectiveClasses(m.experience).get("h-a")).toBe("secret");
+        else expect(m.experience.handleClasses?.["h-a"]).toBe("secret");
+      });
+      it(`${n}-deep ${deepSide}: the class implied on a shared tool survives`, () => {
+        const base = base0();
+        const [o, t] = sides(base, mark(base, "a", { binding: secretBinding }));
+        const m = mergeExperiences(base, o, t);
+        expect(m.experience.toolClasses?.shared).toBe("secret");
+        if (n < 10_000) expect(effectiveClasses(m.experience).get("h-b")).toBe("secret"); // readers recurse
+      });
+      it(`${n}-deep ${deepSide}: a node-level projection class survives`, () => {
+        const base = mark(base0(), "a", {
+          binding: undefined,
+          projection: { ...secretProjection, sensitivity: undefined },
+        });
+        const [o, t] = sides(base, mark(base, "a", { projection: secretProjection }));
+        const m = mergeExperiences(base, o, t);
+        expect(m.experience.projectionClasses?.p1).toBe("secret");
+      });
+    }
+    it(`${n}-deep input that is itself the classed side keeps its own live class`, () => {
+      const base = base0();
+      const classed = withSpine(mark(base, "a", { binding: secretBinding }), n);
+      const m = mergeExperiences(base, classed, base);
+      if (n < 10_000) expect(effectiveClasses(m.experience).get("h-a")).toBe("secret");
+      else expect(m.experience.handleClasses?.["h-a"]).toBe("secret");
+    });
+  }
 });
