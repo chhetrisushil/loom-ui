@@ -257,11 +257,32 @@ describe("paste mode always ends, and a lone key is alone", () => {
       expect(d("junk\x03y")).toEqual([{ name: "interrupt" }, { name: "char", char: "y" }]);
       expect(d("y")).toEqual([{ name: "char", char: "y" }]);
     });
-    it("a second idle period with no input resumes normal decoding", () => {
+    it("a second stall inside the drain does not resume typing: the rest is still the paste's", () => {
       const { d, clock } = stalled();
       expect(d("tail")).toEqual([]);
-      clock.t += 2001;
+      clock.t += 60_000; // the link stalls again, far past the idle bound
+      expect(d("y\ty\n")).toEqual([]); // still the stalled paste's text, not keystrokes
+      clock.t += 60_000;
+      expect(d(`more${END}y`)).toEqual([{ name: "char", char: "y" }]);
+    });
+    it("the drain is bounded by bytes, not time: past MAX_PASTE discarded bytes typing resumes", () => {
+      const { d } = stalled();
+      expect(d("a".repeat(1 << 20))).toEqual([]);
+      expect(d("a")).toEqual([]); // MAX_PASTE + 1 discarded: the bound is passed
       expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+    });
+    it("a stalled consent paste cannot approve through the drain either", async () => {
+      const clock = { t: 0 };
+      const { term, actions } = rig(view("e@v1", approval), { now: () => clock.t });
+      await term.send("\x1b[200~abc");
+      clock.t += 5000;
+      await term.send("y");
+      clock.t += 5000;
+      await term.send("y");
+      expect(actions).toEqual([]);
+      await term.send(END);
+      await term.send("y");
+      expect(types(actions)).toEqual(["APPROVE"]);
     });
   });
   it("a dropped sequence or non-printable beside `y` disqualifies it", async () => {
