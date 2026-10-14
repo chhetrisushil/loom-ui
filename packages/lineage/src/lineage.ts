@@ -277,6 +277,15 @@ export class Lineage {
    * a moment earlier still refuses to delete it. That also covers a fork made between this method's
    * two passes. It needs a store with `touch`; loom's sweep refuses to erase through one without it.
    *
+   * COST. Linear in the number of RETAINED, DISTINCT artifacts, and each one is read in full: the
+   * refs a version cites (media, blobs) live only inside its artifact's bytes, and neither the version
+   * event nor the store records which artifacts hold any, so there is nothing to skip on without
+   * reading. The reads are bounded, not avoided: a retention policy that keeps fewer versions reads
+   * fewer artifacts, artifacts shared by versions or forks are read once per call, and `extra.concurrency`
+   * sets how many of a line are in flight. Run it from the collector, not on a request path. (Skipping
+   * ref-free artifacts would need a "cites refs" flag stamped on the version event at write time: a
+   * lineage event-schema change, not done here.)
+   *
    * Two passes, one line in memory at a time. Throws if the store cannot enumerate its lines, if
    * any line fails to fold, if a retained artifact cannot be read for a reason other than being
    * already gone, or on a malformed policy (a collector must refuse, never guess).
