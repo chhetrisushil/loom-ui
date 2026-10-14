@@ -283,16 +283,27 @@ export function treeDepth(root: ExperienceNode): number {
   return max;
 }
 
-/** Depth-first walk, parent before children. */
+/**
+ * Depth-first walk, parent before children. Iterative (an explicit frame per open container, each
+ * reading its child list lazily exactly as a recursive walk would), so a tree nested past the call
+ * stack is walked, not overflowed.
+ */
 export function walk(
   root: ExperienceNode,
   visit: (n: ExperienceNode, parent: ContainerNode | null) => void
 ): void {
-  const rec = (n: ExperienceNode, parent: ContainerNode | null): void => {
-    visit(n, parent);
-    if (isContainer(n)) for (const c of n.children) rec(c, n);
-  };
-  rec(root, null);
+  visit(root, null);
+  if (!isContainer(root)) return;
+  const stack: Array<{ node: ContainerNode; next: number }> = [{ node: root, next: 0 }];
+  for (let top = stack[stack.length - 1]; top !== undefined; top = stack[stack.length - 1]) {
+    if (top.next >= top.node.children.length) {
+      stack.pop();
+      continue;
+    }
+    const child = top.node.children[top.next++] as ExperienceNode;
+    visit(child, top.node);
+    if (isContainer(child)) stack.push({ node: child, next: 0 });
+  }
 }
 
 export function findNode(root: ExperienceNode, id: string): ExperienceNode | undefined {
