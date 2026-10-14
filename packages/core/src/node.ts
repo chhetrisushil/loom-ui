@@ -286,7 +286,8 @@ export function treeDepth(root: ExperienceNode): number {
 /**
  * Depth-first walk, parent before children. Iterative (an explicit frame per open container, each
  * reading its child list lazily exactly as a recursive walk would), so a tree nested past the call
- * stack is walked, not overflowed.
+ * stack is walked, not overflowed. A cyclic object graph (only possible from a buggy host-built
+ * object; zod-parsed trees are acyclic) now loops until OOM instead of throwing RangeError.
  */
 export function walk(
   root: ExperienceNode,

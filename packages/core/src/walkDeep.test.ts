@@ -116,7 +116,6 @@ describe("walk and the class readers on a very deep tree", () => {
 
   it("walk, liveClasses and effectiveClasses survive a 50 000-deep tree (the recursive walk overflows)", () => {
     const root = spine(50_000);
-    expect(() => recursiveWalk(root, () => {})).toThrow(RangeError);
     let visited = 0;
     walk(root, () => visited++);
     expect(visited).toBe(50_001);

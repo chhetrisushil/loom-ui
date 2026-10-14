@@ -124,7 +124,9 @@ export interface KeyDecoderOptions {
  * Paste mode always ends: at the end marker (even split across chunks), at Ctrl-C (the paste is
  * discarded and the interrupt delivered), when the paste outgrows MAX_PASTE (it is discarded, and
  * the rest is swallowed up to the end marker, never typed), or after `pasteIdleMs` of silence, when the
- * remainder (if any) is drained: discarded up to the end marker, Ctrl-C, or MAX_PASTE more bytes.
+ * remainder (if any) is drained: discarded up to the end marker, Ctrl-C, or MAX_PASTE more UTF-16
+ * code units AND `pasteIdleMs` of silence (a still-flowing paste keeps draining). A drain or an
+ * overflowed paste that ends inside a chunk emits an `ignored` key, so what follows is never sole.
  * Nothing it discards ever becomes a key.
  */
 export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) => Key[] {
@@ -136,8 +138,8 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
   let lastByteAt = 0;
   // After an idle-abandon the rest of the stalled paste may still arrive: drain (discard) it up to
   // the end marker or Ctrl-C, so it is never typed. Silence does NOT end the drain (a slow link can
-  // stall again mid-paste, and what follows is still the paste); a byte bound does, so a lost end
-  // marker costs at most MAX_PASTE of input, never all of it.
+  // stall again mid-paste, and what follows is still the paste); a bound (MAX_PASTE UTF-16 code
+  // units) PLUS idleMs of silence does, so a lost end marker costs at most that, never all input.
   let draining = false;
   let drained = 0;
   const leavePaste = (): void => {
@@ -153,6 +155,11 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
       draining = true;
       drained = 0;
     }
+    if (draining && drained > MAX_PASTE && now() - lastByteAt > idleMs) {
+      // Past the bound AND silent for idleMs: the end marker is lost, hand the input back.
+      draining = false;
+      carry = "";
+    }
     if (draining) {
       lastByteAt = now();
       const text = carry + chunk;
@@ -166,14 +173,14 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
         i = ctrl - lead + 1;
       } else if (end !== -1) {
         draining = false;
+        // Discarded content yields no key of its own, so mark the end: whatever follows in this
+        // chunk is then never a sole key.
+        keys.push({ name: "ignored" });
         i = end - lead + PASTE_END.length;
       } else {
+        // Past the bound the drain ends only after idleMs of silence (checked above), so a
+        // still-flowing paste is never typed.
         drained += chunk.length;
-        if (drained > MAX_PASTE) {
-          // The end marker never came: give the input back rather than swallow it forever.
-          draining = false;
-          return keys;
-        }
         carry = markerTail(text);
         return keys;
       }
@@ -205,7 +212,7 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
           carry = text.slice(stop);
           return keys;
         }
-        if (!overflow) keys.push({ name: "paste", text: pasteText(pasting) });
+        keys.push(overflow ? { name: "ignored" } : { name: "paste", text: pasteText(pasting) });
         leavePaste();
         i += end - lead + PASTE_END.length;
         continue;
