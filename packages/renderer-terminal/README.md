@@ -274,17 +274,18 @@ term.stop();
   delivered), when the paste passes 1 MiB (discarded; the rest is swallowed to the end marker, never
   typed), or after `pasteIdleMs` (default 2000, read from an injectable `now`) without a byte. An
   idle-abandoned paste may still be arriving, so the decoder then DRAINS: it discards input (nothing
-  is typed) until the end marker, Ctrl-C (delivered as an interrupt) or a further idle period with
-  no input, and only then decodes normally.
+  is typed) until the end marker or Ctrl-C (delivered as an interrupt). A further silence does not
+  end the drain (a slow link can stall twice); a byte bound does: after 1 MiB more with no end marker
+  the input is handed back, so a lost marker costs at most that much typing, never all of it.
 - **Known limits, and `confirmConsent`.** A chunk boundary is all a terminal gives us. (1) On a
   terminal WITHOUT bracketed paste, a one-character paste `y` into a focused approval is a one-key
   chunk, taken as a keypress. (2) A host reading byte by byte (slow serial / ssh) makes every key
   sole, so a multi-line non-bracketed paste could reach `\t`, `y`. For raw-byte-stream hosts set
   `confirmConsent: true` (recommended there; default off): the first `y` / `n` only arms the
   approval (the frame shows `y ×2`, or `labels.confirm`), and the same key alone in a LATER chunk on
-  the same frame acts; any other key disarms. (3) A paste that stalls and then resumes after a
-  second idle period of silence is indistinguishable from fresh typing: that tail is decoded as keys
-  (the sole-key rule still blocks consent).
+  the same frame acts; any other key disarms. (3) A paste whose end marker never arrives
+  is drained for 1 MiB, after which what follows is decoded as keys (the sole-key rule still blocks
+  consent); Ctrl-C leaves the drain at once.
 - **Actions** are the shapes the web emits (`APPROVE` / `REJECT` with `payload.approved`, `SELECT`,
   `SUBMIT_TEXT` with an idempotency `key`), stamped with `viewedVersion`. What was typed is kept until
   the host answers `ok`; a refusal or a throw is a fixed sentence from `LU_MESSAGES`, never the host's
