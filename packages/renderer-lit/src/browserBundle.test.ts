@@ -81,8 +81,11 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // `import` condition), so the bundler drops every module an entry does not reach. Every budget below was
     // lowered to ~4% over the new measurement (index 186 -> 177 kB, measured 170_171; dom/index 180 -> 84 kB,
     // 80_252; dom/containers 93 -> 66 kB, 63_081; media 187 -> 122 kB, 117_079; chat 203 -> 141 kB, 135_267).
-    ["index.js", 177 * 1000],
-    ["dom/index.js", 84 * 1000],
+    // Re-baselined 2026-10-14 after the ESM build (loom-ui #82) at measured size + ~10%, rounded up:
+    // index 120_260 -> 133 kB, dom/index 30_450 -> 34 kB, containers 10_643 -> 12 kB, media 64_476 -> 71 kB,
+    // chat 82_652 -> 91 kB, signals 2_074 -> 2.5 kB.
+    ["index.js", 133 * 1000],
+    ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
     // U8 fix round 1: 80 -> 81 kB (the contract grew by `mode`: +130 bytes put it 26 over).
@@ -91,12 +94,12 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Slice 7 (audience): 91 -> 92 kB (measured 91_238, 238 over): the redacted-widget draw (`drawRedacted`, loom's
     // constant marker) and `describeWidgetStatus` ride in the shared tree every entry carries.
     // Slice 7 re-review: 92 -> 93 kB (measured 92_201, 201 over): `isBroadcast` is now core's one copy, so `viewer.js` (zod-free) joins the graph.
-    ["dom/containers.js", 66 * 1000],
+    ["dom/containers.js", 12 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
-    ["media.js", 122 * 1000],
+    ["media.js", 71 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
-    ["chat.js", 141 * 1000],
+    ["chat.js", 91 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);
@@ -119,11 +122,12 @@ describe("renderer-lit's browser entries carry no zod", () => {
 // index/dom pay nothing, and it imports NOTHING from core at runtime (it takes the collector by its
 // shape), so it is not subject to the core allowlist above — it must have no core module at all.
 describe("renderer-lit/signals", () => {
-  it("bundles with no zod and no core module, under 6000 bytes", async () => {
+  // Re-baselined 2026-10-14 after the ESM build (loom-ui #82): 2_074 measured -> 2.5 kB.
+  it("bundles with no zod and no core module, under 2500 bytes", async () => {
     const { inputs, bytes } = await bundle("signals.js");
     console.info(`@loom-ui/renderer-lit/signals.js browser bundle (minified, esm): ${bytes} bytes`);
     expect(inputs.filter((f) => /[\\/]zod[\\/]/.test(f))).toEqual([]);
     expect(inputs.filter((f) => f.startsWith(`${CORE_DIST}/`))).toEqual([]);
-    expect(bytes).toBeLessThan(6 * 1000);
+    expect(bytes).toBeLessThan(2.5 * 1000);
   });
 });
