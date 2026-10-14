@@ -123,7 +123,8 @@ export interface KeyDecoderOptions {
  *
  * Paste mode always ends: at the end marker (even split across chunks), at Ctrl-C (the paste is
  * discarded and the interrupt delivered), when the paste outgrows MAX_PASTE (it is discarded, and
- * the rest is swallowed up to the end marker, never typed), or after `pasteIdleMs` of silence.
+ * the rest is swallowed up to the end marker, never typed), or after `pasteIdleMs` of silence, when the
+ * remainder (if any) is drained: discarded up to the end marker, Ctrl-C, or MAX_PASTE more bytes.
  * Nothing it discards ever becomes a key.
  */
 export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) => Key[] {
@@ -134,8 +135,11 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
   let carry = "";
   let lastByteAt = 0;
   // After an idle-abandon the rest of the stalled paste may still arrive: drain (discard) it up to
-  // the end marker, Ctrl-C, or a second idle period, so it is never typed.
+  // the end marker or Ctrl-C, so it is never typed. Silence does NOT end the drain (a slow link can
+  // stall again mid-paste, and what follows is still the paste); a byte bound does, so a lost end
+  // marker costs at most MAX_PASTE of input, never all of it.
   let draining = false;
+  let drained = 0;
   const leavePaste = (): void => {
     pasting = undefined;
     overflow = false;
@@ -147,7 +151,8 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
     if (pasting !== undefined && now() - lastByteAt > idleMs) {
       leavePaste();
       draining = true;
-    } else if (draining && now() - lastByteAt > idleMs) draining = false;
+      drained = 0;
+    }
     if (draining) {
       lastByteAt = now();
       const text = carry + chunk;
@@ -163,6 +168,12 @@ export function createKeyDecoder(opts: KeyDecoderOptions = {}): (chunk: string) 
         draining = false;
         i = end - lead + PASTE_END.length;
       } else {
+        drained += chunk.length;
+        if (drained > MAX_PASTE) {
+          // The end marker never came: give the input back rather than swallow it forever.
+          draining = false;
+          return keys;
+        }
         carry = markerTail(text);
         return keys;
       }
