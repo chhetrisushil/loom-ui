@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // ── ESM packaging (F3) ───────────────────────────────────────────────────────────
@@ -12,6 +12,11 @@ import { describe, expect, it } from "vitest";
 //    `dist/esm/**` behind the `import` condition, which a bundler targeting the browser resolves
 //    (it does not set `node`). `node` MUST come before `import`: Node sets both.
 //  - ESM-first packages (renderer-lit, renderer-conformance) are `"type": "module"` already.
+//  - One copy per runtime: a build may only name a sibling `@loom-ui/*` package through its `exports`
+//    map (a deep `dist/...` path would bypass the conditions and load the OTHER build of it), and a
+//    relative import stays inside its own build (`dist/esm` never reaches `dist/*.js`, nor back).
+//    Otherwise a consumer holds a CJS and an ESM copy of the same package (two registries, two
+//    `instanceof` worlds).
 //
 // Needs `pnpm build` first, like every other guard that reads `dist`.
 
@@ -79,6 +84,114 @@ describe("ESM packaging", () => {
       });
     });
   }
+
+  describe("one copy per runtime (no require/import mix)", () => {
+    const files = (d: string, skip: (p: string) => boolean = () => false): string[] =>
+      existsSync(d)
+        ? readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+            const p = resolve(d, e.name);
+            return skip(p)
+              ? []
+              : e.isDirectory()
+                ? files(p, skip)
+                : e.name.endsWith(".js")
+                  ? [p]
+                  : [];
+          })
+        : [];
+    /** Module specifiers a built file names: `from "x"`, `import "x"`, `import("x")`, `require("x")`. */
+    const specifiers = (src: string): string[] =>
+      [
+        ...stripComments(src).matchAll(
+          /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\(\s*)["']([^"']+)["']/g
+        ),
+      ].map((m) => m[1] as string);
+    // Comments name specifiers in prose; only code counts. (No emitted file here has `//` in a string.)
+    const stripComments = (src: string): string =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const byName = new Map(pkgs.map((p) => [p.pkg.name, p]));
+    /** `@loom-ui/x/sub` -> [package, "./sub"]; `@loom-ui/x` -> [package, "."]. */
+    const split = (spec: string): [string, string] => {
+      const [scope, name, ...rest] = spec.split("/");
+      return [`${scope}/${name}`, rest.length === 0 ? "." : `./${rest.join("/")}`];
+    };
+    type Build = { label: string; condition: "import" | "node"; root: string; files: string[] };
+    const builds: Build[] = pkgs.flatMap(({ dir, pkg }) => {
+      const dist = resolve(dir, "dist");
+      const esmDir = resolve(dist, "esm");
+      if (pkg.type === "module")
+        return [
+          {
+            label: `${pkg.name} (ESM)`,
+            condition: "import" as const,
+            root: dist,
+            files: files(dist),
+          },
+        ];
+      return [
+        {
+          label: `${pkg.name} (ESM)`,
+          condition: "import" as const,
+          root: esmDir,
+          files: files(esmDir),
+        },
+        {
+          label: `${pkg.name} (CJS)`,
+          condition: "node" as const,
+          root: dist,
+          files: files(dist, (p) => p === esmDir),
+        },
+      ];
+    });
+
+    it("is not vacuous: both builds of the dual packages are scanned and some sibling imports exist", () => {
+      expect(builds.length).toBeGreaterThanOrEqual(2 * dualPkgs.length);
+      for (const b of builds) expect(b.files.length, b.label).toBeGreaterThan(0);
+      const siblingImports = builds.flatMap((b) =>
+        b.files.flatMap((f) =>
+          specifiers(readFileSync(f, "utf8")).filter((x) => x.startsWith("@loom-ui/"))
+        )
+      );
+      expect(siblingImports.length).toBeGreaterThan(10);
+    });
+
+    it("a sibling @loom-ui package is named only through an export that has this build's condition", () => {
+      for (const b of builds)
+        for (const f of b.files)
+          for (const spec of specifiers(readFileSync(f, "utf8"))) {
+            if (!spec.startsWith("@loom-ui/")) continue;
+            const [name, sub] = split(spec);
+            const target = byName.get(name);
+            const where = `${b.label}: ${relative(PACKAGES, f)} -> ${spec}`;
+            expect(target, where).not.toBeUndefined();
+            const exports = target?.pkg.exports ?? {};
+            const key = Object.keys(exports).find(
+              (k) => k === sub || (k.endsWith("/*") && sub.startsWith(k.slice(0, -1)))
+            );
+            const cond = key === undefined ? undefined : exports[key];
+            expect(
+              cond,
+              `${where} is not an export (a deep path bypasses the conditions)`
+            ).not.toBeUndefined();
+            // ESM resolves `import`; an ESM-first package has only `default`, a dual one has both.
+            expect(cond?.[b.condition] ?? cond?.default, where).not.toBeUndefined();
+          }
+    });
+
+    it("a relative import stays inside its own build", () => {
+      for (const b of builds)
+        for (const f of b.files)
+          for (const spec of specifiers(readFileSync(f, "utf8"))) {
+            if (!spec.startsWith(".")) continue;
+            const hit = resolve(dirname(f), spec);
+            const rel = relative(b.root, hit);
+            const where = `${b.label}: ${relative(PACKAGES, f)} -> ${spec}`;
+            expect(rel.startsWith(".."), where).toBe(false);
+            // the CJS build owns dist/ minus dist/esm
+            if (b.label.endsWith("(CJS)")) expect(rel.split("/")[0], where).not.toBe("esm");
+          }
+    });
+  });
 
   it("renderer-lit keeps its element-registering modules listed as side-effectful", () => {
     const lit = pkgs.find((p) => p.pkg.name === "@loom-ui/renderer-lit")?.pkg;
