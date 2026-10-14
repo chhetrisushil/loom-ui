@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { oneLineChatText, sanitizeChatText } from "./chatText";
 import { MAX_CHAT_TEXT } from "./chatValue";
 
@@ -148,11 +148,40 @@ describe("invisible glyph carriers (fix round 1)", () => {
     expect(sanitizeChatText(`${cp(0x1f600, 0xfe0f)}`)).toBe(cp(0x1f600, 0xfe0f));
     expect(sanitizeChatText(`a${cp(0xfe0f)}b`)).toBe("ab");
   });
-  it("stays linear with 100 KB of them", () => {
-    const t0 = performance.now();
-    sanitizeChatText(cp(0xfe0f).repeat(100_000));
-    sanitizeChatText(`a${cp(0xfe0f)}`.repeat(50_000));
-    expect(performance.now() - t0).toBeLessThan(250);
+  it("stays linear with 100 KB of them (counted work, not a clock)", () => {
+    // keepsVs16 is the only per-mark work: it slices at most 2 units around one mark. Count every
+    // slice and the units it returns (these inputs fit under the cut, so no big slice is expected); a rescan per mark would multiply them, doubling the input
+    // must at most double them.
+    const work = (input: string): { calls: number; units: number; out: string } => {
+      const real = String.prototype.slice;
+      const seen = { calls: 0, units: 0 };
+      const spy = vi.spyOn(String.prototype, "slice").mockImplementation(function (
+        this: string,
+        ...a: [number?, number?]
+      ) {
+        const r = real.apply(this, a);
+        seen.calls++;
+        seen.units += r.length;
+        return r;
+      });
+      try {
+        const out = sanitizeChatText(input);
+        return { ...seen, out };
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    for (const make of [
+      (n: number) => cp(0xfe0f).repeat(n),
+      (n: number) => `a${cp(0xfe0f)}`.repeat(n),
+    ]) {
+      const small = work(make(25_000));
+      const big = work(make(50_000));
+      expect(big.out).toBe(make(1).includes("a") ? "a".repeat(50_000) : "");
+      expect(big.calls).toBeLessThanOrEqual(50_000 + 8);
+      expect(big.units).toBeLessThanOrEqual(2 * 50_000 + 16);
+      expect(big.calls / small.calls).toBeLessThanOrEqual(2.05);
+    }
   });
 });
 
