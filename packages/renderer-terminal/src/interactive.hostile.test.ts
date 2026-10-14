@@ -231,7 +231,16 @@ describe("paste mode always ends, and a lone key is alone", () => {
     const d = createKeyDecoder();
     expect(d(`\x1b[200~${"a".repeat((1 << 20) + 1)}`)).toEqual([]);
     expect(d("y\ty")).toEqual([]);
-    expect(d(`${END}y`)).toEqual([{ name: "char", char: "y" }]);
+    expect(d(`${END}y`)).toEqual([{ name: "ignored" }, { name: "char", char: "y" }]);
+  });
+  it("an overflowed paste that ends inside a chunk never leaves a following `y` sole", async () => {
+    const d = createKeyDecoder();
+    expect(d(`\x1b[200~${"a".repeat((1 << 20) + 1)}`)).toEqual([]);
+    expect(d(`zz${END}y`)).toEqual([{ name: "ignored" }, { name: "char", char: "y" }]);
+    const { term, actions } = rig(view("e@v1", approval));
+    await term.send(`\x1b[200~${"a".repeat((1 << 20) + 1)}`);
+    await term.send(`zz${END}y`);
+    expect(actions).toEqual([]);
   });
   describe("a stalled paste's remainder is drained, never typed", () => {
     const stalled = () => {
@@ -249,8 +258,18 @@ describe("paste mode always ends, and a lone key is alone", () => {
       clock.t += 100;
       expect(d("more\x1b[20")).toEqual([]);
       clock.t += 100;
-      expect(d("1~")).toEqual([]);
+      expect(d("1~")).toEqual([{ name: "ignored" }]);
       expect(d("y")).toEqual([{ name: "char", char: "y" }]);
+    });
+    it("a drain that ends inside a chunk never leaves a following `y` sole, and grants no consent", async () => {
+      const { d } = stalled();
+      expect(d(`junk${END}y`)).toEqual([{ name: "ignored" }, { name: "char", char: "y" }]);
+      const clock = { t: 0 };
+      const { term, actions } = rig(view("e@v1", approval), { now: () => clock.t });
+      await term.send("\x1b[200~abc");
+      clock.t += 5000;
+      await term.send(`junk${END}y`);
+      expect(actions).toEqual([]);
     });
     it("Ctrl-C leaves the drain and is delivered as an interrupt", () => {
       const { d } = stalled();
@@ -263,12 +282,25 @@ describe("paste mode always ends, and a lone key is alone", () => {
       clock.t += 60_000; // the link stalls again, far past the idle bound
       expect(d("y\ty\n")).toEqual([]); // still the stalled paste's text, not keystrokes
       clock.t += 60_000;
-      expect(d(`more${END}y`)).toEqual([{ name: "char", char: "y" }]);
+      expect(d(`more${END}y`)).toEqual([{ name: "ignored" }, { name: "char", char: "y" }]);
     });
-    it("the drain is bounded by bytes, not time: past MAX_PASTE discarded bytes typing resumes", () => {
-      const { d } = stalled();
-      expect(d("a".repeat(1 << 20))).toEqual([]);
-      expect(d("a")).toEqual([]); // MAX_PASTE + 1 discarded: the bound is passed
+    it("past MAX_PASTE a still-flowing paste keeps draining: a tail chunk `y` is never a key", () => {
+      const clock = { t: 0 };
+      const d = createKeyDecoder({ now: () => clock.t, pasteIdleMs: 2000 });
+      expect(d("\x1b[200~abc")).toEqual([]);
+      clock.t += 5000;
+      expect(d("a".repeat((1 << 20) + 1))).toEqual([]);
+      expect(d("y")).toEqual([]);
+      clock.t += 100;
+      expect(d("y")).toEqual([]);
+    });
+    it("the drain ends past MAX_PASTE only after idleMs of silence: a lost end marker recovers", () => {
+      const clock = { t: 0 };
+      const d = createKeyDecoder({ now: () => clock.t, pasteIdleMs: 2000 });
+      expect(d("\x1b[200~abc")).toEqual([]);
+      clock.t += 5000;
+      expect(d("a".repeat((1 << 20) + 1))).toEqual([]);
+      clock.t += 2001;
       expect(d("y")).toEqual([{ name: "char", char: "y" }]);
     });
     it("a stalled consent paste cannot approve through the drain either", async () => {

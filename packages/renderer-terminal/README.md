@@ -271,12 +271,15 @@ term.stop();
 - **Sole means sole.** Every decoded unit of a chunk counts toward "sole", including dropped escape
   sequences (arrows, OSC) and non-printables: `ESC[C` + `y` is two units and cannot approve. Paste
   mode always ends: at the end marker (even split across chunks), at Ctrl-C (paste discarded, interrupt
-  delivered), when the paste passes 1 MiB (discarded; the rest is swallowed to the end marker, never
+  delivered), when the paste passes 1 Mi UTF-16 code units (discarded; the rest is swallowed to the end marker, never
   typed), or after `pasteIdleMs` (default 2000, read from an injectable `now`) without a byte. An
   idle-abandoned paste may still be arriving, so the decoder then DRAINS: it discards input (nothing
   is typed) until the end marker or Ctrl-C (delivered as an interrupt). A further silence does not
-  end the drain (a slow link can stall twice); a byte bound does: after 1 MiB more with no end marker
-  the input is handed back, so a lost marker costs at most that much typing, never all of it.
+  end the drain (a slow link can stall twice); a bound plus silence does: after 1 Mi UTF-16 code units
+  more with no end marker AND `pasteIdleMs` of silence the input is handed back (a still-flowing paste
+  keeps draining), so a lost marker costs at most that much typing, never all of it. A drain or an
+  oversize paste that ends inside a chunk yields an `ignored` key, so a `y` after it is not sole.
+  During a drain Ctrl-C is delivered as an interrupt (by default this stops the session).
 - **Known limits, and `confirmConsent`.** A chunk boundary is all a terminal gives us. (1) On a
   terminal WITHOUT bracketed paste, a one-character paste `y` into a focused approval is a one-key
   chunk, taken as a keypress. (2) A host reading byte by byte (slow serial / ssh) makes every key
