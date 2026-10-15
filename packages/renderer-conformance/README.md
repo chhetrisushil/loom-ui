@@ -7,6 +7,16 @@ you prove yours honours the contract without forking loom-ui.
 
 ESM, like `@loom-ui/renderer-lit`; its consumer is a bundler or vitest, not a plain Node `import()`.
 
+## Install / import
+
+```jsonc
+// package.json of a consumer checked out beside this repo (the packages are not published)
+"@loom-ui/renderer-conformance": "link:../loom-ui/packages/renderer-conformance"
+```
+
+Entry points: `@loom-ui/renderer-conformance` (the checks and report) and
+`@loom-ui/renderer-conformance/vitest` (a vitest harness).
+
 ## Run it
 
 ```ts
@@ -81,8 +91,8 @@ You need three things, none of them loom-ui internals:
 
 1. **Read the Blueprint.** It is loom's own IR (`@loom/blueprint-runtime`): a `layout` tree of
    `grid` / `flex` / `stack` containers (a grid child is a `GridCell { node }`) and `Widget`s with a
-   `kind`, `title`, `props` and an optional `binding`. Walk it; look the widget's kind up in your own
-   table.
+   `kind`, `title`, `props` and an optional `binding`. Walk it; look the widget's kind up in your
+   own table.
 2. **Honour the status matrix and the contract.** A bound widget's value and status live in the
    projection state at `binding.path` / `binding.status.path`. Use `@loom-ui/core`'s
    `checkKindValue(kind, value)` to validate a value against the kind's contract, `createSay(i18n)`
@@ -101,3 +111,11 @@ package, `./register`) first: importing the renderer no longer defines its custo
 
 Container roles: a role your renderer does not know is the plain container (loom ADR 0099). If you
 draw one (`tabs`), the kit still requires every panel to be reachable from `text()`.
+
+## See also
+
+- [../renderer-lit/README.md](../renderer-lit/README.md) and
+  [../renderer-terminal/README.md](../renderer-terminal/README.md) — the shipped renderers that run
+  this kit.
+- [../../docs/reference/rendering.md](../../docs/reference/rendering.md) — what a renderer draws.
+- [../../README.md](../../README.md) — root overview.

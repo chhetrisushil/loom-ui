@@ -8,11 +8,15 @@ const ROOT = resolve(__dirname, "../../..");
 const source = readFileSync(resolve(__dirname, "operations.ts"), "utf8");
 const codes = [...new Set([...source.matchAll(/refuse\(\s*"([a-z-]+)"/g)].map((m) => m[1]))].sort();
 
-/** The paragraph (README) or bullet (AGENTS) that carries the list, found by its lead-in. */
+/** The section (a `## ` heading), or the bullet (AGENTS) that carries the list, found by its lead-in. */
 function section(file: string, lead: string): string {
   const md = readFileSync(resolve(ROOT, file), "utf8");
   const start = md.indexOf(lead);
   if (start < 0) return "";
+  if (lead.startsWith("## ")) {
+    const next = md.indexOf("\n## ", start + lead.length);
+    return md.slice(start, next < 0 ? undefined : next);
+  }
   const end = md.indexOf("\n\n", start);
   const block = md.slice(start, end < 0 ? undefined : end);
   // AGENTS.md bullets are separated by the next "\n- ", not a blank line.
@@ -27,7 +31,7 @@ describe("every op-level refusal code is documented", () => {
     expect(codes.length).toBeGreaterThanOrEqual(15);
   });
   for (const [file, lead] of [
-    ["README.md", "**Op refusal codes.**"],
+    ["docs/reference/composition.md", "## Op refusal codes"],
     ["AGENTS.md", "- Op refusal codes"],
   ] as const)
     it(`${file} lists every code apply can return`, () => {

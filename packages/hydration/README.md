@@ -10,8 +10,9 @@ repair is the app's own loom execution.
 
 ## Install / import
 
-```
-pnpm add @loom-ui/hydration
+```jsonc
+// package.json of a consumer checked out beside this repo (the packages are not published)
+"@loom-ui/hydration": "link:../loom-ui/packages/hydration"
 ```
 
 ```ts
@@ -30,27 +31,29 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   browser: the split controller, the loader contract, the store, and param checks — nothing that
   imports the sandbox, MCP, `@loom/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
   the *built* client bundle to enforce this, and keeps it under a 64 KB size budget (about 34 KB
-  minified today).
-  The client entry also carries the pure helpers other client-side packages need (`terminalSteps`,
-  `stepReferences`, `topoWaves`, `jsonPathSelect`, `outputShapeHashOf`, a client-safe mirror of the
-  sandbox's shape hash, parity-tested). `@loom-ui/planner`, `renderer-terminal`, `renderer-lit` and
-  `core` import ONLY `@loom-ui/hydration/client`; `clientConsumers.test.ts` fails if any of them
-  reaches the root entry, QuickJS or the MCP plugin, by source import or built module graph.
+  minified today). The client entry also carries the pure helpers other client-side packages need
+  (`terminalSteps`, `stepReferences`, `topoWaves`, `jsonPathSelect`, `outputShapeHashOf`, a
+  client-safe mirror of the sandbox's shape hash, parity-tested). `@loom-ui/planner`,
+  `renderer-terminal`, `renderer-lit` and `core` import ONLY `@loom-ui/hydration/client`;
+  `clientConsumers.test.ts` fails if any of them reaches the root entry, QuickJS or the MCP plugin,
+  by source import or built module graph.
 - **The hydration projection.** Every handle publishes to one loom projection
   (`HYDRATION_PROJECTION_ID = "loom-ui.hydration"`, version `HYDRATION_PROJECTION_VERSION`) that a
-  `HydrationStore` wraps; a compiled Blueprint's bindings read `values.<handle>` /
-  `status.<handle>` from it. A handle's `HandleState` is `"pending" | "ready" | "stale" | "error" |
-  "empty"`.
+  `HydrationStore` wraps; a compiled Blueprint's bindings read `values.<handle>` / `status.<handle>`
+  from it. A handle's `HandleState` is `"pending" | "ready" | "stale" | "error" | "empty"`.
 - **In-process vs. split.** `HydrationController` executes providers directly through an injected
-  `TransientInvoker` (any loom `EffectRuntime` satisfies it structurally). `SplitHydrationController`
-  (client) talks to a `HandleLoader` — the app's transport — which calls `serveHandle`/`serveHandles`
-  (server) over that boundary; the server answers with the exact same `HandleLoadResult` shape the
-  in-process controller publishes, so the two paths cannot disagree.
-- **`scopeInvoker` and `principal`.** When the invoker is a planner `scopeInvoker` (a `ctx.decide` scope), do not configure `principal`: the scope already carries the execution's principal and the call is refused otherwise.
-- **Bounded cache (U17).** `new HydrationCache(clock, { maxEntries })` evicts the least recently used result past
-  `maxEntries` (default `DEFAULT_CACHE_MAX_ENTRIES` = 10,000; a hit or a set refreshes an entry; a non-positive-integer
-  cap throws `RangeError`). An evicted result is a miss, exactly like an expired one: the next load calls the provider
-  again. Before this the cache only dropped an entry on a re-read after its TTL, so a long-lived ambient host grew without bound.
+  `TransientInvoker` (any loom `EffectRuntime` satisfies it structurally).
+  `SplitHydrationController` (client) talks to a `HandleLoader` — the app's transport — which calls
+  `serveHandle`/`serveHandles` (server) over that boundary; the server answers with the exact same
+  `HandleLoadResult` shape the in-process controller publishes, so the two paths cannot disagree.
+- **`scopeInvoker` and `principal`.** When the invoker is a planner `scopeInvoker` (a `ctx.decide`
+  scope), do not configure `principal`: the scope already carries the execution's principal and the
+  call is refused otherwise.
+- **Bounded cache (U17).** `new HydrationCache(clock, { maxEntries })` evicts the least recently
+  used result past `maxEntries` (default `DEFAULT_CACHE_MAX_ENTRIES` = 10,000; a hit or a set
+  refreshes an entry; a non-positive-integer cap throws `RangeError`). An evicted result is a miss,
+  exactly like an expired one: the next load calls the provider again. Before this the cache only
+  dropped an entry on a re-read after its TTL, so a long-lived ambient host grew without bound.
 - **Scheduling.** Both controllers schedule by priority: P0 loads immediately, P1 batches within a
   short window, P2 waits for `markVisible`. An identical step (same tool, same arguments) runs once
   per pass no matter how many handles share it.
@@ -66,65 +69,73 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 - `HYDRATION_PROJECTION_ID`, `HYDRATION_PROJECTION_VERSION`, `HYDRATION_SET_EVENT` — the fixed
   projection id/version and the internal set event it folds.
 - `hydrationProjection()`, `HydrationState`, `HandleSlice`, `HandleState`, `HandleStatus`,
-  `HydrationScope` — the loom `Projection` itself and its state shape. Isolation is by
-  (experience, principal, audience): `HydrationScope.audience` (`"broadcast"`) is its own state, and
-  `HydrationAudienceMismatchError` is thrown when a controller's `audience` differs from its store's.
-- `HydrationStore` — wraps a `projectionRuntime` and exposes `.state()` and
-  `.runtimeSubscribe(fn)` for a renderer or `watch` to read/observe.
+  `HydrationScope` — the loom `Projection` itself and its state shape. Isolation is by (experience,
+  principal, audience): `HydrationScope.audience` (`"broadcast"`) is its own state, and
+  `HydrationAudienceMismatchError` is thrown when a controller's `audience` differs from its
+  store's.
+- `HydrationStore` — wraps a `projectionRuntime` and exposes `.state()` and `.runtimeSubscribe(fn)`
+  for a renderer or `watch` to read/observe.
 - `isReservedHandle(handle)` — true for a handle name the projection itself reserves.
 
 ### Running providers (server / Node only)
 
-- `HydrationController` — in-process controller. Constructor takes `ControllerOptions`
-  (`invoker`, `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`,
-  `maxConcurrentCalls?`, `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`,
-  `inputDrift?`, `argumentHook?`, `contentRefArgs` (required), `acceptContentRefParam?`, `reshapers?`, `providers?`,
-  `captureSample?`). Methods: `load(exp)`,
-  `recompose(next)`, `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`,
-  `inFlight()`, `dispose()` — each returns `{ findings: Finding[] }` where relevant.
-- **Content-reference arguments (U9b).** `contentRefArgs` is REQUIRED on `ControllerOptions` and `ServeOptions`: the table
-  `contentRefArgsFrom(capabilities)` builds (persist it with the capability set; `parseContentRefTable` re-reads it), or the
-  explicit opt-out `"none"` (an experience with media nodes then reports `media-content-refs-unguarded`). Before ANY call a
-  step's marked argument must be absent / null, a `{{steps.…}}` reference to an output its tool declares to be a content
-  reference, or a param the host accepted; otherwise the step is refused (`media-arg-literal` / `media-arg-unproven-ref`, or
-  `media-arg-param-refused` for a param the gate refused: three distinct codes on `onFinding`) and
-  the call is NOT made. Behaviour change: when every failed step was such a refusal, the outcome's finding (and what a split client
-  receives) is the public code `content-ref-refused` with one fixed message, no longer the opaque `provider-failed`; it says nothing
-  of which argument, step or whether a reference exists. A refusal mixed with another failure stays `provider-failed`. A param the
-  gate refuses used to be reported as `media-arg-literal` and is now `media-arg-param-refused`. The same check runs BEFORE every cache lookup (in-process and split), asking the gate again: a cached
-  value is never served to a principal whose gate refuses, nor after a revocation, and a result a param filled is cached per
-  principal only, never globally. A param that fills a marked argument (in-process `setParams`, or a split client's params,
-  which are client input) is refused unless `acceptContentRefParam({ handle, stepId, toolName, kind?, param, value,
-  principalId?, principal? }) => boolean` returns `true`. The gate MUST check that the value was ISSUED TO `principalId`
-  (e.g. keep the `MediaRef`s `acceptMediaAttach` accepted for each principal and return `issued.get(principalId)?.has(value.address)`)
-  and is still current (a revoked share answers `false`). `null` at a marked path is stripped before the call. The
-  `argumentHook` runs after the check and is the host's own word. A tool whose schema mentions the marker but was unreadable
+- `HydrationController` — in-process controller. Constructor takes `ControllerOptions` (`invoker`,
+  `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`, `maxConcurrentCalls?`,
+  `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`, `inputDrift?`,
+  `argumentHook?`, `contentRefArgs` (required), `acceptContentRefParam?`, `reshapers?`,
+  `providers?`, `captureSample?`). Methods: `load(exp)`, `recompose(next)`, `markVisible(handle)`,
+  `setParams(params, scope?)`, `invalidate(handle?)`, `inFlight()`, `dispose()` — each returns `{
+  findings: Finding[] }` where relevant.
+- **Content-reference arguments (U9b).** `contentRefArgs` is REQUIRED on `ControllerOptions` and
+  `ServeOptions`: the table `contentRefArgsFrom(capabilities)` builds (persist it with the
+  capability set; `parseContentRefTable` re-reads it), or the explicit opt-out `"none"` (an
+  experience with media nodes then reports `media-content-refs-unguarded`). Before ANY call a step's
+  marked argument must be absent / null, a `{{steps.…}}` reference to an output its tool declares to
+  be a content reference, or a param the host accepted; otherwise the step is refused
+  (`media-arg-literal` / `media-arg-unproven-ref`, or `media-arg-param-refused` for a param the gate
+  refused: three distinct codes on `onFinding`) and the call is NOT made. Behaviour change: when
+  every failed step was such a refusal, the outcome's finding (and what a split client receives) is
+  the public code `content-ref-refused` with one fixed message, no longer the opaque
+  `provider-failed`; it says nothing of which argument, step or whether a reference exists. A
+  refusal mixed with another failure stays `provider-failed`. A param the gate refuses used to be
+  reported as `media-arg-literal` and is now `media-arg-param-refused`. The same check runs BEFORE
+  every cache lookup (in-process and split), asking the gate again: a cached value is never served
+  to a principal whose gate refuses, nor after a revocation, and a result a param filled is cached
+  per principal only, never globally. A param that fills a marked argument (in-process `setParams`,
+  or a split client's params, which are client input) is refused unless `acceptContentRefParam({
+  handle, stepId, toolName, kind?, param, value, principalId?, principal? }) => boolean` returns
+  `true`. The gate MUST check that the value was ISSUED TO `principalId` (e.g. keep the `MediaRef`s
+  `acceptMediaAttach` accepted for each principal and return
+  `issued.get(principalId)?.has(value.address)`) and is still current (a revoked share answers
+  `false`). `null` at a marked path is stripped before the call. The `argumentHook` runs after the
+  check and is the host's own word. A tool whose schema mentions the marker but was unreadable
   (`"unknown"`) has every replaced param gated and every literal string refused.
-- `executeProvider` — runs one `ProviderSpec`'s execution graph and reshaping; what both
-  controllers and `serveHandle`/`serveHandles` call underneath.
+- `executeProvider` — runs one `ProviderSpec`'s execution graph and reshaping; what both controllers
+  and `serveHandle`/`serveHandles` call underneath.
 - `ExecuteOptions`, `ProviderOutcome`, `DriftRecord`, `InputDriftMode` — the execution options and
   outcome/drift shapes `executeProvider` and `onDrift` use.
-- `DriftReport` — what `ControllerOptions.onDrift` actually receives: `{ experienceId,
-  versionHash, handle, spec, drift: readonly DriftRecord[], findings, proceeded }` — one or more
-  drift records for the handle, plus the provider spec that drifted and whether the load
-  retried and published (`inputDrift: "report-and-proceed"`).
-- `HandleLoadResult` — what every load resolves to and what both controllers publish:
-  `{ state: "ready", value, finding? } | { state: "stale" | "error", finding } | { state:
-  "empty", finding }`.
-- `HydrationCache`, `CacheVariant` (`params`, `kinds`, `contracts` — the bound kinds' `ValueContract.version`s are folded into the key; unversioned contracts leave keys unchanged, so call `invalidate()` after changing one) — the per-principal, per-params cache `HydrationController` uses
-  by default (inject your own, or a fresh one per controller).
+- `DriftReport` — what `ControllerOptions.onDrift` actually receives: `{ experienceId, versionHash,
+  handle, spec, drift: readonly DriftRecord[], findings, proceeded }` — one or more drift records
+  for the handle, plus the provider spec that drifted and whether the load retried and published
+  (`inputDrift: "report-and-proceed"`).
+- `HandleLoadResult` — what every load resolves to and what both controllers publish: `{ state:
+  "ready", value, finding? } | { state: "stale" | "error", finding } | { state: "empty", finding }`.
+- `HydrationCache`, `CacheVariant` (`params`, `kinds`, `contracts` — the bound kinds'
+  `ValueContract.version`s are folded into the key; unversioned contracts leave keys unchanged, so
+  call `invalidate()` after changing one) — the per-principal, per-params cache
+  `HydrationController` uses by default (inject your own, or a fresh one per controller).
 - `limitInvoker`, `memoInvoker`, `signalInvoker` — `TransientInvoker` wrappers: cap concurrency,
-  de-duplicate identical calls within one pass, and bind an `AbortSignal`. `memoInvoker` keys on
-  the principal AND every other call option except `signal` (e.g. a stamped execution identity
-  `as`, or the `label` that names the transient execution when `as` is absent — an authorizer
-  may grant by either), so calls made as different executions never share a result.
+  de-duplicate identical calls within one pass, and bind an `AbortSignal`. `memoInvoker` keys on the
+  principal AND every other call option except `signal` (e.g. a stamped execution identity `as`, or
+  the `label` that names the transient execution when `as` is absent — an authorizer may grant by
+  either), so calls made as different executions never share a result.
 - `defineReshapers(entries)`, `jsonPathSelect(value, path)`, `outputShapeHashOf(value)` — build a
   `ReshaperRegistry` for `reshaping.engine: "Named"`, run a JSONPath reshape, and hash a value's
   structural shape for pinning `ProviderSpec.outputShapeHash`.
 - `stepReferences`, `terminalSteps`, `topoWaves` — inspect an execution graph's `{{steps.…}}`
   references, find its terminal step(s), and compute its topological waves.
-- `DEFAULT_TIME_RANGE`, `checkParams` — the default `{ from: "$now-24h", to: "$now" }` params, and
-  a params validity check.
+- `DEFAULT_TIME_RANGE`, `checkParams` — the default `{ from: "$now-24h", to: "$now" }` params, and a
+  params validity check.
 
 ### The data plane: data-provider kinds (server / Node only)
 
@@ -137,28 +148,28 @@ query, an A2A call) binds it directly, without wrapping it as an MCP server.
   expectedPin }`: `target` is the step's `toolName` (its id WITHIN the kind), `args` the prepared
   arguments (params, time tokens, templates, hook already applied), `expectedPin` the step's
   `toolSchemaHash`. `invoke` runs the target THROUGH the transient `invoker` it is handed with
-  `opts` (signal, principal, label) — so the invoker's authoriser, budget and per-principal
-  identity stay in force, the read path stays log-free, and a kind never sees the runtime.
+  `opts` (signal, principal, label) — so the invoker's authoriser, budget and per-principal identity
+  stay in force, the read path stays log-free, and a kind never sees the runtime.
 - **The pin is the contract.** `invoke` MUST compare `expectedPin` with the target's current pin and
-  throw `TypedFailure("schemaDrift", { observedHash })` BEFORE running the target. That is what makes
-  drift a `DriftRecord` (`kind: "input"`, `providerKind` set for a non-MCP kind), what
-  `remapOperation` repairs, and what `inputDrift: "report-and-proceed"` retries on. A kind that cannot
-  say what its target's contract is must not be registered: there is no unpinned kind.
-  `checkDataProviderConformance(provider, { target, pin, invoker })` returns the violations
-  (empty = conformant), including a violation if a stale pin reached a direct call to `target`; it is
-  a TEST HELPER — `defineDataProviders` cannot enforce the rule, so run it in a kind's own tests.
+  throw `TypedFailure("schemaDrift", { observedHash })` BEFORE running the target. That is what
+  makes drift a `DriftRecord` (`kind: "input"`, `providerKind` set for a non-MCP kind), what
+  `remapOperation` repairs, and what `inputDrift: "report-and-proceed"` retries on. A kind that
+  cannot say what its target's contract is must not be registered: there is no unpinned kind.
+  `checkDataProviderConformance(provider, { target, pin, invoker })` returns the violations (empty =
+  conformant), including a violation if a stale pin reached a direct call to `target`; it is a TEST
+  HELPER — `defineDataProviders` cannot enforce the rule, so run it in a kind's own tests.
 - `defineDataProviders(providers)` → `DataProviderRegistry` (`has`/`get`/`kinds`) — composition-time
   only, no discovery, no later registration; a malformed or duplicate kind id throws. Pass it as
   `providers` to `HydrationController`, `serveHandle(s)` or `executeProvider`. Default
   (`DEFAULT_DATA_PROVIDERS`): MCP only, byte-identical to before kinds.
-- `mcpProvider` — the first registered kind: `mcp.invoke` with `expectedPin` as
-  `expectedSchemaHash` (the plugin verifies it per call).
-- `loomEffectProvider({ runtime, effects })` — the second kind, `loom-effect` (`LOOM_EFFECT_KIND`): a
-  step whose `toolName` is a registered loom effect id, invoked via `invokeTransient`. Hydration is
-  a read path (per viewer load, unmemoised, retried), so at CONSTRUCTION every listed effect is
-  checked against `runtime` (`has` / `modeOf` / `kindOf`): it must be registered, explicitly
-  `mode: "ambient"` (ADR 0073 — an UNDECLARED mode is refused, since loom itself only refuses an
-  explicit `journaled` one), and not a `human` / `llm` kind. `effects` is an ALLOWLIST: a stored or
+- `mcpProvider` — the first registered kind: `mcp.invoke` with `expectedPin` as `expectedSchemaHash`
+  (the plugin verifies it per call).
+- `loomEffectProvider({ runtime, effects })` — the second kind, `loom-effect` (`LOOM_EFFECT_KIND`):
+  a step whose `toolName` is a registered loom effect id, invoked via `invokeTransient`. Hydration
+  is a read path (per viewer load, unmemoised, retried), so at CONSTRUCTION every listed effect is
+  checked against `runtime` (`has` / `modeOf` / `kindOf`): it must be registered, explicitly `mode:
+  "ambient"` (ADR 0073 — an UNDECLARED mode is refused, since loom itself only refuses an explicit
+  `journaled` one), and not a `human` / `llm` kind. `effects` is an ALLOWLIST: a stored or
   planner-authored step can name any string. Each entry is `{ inputSchema }` (the pin is computed
   with `effectPin(schema)` = `jsonSchemaHash` of its JSON-Schema form, so editing the effect's zod
   schema drifts every stored step with no edit to the map) or `{ pin }` (HOST-ASSERTED: nothing
@@ -171,14 +182,15 @@ query, an A2A call) binds it directly, without wrapping it as an MCP server.
   only); memoising `ambient` effects is a possible follow-up. A persisted experience must cross
   version boundaries only through the log: an older in-memory `executeProvider` / `seal` that
   predates kinds would run a kinded step as an MCP call.
-- `ArgumentHookContext.kind` — the step's provider kind (absent for MCP): a hook keyed on
-  `toolName` must also read it, since MCP tool `x` and loom effect `x` are different targets.
+- `ArgumentHookContext.kind` — the step's provider kind (absent for MCP): a hook keyed on `toolName`
+  must also read it, since MCP tool `x` and loom effect `x` are different targets.
 - An unregistered kind fails the WHOLE provider as `provider-kind-unregistered` before any step runs
   (never a throw, no partial calls); served publicly as a fixed text naming neither kind nor target.
 
-A step's class identity is `toolKey(step)` (core): the bare `toolName` for MCP — every class recorded
-before kinds still applies — and `<kind>:<toolName>` otherwise, so `toolClasses` stickiness and
-`effectiveClasses` cover every kind and a loom effect never shares a class with a same-named MCP tool.
+A step's class identity is `toolKey(step)` (core): the bare `toolName` for MCP — every class
+recorded before kinds still applies — and `<kind>:<toolName>` otherwise, so `toolClasses` stickiness
+and `effectiveClasses` cover every kind and a loom effect never shares a class with a same-named MCP
+tool.
 
 ### Split hydration — server half
 
@@ -265,42 +277,53 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 
 ## Notable behaviours and guarantees
 
-- **A handle that feeds a media widget is always contract-checked (U9).** When the controller is given
-  `outputKinds` and a handle's bound nodes resolve to `Image`/`Audio`/`Video`/`File`, the load runs as
-  `outputCheck: "contract"` whatever the provider declared: a shape pin passes any value of the pinned
-  shape (inline bytes or a locator included), and what is published reaches the store, a seen log and a
-  split-hydration payload. A value that is not a `MediaRef` is drift (`output-contract-drift`), never
-  published. A restricted media handle is never invoked, as for any restricted handle. Kinds are
-  resolved through the catalogue when `outputKinds` is given AND by node type alone: a node whose `type` is a
-  framework media kind marks its handle as media even with NO `outputKinds`, so forgetting it fails closed (a
-  `media-output-kinds-missing` warning says to pass it). The split server (`serveHandle`/`serveHandles`) applies
-  the same rule, including its cache variant. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`, called by
-  the renderer (see `@loom-ui/core` "Media").
+- **A handle that feeds a media widget is always contract-checked (U9).** When the controller is
+  given `outputKinds` and a handle's bound nodes resolve to `Image`/`Audio`/`Video`/`File`, the load
+  runs as `outputCheck: "contract"` whatever the provider declared: a shape pin passes any value of
+  the pinned shape (inline bytes or a locator included), and what is published reaches the store, a
+  seen log and a split-hydration payload. A value that is not a `MediaRef` is drift
+  (`output-contract-drift`), never published. A restricted media handle is never invoked, as for any
+  restricted handle. Kinds are resolved through the catalogue when `outputKinds` is given AND by
+  node type alone: a node whose `type` is a framework media kind marks its handle as media even with
+  NO `outputKinds`, so forgetting it fails closed (a `media-output-kinds-missing` warning says to
+  pass it). The split server (`serveHandle`/`serveHandles`) applies the same rule, including its
+  cache variant. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`,
+  called by the renderer (see `@loom-ui/core` "Media").
 
-- **A handle that feeds a chat transcript is always contract-checked, and never a stream (U8).** Like media: a node of type
-  `Chat` (or a kind that resolves to it) marks its handle, the provider is checked against the `ChatValue` contract
-  whatever `outputCheck` it declared (controller AND split server), and a text chunk (`append`) cannot overwrite a
-  transcript. A live reply therefore rides the transcript VALUE (a `ChatFeed` republishes it), with `pending` status while
-  it streams, rather than `appendChunk` on a string handle; the bounds of `appendChunk` still apply inside the feed.
-- **`connectConversation` (U8, `@loom-ui/hydration/client`)** is the browser's read half over loom's conversation routes
-  (`GET {base}/history`, `GET {base}/events`, ADR 0122 D6). The transport is injected (`fetch`; `openStream(url)` so the host
-  builds the `EventSource` with its credentials), it imports no loom package, and it folds history pages and SSE frames into
-  a `ChatFeed`, publishing the result through `publish` (`SplitHydrationController.publishValue` can check only that the handle is one the server LISTED; it cannot know the listed handle is a `Chat`, so the `kind` it checks against is the page author's own claim). (`publishChat(controller, handle)` writes the handle THROUGH the controller's gate: `publishValue` refuses a handle the experience
-  does not bind or the server did not list, a restricted one, one that is not a `Chat`, and a value that fails the `ChatValue` contract;
-  `pending` while a reply streams, `ready` once durable). `start()` loads the newest page then opens the stream after its cursor;
-  `loadOlder()` follows the feed's cursor, one load at a time; a `reconnect` event reopens from the feed's resume cursor after at least 250 ms (never 0), consecutive failures back off
-  (the first wait is `reconnectMs`, 2 s, then doubling to 30 s; a stream that stayed up 5 s or more starts the streak afresh), and a failed first page is retried the same way instead of giving up.
-  Failures are FIXED findings (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`): no status code,
-  response body or exception text is carried, and an `error` event's body is not read. Sending is NOT here: it is the host's
-  authenticated write-back (`createWriteBack`, `@loom-ui/core` "Chat and inputs").
+- **A handle that feeds a chat transcript is always contract-checked, and never a stream (U8).**
+  Like media: a node of type `Chat` (or a kind that resolves to it) marks its handle, the provider
+  is checked against the `ChatValue` contract whatever `outputCheck` it declared (controller AND
+  split server), and a text chunk (`append`) cannot overwrite a transcript. A live reply therefore
+  rides the transcript VALUE (a `ChatFeed` republishes it), with `pending` status while it streams,
+  rather than `appendChunk` on a string handle; the bounds of `appendChunk` still apply inside the
+  feed.
+- **`connectConversation` (U8, `@loom-ui/hydration/client`)** is the browser's read half over loom's
+  conversation routes (`GET {base}/history`, `GET {base}/events`, ADR 0122 D6). The transport is
+  injected (`fetch`; `openStream(url)` so the host builds the `EventSource` with its credentials),
+  it imports no loom package, and it folds history pages and SSE frames into a `ChatFeed`,
+  publishing the result through `publish` (`SplitHydrationController.publishValue` can check only
+  that the handle is one the server LISTED; it cannot know the listed handle is a `Chat`, so the
+  `kind` it checks against is the page author's own claim). (`publishChat(controller, handle)`
+  writes the handle THROUGH the controller's gate: `publishValue` refuses a handle the experience
+  does not bind or the server did not list, a restricted one, one that is not a `Chat`, and a value
+  that fails the `ChatValue` contract; `pending` while a reply streams, `ready` once durable).
+  `start()` loads the newest page then opens the stream after its cursor; `loadOlder()` follows the
+  feed's cursor, one load at a time; a `reconnect` event reopens from the feed's resume cursor after
+  at least 250 ms (never 0), consecutive failures back off (the first wait is `reconnectMs`, 2 s,
+  then doubling to 30 s; a stream that stayed up 5 s or more starts the streak afresh), and a failed
+  first page is retried the same way instead of giving up. Failures are FIXED findings
+  (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`): no status code,
+  response body or exception text is carried, and an `error` event's body is not read. Sending is
+  NOT here: it is the host's authenticated write-back (`createWriteBack`, `@loom-ui/core` "Chat and
+  inputs").
 - **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,
   `handleInventory` and `serveHandle(s)`; `@loom-ui/core`'s `DeclaredToolClasses`) makes a handle
   whose provider calls a declared tool at least that class, even when no stored node carries one.
-  **Bind it once with `createServeSurface(policy)`**: it returns `handleInventory`, `serveHandle` and
-  `serveHandles` with a core `ReadPolicy` (`{ declaredToolClasses, undeclared }`) applied to every
-  call, so the inventory and the loader cannot disagree because one call forgot the table. A per-call
-  `declaredToolClasses` / `undeclared` only ADDS (`{}` or `undefined` cannot lower it). The free
-  `handleInventory` / `serveHandle(s)` take the table per call and are the low-level API.
+  **Bind it once with `createServeSurface(policy)`**: it returns `handleInventory`, `serveHandle`
+  and `serveHandles` with a core `ReadPolicy` (`{ declaredToolClasses, undeclared }`) applied to
+  every call, so the inventory and the loader cannot disagree because one call forgot the table. A
+  per-call `declaredToolClasses` / `undeclared` only ADDS (`{}` or `undefined` cannot lower it). The
+  free `handleInventory` / `serveHandle(s)` take the table per call and are the low-level API.
   `undeclared: "deny"` refuses every handle whose provider calls a tool the table does not list (no
   table = an empty one: all tool-bound handles), for every viewer, until the tool is declared; a
   per-call table cannot list a new tool once deny is bound. `HydrationController` takes the SAME
@@ -314,15 +337,15 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   NOTHING to the store for it: no value and no status, so a store projected to a client does not
   even name the handle (a stale entry is removed). The viewer is snapshotted at construction;
   `setViewer` re-plans (drops now-restricted values, aborts their in-flight loads, loads newly
-  allowed ones). Token streams obey the same gate: `ctl.append(handle, chunk)` (and `store.append` once a
-  controller fronts the store) refuses a handle that is restricted for the viewer (`restricted`), not
-  bound (`stream-unbound`), or — with `outputKinds` — not a `StreamingText` widget
-  (`stream-kind-mismatch`); nothing is written. `handleInventory`
-  omits it (the client learns neither name nor revision); the server answers a client that names it
-  anyway exactly as for a handle the experience does not bind (`unknown-handle`, no existence
-  oracle) and logs the full `restricted` finding to `onFinding`. No viewer = no clearance, with one
-  `viewer-not-supplied` warn when anything is classified; unclassified handles are unaffected. Use
-  the same viewer you pass to `compile`, and one store per viewer.
+  allowed ones). Token streams obey the same gate: `ctl.append(handle, chunk)` (and `store.append`
+  once a controller fronts the store) refuses a handle that is restricted for the viewer
+  (`restricted`), not bound (`stream-unbound`), or — with `outputKinds` — not a `StreamingText`
+  widget (`stream-kind-mismatch`); nothing is written. `handleInventory` omits it (the client learns
+  neither name nor revision); the server answers a client that names it anyway exactly as for a
+  handle the experience does not bind (`unknown-handle`, no existence oracle) and logs the full
+  `restricted` finding to `onFinding`. No viewer = no clearance, with one `viewer-not-supplied` warn
+  when anything is classified; unclassified handles are unaffected. Use the same viewer you pass to
+  `compile`, and one store per viewer.
 
 - **`empty` is an answer, not an error.** A step whose `{{steps.<id>.output.<path>}}` indexes past
   the end of a real (but short) upstream array publishes `empty` — a warn (`upstream-empty`), no
@@ -362,5 +385,6 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 - [../renderer-lit/README.md](../renderer-lit/README.md) and
   [../renderer-terminal/README.md](../renderer-terminal/README.md) — read the projection this
   package publishes.
-- [../../README.md](../../README.md) — root overview, including the full hydration options
-  reference and split-hydration wiring.
+- [../../docs/reference/hydration.md](../../docs/reference/hydration.md) — the full hydration
+  options reference and split-hydration wiring.
+- [../../README.md](../../README.md) — root overview.

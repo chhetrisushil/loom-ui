@@ -3,7 +3,7 @@
 loom-ui is a semantic UI framework for [loom](../loom). Its Experience Model **compiles to loom's
 `Blueprint`**, so loom's renderers draw what this framework composes. Design:
 `../loom/docs/requirements/2026-09-21-loom-ui-design.md`. The Blueprint contract it targets is
-versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.4.0 (loom ADRs 0096, 0097, 0098, 0099, 0100, 0101).
+versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.5.0 (loom ADRs 0096, 0097, 0098, 0099, 0100, 0101).
 
 ## How loom is consumed
 
@@ -73,7 +73,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `node-restricted` (server-side only; ONE Blueprint shape for both). A `"viewer"` compile is unchanged. `audience` is in the
   compile memo key; hydration (`HydrationController`, `handleInventory`, `serveHandles`) takes the same `audience`; `HydrationScope.audience` makes a broadcast store its own state (mismatch throws); `describeChange`/`snapshotSeen`/`explainNode`/`Lineage.explain`/`SeenLog`/learning `ingest` take it too; `CompileResult.viewer`/`.clearance` = the effective viewer.
   `renderer-lit` draws `⊘ redacted` only (reconcile remounts on a redaction change); the conformance kit has an
-  `audience` check. See the README "Audience".
+  `audience` check. See `docs/reference/audience.md`.
 - The learning loop (U11): the planner's variant choice is a `decideWithPolicy` decision (`plan-variant:*`, SHA-256 id,
   propensity in the log) made BEFORE the plan; the plan id is keyed on the variant; `Provenance.policyDecisionId` is the
   learnable decision (the model call stays `decisionId`). The planner `unit` is a server-derived HMAC alias
@@ -144,8 +144,8 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   never lost. The adapter restores only visibility on a throw; a renderer's `dispose` MUST undo
   every other attribute it set on children (`role`, `aria-labelledby`, `id`, `class`). The terminal has no counterpart seam: a role prints the plain container.
 - Op refusal codes — the complete list `apply` (and so `replay`) can return, by op; a new
-  `refuse("…")` in `operations.ts` fails `refusalCodesDocs.test.ts` until it is listed here and in the
-  README. Every op: `invalid-operation` (the op fails the `Operation` schema) and `tree-too-deep` (the
+  `refuse("…")` in `operations.ts` fails `refusalCodesDocs.test.ts` until it is listed here and in
+  `docs/reference/composition.md` ("Op refusal codes"). Every op: `invalid-operation` (the op fails the `Operation` schema) and `tree-too-deep` (the
   base, or the tree an `insertNode` would produce, nests past `MAX_TREE_DEPTH`). `insertNode`:
   `duplicate-node-id`, `missing-parent`, `not-a-container` (the parent), and `placement-outside-grid`
   / `placement-out-of-range` for any placed node in the inserted subtree. `removeNode`:

@@ -9,8 +9,9 @@ contributes only the per-kind value check.
 
 ## Install / import
 
-```
-pnpm add @loom-ui/renderer-terminal
+```jsonc
+// package.json of a consumer checked out beside this repo (the packages are not published)
+"@loom-ui/renderer-terminal": "link:../loom-ui/packages/renderer-terminal"
 ```
 
 ```ts
@@ -19,25 +20,26 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
 
 ## Key concepts
 
-- **The status matrix is loom's.** Since Blueprint IR 2.0.0 each binding declares its status
-  channel (`status.<handle>`, beside `values.<handle>` in the same projection state), and loom's
-  own `renderBlueprintToString` applies the eight-row decision table (loading, ready, empty,
-  stale, error, …). This package contributes exactly one thing to it: what a bound VALUE must look
-  like, through the `check` seam loom leaves open — `kindValueCheck`.
+- **The status matrix is loom's.** Since Blueprint IR 2.0.0 each binding declares its status channel
+  (`status.<handle>`, beside `values.<handle>` in the same projection state), and loom's own
+  `renderBlueprintToString` applies the eight-row decision table (loading, ready, empty, stale,
+  error, …). This package contributes exactly one thing to it: what a bound VALUE must look like,
+  through the `check` seam loom leaves open — `kindValueCheck`.
 - **One registry, merged over loom's.** `terminalRegistry()` returns loom's
   `defaultTerminalRegistry` merged with this package's own renderers for the framework kinds
   (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`) — a
-  fresh registry each call, since loom's default registries are shared singletons that must never
-  be mutated in place.
-- **`renderExperience` reads one well-known projection.** A `HydrationStore` always publishes
-  under `HYDRATION_PROJECTION_ID`; `renderExperience` maps every OTHER projection id the Blueprint
-  declares to `undefined` state, so a binding under a different id renders as its honest loading
-  row rather than an error.
+  fresh registry each call, since loom's default registries are shared singletons that must never be
+  mutated in place.
+- **`renderExperience` reads one well-known projection.** A `HydrationStore` always publishes under
+  `HYDRATION_PROJECTION_ID`; `renderExperience` maps every OTHER projection id the Blueprint
+  declares to `undefined` state, so a binding under a different id renders as its honest loading row
+  rather than an error.
 - **Numeric parity with the web.** Every framework-kind renderer here formats a number exactly as
   `@loom-ui/renderer-lit`'s `measure()` would for the same value, format and unit — same rounding,
   grouping, currency symbol and unit suffix — via `@loom-ui/core`'s `formatSemanticNumber` and
-  `effectiveFormat`, at one fixed locale (`en-US` by default) so the terminal output does not vary with the
-  host's own locale; a host opts into another with `i18n.locale` (see "Localising the renderer").
+  `effectiveFormat`, at one fixed locale (`en-US` by default) so the terminal output does not vary
+  with the host's own locale; a host opts into another with `i18n.locale` (see "Localising the
+  renderer").
 
 ## API
 
@@ -47,30 +49,29 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
 - `watch(blueprint, store, onFrame: (frame: string) => void, opts?): () => void` — call `onFrame`
   now and on every change to the store's projection (via `store.runtimeSubscribe`); returns an
   unsubscribe function.
-- `terminalRegistry(): RendererRegistry<TerminalWidgetRenderer>` — loom's built-in terminal
-  registry merged with `loomUiTerminalRegistry`. Call it fresh each time you need one.
-  `terminalRegistry({ chrome: "host" })` (also on `renderExperience` and
-  `createLoomUiTerminalRegistry`) is for an app that draws its own title bar or frame: the
-  framework kinds print no `Title:` prefix — ready, error (`✗ msg`) or loading (`—`) — and a Kpi's
-  caption trails the figure, and multi-line bodies (Table, TimeSeries, BarChart) print with no
-  4-space hanging indent — that indent only sits rows under the `Title:` lead, which host chrome
-  does not have (so a narrow cell keeps its columns). Default `"widget"` is unchanged. loom's own traversal rows (status
-  lines) and its eight built-in kinds are loom's output and keep their titles. Only a non-empty
-  string is a title: `""` or a non-string (`0`, `5`) is none — the kind stands in, a Note prints no
-  title — exactly as in the lit renderer. `renderExperience` throws if given both `chrome` and
-  `registry` (chrome would be silently ignored); use `terminalRegistry({ chrome })` for yours.
+- `terminalRegistry(): RendererRegistry<TerminalWidgetRenderer>` — loom's built-in terminal registry
+  merged with `loomUiTerminalRegistry`. Call it fresh each time you need one. `terminalRegistry({
+  chrome: "host" })` (also on `renderExperience` and `createLoomUiTerminalRegistry`) is for an app
+  that draws its own title bar or frame: the framework kinds print no `Title:` prefix — ready, error
+  (`✗ msg`) or loading (`—`) — and a Kpi's caption trails the figure, and multi-line bodies (Table,
+  TimeSeries, BarChart) print with no 4-space hanging indent — that indent only sits rows under the
+  `Title:` lead, which host chrome does not have (so a narrow cell keeps its columns). Default
+  `"widget"` is unchanged. loom's own traversal rows (status lines) and its eight built-in kinds are
+  loom's output and keep their titles. Only a non-empty string is a title: `""` or a non-string
+  (`0`, `5`) is none — the kind stands in, a Note prints no title — exactly as in the lit renderer.
+  `renderExperience` throws if given both `chrome` and `registry` (chrome would be silently
+  ignored); use `terminalRegistry({ chrome })` for yours.
 - `loomUiTerminalRegistry` — just the framework kinds' renderers, unmerged, for a caller building
   its own composed registry.
 - `sparkline(values: readonly number[]): string` — an eight-level Unicode sparkline (`▁▂▃▄▅▆▇█`)
   over a series of numbers, used by the `TimeSeries` renderer and available standalone.
-- `kindValueCheck: WidgetValueCheck` — the framework's per-kind value contract, plugged into
-  loom's `check` seam; exported so a caller assembling its own `renderBlueprintToString` call can
-  reuse it.
+- `kindValueCheck: WidgetValueCheck` — the framework's per-kind value contract, plugged into loom's
+  `check` seam; exported so a caller assembling its own `renderBlueprintToString` call can reuse it.
 - `RenderExperienceOptions` — `{ registry?, chrome?, projectionState?, projectionSubscribe? }`.
-  `projectionState(id)` supplies the state of any NON-hydration projection the blueprint declares
-  (a node bound through core's `SemanticNode.projection`), e.g.
-  `(id) => runtime.getState(id, store.executionId)`; absent or throwing, its widgets render as
-  loading. `projectionSubscribe(onChange)` lets `watch` re-render when such a projection changes.
+  `projectionState(id)` supplies the state of any NON-hydration projection the blueprint declares (a
+  node bound through core's `SemanticNode.projection`), e.g. `(id) => runtime.getState(id,
+  store.executionId)`; absent or throwing, its widgets render as loading.
+  `projectionSubscribe(onChange)` lets `watch` re-render when such a projection changes.
 
 ## Examples
 
@@ -98,22 +99,25 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
 
 ## Notable behaviours and guarantees
 
-- **Chat and inputs (U8).** `Chat` prints under its title as the SAME lines the web speaks (`chatTranscriptLines`):
-  `You: ...`, `Assistant (interrupted): ...`, `You (edit of turn 1): ...`, a failure as its fixed sentence plus
-  `(ref <id>)`, a restricted entry as `[restricted assistant turn]`, media described without an address, then
-  `(the assistant is replying...)` / `(conversation closed)` / `... earlier messages are available`. Each turn is one
-  bounded line of cleaned text: an escape sequence, a bidi override or a newline in a turn cannot reach the screen or
-  forge a `Assistant:` line. `TextInput` / `FormInput` / `SelectInput` print a prompt that says what they ask (fields,
-  numbered options) and that the answer goes through an interactive surface (the registry draws, it does not read a
-  line): a terminal host that collects answers sends them through the same `createWriteBack` as the web.
+- **Chat and inputs (U8).** `Chat` prints under its title as the SAME lines the web speaks
+  (`chatTranscriptLines`): `You: ...`, `Assistant (interrupted): ...`, `You (edit of turn 1): ...`,
+  a failure as its fixed sentence plus `(ref <id>)`, a restricted entry as `[restricted assistant
+  turn]`, media described without an address, then `(the assistant is replying...)` / `(conversation
+  closed)` / `... earlier messages are available`. Each turn is one bounded line of cleaned text: an
+  escape sequence, a bidi override or a newline in a turn cannot reach the screen or forge a
+  `Assistant:` line. `TextInput` / `FormInput` / `SelectInput` print a prompt that says what they
+  ask (fields, numbered options) and that the answer goes through an interactive surface (the
+  registry draws, it does not read a line): a terminal host that collects answers sends them through
+  the same `createWriteBack` as the web.
 - **Media prints a line, never loads (U9).** `Image`/`Audio`/`Video`/`File` print the same one-line
   description the web speaks (`describeMedia`: `image chart.png (image/png, 2 KiB)`), `[untrusted]`
   unless `media.trusted(ref)` says the host vouches (never for `origin: "user"`), and either a
-  re-checked `media.link(ref)` (`checkMediaUrl`) or a NON-REVERSIBLE tag `ref#1a2b3c4d` (first 8 hex of the SHA-256 of the address; never any part of the
-  address itself), which is a capability and terminal output is copied and logged. A declared size over
-  `media.policy.maxBytes` prints "too large to open" with no link. Name and alt are stripped of control
-  and bidi characters. Untrusted active types print "blocked (active content type)" with no link; a same-origin link is refused for untrusted media.
-  `MediaInput` prints that it is a web control. A restricted media node is a
+  re-checked `media.link(ref)` (`checkMediaUrl`) or a NON-REVERSIBLE tag `ref#1a2b3c4d` (first 8 hex
+  of the SHA-256 of the address; never any part of the address itself), which is a capability and
+  terminal output is copied and logged. A declared size over `media.policy.maxBytes` prints "too
+  large to open" with no link. Name and alt are stripped of control and bidi characters. Untrusted
+  active types print "blocked (active content type)" with no link; a same-origin link is refused for
+  untrusted media. `MediaInput` prints that it is a web control. A restricted media node is a
   `Note`, as for any kind.
 
 
@@ -161,14 +165,16 @@ renderExperience(blueprint, store, {
 });
 ```
 
-- **The default locale stays `en-US`**, not the process's locale: terminal output is logged, diffed and
-  snapshotted, so the same value must print the same bytes on every machine. A host that wants
+- **The default locale stays `en-US`**, not the process's locale: terminal output is logged, diffed
+  and snapshotted, so the same value must print the same bytes on every machine. A host that wants
   another opts in with `i18n.locale`.
-- Lookup order is `messages`, then `translate(key, english)`, then English; a throwing `translate` is
-  English. `{name}` placeholders must be kept. A counted noun is `<base>.<category>`
-  (`lu.plural.row.one` / `.other`, `.few`, ...); the locale's category applies only to a translated form.
+- Lookup order is `messages`, then `translate(key, english)`, then English; a throwing `translate`
+  is English. `{name}` placeholders must be kept. A counted noun is `<base>.<category>`
+  (`lu.plural.row.one` / `.other`, `.few`, ...); the locale's category applies only to a translated
+  form.
 - Not covered: bound data (titles, labels, cells, chat text), loom's own eight built-in kinds and
-  the `✗`/`○`/`~`/`⋯` status lines loom's traversal writes (loom's renderers), and developer diagnostics.
+  the `✗`/`○`/`~`/`⋯` status lines loom's traversal writes (loom's renderers), and developer
+  diagnostics.
 
 The keys the terminal asks for (including the shared chat and media words from `@loom-ui/core`):
 
@@ -257,57 +263,58 @@ term.stop();
   `TextInput`. Tab / Shift-Tab (or the arrows) move focus. Approvals take `y` / `n` only: Enter is
   never consent. A select opens a list (Enter), picks by digit or arrows + Enter, Escape backs out.
   A text input starts on Enter, edits with Backspace, sends on Enter, Escape cancels.
-- **Consent is deliberate.** `y` / `n` and every submit act only when they are the SOLE key of
-  their input chunk, on the frame they were pressed on: a key that changes mode or submits ends the
-  chunk (the rest is dropped), so a paste can never navigate to an approval and answer it. The
-  session turns on bracketed paste (`ESC[?2004h`, off again on `stop`) and a pasted span is TEXT
-  only: it is appended to an open draft (newlines kept), otherwise it is nothing. A consent key
-  queued behind an in-flight action is refused ("The view changed.") if the blueprint or a control's
-  binding status moved since it was pressed, and `viewedVersion` is stamped from that frame, not
-  from whatever is current when the key finally runs. After an `APPROVE` / `REJECT` is dispatched for
-  a pending approval, further `y` / `n` for it are ignored until the frame moves (the host answered,
-  or a new version landed): the HOST must still dedupe by its own key, since another session can
-  answer too. `press(...keys)` treats each key as its own arrival; `send(chunk)` and real input are chunks.
+- **Consent is deliberate.** `y` / `n` and every submit act only when they are the SOLE key of their
+  input chunk, on the frame they were pressed on: a key that changes mode or submits ends the chunk
+  (the rest is dropped), so a paste can never navigate to an approval and answer it. The session
+  turns on bracketed paste (`ESC[?2004h`, off again on `stop`) and a pasted span is TEXT only: it is
+  appended to an open draft (newlines kept), otherwise it is nothing. A consent key queued behind an
+  in-flight action is refused ("The view changed.") if the blueprint or a control's binding status
+  moved since it was pressed, and `viewedVersion` is stamped from that frame, not from whatever is
+  current when the key finally runs. After an `APPROVE` / `REJECT` is dispatched for a pending
+  approval, further `y` / `n` for it are ignored until the frame moves (the host answered, or a new
+  version landed): the HOST must still dedupe by its own key, since another session can answer too.
+  `press(...keys)` treats each key as its own arrival; `send(chunk)` and real input are chunks.
 - **Sole means sole.** Every decoded unit of a chunk counts toward "sole", including dropped escape
   sequences (arrows, OSC) and non-printables: `ESC[C` + `y` is two units and cannot approve. Paste
-  mode always ends: at the end marker (even split across chunks), at Ctrl-C (paste discarded, interrupt
-  delivered), when the paste passes 1 Mi UTF-16 code units (discarded; the rest is swallowed to the end marker, never
-  typed), or after `pasteIdleMs` (default 2000, read from an injectable `now`) without a byte. An
-  idle-abandoned paste may still be arriving, so the decoder then DRAINS: it discards input (nothing
-  is typed) until the end marker or Ctrl-C (delivered as an interrupt). A further silence does not
-  end the drain (a slow link can stall twice); a bound plus silence does: after 1 Mi UTF-16 code units
-  more with no end marker AND `pasteIdleMs` of silence the input is handed back (a still-flowing paste
-  keeps draining), so a lost marker costs at most that much typing, never all of it. A drain or an
-  oversize paste that ends inside a chunk yields an `ignored` key, so a `y` after it is not sole.
-  During a drain Ctrl-C is delivered as an interrupt (by default this stops the session).
+  mode always ends: at the end marker (even split across chunks), at Ctrl-C (paste discarded,
+  interrupt delivered), when the paste passes 1 Mi UTF-16 code units (discarded; the rest is
+  swallowed to the end marker, never typed), or after `pasteIdleMs` (default 2000, read from an
+  injectable `now`) without a byte. An idle-abandoned paste may still be arriving, so the decoder
+  then DRAINS: it discards input (nothing is typed) until the end marker or Ctrl-C (delivered as an
+  interrupt). A further silence does not end the drain (a slow link can stall twice); a bound plus
+  silence does: after 1 Mi UTF-16 code units more with no end marker AND `pasteIdleMs` of silence
+  the input is handed back (a still-flowing paste keeps draining), so a lost marker costs at most
+  that much typing, never all of it. A drain or an oversize paste that ends inside a chunk yields an
+  `ignored` key, so a `y` after it is not sole. During a drain Ctrl-C is delivered as an interrupt
+  (by default this stops the session).
 - **Known limits, and `confirmConsent`.** A chunk boundary is all a terminal gives us. (1) On a
   terminal WITHOUT bracketed paste, a one-character paste `y` into a focused approval is a one-key
   chunk, taken as a keypress. (2) A host reading byte by byte (slow serial / ssh) makes every key
   sole, so a multi-line non-bracketed paste could reach `\t`, `y`. For raw-byte-stream hosts set
   `confirmConsent: true` (recommended there; default off): the first `y` / `n` only arms the
   approval (the frame shows `y ×2`, or `labels.confirm`), and the same key alone in a LATER chunk on
-  the same frame acts; any other key disarms. (3) A paste whose end marker never arrives
-  is drained for 1 MiB, after which what follows is decoded as keys (the sole-key rule still blocks
-  consent); Ctrl-C leaves the drain at once.
+  the same frame acts; any other key disarms. (3) A paste whose end marker never arrives is drained
+  for 1 MiB, after which what follows is decoded as keys (the sole-key rule still blocks consent);
+  Ctrl-C leaves the drain at once.
 - **Actions** are the shapes the web emits (`APPROVE` / `REJECT` with `payload.approved`, `SELECT`,
-  `SUBMIT_TEXT` with an idempotency `key`), stamped with `viewedVersion`. What was typed is kept until
-  the host answers `ok`; a refusal or a throw is a fixed sentence from `LU_MESSAGES`, never the host's
-  text. No `onAction` = "not available here"; nothing is pretended to be sent.
+  `SUBMIT_TEXT` with an idempotency `key`), stamped with `viewedVersion`. What was typed is kept
+  until the host answers `ok`; a refusal or a throw is a fixed sentence from `LU_MESSAGES`, never
+  the host's text. No `onAction` = "not available here"; nothing is pretended to be sent.
 - **No TTY needed.** `input` / `output` are injected; `send("\t")` and `press({ name: "enter" })`
   feed keys and resolve when the effect, including the action, has settled. `decodeKeys` is the pure
-  parser: unknown escape sequences are dropped whole, control characters and bidi overrides are never
-  typed text. Ctrl-C calls `onInterrupt` (default `stop`).
+  parser: unknown escape sequences are dropped whole, control characters and bidi overrides are
+  never typed text. Ctrl-C calls `onInterrupt` (default `stop`).
 - `labels` overrides the footer's key legend and focus marker (symbols by default); every other word
   uses the host's `i18n`. Form inputs are not driven here (use a surface with fields).
 
 `renderExperience` and the interactive frame (controls footer included) strip core's one unsafe set
 (`stripUnsafeChars`, the class `sanitizeChatText` removes: C0/C1 controls, ESC, bidi overrides and
-isolates, zero-width and invisible marks, soft hyphen, TAG characters) plus tab, CR and U+2028/9 from
-the whole frame; only newline survives. A title, heading, cell, translated word or typed draft can
-be model- or user-authored, and an ESC would otherwise reach the terminal as an escape sequence.
-"Inert" means STRIPPED, not parsed: the printable bytes after a removed ESC (such as
-`]8;;http://…`) may remain visible. They are harmless text. A typed `Key.char` must be exactly one
-printable code point or it is ignored.
+isolates, zero-width and invisible marks, soft hyphen, TAG characters) plus tab, CR and U+2028/9
+from the whole frame; only newline survives. A title, heading, cell, translated word or typed draft
+can be model- or user-authored, and an ESC would otherwise reach the terminal as an escape sequence.
+"Inert" means STRIPPED, not parsed: the printable bytes after a removed ESC (such as `]8;;http://…`)
+may remain visible. They are harmless text. A typed `Key.char` must be exactly one printable code
+point or it is ignored.
 
 The renderer runs the shared conformance kit (`@loom-ui/renderer-conformance`) in
 `src/conformance.test.ts`.
