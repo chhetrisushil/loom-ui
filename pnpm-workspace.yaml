@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "docs/snippets"
 
 # Third-party versions shared across packages. loom's own packages are NOT here — they are
 # unpublished and resolved from the sibling ../loom checkout via pnpm.overrides in package.json.
