@@ -40,5 +40,13 @@
       "trailingCommas": "es5",
       "semicolons": "always"
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["docs/snippets/**"],
+      "organizeImports": {
+        "enabled": false
+      }
+    }
+  ]
 }

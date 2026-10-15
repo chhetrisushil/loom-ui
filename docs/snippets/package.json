@@ -1,0 +1,36 @@
+{
+  "name": "@loom-ui/docs-snippets",
+  "version": "0.0.1",
+  "description": "The compiling, asserted code behind docs/getting-started.md and docs/guides/*.md. Tests only; nothing here is published or imported.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "clean": "rm -rf tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@loom-ui/changes": "workspace:*",
+    "@loom-ui/core": "workspace:*",
+    "@loom-ui/hydration": "workspace:*",
+    "@loom-ui/learning": "workspace:*",
+    "@loom-ui/lineage": "workspace:*",
+    "@loom-ui/planner": "workspace:*",
+    "@loom-ui/renderer-conformance": "workspace:*",
+    "@loom-ui/renderer-lit": "workspace:*",
+    "@loom-ui/renderer-terminal": "workspace:*",
+    "@loom/blueprint-runtime": "*",
+    "@loom/projection-runtime": "*",
+    "@loom/core": "*",
+    "@loom/plugin-content": "*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "happy-dom": "catalog:",
+    "lit": "catalog:",
+    "typescript": "^5.6.3",
+    "vitest": "catalog:",
+    "zod": "catalog:"
+  }
+}

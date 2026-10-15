@@ -52,6 +52,67 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  docs/snippets:
+    dependencies:
+      '@loom-ui/changes':
+        specifier: workspace:*
+        version: link:../../packages/changes
+      '@loom-ui/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@loom-ui/hydration':
+        specifier: workspace:*
+        version: link:../../packages/hydration
+      '@loom-ui/learning':
+        specifier: workspace:*
+        version: link:../../packages/learning
+      '@loom-ui/lineage':
+        specifier: workspace:*
+        version: link:../../packages/lineage
+      '@loom-ui/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@loom-ui/renderer-conformance':
+        specifier: workspace:*
+        version: link:../../packages/renderer-conformance
+      '@loom-ui/renderer-lit':
+        specifier: workspace:*
+        version: link:../../packages/renderer-lit
+      '@loom-ui/renderer-terminal':
+        specifier: workspace:*
+        version: link:../../packages/renderer-terminal
+      '@loom/blueprint-runtime':
+        specifier: link:../../../loom/packages/blueprint-runtime
+        version: link:../../../loom/packages/blueprint-runtime
+      '@loom/core':
+        specifier: link:../../../loom/packages/core
+        version: link:../../../loom/packages/core
+      '@loom/plugin-content':
+        specifier: link:../../../loom/plugins/content
+        version: link:../../../loom/plugins/content
+      '@loom/projection-runtime':
+        specifier: link:../../../loom/packages/projection-runtime
+        version: link:../../../loom/packages/projection-runtime
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.4
+      happy-dom:
+        specifier: 'catalog:'
+        version: 20.14.5
+      lit:
+        specifier: 'catalog:'
+        version: 3.3.3
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@22.20.4)(happy-dom@20.14.5)
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+
   packages/changes:
     dependencies:
       '@loom-ui/core':
