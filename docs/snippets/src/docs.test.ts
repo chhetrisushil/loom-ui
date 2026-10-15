@@ -102,7 +102,7 @@ describe("the mirror guard is not vacuous", () => {
 
   it("fails when a mirrored block differs from its region by one character", () => {
     expect(marked, "user guide has a mirrored block to plant drift in").not.toBeNull();
-    const [whole, head, body, tail] = marked as RegExpExecArray;
+    const [whole = "", head = "", body = "", tail = ""] = marked as RegExpExecArray;
     const drifted = text.replace(whole, `${head}${body.replace(/\w/, "X")}${tail}`);
     expect(drifted).not.toBe(text);
     expect(() => expectDocMirrors(doc, "concepts.test.ts", drifted)).toThrow(/drifted/);
