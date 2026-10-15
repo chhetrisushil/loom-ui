@@ -80,6 +80,7 @@ describe("the CONSUMER pattern matches a name, not a word that contains its lett
 describe("loom-ui names no consumer", () => {
   const scanned = [
     ...files(join(ROOT, "packages")),
+    ...files(join(ROOT, "docs", "reference")),
     join(ROOT, "AGENTS.md"),
     join(ROOT, "README.md"),
   ];

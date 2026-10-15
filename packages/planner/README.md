@@ -9,8 +9,9 @@ projection directly, only `Operation`s that `apply`/`replay` fold onto an Experi
 
 ## Install / import
 
-```
-pnpm add @loom-ui/planner
+```jsonc
+// package.json of a consumer checked out beside this repo (the packages are not published)
+"@loom-ui/planner": "link:../loom-ui/packages/planner"
 ```
 
 ```ts
@@ -20,16 +21,16 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 
 ## Key concepts
 
-- **A planner returns operations, never an Experience.** `Planner.compose`/`.revise` both resolve
-  to a `PlanResult { ops, findings, report, summary? }`; the caller folds `ops` onto its own lineage with
-  `replay`. `@loom-ui/planner` imports no invoker, effect runtime, projection runtime or LLM
+- **A planner returns operations, never an Experience.** `Planner.compose`/`.revise` both resolve to
+  a `PlanResult { ops, findings, report, summary? }`; the caller folds `ops` onto its own lineage
+  with `replay`. `@loom-ui/planner` imports no invoker, effect runtime, projection runtime or LLM
   provider (enforced by `noLookups.test.ts`) — capabilities and context arrive resolved from the
   caller.
 - **Every model call is one `ctx.decide`.** A plan is recorded as a single decision keyed on every
   input that shapes the prompt (intent, catalogue content, surface, the offered capabilities'
-  identity and tool-authored text, and the caller's context) — so a replay serves the recorded
-  `ops` with no model call. `CapabilityRef.sampleOutput` is deliberately NOT part of that key: a
-  new sample is a new REVISION, never a silent re-plan.
+  identity and tool-authored text, and the caller's context) — so a replay serves the recorded `ops`
+  with no model call. `CapabilityRef.sampleOutput` is deliberately NOT part of that key: a new
+  sample is a new REVISION, never a silent re-plan.
 - **Capabilities are an input, not a lookup.** A `CapabilityRef` is a tool the planner MAY bind a
   node to: `handle`, `toolName`, `toolVersion`, a pinned `toolSchemaHash`, and an optional
   `sampleOutput` the planner reshapes to pin `outputShapeHash` — no sample means not bindable.
@@ -38,9 +39,9 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   caller's `contextClass`, and `CapabilityRef.sensitivity` of EVERY offered capability (its sample
   reaches the prompt whether or not the plan binds it). A capability that carries a `sampleOutput`
   but no `sensitivity`, with no `contextClass` declared, is content of unknown class: the summary is
-  OMITTED (warn finding `summary-withheld`; the ops are unaffected) rather than stamped with a guess.
-  Declare `sensitivity` on the capability, or `contextClass` to vouch for the lot. The conformance
-  kit reports `summary-class-unsound` for a planner that does otherwise.
+  OMITTED (warn finding `summary-withheld`; the ops are unaffected) rather than stamped with a
+  guess. Declare `sensitivity` on the capability, or `contextClass` to vouch for the lot. The
+  conformance kit reports `summary-class-unsound` for a planner that does otherwise.
 - **A capability's declared class classes every node bound to it (tool-level, fail-closed).**
   `CapabilityRef.sensitivity` is not only the summary's stamp: `materialize` gives each bound node
   `strictest(the model's proposal, the capability's class)`. A proposal (admitted only on a
@@ -48,13 +49,15 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   caller-only type still takes the capability's class although the model could not set one. On a
   revise it raises an existing node (a `bindProvider` carrying the class). The conformance kit
   reports `binding-class-below-capability` for a planner whose bound nodes carry less than their
-  capability declares. The class is the strictest declared over EVERY step of the node's call graph and every capability of the same tool (`requiredClass`; `declaredToolClassesFrom(capabilities)` is the matching read-time table). The same declaration is the READ-time floor a host passes to core as
-  `declaredToolClasses` (see `@loom-ui/core`), which covers nodes this planner did not write.
+  capability declares. The class is the strictest declared over EVERY step of the node's call graph
+  and every capability of the same tool (`requiredClass`; `declaredToolClassesFrom(capabilities)` is
+  the matching read-time table). The same declaration is the READ-time floor a host passes to core
+  as `declaredToolClasses` (see `@loom-ui/core`), which covers nodes this planner did not write.
   **`declaredToolClassesFrom(capabilities)` is THE way a host builds that table**, from the same
-  `CapabilityRef`s it gives the planner, so host and planner derive it identically:
-  `new Lineage({ events, content, readPolicy: { declaredToolClasses: declaredToolClassesFrom(capabilities) } })`
-  (or `createServeSurface({ declaredToolClasses: ... })` in hydration). Add `undeclared: "deny"` to make
-  a tool the capabilities do not list unreadable; pass the same `readPolicy` to
+  `CapabilityRef`s it gives the planner, so host and planner derive it identically: `new Lineage({
+  events, content, readPolicy: { declaredToolClasses: declaredToolClassesFrom(capabilities) } })`
+  (or `createServeSurface({ declaredToolClasses: ... })` in hydration). Add `undeclared: "deny"` to
+  make a tool the capabilities do not list unreadable; pass the same `readPolicy` to
   `checkPlannerConformance` and it warns (`handle-tool-undeclared`) when a composed handle's tool is
   neither offered nor in the table, i.e. would be unreadable.
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
@@ -66,8 +69,8 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   `prompt`/`setRole`/a provider op, and does not touch the root; everything else passes through to
   loom's ordinary business-action path untouched.
 - **Drift re-authoring.** `reviseForDrift` takes the `DriftRecord`s collected from one or more
-  `@loom-ui/hydration` `DriftReport`s (their `.drift` arrays) and turns them into a revision
-  request any `Planner` can serve, composing the same helpers (`driftRequest`, `driftContext`,
+  `@loom-ui/hydration` `DriftReport`s (their `.drift` arrays) and turns them into a revision request
+  any `Planner` can serve, composing the same helpers (`driftRequest`, `driftContext`,
   `observedSamples`, `driftCapabilities`, `unsampledDrift`) the reference planner itself calls.
 
 ## API
@@ -78,54 +81,56 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   ctx): Promise<PlanResult> }`.
 - `ComposeInput`, `ReviseInput` — `{ intent, catalog, capabilities, context?, surface? }` and, for a
   revision, `{ experience, request: { text, scopeNodeIds? }, ..., observed? }`.
-- `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report, summary? }` (`summary` is the model's own description of the plan, kept for change delivery: UNTRUSTED text, bounded and stripped by core's `boundSummary`, never an instruction); the report's
-  `decisionId`, `attempts`, `firstAttemptValid`, `modelId` and summed `usage` are what a caller
-  stamps provenance from.
+- `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report, summary? }` (`summary` is
+  the model's own description of the plan, kept for change delivery: UNTRUSTED text, bounded and
+  stripped by core's `boundSummary`, never an instruction); the report's `decisionId`, `attempts`,
+  `firstAttemptValid`, `modelId` and summed `usage` are what a caller stamps provenance from.
 - `CapabilityRef` — one bindable tool: `handle`, optional `kind`, `toolName`, `toolVersion`,
-  `toolSchemaHash`, optional `description`/`inputSchema`/`sampleOutput`. `kind` (absent = MCP) names the
-  data-provider kind (see hydration): the planner treats it as opaque, copies it onto the step it emits,
-  and keys handles, decision ids and observation matching by it (`toolKey`), so the same name under two
-  kinds is two providers. An MCP capability keeps every id it had.
+  `toolSchemaHash`, optional `description`/`inputSchema`/`sampleOutput`. `kind` (absent = MCP) names
+  the data-provider kind (see hydration): the planner treats it as opaque, copies it onto the step
+  it emits, and keys handles, decision ids and observation matching by it (`toolKey`), so the same
+  name under two kinds is two providers. An MCP capability keeps every id it had.
 - `DecideContext`, `DecideOptionsLike`, `DecideScope` — the structural subset of loom's
-  `ExecutionContext.decide` a planner needs; any loom `ctx` satisfies it. The decider is
-  `(scope: DecideScope) => T | Promise<T>`: `scope.invokeTransient(toolId, input, { signal? })`
-  runs the call AS the deciding execution (its workflowId/executionId, full principal including
-  delegation, composed cancellation, budget snapshot), still transient. A zero-arg decider remains
-  valid. A planner that makes its model / MCP / sandbox calls through the scope is authorised and
-  metered as the flow that asked, not as an anonymous runtime-level caller.
+  `ExecutionContext.decide` a planner needs; any loom `ctx` satisfies it. The decider is `(scope:
+  DecideScope) => T | Promise<T>`: `scope.invokeTransient(toolId, input, { signal? })` runs the call
+  AS the deciding execution (its workflowId/executionId, full principal including delegation,
+  composed cancellation, budget snapshot), still transient. A zero-arg decider remains valid. A
+  planner that makes its model / MCP / sandbox calls through the scope is authorised and metered as
+  the flow that asked, not as an anonymous runtime-level caller.
 - `scopeInvoker(scope): TransientInvoker` — adapts a `DecideScope` to the `TransientInvoker`
   interface `@loom-ui/hydration` is written against, so its wrappers compose on top:
-  `memoInvoker(limitInvoker(scopeInvoker(scope), 4))`. Only `signal` is forwarded; `principal`,
-  `as` and `resources` throw (the scope IS the identity; a silent drop would run a call as
-  someone it did not ask to be), `label` is ignored. `memoInvoker` keys on every option except
-  `signal`, and the scope fixes the identity, so a memo built inside one decider is safe — never
-  share one memo across scopes (executions). A refused option is a REJECTED promise, never a
-  synchronous throw. Do not configure `principal` on hydration / reshape when their invoker is a
-  `scopeInvoker` — the scope already carries the execution's principal, and the call is refused
-  otherwise (refusing beats running as someone else).
+  `memoInvoker(limitInvoker(scopeInvoker(scope), 4))`. Only `signal` is forwarded; `principal`, `as`
+  and `resources` throw (the scope IS the identity; a silent drop would run a call as someone it did
+  not ask to be), `label` is ignored. `memoInvoker` keys on every option except `signal`, and the
+  scope fixes the identity, so a memo built inside one decider is safe — never share one memo across
+  scopes (executions). A refused option is a REJECTED promise, never a synchronous throw. Do not
+  configure `principal` on hydration / reshape when their invoker is a `scopeInvoker` — the scope
+  already carries the execution's principal, and the call is refused otherwise (refusing beats
+  running as someone else).
 - `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loom/llm`'s
-  `LlmProvider.complete` a model must satisfy, and its token-usage shape. `PlannerMessage.content` is text OR
-  parts (`PlannerMessageContent`, mirroring loom R5's `LlmMessageContent`); the messages the planner itself writes are
-  always text. A model that reads message content uses `plannerMessageText(content)` (the local `textOf`: text and
-  tool-result text, never `[object Object]`; a `tainted()` wrapper throws). Type change: code that read
-  `message.content` as a `string` must narrow or call `plannerMessageText`.
+  `LlmProvider.complete` a model must satisfy, and its token-usage shape. `PlannerMessage.content`
+  is text OR parts (`PlannerMessageContent`, mirroring loom R5's `LlmMessageContent`); the messages
+  the planner itself writes are always text. A model that reads message content uses
+  `plannerMessageText(content)` (the local `textOf`: text and tool-result text, never `[object
+  Object]`; a `tainted()` wrapper throws). Type change: code that read `message.content` as a
+  `string` must narrow or call `plannerMessageText`.
 - `planDecisionId(kind, input): string` — the `ctx.decide` key `compose`/`revise` use: every input
   that shapes the prompt (intent/request, catalogue CONTENT, the offered capabilities including
-  their tool-authored text, caller `context`, and `surface`), deliberately excluding a
-  capability's `sampleOutput` (a new sample is a new revision, never a silent re-plan). Overloaded
-  per `kind`: `"compose"` takes `{ intent, catalog, capabilities, context?, surface? }`;
-  `"revise"` takes `{ versionHash, request, catalog?, capabilities?, context?, surface?,
-  observedHandles? }`. `ReferencePlanner` calls it to key its own `ctx.decide`; a custom planner
-  can reuse it for the same replay-stability.
+  their tool-authored text, caller `context`, and `surface`), deliberately excluding a capability's
+  `sampleOutput` (a new sample is a new revision, never a silent re-plan). Overloaded per `kind`:
+  `"compose"` takes `{ intent, catalog, capabilities, context?, surface? }`; `"revise"` takes `{
+  versionHash, request, catalog?, capabilities?, context?, surface?, observedHandles? }`.
+  `ReferencePlanner` calls it to key its own `ctx.decide`; a custom planner can reuse it for the
+  same replay-stability.
 
 ### Reference planner
 
-- `ReferencePlanner` — implements `Planner`. Constructor: `{ model: PlannerModel | ((scope: DecideScope) => PlannerModel),
-  modelId: string, maxAttempts?: number }` (default 2 attempts, parse/validation retries included).
-  Pass a factory to make the model calls AS the deciding execution, e.g.
-  `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req, o) =>
-  inv.invokeTransient("llm.complete", req, o) }; }` (forward `o`: it carries the signal and, for a
-  streamed turn, the delta sink); a plain model ignores the scope.
+- `ReferencePlanner` — implements `Planner`. Constructor: `{ model: PlannerModel | ((scope:
+  DecideScope) => PlannerModel), modelId: string, maxAttempts?: number }` (default 2 attempts,
+  parse/validation retries included). Pass a factory to make the model calls AS the deciding
+  execution, e.g. `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req, o)
+  => inv.invokeTransient("llm.complete", req, o) }; }` (forward `o`: it carries the signal and, for
+  a streamed turn, the delta sink); a plain model ignores the scope.
 - `reach?: { run?, transient? }` — the planner's **declared reach** for `@loom/verify` (loom L32). A
   flow that calls `planner.compose(input, ctx)` hands its `ctx` to code the verifier cannot see
   into; the planner declares what that code runs, and the verifier counts those tools against the
@@ -141,35 +146,34 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   attachment for a custom `Planner` (or any object a flow hands `ctx` to).
 - `REFERENCE_POLICY`, `REFERENCE_SOURCE` — the fixed `{ id, version }` policy stamp and decision
   source this planner records.
-- `scratchGenesis(intent)` — a scratch-lineage `Experience` for validating a draft plan before it
-  is applied to a real one (every genesis shares the same root, so ops are id-based and portable).
+- `scratchGenesis(intent)` — a scratch-lineage `Experience` for validating a draft plan before it is
+  applied to a real one (every genesis shares the same root, so ops are id-based and portable).
 
 ### Conformance
 
 - `checkPlannerConformance(planner: Planner, fx: ConformanceFixture): Promise<Finding[]>` — runs a
   custom `Planner` through the contract a caller depends on: at least one attempt, a named model,
   `firstAttemptValid` agreeing with the attempts, replay-stable `usage`, and — with `fx.ctx` a
-  recording context — that a second `compose` with the same inputs replays rather than re-calls
-  the model. With `fx.scopeProbe` (`{ identity, calls() }`, observing the scope behind `fx.ctx`) it
-  also requires compose to decide through `ctx.decide` and its decider to call through the scope
-  (`scope-unused` either way), every call to be stamped as
-  the deciding execution (`scope-identity-mismatch`), and a replay to make none
-  (`replay-recalled-scope`); calls made during `revise` must be stamped as the deciding execution
-  too, reported separately from a compose mismatch (whether `revise` must call the scope at all
-  is not checked). **Omitting `scopeProbe` means
-  the scope contract is NOT checked.** `fx.ctx` must be fresh: a ctx that already holds the
-  compose decision serves it without running the decider, reported as `fixture-ctx-not-fresh`
-  (not `scope-unused`). `calls()` may return a live array.
-  With `fx.denialProbe` (`{ ctx, error, decisions() }`: a second fresh recording context whose scope
-  throws `error`) it also requires `compose` to REJECT with that error and record nothing
-  (`denial-swallowed` / `denial-replaced` / `denial-recorded`). Omitting it means the
-  control-plane contract is NOT checked.
-  With `fx.checkReach: true` (needs `scopeProbe` whose calls carry `toolId`) it also requires the
+  recording context — that a second `compose` with the same inputs replays rather than re-calls the
+  model. With `fx.scopeProbe` (`{ identity, calls() }`, observing the scope behind `fx.ctx`) it also
+  requires compose to decide through `ctx.decide` and its decider to call through the scope
+  (`scope-unused` either way), every call to be stamped as the deciding execution
+  (`scope-identity-mismatch`), and a replay to make none (`replay-recalled-scope`); calls made
+  during `revise` must be stamped as the deciding execution too, reported separately from a compose
+  mismatch (whether `revise` must call the scope at all is not checked). **Omitting `scopeProbe`
+  means the scope contract is NOT checked.** `fx.ctx` must be fresh: a ctx that already holds the
+  compose decision serves it without running the decider, reported as `fixture-ctx-not-fresh` (not
+  `scope-unused`). `calls()` may return a live array. With `fx.denialProbe` (`{ ctx, error,
+  decisions() }`: a second fresh recording context whose scope throws `error`) it also requires
+  `compose` to REJECT with that error and record nothing (`denial-swallowed` / `denial-replaced` /
+  `denial-recorded`). Omitting it means the control-plane contract is NOT checked. With
+  `fx.checkReach: true` (needs `scopeProbe` whose calls carry `toolId`) it also requires the
   planner's declaration to list every toolId called through the scope during compose and revise
-  under `transient` (`reach-undeclared`; `reach-unprobed` when there is no probe). Omitting it
-  means reach is NOT checked.
+  under `transient` (`reach-undeclared`; `reach-unprobed` when there is no probe). Omitting it means
+  reach is NOT checked.
 - `ConformanceFixture` — the fixture shape: `intent`, `catalog`, `capabilities`, `meta`, a
-  `revision` request, a `DecideContext`, and optional `modelCalls()`/`surface`/`scopeProbe`/`denialProbe`.
+  `revision` request, a `DecideContext`, and optional
+  `modelCalls()`/`surface`/`scopeProbe`/`denialProbe`.
 
 ### Interaction (widget actions vs. experience ops)
 
@@ -264,38 +268,39 @@ the model's text ever entering the op log through the provenance. It copies noth
 ## Variants, propensity and a learning loop (U11)
 
 `new ReferencePlanner({ variants: { policy, variants } })` makes each turn two decisions. First a
-**variant choice** through `decideWithPolicy` (`plan-variant:<hash>`): recorded with its context
-(`{ kind, unit, key, catalogId }`), the alternatives (the sorted variant ids) and the policy's
+**variant choice** through `decideWithPolicy` (`plan-variant:<hash>`): recorded with its context (`{
+kind, unit, key, catalogId }`), the alternatives (the sorted variant ids) and the policy's
 **propensity**, so `@loom/learning` can evaluate it off-policy from the log. Then the plan, keyed
 additionally on the variant (a plan made under one variant is not a plan for another). A variant is
-`{ containers?, guidance? }`: the container roles offered for the turn, and a bounded, control-free line
-of application-authored layout guidance appended to the system prompt.
+`{ containers?, guidance? }`: the container roles offered for the turn, and a bounded, control-free
+line of application-authored layout guidance appended to the system prompt.
 
-The turn needs `ComposeInput.unit` / `ReviseInput.unit`, an opaque `[A-Za-z0-9_.:-]{1,128}` id of the
-user, tenant or cohort (an email is refused). The host derives it SERVER-SIDE as a keyed HMAC alias
-(`unitAlias(key, userId)` in `@loom-ui/learning`), never from a client: it is a pseudonym recorded in the
-decision log, so destroying the key severs it from the person (the log still links one alias's decisions).
-The variant decision id is a SHA-256 of the plan key and unit (it keys what a reward attaches to). Without a valid unit the turn returns a
-`variant-unit-invalid` finding and calls nothing. Policies shipped: `stableBucketPolicy` (A/B by a
-hash of the unit, propensity = weight share), `epsilonGreedyPolicy` (propensity `eps/k` plus `1-eps`
-for the greedy arm — exact) and `ucbPolicy` (deterministic, propensity 1, over a stats snapshot). All are
-pure — no clock, no RNG — so a replay and a re-run agree; and a replay serves the RECORDED choice even if
-the policy has since changed (`report.variant.propensity` is then absent: it is only claimed when this
-run's policy made the recorded choice). A recorded variant the planner no longer offers fails closed
-(`variant-unknown`, no model call). `PlanResult.report.variant.decisionId` is the learnable decision;
-`plannerProvenance` stamps it as `Provenance.policyDecisionId`.
+The turn needs `ComposeInput.unit` / `ReviseInput.unit`, an opaque `[A-Za-z0-9_.:-]{1,128}` id of
+the user, tenant or cohort (an email is refused). The host derives it SERVER-SIDE as a keyed HMAC
+alias (`unitAlias(key, userId)` in `@loom-ui/learning`), never from a client: it is a pseudonym
+recorded in the decision log, so destroying the key severs it from the person (the log still links
+one alias's decisions). The variant decision id is a SHA-256 of the plan key and unit (it keys what
+a reward attaches to). Without a valid unit the turn returns a `variant-unit-invalid` finding and
+calls nothing. Policies shipped: `stableBucketPolicy` (A/B by a hash of the unit, propensity =
+weight share), `epsilonGreedyPolicy` (propensity `eps/k` plus `1-eps` for the greedy arm — exact)
+and `ucbPolicy` (deterministic, propensity 1, over a stats snapshot). All are pure — no clock, no
+RNG — so a replay and a re-run agree; and a replay serves the RECORDED choice even if the policy has
+since changed (`report.variant.propensity` is then absent: it is only claimed when this run's policy
+made the recorded choice). A recorded variant the planner no longer offers fails closed
+(`variant-unknown`, no model call). `PlanResult.report.variant.decisionId` is the learnable
+decision; `plannerProvenance` stamps it as `Provenance.policyDecisionId`.
 
 **Through a rollout registry (loom R18).** Pass `variants: { rollout: { source, policyId, resolve,
-bucketSecret? }, variants }` INSTEAD of `policy` (exactly one; both or neither throws at construction)
-and the choice is made with `decideWithRollout`, with `unit` as the traffic key. The decision records
-the version that ACTED, its propensity and the rollout stamp (mode, bucket, shadow arm, `fellBack`),
-so a shadow candidate never serves, a canary unit gets the candidate's variant stamped with the
-candidate's version, and `linkFromLedger` / U11 rewards attribute to the right version.
-`report.variant.policy` is then the acting `{ id, version }` and `report.variant.rollout` the stamp
-(on a replay `version` is omitted: the log's recorded stamp is the truth).
-Like `propensity`, both are claimed only for a choice this run made; a replay serves the recorded
-choice and the log keeps its stamp. A registry with no live version is a `variant-policy-failed`
-finding, no model call.
+bucketSecret? }, variants }` INSTEAD of `policy` (exactly one; both or neither throws at
+construction) and the choice is made with `decideWithRollout`, with `unit` as the traffic key. The
+decision records the version that ACTED, its propensity and the rollout stamp (mode, bucket, shadow
+arm, `fellBack`), so a shadow candidate never serves, a canary unit gets the candidate's variant
+stamped with the candidate's version, and `linkFromLedger` / U11 rewards attribute to the right
+version. `report.variant.policy` is then the acting `{ id, version }` and `report.variant.rollout`
+the stamp (on a replay `version` is omitted: the log's recorded stamp is the truth). Like
+`propensity`, both are claimed only for a choice this run made; a replay serves the recorded choice
+and the log keeps its stamp. A registry with no live version is a `variant-policy-failed` finding,
+no model call.
 
 ## Streaming a turn (U1)
 
@@ -369,68 +374,76 @@ const repaired = await reviseForDrift(planner, {
 
 ## Notable behaviours and guarantees
 
-- **Chat and inputs: the model shapes, never says (U8).** `describeCatalog` adds chat guidance to an entry ONLY when it
-  resolves to a chat kind (a catalogue without the chat entries says nothing about it, and a draft naming `Chat` is
-  `unknown-type`). A chat node's props are checked against the framework's allow-list, whatever the catalogue declares:
-  transcript content (`entries`, `messages`, `text`), an entered value (`value`, `defaultValue`, a prefill), a submit
-  or any markup prop is `chat-prop-forbidden`; a form's `fields` / a select's `options` are a closed spec (no
-  regular expressions, no defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` is `chat-unbound`; an input
-  with a binding is `unexpected-binding`. `checkPlannerConformance` reports a planner that gets one past validation as
-  `compose-invalid:<code>`. A planner decides where a conversation goes and what its inputs are called; what people
-  and the assistant say, and what a person enters, are data and never its to author.
-- **Media comes from bindings, never from the model (U9).** `describeCatalog` adds media guidance to an
-  entry ONLY when it resolves to a media kind (a catalogue without the media entries says nothing about
-  media, and a draft naming `Image` is `unknown-type`). A media node's props are checked against the
-  FRAMEWORK allow-list in `validateExperience` (text props only): a `src`/`address`/`autoplay` prop is
-  `media-prop-forbidden`, a URL or content address as a prop's whole value is `media-literal-ref`, an
-  unbound display node is `media-unbound` — even for a catalogue that DECLARES such a prop. The
-  reference planner feeds those findings back like any validation finding, and the conformance kit
-  reports them as `compose-invalid:<code>` for any planner. Text props that merely EMBED a URL or address are `media-embedded-ref` (media nodes) /
-  `embedded-ref` warnings (other nodes): a hint for review, not a boundary. The prompt's raw capability samples are
-  redacted of address-shaped strings (`redactAddresses`). Content references as tool ARGUMENTS (U9b) are guarded too:
-  mark the field `"x-content-ref": true` in the capability's `inputSchema` (any depth; grammar, marker choice and residuals
-  in core's README, "Content references as tool arguments"), and mark a producer's `outputSchema` the same way to declare
-  that its output is a content reference. `contentRefArgsFrom(capabilities)` turns the offered schemas into the table
-  (`{ args, produces }`, plain JSON, persistable); the reference planner and the conformance kit hand it to
-  `validateExperience`, so a literal at a marked path is `media-arg-literal`, and a reference to an output its tool does not
-  declare is `media-arg-unproven-ref` (both fed back to the model; `compose-invalid:…` in the kit). A schema that mentions the
-  marker but cannot be read is a `media-arg-schema-unknown` ERROR. The model is told never to write one (leave it out, or
-  keep an existing `{{steps.<id>.output…}}` that points at a `producesContentRefs` output): the compose rules say so and each
-  capability's DATA block lists its `contentRefArguments` and `producesContentRefs`. The capability details (description,
-  `inputSchema`, `outputSchema`, so their `examples` / `default` / `enum` too) are redacted of address-shaped strings like the
-  samples: a string that is wholly a URL / locator / address goes whole, and the `algo:hex` class matches
-  `looksLikeLiteralRef` (`content_ref:`, `blake3-256:`). The revise prompt's CURRENT EXPERIENCE keeps a step's arguments
-  verbatim on purpose: the model must echo them byte-identical, so redacting them would silently rebind the call; they passed
-  validation, which refuses a literal at a marked path and warns on address-shaped text elsewhere. An UNMARKED string
-  argument that looks like an address warns (`media-arg-suspect`); a hint. Hand the SAME table to hydration's required
-  `contentRefArgs` (its README has the run-time re-check, the cache rule and the param gate). Residuals: an unmarked schema is
-  unguarded, and a declared producer is trusted as a whole, including what it does with its own unmarked inputs (the host's
-  invoker authorises each call as the viewer; a producer step with an address-shaped literal argument gets a
-  `media-arg-suspect` hint).
+- **Chat and inputs: the model shapes, never says (U8).** `describeCatalog` adds chat guidance to an
+  entry ONLY when it resolves to a chat kind (a catalogue without the chat entries says nothing
+  about it, and a draft naming `Chat` is `unknown-type`). A chat node's props are checked against
+  the framework's allow-list, whatever the catalogue declares: transcript content (`entries`,
+  `messages`, `text`), an entered value (`value`, `defaultValue`, a prefill), a submit or any markup
+  prop is `chat-prop-forbidden`; a form's `fields` / a select's `options` are a closed spec (no
+  regular expressions, no defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` is
+  `chat-unbound`; an input with a binding is `unexpected-binding`. `checkPlannerConformance` reports
+  a planner that gets one past validation as `compose-invalid:<code>`. A planner decides where a
+  conversation goes and what its inputs are called; what people and the assistant say, and what a
+  person enters, are data and never its to author.
+- **Media comes from bindings, never from the model (U9).** `describeCatalog` adds media guidance to
+  an entry ONLY when it resolves to a media kind (a catalogue without the media entries says nothing
+  about media, and a draft naming `Image` is `unknown-type`). A media node's props are checked
+  against the FRAMEWORK allow-list in `validateExperience` (text props only): a
+  `src`/`address`/`autoplay` prop is `media-prop-forbidden`, a URL or content address as a prop's
+  whole value is `media-literal-ref`, an unbound display node is `media-unbound` — even for a
+  catalogue that DECLARES such a prop. The reference planner feeds those findings back like any
+  validation finding, and the conformance kit reports them as `compose-invalid:<code>` for any
+  planner. Text props that merely EMBED a URL or address are `media-embedded-ref` (media nodes) /
+  `embedded-ref` warnings (other nodes): a hint for review, not a boundary. The prompt's raw
+  capability samples are redacted of address-shaped strings (`redactAddresses`). Content references
+  as tool ARGUMENTS (U9b) are guarded too: mark the field `"x-content-ref": true` in the
+  capability's `inputSchema` (any depth; grammar, marker choice and residuals in core's README,
+  "Content references as tool arguments"), and mark a producer's `outputSchema` the same way to
+  declare that its output is a content reference. `contentRefArgsFrom(capabilities)` turns the
+  offered schemas into the table (`{ args, produces }`, plain JSON, persistable); the reference
+  planner and the conformance kit hand it to `validateExperience`, so a literal at a marked path is
+  `media-arg-literal`, and a reference to an output its tool does not declare is
+  `media-arg-unproven-ref` (both fed back to the model; `compose-invalid:…` in the kit). A schema
+  that mentions the marker but cannot be read is a `media-arg-schema-unknown` ERROR. The model is
+  told never to write one (leave it out, or keep an existing `{{steps.<id>.output…}}` that points at
+  a `producesContentRefs` output): the compose rules say so and each capability's DATA block lists
+  its `contentRefArguments` and `producesContentRefs`. The capability details (description,
+  `inputSchema`, `outputSchema`, so their `examples` / `default` / `enum` too) are redacted of
+  address-shaped strings like the samples: a string that is wholly a URL / locator / address goes
+  whole, and the `algo:hex` class matches `looksLikeLiteralRef` (`content_ref:`, `blake3-256:`). The
+  revise prompt's CURRENT EXPERIENCE keeps a step's arguments verbatim on purpose: the model must
+  echo them byte-identical, so redacting them would silently rebind the call; they passed
+  validation, which refuses a literal at a marked path and warns on address-shaped text elsewhere.
+  An UNMARKED string argument that looks like an address warns (`media-arg-suspect`); a hint. Hand
+  the SAME table to hydration's required `contentRefArgs` (its README has the run-time re-check, the
+  cache rule and the param gate). Residuals: an unmarked schema is unguarded, and a declared
+  producer is trusted as a whole, including what it does with its own unmarked inputs (the host's
+  invoker authorises each call as the viewer; a producer step with an address-shaped literal
+  argument gets a `media-arg-suspect` hint).
 
 - **Error semantics: refusals propagate, model failures become findings.** A plain model failure
   (provider error, unparseable or invalid output, `TypedFailure`) becomes a `model-error` /
   `model-output-invalid` finding, is retried up to `maxAttempts`, and ends as a recorded failed
-  plan. A CONTROL-PLANE refusal is different: `CapabilityDeniedError` (the deciding execution has
-  no grant for the effect), `QuotaExceededError` (its budget refuses the call) and `AbortError`
-  (cancellation) are rethrown out of the decider at once — from the model call or the model
-  factory — with no retry. A throwing decider records nothing, so the flow fails with the real
-  error and, once the grant is fixed, a re-run decides afresh instead of replaying a failed plan.
-  They are matched by error `name`, so a second copy of loom's classes is still recognised.
-  The set also names loom's `ExecutionCancelledError` / `DecideScopeClosedError` (its cancellation
-  errors) and the refusals `ExecutionDeniedError`, `CapabilityInvokeDeniedError`,
-  `EffectModeViolationError`, `EgressDeniedError`, `SafetyViolationError`, `UntrustedContentError` and loom's control-plane limits
-  `RateLimitExceededError`, `KillSwitchEngagedError` and `SpawnLimitExceededError`.
-  An `AbortError` thrown by the provider itself (say its own request timeout) is therefore ALSO
+  plan. A CONTROL-PLANE refusal is different: `CapabilityDeniedError` (the deciding execution has no
+  grant for the effect), `QuotaExceededError` (its budget refuses the call) and `AbortError`
+  (cancellation) are rethrown out of the decider at once — from the model call or the model factory
+  — with no retry. A throwing decider records nothing, so the flow fails with the real error and,
+  once the grant is fixed, a re-run decides afresh instead of replaying a failed plan. They are
+  matched by error `name`, so a second copy of loom's classes is still recognised. The set also
+  names loom's `ExecutionCancelledError` / `DecideScopeClosedError` (its cancellation errors) and
+  the refusals `ExecutionDeniedError`, `CapabilityInvokeDeniedError`, `EffectModeViolationError`,
+  `EgressDeniedError`, `SafetyViolationError`, `UntrustedContentError` and loom's control-plane
+  limits `RateLimitExceededError`, `KillSwitchEngagedError` and `SpawnLimitExceededError`. An
+  `AbortError` thrown by the provider itself (say its own request timeout) is therefore ALSO
   propagated and fails the flow: an `AbortError` is the platform's name for a cancelled call and
   cannot be told from the execution's cancellation by name, retrying a cancelled call is the
   caller's policy (not a draft to re-ask), and previously it was masked as a recorded failed plan.
   The classifier is exported as `isControlPlaneError(e)`, so a host planner that wraps its own
   effect calls (a sandbox proof, an MCP sample) can apply the same rule at its own catch sites.
-  `plan()` receives no cancellation signal, so classification rests on names alone — which means
-  a host that cancels with its OWN `Error` (loom keeps a caller-supplied reason as-is, e.g.
-  `new Error("user left")`) is not recognised and is retried and recorded like a model failure.
-  Cancel with the default reason (loom's `ExecutionCancelledError`) or an error named `AbortError`.
+  `plan()` receives no cancellation signal, so classification rests on names alone — which means a
+  host that cancels with its OWN `Error` (loom keeps a caller-supplied reason as-is, e.g. `new
+  Error("user left")`) is not recognised and is retried and recorded like a model failure. Cancel
+  with the default reason (loom's `ExecutionCancelledError`) or an error named `AbortError`.
 
 - **Replay serves the recorded plan.** Because every model call is one `ctx.decide`, a replayed
   execution never calls the model again — `checkPlannerConformance`'s recording-context assertion
@@ -460,10 +473,11 @@ application panels locked inside a role container, and `{ partial: true }` for a
 base, so a revise can echo `tabs`/`stepper` without `containers`.
 
 Viewer-redaction note: the planner always reads the FULL experience (`describeExperience` takes no
-viewer; compose and revise run on the trusted side), so nothing there is collapsed. A container whose
-children are all restricted for a viewer collapses to a bare placeholder only in `compile(..., { viewer })`
-and the viewer-facing readers (see `@loom-ui/core`, "A container is classified by what it would show");
-a tabs / stepper panel that collapses is drawn like any restricted node, so the set keeps its panel count.
+viewer; compose and revise run on the trusted side), so nothing there is collapsed. A container
+whose children are all restricted for a viewer collapses to a bare placeholder only in `compile(...,
+{ viewer })` and the viewer-facing readers (see `@loom-ui/core`, "A container is classified by what
+it would show"); a tabs / stepper panel that collapses is drawn like any restricted node, so the set
+keeps its panel count.
 
 Behaviour notes for this release: the prompt gained a CONTAINERS block and a grouping rule;
 `MAX_DRAFT_NODES` went 24 → 64 (the top level, and each container, stays 24), and decision ids are
@@ -477,28 +491,31 @@ one `setRole`, a widget added to a panel one `insertNode` under it, a widget mov
 one `moveNode` (never a remove plus an insert), a removed container one `removeNode` (its contents
 go with it), and a reorder costs the fewest `moveNode`s (the longest run already in order stays
 put). A container's kind (`section` ↔ `row`) cannot change — no op does that — so it is a warning.
-`checkPlannerConformance` judges only what the plan INSERTED (an application's own containers are not
-the planner's to bound or stamp) and checks the bounds, that every container the planner inserts is
-`owner: "planner"`, that a revise does not recompose, and (given `fx.containers`) the role rules.
+`checkPlannerConformance` judges only what the plan INSERTED (an application's own containers are
+not the planner's to bound or stamp) and checks the bounds, that every container the planner inserts
+is `owner: "planner"`, that a revise does not recompose, and (given `fx.containers`) the role rules.
 - **`setRole` is never interactive.** `interpretAction` refuses `setRole` from a widget action
-  (`role-op-not-interactive`) — a role picks which container renderer draws a section, and
-  changing it discards that renderer's chrome state; only a planner or the app sets one.
+  (`role-op-not-interactive`) — a role picks which container renderer draws a section, and changing
+  it discards that renderer's chrome state; only a planner or the app sets one.
 - **Op refusals are typed and total.** Every operation `materialize` or a caller applies can fail
   with one of a fixed set of codes (`invalid-operation`, `tree-too-deep`, `placement-outside-grid`,
-  `placement-out-of-range`, `dangling-step-reference`, …) — see the root README's "Op refusal
-  codes" for the complete per-op list.
+  `placement-out-of-range`, `dangling-step-reference`, …) — see the [composition
+  reference](../../docs/reference/composition.md#op-refusal-codes) for the complete per-op list.
 - **A sample pins a call, never a tool.** Samples are keyed by HANDLE (one call: tool + arguments),
   not by tool@version — two nodes calling the same tool with different arguments drift to two
   different outputs, and pinning both from one sample would record a wrong repair as proven.
-- **A sample never leaves the server.** `observedSample` is raw tool output; an app's `onDrift`
-  hook must never forward it (or a `DriftReport` carrying it) to a client.
-- **`reviseForDrift` does not loop.** It calls `revise` once; a failed repair ends in error
-  findings rather than retrying.
+- **A sample never leaves the server.** `observedSample` is raw tool output; an app's `onDrift` hook
+  must never forward it (or a `DriftReport` carrying it) to a client.
+- **`reviseForDrift` does not loop.** It calls `revise` once; a failed repair ends in error findings
+  rather than retrying.
 
 ## See also
 
 - [../core/README.md](../core/README.md) — the Experience Model, operations and catalogue a
   planner composes against.
 - [../hydration/README.md](../hydration/README.md) — the `DriftReport` `reviseForDrift` repairs.
-- [../../README.md](../../README.md) — root overview, including the full op refusal code list and
-  drift re-authoring details.
+- [../../docs/reference/planning.md](../../docs/reference/planning.md) — the reference planner and
+  drift repair in depth.
+- [../../docs/reference/composition.md](../../docs/reference/composition.md) — the operations a
+  planner emits and every refusal code.
+- [../../README.md](../../README.md) — root overview.
