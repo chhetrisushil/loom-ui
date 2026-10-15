@@ -225,5 +225,5 @@ shape pin would call it drift. Pin a shape hash with `outputShapeHashOf`, nothin
 - Reference: [hydration](../reference/hydration.md).
 - Package: [`@loom-ui/hydration`](../../packages/hydration/README.md).
 - Examples (in `loom-examples`): `split-hydration` (a weather board across a trust boundary, with
-  drift and shared upstream calls), `db-observability` (transient hydration to durable repair).
+  drift and shared upstream calls).
 - Next: [rendering](rendering.md), [sensitivity and audiences](sensitivity-and-audiences.md).
