@@ -11,8 +11,11 @@ import { expect } from "vitest";
 //   <!-- snippet: NAME in FILE -->    ... or in another test file of this package
 //   <!-- illustrative: WHY -->        deliberately not compiled (the doc says why, in prose too)
 //
-// A ```ts block with none of these fails; so does a mirrored block that differs from its region
-// by one character, and a region the doc never shows when `required` names it.
+// A ```ts or ```tsx block with none of these fails; so does a mirrored block that differs from its
+// region by one character.
+//
+// Regions are the source of truth and must stay byte-stable, so biome's organizeImports is turned
+// off for docs/snippets (biome.json override): imports are in teaching order, not sorted.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -34,8 +37,8 @@ function regionsOf(file: string): Map<string, string> {
   return out;
 }
 
-export function expectDocMirrors(doc: string, defaultFile: string): void {
-  const text = readFileSync(resolve(HERE, "../../../", doc), "utf8");
+export function expectDocMirrors(doc: string, defaultFile: string, source?: string): void {
+  const text = source ?? readFileSync(resolve(HERE, "../../../", doc), "utf8");
   const cache = new Map<string, Map<string, string>>();
   const regions = (file: string) => {
     const hit = cache.get(file);
@@ -44,14 +47,17 @@ export function expectDocMirrors(doc: string, defaultFile: string): void {
     cache.set(file, fresh);
     return fresh;
   };
-  const fence = /(?:<!-- (snippet|illustrative): ?([^>]*?) -->\n+)?```ts\n([\s\S]*?)```/g;
+  const fence = /(?:<!-- (snippet|illustrative): ?([^>]*?) -->\n+)?```tsx?\n([\s\S]*?)```/g;
   let blocks = 0;
   for (const m of text.matchAll(fence)) {
     blocks++;
     const [, kind, arg, body] = m as unknown as [string, string | undefined, string, string];
     const line = text.slice(0, m.index).split("\n").length;
     const where = `${doc}:${line}`;
-    expect(kind, `${where}: a \`\`\`ts block needs a snippet/illustrative marker`).toBeDefined();
+    expect(
+      kind,
+      `${where}: a \`\`\`ts/tsx block needs a snippet/illustrative marker`
+    ).toBeDefined();
     if (kind === "illustrative") {
       expect(arg.trim(), `${where}: say why it is not compiled`).not.toBe("");
       continue;

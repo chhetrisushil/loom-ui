@@ -1,10 +1,10 @@
 # loom-ui user guide
 
-loom-ui is a generic UI framework on top of loom (the sibling repository it compiles to). You describe a screen as an
-**experience**, a tree of semantic nodes with stable ids bound to data by handle, and loom-ui
-**compiles** it, per surface, to a loom `Blueprint` that loom's renderers draw. Composition is recorded
-as a content-addressed artifact plus the operations that produced it, so a view can be replayed,
-revised without losing node identity, and rendered with no model in the path.
+loom-ui is a generic UI framework on top of loom (the sibling repository it compiles to). You
+describe a screen as an **experience**, a tree of semantic nodes with stable ids bound to data by
+handle, and loom-ui **compiles** it, per surface, to a loom `Blueprint` that loom's renderers draw.
+Composition is recorded as a content-addressed artifact plus the operations that produced it, so a
+view can be replayed, revised without losing node identity, and rendered with no model in the path.
 
 New here? Do [getting started](getting-started.md) first (about ten minutes, every snippet runs). This
 page then gives you the concepts, and a guide per task.
@@ -146,7 +146,7 @@ not see as a placeholder, a broadcast audience as a redacted widget, and the dat
 | I want to... | Guide | Reference | Example (`loom-examples`) |
 | --- | --- | --- | --- |
 | compose, revise without losing identity, detect a stale author, merge two forks | [Composing](guides/composing.md) | [composition](reference/composition.md) | `experience-merge`, `experience-recompose`, `experience-layout` |
-| load data, split client and server, pass a time range, handle drift | [Hydration](guides/hydration.md) | [hydration](reference/hydration.md) | `split-hydration`, `db-observability` |
+| load data, split client and server, pass a time range, handle drift | [Hydration](guides/hydration.md) | [hydration](reference/hydration.md) | `split-hydration` |
 | draw in a terminal, with Lit, with React; tabs and steppers; theme | [Rendering](guides/rendering.md) | [rendering](reference/rendering.md), [theming](reference/theming.md) | `experience-kinds`, `experience-stepped`, `experience-layout` |
 | hide classified data, build a wallboard, keep the boundary in step | [Sensitivity and audiences](guides/sensitivity-and-audiences.md) | [audience](reference/audience.md) | `experience-broadcast`, `media-gallery` |
 | keep a head, undo, branch, notify people of changes | [Lineage and the change feed](guides/lineage-and-changes.md) | | `provenance-explain` |
