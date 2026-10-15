@@ -80,7 +80,14 @@ describe("the CONSUMER pattern matches a name, not a word that contains its lett
 describe("loom-ui names no consumer", () => {
   const scanned = [
     ...files(join(ROOT, "packages")),
-    ...files(join(ROOT, "docs", "reference")),
+    // all of docs/ (getting-started, user-guide, guides, reference, snippets) except the
+    // evaluations, which are dated records of how the framework was assessed against its consumers
+    ...readdirSync(join(ROOT, "docs"))
+      .filter((n) => n !== "evaluations" && !SKIP.has(n))
+      .flatMap((n) => {
+        const p = join(ROOT, "docs", n);
+        return statSync(p).isDirectory() ? files(p) : /\.(md|ts|json)$/.test(n) ? [p] : [];
+      }),
     join(ROOT, "AGENTS.md"),
     join(ROOT, "README.md"),
   ];
