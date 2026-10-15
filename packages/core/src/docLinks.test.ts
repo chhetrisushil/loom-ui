@@ -16,12 +16,6 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(__dirname, "../../..");
 const SKIP = new Set(["node_modules", "dist", ".git", ".superpowers", "coverage"]);
 
-/**
- * Pages written by a companion change that may not be on this branch yet. A link to one is not
- * checked; once the page exists, it is checked like any other. Remove an entry when its page lands.
- */
-const PENDING = new Set(["docs/getting-started.md", "docs/user-guide.md"]);
-
 function markdown(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     if (SKIP.has(name)) continue;
@@ -91,7 +85,6 @@ function broken(files: readonly string[], root: string): string[] {
           const target = pathPart === "" ? file : resolve(dirname(file), pathPart);
           const rel = relative(root, target);
           if (rel.startsWith("..")) continue; // a sibling repo (../loom): not ours to check
-          if (PENDING.has(rel) && !existsSync(target)) continue;
           const at = `${relative(root, file)}:${i + 1}: ${href}`;
           if (!existsSync(target)) {
             problems.push(`${at} (no such file)`);

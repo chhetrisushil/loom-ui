@@ -86,9 +86,8 @@ client-graph guards, the genericity rule, how to add a framework kind) are in [A
 ## Where next
 
 - [Getting started](docs/getting-started.md): install, compose, compile and render a first
-  experience. *(Added by a companion change; the link resolves once both land.)*
-- [User guide](docs/user-guide.md): task-oriented guides for each capability. *(Same companion
-  change.)*
+  experience.
+- [User guide](docs/user-guide.md): task-oriented guides for each capability.
 - Reference pages, one per topic:
   - [Composition](docs/reference/composition.md): operations, placement, container roles, framework
     kinds, number semantics, refusal codes.
