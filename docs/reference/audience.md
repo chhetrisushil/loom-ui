@@ -64,15 +64,15 @@ compile(exp, { ...opts, viewer: { clearance: "secret" }, audience: "broadcast" }
 - **Renderers** (`renderer-lit`, and loom's terminal traversal under `renderer-terminal`) draw only
   loom's constant `⊘ redacted` marker for a `source.redacted` widget: no renderer runs, nothing
   subscribes, and no kind, title, value or source attribute reaches the output, even for an
-  unvalidated widget that still
+  unvalidated widget that still carries them. The renderer-conformance kit's `audience` check enforces this for any renderer.
 
 ## Findings
-
 
 | Finding | Severity | Meaning (server-side: names real ids) |
 | --- | --- | --- |
 | `audience-withheld` | warn | a node the requesting viewer may see was withheld because the surface is a broadcast |
 | `node-restricted` | warn | a node the requesting viewer may not see (unchanged; on a broadcast surface it is also a redacted widget) |
+| `title-restricted` | warn | the default title (the intent objective) is classified above the effective viewer |
 
 ## Example
 

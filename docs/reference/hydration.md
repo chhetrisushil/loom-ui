@@ -187,9 +187,7 @@ through live.
 default) or, server-side, the whole batch (default `DEFAULT_MAX_CONCURRENT_CALLS`, 32 — a client
 sizes the batch, so the server bounds its fan-out; an explicit option overrides; it bounds ONE
 batch, so for a server-wide bound wrap the invoker once in the exported `limitInvoker` and share it
-across batches);
-
-beneath it, one step memo per pass — keyed by principal too — runs an identical step once no matter
+across batches); beneath it, one step memo per pass — keyed by principal too — runs an identical step once no matter
 how many handles share it, ref-counted so one caller's abort never cancels a call another caller of
 the same step is still waiting on.
 
