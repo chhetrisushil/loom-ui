@@ -176,6 +176,8 @@ checkout beside it; see [getting started](getting-started.md#prerequisites).
 
 ## Reading order
 
+A one-page reference card is [the cheatsheet](cheatsheet.md).
+
 1. [Getting started](getting-started.md) and the concepts above.
 2. [Composing](guides/composing.md), then [Hydration](guides/hydration.md) and
    [Rendering](guides/rendering.md): the minimum for a working screen.

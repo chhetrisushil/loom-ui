@@ -344,6 +344,7 @@ walkthrough and asserts the terminal frame contains the metric.
 ## Where next
 
 - [User guide](user-guide.md) - concepts, then a guide per task.
+- [Cheatsheet](cheatsheet.md) - one reference card: the model, every package's main exports, and what bites.
 - Reference: [composition](reference/composition.md), [hydration](reference/hydration.md),
   [rendering](reference/rendering.md).
 - Worked, runnable apps live in the sibling

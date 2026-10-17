@@ -88,6 +88,8 @@ client-graph guards, the genericity rule, how to add a framework kind) are in [A
 - [Getting started](docs/getting-started.md): install, compose, compile and render a first
   experience.
 - [User guide](docs/user-guide.md): task-oriented guides for each capability.
+- [Cheatsheet](docs/cheatsheet.md): one reference card for the model, the packages' main exports and
+  the things that reliably bite.
 - Reference pages, one per topic:
   - [Composition](docs/reference/composition.md): operations, placement, container roles, framework
     kinds, number semantics, refusal codes.
