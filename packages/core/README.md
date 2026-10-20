@@ -462,8 +462,17 @@ kind (one function backs the zod and the zod-free checker; its messages never ec
   reason?: "model-error",          // a short TOKEN; the renderer owns the words (`chatReasonText`)
   errorId?: string,                // a correlation id, shown as "ref ..." and never as an explanation
   editOf?: number,                 // this turn is a NEW turn that revises an earlier one
-  tools?: { name, status }[] }     // optional one-line tool activity
+  tools?: { name, status }[],      // optional one-line tool activity
+  reasoning?: { text, kind: "text" | "summary" | "redacted", streaming: boolean,
+                truncated?: boolean,   // only part is here
+                status?: "ok" | "erased" | "digest-mismatch" | "unloaded" | "loading" | "unavailable" } }
 ```
+
+`reasoning` (loom ADR 0133) is the model's reasoning for an ASSISTANT reply and exists only when the
+host turned it on (see "Reasoning" below); a value without it is exactly what it was. It is model output
+derived from untrusted input, so it is drawn as TEXT, cleaned like reply text, and the contract refuses
+text on `redacted`, `erased`, `digest-mismatch` and not-yet-loaded reasoning, and the field on a user or
+restricted entry.
 
 `mode` says what the source KNOWS about whose turns these are: `owner` (an owner-only conversation:
 a user turn with no `asker` is the viewer's own, drawn "You" and editable), `shared`, or absent
@@ -486,6 +495,26 @@ DOES (C0/C1 controls incl. ESC, bidi overrides and isolates, zero-width marks, U
 characters), keeps ZWJ/ZWNJ (emoji, Indic scripts), normalises line breaks and collapses
 vertical-space bombs. Linear time; the input is cut before it is scanned (100 KB adversarial tests
 with absolute bounds).
+
+**Reasoning (loom ADR 0133 D6), opt-in.** `new ChatFeed({ reasoning: true })` folds the SSE `reasoning`
+and `reasoning-partial` events into the in-progress reply's `reasoning` (`streaming: true`, a separate
+channel: it can never land in the reply text); `reset` / `closed` clear it, a `reasoning-partial` REPLACES
+(a reconnect cannot duplicate it), and the durable `message` keeps the live text as that reply's reasoning.
+Off by default: with it off the events are ignored (no finding) and no entry ever carries the field. The
+server sends reasoning only to the viewer allowed to see it (the turn's asker, or the owner), and the
+conversation server must opt in (`reasoning` on `@loom/plugin-conversation-sse`); the client renders what
+it gets and never assumes any. The live events do not say whether the text is the model's own reasoning or
+a provider summary, so the live label defaults to `summary` (never present a summary as the full chain of
+thought); `reasoning: { liveKind: "text" }` is for a provider that streams the raw reasoning.
+`reasoning: { durable: true }` also marks each finished reply `unloaded` (shared mode: only the viewer's
+own turns), and the host fetches ONE reply's stored reasoning lazily: `beginReasoning(cursor)` (`changed:
+true` = go; the entry reads `loading`), then `applyReasoning(cursor, body)` with the
+`GET .../reasoning?cursor=` body, or `reasoningFailed` / `reasoningUnavailable`. `chatReasoningFromDurable`
+folds that body (only the recorded attempt of each step, texts joined, a `summary` among them makes the
+whole a `summary`, hidden parts are `redacted`, erased / unverifiable parts never carry text; bounded).
+The widget asks for it with `LOAD_REASONING { cursor }` on first expand (a read like `LOAD_OLDER`: no key,
+refused with `browser-side` if routed to a `conversationTarget`). The terminal prints
+`[reasoning: ...]` / `[reasoning summary: ...]` / a marker (`chatReasoningLine`).
 
 **Folding loom's API: `ChatFeed`.** Pure (no network, timers or DOM). `applyHistory(page, "backward"
 | "forward")` folds a history page, `applyEvent(name, data)` folds an SSE event (`status`,

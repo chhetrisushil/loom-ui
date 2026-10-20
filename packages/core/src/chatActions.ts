@@ -8,6 +8,7 @@
 //   SELECT        { value, key }           a SelectInput
 //   EDIT_TURN     { turn, text, key }      a Chat: the user revised an earlier turn of their own
 //   LOAD_OLDER    { cursor }               a Chat: show earlier turns (a read; carries no key)
+//   LOAD_REASONING { cursor }              a Chat: fetch one reply's durable reasoning (a read; carries no key)
 //   MEDIA_ATTACH  { ref }                  the existing U9 `MediaInput` (see `acceptMediaAttach`)
 
 export const SUBMIT_TEXT_ACTION = "SUBMIT_TEXT";
@@ -15,6 +16,7 @@ export const SUBMIT_FORM_ACTION = "SUBMIT_FORM";
 export const SELECT_ACTION = "SELECT";
 export const EDIT_TURN_ACTION = "EDIT_TURN";
 export const LOAD_OLDER_ACTION = "LOAD_OLDER";
+export const LOAD_REASONING_ACTION = "LOAD_REASONING";
 
 /** The idempotency key shape: short, URL-safe, long enough to be unguessable when random. */
 const KEY = /^[A-Za-z0-9_-]{16,128}$/;

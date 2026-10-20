@@ -28,6 +28,12 @@
 //    only (ADR 0122 D10.4), and this is the client's second line.
 //  - BOUNDED. At most `maxEntries` entries (default and ceiling {@link MAX_CHAT_ENTRIES}); the live
 //    reply is bounded like any stream (`appendChunk`: 64 K, closed on overflow).
+//  - REASONING IS OPT-IN AND NEVER TEXT OF THE REPLY (loom ADR 0133 D6). Off unless `options.reasoning`
+//    is set: then `reasoning` / `reasoning-partial` events, and nothing else, build a reply's `reasoning`
+//    (a separate channel: it can never land in reply text). It is model output derived from untrusted
+//    input, cleaned like reply text and drawn as text. `reset` / `closed` clear it with the reply; a
+//    `reasoning-partial` REPLACES (a reconnect cannot duplicate it); the durable reply keeps the live
+//    text; `durable` adds a lazy per-reply fetch (`beginReasoning` / `applyReasoning`), never eager.
 //  - EDITS ARE NEW TURNS. `annotate(turn, { editOf })` labels a turn the host KNOWS is an edit; the
 //    feed never infers one (loom's record has no such field today, see the README).
 
@@ -35,8 +41,11 @@ import { sanitizeChatText } from "./chatText";
 import {
   type ChatActor,
   type ChatEntry,
+  type ChatReasoning,
+  type ChatReasoningKind,
   type ChatValue,
   MAX_CHAT_ENTRIES,
+  MAX_CHAT_REASONING_TEXT,
   sameChatActor,
 } from "./chatValue";
 import { MAX_ACTOR_FIELD, isChatCursor, isChatErrorId, isChatReason } from "./chatValue";
@@ -169,11 +178,114 @@ export interface ChatFeedOptions {
   readonly maxEntries?: number;
   /** What the source knows about whose turns these are (see `ChatValue.mode`); set `owner` for an owner-only conversation. */
   readonly mode?: "owner" | "shared";
+  /**
+   * Show the model's reasoning (loom ADR 0133). OFF by default: with it off the `reasoning` events are
+   * ignored and no entry ever carries the field. `true` follows the live events; `{ durable: true }` also
+   * offers each finished reply's stored reasoning for a lazy fetch (see {@link ChatFeed.beginReasoning});
+   * `liveKind` is what the live events are labelled (the wire does not say; default `"summary"`, the
+   * conservative label: set `"text"` only when your provider streams the raw reasoning).
+   */
+  readonly reasoning?:
+    | boolean
+    | { readonly durable?: boolean; readonly liveKind?: "text" | "summary" };
 }
 
 interface Live {
   readonly turn: number;
   stream: StreamedText;
+}
+interface LiveReasoning {
+  readonly turn: number;
+  text: string;
+  truncated: boolean;
+}
+
+const UNLOADED: ChatReasoning = Object.freeze({
+  text: "",
+  kind: "text",
+  streaming: false,
+  status: "unloaded",
+});
+const LOADING: ChatReasoning = Object.freeze({
+  text: "",
+  kind: "text",
+  streaming: false,
+  status: "loading",
+});
+const UNAVAILABLE: ChatReasoning = Object.freeze({
+  text: "",
+  kind: "text",
+  streaming: false,
+  status: "unavailable",
+});
+const MAX_REASONING_STEPS = 256;
+const MAX_REASONING_PARTS = 256;
+
+/**
+ * The durable `GET .../reasoning?cursor=` body (`{ steps: [{ stepId, recordedAttempt?, attempts: [{ attempt,
+ * recorded, parts: [{ kind, status, text? }] }] }], truncated? }`) folded into ONE {@link ChatReasoning}, or
+ * `undefined` when it holds nothing usable. Only the RECORDED attempt of each step counts (a superseded retry is
+ * not what the model said). Texts are cleaned and joined by a blank line and bounded; a `summary` among the
+ * parts makes the whole a `summary` (never upgraded); a part with no text is hidden reasoning (`redacted`);
+ * a part that is erased or fails its digest never contributes text. Total: never throws.
+ */
+export function chatReasoningFromDurable(body: unknown): ChatReasoning | undefined {
+  if (!isRecord(body)) return undefined;
+  const steps = own(body, "steps");
+  if (!Array.isArray(steps)) return undefined;
+  const texts: string[] = [];
+  let used = 0;
+  let truncated = own(body, "truncated") === true;
+  let summary = false;
+  let hidden = false;
+  let mismatch = false;
+  let erased = false;
+  let seen = 0;
+  for (const st of steps.slice(0, MAX_REASONING_STEPS)) {
+    if (!isRecord(st)) continue;
+    const attempts = own(st, "attempts");
+    if (!Array.isArray(attempts)) continue;
+    const recordedAttempt = own(st, "recordedAttempt");
+    for (const a of attempts.slice(0, 16)) {
+      if (!isRecord(a)) continue;
+      const isRecorded =
+        own(a, "recorded") === true &&
+        (typeof recordedAttempt !== "number" || own(a, "attempt") === recordedAttempt);
+      if (!isRecorded) continue;
+      const parts = own(a, "parts");
+      if (!Array.isArray(parts)) continue;
+      for (const p of parts) {
+        if (!isRecord(p) || seen >= MAX_REASONING_PARTS) continue;
+        const kind = own(p, "kind");
+        if (kind !== "text" && kind !== "summary" && kind !== "redacted") continue;
+        seen++;
+        const status = own(p, "status");
+        if (status === "erased") erased = true;
+        else if (status !== "ok")
+          mismatch = true; // digest-mismatch, or a status we do not know: fail closed
+        else {
+          const raw = own(p, "text");
+          const room = MAX_CHAT_REASONING_TEXT - used;
+          const clean = kind === "redacted" ? "" : sanitizeChatText(raw, Math.max(0, room));
+          if (clean === "") hidden = true;
+          else {
+            if (kind === "summary") summary = true;
+            if (typeof raw === "string" && raw.length > room) truncated = true;
+            texts.push(clean);
+            used += clean.length + 2;
+            if (used >= MAX_CHAT_REASONING_TEXT) truncated = true;
+          }
+        }
+      }
+    }
+  }
+  const base = { streaming: false, ...(truncated && { truncated: true }) } as const;
+  if (texts.length > 0)
+    return { text: texts.join("\n\n"), kind: summary ? "summary" : "text", ...base };
+  if (hidden) return { text: "", kind: "redacted", ...base };
+  if (mismatch) return { text: "", kind: "text", status: "digest-mismatch", ...base };
+  if (erased) return { text: "", kind: "text", status: "erased", ...base };
+  return undefined;
 }
 
 export class ChatFeed {
@@ -197,12 +309,23 @@ export class ChatFeed {
   private running = false;
   private readonly edits = new Map<number, number>();
   private snapshot: ChatValue | undefined;
+  private readonly reasoningOn: boolean;
+  private readonly durable: boolean;
+  private readonly liveKind: ChatReasoningKind;
+  private liveReasoning: LiveReasoning | undefined;
+  /** Entry id -> the reasoning that entry keeps (the live text it ended with, or a fetched record). Bounded. */
+  private readonly kept = new Map<string, ChatReasoning>();
 
   constructor(options: ChatFeedOptions = {}) {
     this.viewer = options.viewer;
     this.mode = options.mode;
     this.max = Math.max(2, Math.min(options.maxEntries ?? MAX_CHAT_ENTRIES, MAX_CHAT_ENTRIES));
     this.cap = this.max - 1;
+    const r = options.reasoning;
+    this.reasoningOn = r === true || (typeof r === "object" && r !== null);
+    this.durable = typeof r === "object" && r !== null && r.durable === true;
+    this.liveKind =
+      typeof r === "object" && r !== null && r.liveKind === "text" ? "text" : "summary";
   }
 
   // ── reading ────────────────────────────────────────────────────────────────────────────────
@@ -210,7 +333,8 @@ export class ChatFeed {
   /** The transcript to publish to the widget's handle. The same object until something changes. */
   value(): ChatValue {
     if (this.snapshot !== undefined) return this.snapshot;
-    const entries: ChatEntry[] = this.list.map((e) => {
+    const entries: ChatEntry[] = this.list.map((e0) => {
+      const e = this.withReasoning(e0);
       const editOf = this.edits.get(e.turn);
       // Only the turn's ACCEPTED user entry, and never a placeholder (the contract refuses `editOf` on one).
       return e.role === "user" &&
@@ -238,6 +362,77 @@ export class ChatFeed {
   /** Is a reply streaming right now? (Drives the binding status: `pending` while true.) */
   get streaming(): boolean {
     return this.liveEntry() !== undefined;
+  }
+
+  /** Reasoning for a durable entry: what it kept, else (durable mode) the "not fetched yet" marker. */
+  private withReasoning(e: ChatEntry): ChatEntry {
+    if (!this.reasoningOn || e.role !== "assistant" || e.status === "restricted") return e;
+    const kept = this.kept.get(e.id);
+    if (kept !== undefined) return { ...e, reasoning: kept };
+    if (this.durable && this.fetchable(e)) return { ...e, reasoning: UNLOADED };
+    return e;
+  }
+
+  /** A finished reply whose stored reasoning this viewer could ask for. The server decides; this only avoids offering the pointless. */
+  private fetchable(e: ChatEntry): boolean {
+    if (e.cursor === undefined || (e.status !== "complete" && e.status !== "interrupted"))
+      return false;
+    if (this.mode !== "shared") return true;
+    // Shared: reasoning goes to the turn's asker alone.
+    const qid = this.acceptedUser.get(e.turn);
+    const q = qid === undefined ? undefined : this.list[this.index.get(qid) ?? -1];
+    return (
+      this.viewer !== undefined && q?.asker !== undefined && sameChatActor(q.asker, this.viewer)
+    );
+  }
+
+  /**
+   * The host is about to fetch the durable reasoning of the reply at `cursor` (a Chat's `LOAD_REASONING`).
+   * `changed: true` = go ahead (the entry now reads `loading`); `changed: false` = do not (reasoning or
+   * durable mode off, unknown cursor, not offered for this reply, already loaded or loading).
+   */
+  beginReasoning(cursor: string): ChatFeedResult {
+    const e = this.durableTarget(cursor);
+    if (e === undefined || this.kept.has(e.id)) return NOOP;
+    this.remember(e.id, LOADING);
+    return this.finish(true);
+  }
+
+  /** The fetched body for `cursor`. Nothing usable becomes `unavailable` (a settled answer, not retried). */
+  applyReasoning(cursor: string, body: unknown): ChatFeedResult {
+    const e = this.durableTarget(cursor);
+    if (e === undefined || this.kept.get(e.id) !== LOADING) return NOOP;
+    this.remember(e.id, chatReasoningFromDurable(body) ?? UNAVAILABLE);
+    return this.finish(true);
+  }
+
+  /** The fetch for `cursor` failed in transit: back to `unloaded`, so a later expand tries again. */
+  reasoningFailed(cursor: string): ChatFeedResult {
+    const e = this.durableTarget(cursor);
+    if (e === undefined || this.kept.get(e.id) !== LOADING) return NOOP;
+    this.kept.delete(e.id);
+    return this.finish(true);
+  }
+
+  /** The fetch for `cursor` was refused or found nothing (the server's 404 is the same for every reason). */
+  reasoningUnavailable(cursor: string): ChatFeedResult {
+    return this.applyReasoning(cursor, undefined);
+  }
+
+  private durableTarget(cursor: string): ChatEntry | undefined {
+    if (!this.reasoningOn || !this.durable || !isChatCursor(cursor)) return undefined;
+    const id = this.byCursor.get(cursor);
+    const e = id === undefined ? undefined : this.list[this.index.get(id) ?? -1];
+    return e !== undefined && e.role === "assistant" && this.fetchable(e) ? e : undefined;
+  }
+
+  private remember(id: string, r: ChatReasoning): void {
+    this.kept.delete(id);
+    this.kept.set(id, r);
+    if (this.kept.size > MAX_CHAT_ENTRIES) {
+      const first = this.kept.keys().next().value as string;
+      this.kept.delete(first);
+    }
   }
 
   /** The cursor the SSE stream resumes after (`Last-Event-ID` / `?cursor=`): the newest durable entry's. */
@@ -328,7 +523,13 @@ export class ChatFeed {
           this.running = run;
           changed = true;
         }
-        if (this.state === "closed") changed = this.dropLive() || changed;
+        if (this.state === "closed") {
+          changed = this.dropLive() || changed;
+          if (this.liveReasoning !== undefined) {
+            this.liveReasoning = undefined;
+            changed = true;
+          }
+        }
         return this.finish(changed);
       }
       case "partial":
@@ -342,18 +543,40 @@ export class ChatFeed {
           return refuse("delta-invalid", "a delta event is { turn, text }");
         return this.finish(this.applyLive(turn, text, name === "partial"));
       }
+      case "reasoning":
+      case "reasoning-partial": {
+        // Off (the default): not even a finding. The server only sends it to a host that opted in.
+        if (!this.reasoningOn) return NOOP;
+        if (!isRecord(data))
+          return refuse("reasoning-invalid", "a reasoning event is { turn, text }");
+        const turn = own(data, "turn");
+        const text = own(data, "text");
+        if (typeof turn !== "number" || !Number.isSafeInteger(turn) || turn < 1)
+          return refuse("reasoning-invalid", "a reasoning event is { turn, text }");
+        if (typeof text !== "string")
+          return refuse("reasoning-invalid", "a reasoning event is { turn, text }");
+        return this.finish(this.applyLiveReasoning(turn, text, name === "reasoning-partial"));
+      }
       case "reset": {
         const turn = isRecord(data) ? own(data, "turn") : undefined;
         if (typeof turn !== "number") return refuse("delta-invalid", "a reset event is { turn }");
-        if (this.live?.turn !== turn) return NOOP;
-        return this.finish(this.dropLive());
+        // A re-run of the turn supersedes the reply AND its reasoning.
+        let cleared = false;
+        if (this.live?.turn === turn) cleared = this.dropLive();
+        if (this.liveReasoning?.turn === turn) {
+          this.liveReasoning = undefined;
+          cleared = true;
+        }
+        return this.finish(cleared);
       }
       case "closed": {
+        const reasoningWas = this.liveReasoning !== undefined;
         const changed = this.state !== "closed" || this.live !== undefined || this.running;
         this.state = "closed";
         this.running = false;
         this.live = undefined;
-        return this.finish(changed);
+        this.liveReasoning = undefined;
+        return this.finish(changed || reasoningWas);
       }
       case "reconnect":
         return { ok: true, changed: false, reconnect: true };
@@ -403,15 +626,29 @@ export class ChatFeed {
   }
 
   private liveEntry(): ChatEntry | undefined {
-    const l = this.live;
-    if (l === undefined || l.stream.text === "") return undefined;
-    if (this.index.has(entryId(l.turn, "assistant"))) return undefined;
+    const l = this.live?.stream.text === "" ? undefined : this.live;
+    const r = this.liveReasoning?.text === "" ? undefined : this.liveReasoning;
+    // The reply and its reasoning share the turn's slot; a reasoning with no reply text yet still makes
+    // the streaming reply (the model thinks before it speaks).
+    const turn = l !== undefined && (r === undefined || l.turn >= r.turn) ? l.turn : r?.turn;
+    if (turn === undefined) return undefined;
+    if (this.index.has(entryId(turn, "assistant"))) return undefined;
+    const text = l?.turn === turn ? l.stream.text : "";
+    const reasoning = r?.turn === turn ? r : undefined;
     return {
-      id: entryId(l.turn, "assistant"),
-      turn: l.turn,
+      id: entryId(turn, "assistant"),
+      turn,
       role: "assistant",
       status: "streaming",
-      parts: [{ type: "text", text: l.stream.text }],
+      ...(text !== "" && { parts: [{ type: "text", text }] }),
+      ...(reasoning !== undefined && {
+        reasoning: {
+          text: reasoning.text,
+          kind: this.liveKind,
+          streaming: true,
+          ...(reasoning.truncated && { truncated: true }),
+        },
+      }),
     };
   }
 
@@ -419,6 +656,32 @@ export class ChatFeed {
     if (this.live === undefined) return false;
     this.live = undefined;
     return true;
+  }
+
+  private applyLiveReasoning(turn: number, text: string, replace: boolean): boolean {
+    if (!this.mayShowLive(turn)) return false;
+    const newest = Math.max(this.live?.turn ?? 0, this.liveReasoning?.turn ?? 0);
+    if (turn < newest) return false; // a stale turn
+    // A newer turn supersedes the older turn's live text (it is not that turn's reply any more).
+    if (this.live !== undefined && this.live.turn < turn) this.live = undefined;
+    if (this.liveReasoning === undefined || this.liveReasoning.turn !== turn || replace) {
+      // A new turn, or the catch-up partial: the reasoning restarts from this text (so a reconnect cannot duplicate it).
+      this.liveReasoning = { turn, text: "", truncated: false };
+    }
+    const cur = this.liveReasoning;
+    const before = cur.text;
+    for (let i = 0; i < text.length && !cur.truncated; i += MAX_CHUNK_TEXT) {
+      // Untrusted model output: cleaned per chunk as it lands, exactly like reply text.
+      const room = MAX_CHAT_REASONING_TEXT - cur.text.length;
+      const piece = text.slice(i, i + MAX_CHUNK_TEXT);
+      const chunk = sanitizeChatText(
+        piece.length > room ? piece.slice(0, room) : piece,
+        MAX_CHUNK_TEXT
+      );
+      cur.text += chunk;
+      if (piece.length > room || cur.text.length >= MAX_CHAT_REASONING_TEXT) cur.truncated = true;
+    }
+    return cur.text !== before || replace;
   }
 
   /** May live text for `turn` be shown to THIS viewer? Fail closed on what the client can see. */
@@ -437,6 +700,8 @@ export class ChatFeed {
   private applyLive(turn: number, text: string, replace: boolean): boolean {
     if (!this.mayShowLive(turn)) return false;
     if (this.live !== undefined && turn < this.live.turn) return false; // a stale turn
+    if (this.liveReasoning !== undefined && this.liveReasoning.turn < turn)
+      this.liveReasoning = undefined;
     if (this.live === undefined || this.live.turn !== turn || replace) {
       // A new turn, or a catch-up `partial`: the stream restarts from this text (bounded).
       this.live = { turn, stream: { text: "", nextSeq: 0, done: false } };
@@ -505,10 +770,24 @@ export class ChatFeed {
 
   private afterDurable(entry: ChatEntry): void {
     if (entry.role === "assistant" && this.live?.turn === entry.turn) this.live = undefined;
+    if (entry.role === "assistant" && this.liveReasoning?.turn === entry.turn) {
+      // The durable reply is final: the live reasoning becomes THAT reply's reasoning (a bare placeholder keeps none).
+      const r = this.liveReasoning;
+      this.liveReasoning = undefined;
+      if (this.reasoningOn && entry.status !== "restricted" && r.text !== "")
+        this.remember(entry.id, {
+          text: r.text,
+          kind: this.liveKind,
+          streaming: false,
+          ...(r.truncated && { truncated: true }),
+        });
+    }
     // Live text shown before its question arrived (or was upgraded) is retracted if the question says it
     // is not this viewer's to see: a restricted question, or another asker's.
-    if (entry.role === "user" && this.live?.turn === entry.turn && !this.mayShowLive(entry.turn))
-      this.live = undefined;
+    if (entry.role === "user" && !this.mayShowLive(entry.turn)) {
+      if (this.live?.turn === entry.turn) this.live = undefined;
+      if (this.liveReasoning?.turn === entry.turn) this.liveReasoning = undefined;
+    }
     if (entry.role === "assistant") this.running = false;
     else if (entry.status === "complete") this.running = true;
   }

@@ -73,6 +73,35 @@ export interface ChatToolActivity {
   readonly status: "running" | "done" | "failed";
 }
 
+/** What kind of reasoning this is. A `summary` is NEVER presented as the full chain of thought; `redacted` carries no text. */
+export type ChatReasoningKind = "text" | "summary" | "redacted";
+/**
+ * How the reasoning stands. Absent = `ok`. `erased` (removed on purpose) and `digest-mismatch` (the
+ * stored text no longer matches its record) carry no text. `unloaded` / `loading` / `unavailable` are the
+ * lazy durable fetch (`ChatFeed({ reasoning: { durable: true } })`): not asked for yet, in flight, none kept.
+ */
+export type ChatReasoningStatus =
+  | "ok"
+  | "erased"
+  | "digest-mismatch"
+  | "unloaded"
+  | "loading"
+  | "unavailable";
+
+/**
+ * A reply's model reasoning (loom ADR 0133). Model output derived from untrusted input: TEXT only,
+ * like any reply text. Optional on an assistant entry; a host that never shows reasoning never sees the field.
+ */
+export interface ChatReasoning {
+  readonly text: string;
+  readonly kind: ChatReasoningKind;
+  /** The reply is still being produced and `text` is still growing. */
+  readonly streaming: boolean;
+  /** Only part of the reasoning is here (the server's bound, or this client's). */
+  readonly truncated?: boolean;
+  readonly status?: ChatReasoningStatus;
+}
+
 export interface ChatEntry {
   /** Stable for the life of the turn's slot (`t<turn>.<role>`): the streaming entry and its durable successor share it, so nothing remounts. */
   readonly id: string;
@@ -94,6 +123,8 @@ export interface ChatEntry {
   /** This turn is a NEW turn that re-asks / revises an earlier one (append-only: history is never edited). */
   readonly editOf?: number;
   readonly tools?: readonly ChatToolActivity[];
+  /** An assistant entry's reasoning, when the host asked for it and the server sent it to this viewer. */
+  readonly reasoning?: ChatReasoning;
 }
 
 export interface ChatValue {
@@ -120,6 +151,8 @@ export const MAX_CHAT_ENTRIES = 500;
 export const MAX_CHAT_PARTS = 32;
 export const MAX_CHAT_TEXT = 65_536;
 export const MAX_CHAT_TOOLS = 16;
+/** The most reasoning text one reply holds. */
+export const MAX_CHAT_REASONING_TEXT = 65_536;
 export const MAX_CHAT_TOOL_NAME = 64;
 export const MAX_ACTOR_FIELD = 256;
 
@@ -185,7 +218,24 @@ const ENTRY_KEYS: ReadonlySet<string> = new Set([
   "errorId",
   "editOf",
   "tools",
+  "reasoning",
 ]);
+const REASONING_KEYS: ReadonlySet<string> = new Set([
+  "text",
+  "kind",
+  "streaming",
+  "truncated",
+  "status",
+]);
+const REASONING_KINDS: readonly string[] = ["text", "summary", "redacted"];
+const REASONING_STATUSES: readonly string[] = [
+  "ok",
+  "erased",
+  "digest-mismatch",
+  "unloaded",
+  "loading",
+  "unavailable",
+];
 const TOOL_STATUSES: readonly string[] = ["running", "done", "failed"];
 const VALUE_KEYS: ReadonlySet<string> = new Set([
   "entries",
@@ -309,9 +359,47 @@ function entryIssues(e: unknown, index: number, ids: Set<string>, out: ChatIssue
           at("a tool activity is { name, status }", ["tools", i]);
       }
   }
+  const reasoning = own(e, "reasoning");
+  if (reasoning !== undefined) {
+    if (role !== "assistant") at("only an assistant entry carries reasoning", ["reasoning"]);
+    else if (!isRecord(reasoning)) at("reasoning is { text, kind, streaming }", ["reasoning"]);
+    else {
+      const rText = own(reasoning, "text");
+      const rKind = own(reasoning, "kind");
+      const rStatus = own(reasoning, "status");
+      if (typeof rText !== "string" || rText.length > MAX_CHAT_REASONING_TEXT)
+        at(`reasoning text is at most ${MAX_CHAT_REASONING_TEXT} characters`, [
+          "reasoning",
+          "text",
+        ]);
+      if (typeof rKind !== "string" || !REASONING_KINDS.includes(rKind))
+        at("reasoning kind must be text, summary or redacted", ["reasoning", "kind"]);
+      if (typeof own(reasoning, "streaming") !== "boolean")
+        at("reasoning streaming must be true or false", ["reasoning", "streaming"]);
+      const rTrunc = own(reasoning, "truncated");
+      if (rTrunc !== undefined && typeof rTrunc !== "boolean")
+        at("reasoning truncated must be true or false", ["reasoning", "truncated"]);
+      if (
+        rStatus !== undefined &&
+        (typeof rStatus !== "string" || !REASONING_STATUSES.includes(rStatus))
+      )
+        at("reasoning status is not a known status", ["reasoning", "status"]);
+      // Redacted, erased, unverifiable and not-yet-loaded reasoning has NO text: nothing rides on it.
+      if (
+        typeof rText === "string" &&
+        rText !== "" &&
+        (rKind === "redacted" || (rStatus !== undefined && rStatus !== "ok"))
+      )
+        at("reasoning that is redacted, removed or not loaded carries no text", [
+          "reasoning",
+          "text",
+        ]);
+      if (extraKey(reasoning, REASONING_KEYS)) at("unexpected field", ["reasoning"]);
+    }
+  }
   // A restricted entry is a bare placeholder: nothing a viewer is not cleared for may ride on it.
   if (status === "restricted") {
-    for (const k of ["parts", "tools", "reason", "errorId", "editOf"] as const)
+    for (const k of ["parts", "tools", "reason", "errorId", "editOf", "reasoning"] as const)
       if (own(e, k) !== undefined) at("a restricted entry carries no content", [k]);
   }
   if (extraKey(e, ENTRY_KEYS)) at("unexpected field");

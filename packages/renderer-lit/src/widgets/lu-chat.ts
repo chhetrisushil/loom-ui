@@ -1,9 +1,11 @@
 import {
   type ChatEntry,
   type ChatPart,
+  type ChatReasoning,
   type ChatValue,
   EDIT_TURN_ACTION,
   LOAD_OLDER_ACTION,
+  LOAD_REASONING_ACTION,
   chatActorLabel,
   chatReasonText,
   chatSpeaker,
@@ -41,6 +43,15 @@ import { type VirtualizeOptions, resolveVirtualize } from "./virtual";
 // is final nothing remounts and nothing shifts. The log is a polite live region held `aria-busy`
 // while a reply streams, so a screen reader hears the settled reply once (as `StreamingText`).
 //
+// REASONING (loom ADR 0133). An assistant entry MAY carry `reasoning` (only when the host turned it on in
+// `ChatFeed`); nothing is drawn for an entry without it, so an existing transcript is byte-identical. It is
+// model output derived from untrusted input, so it is drawn exactly like reply text: a Lit text binding,
+// cleaned again here, never markup. A collapsed-by-default disclosure (a button with `aria-expanded` that
+// controls a labelled region, outside the live announcements: a reader opts in by opening it). A `summary`
+// says it is a summary; `redacted` / removed / unverifiable reasoning is a marker with no text. A reply whose
+// stored reasoning has not been fetched (`unloaded`) asks the host for it ONCE, when first expanded
+// (LOAD_REASONING `{ cursor }`, a read), never eagerly.
+//
 // EDIT. "Edit" on the viewer's own complete turn opens an inline editor and emits EDIT_TURN
 // `{ turn, text, key }`. It never changes what is drawn: the host decides what an edit means
 // (a new turn, a fork), and the new turn arrives as a new entry marked `editOf`.
@@ -57,6 +68,16 @@ const cleanText = (part: ChatPart & { type: "text" }): string => {
   if (c === undefined) {
     c = sanitizeChatText(part.text);
     textCache.set(part, c);
+  }
+  return c;
+};
+
+const reasoningCache = new WeakMap<ChatReasoning, string>();
+const cleanReasoning = (r: ChatReasoning): string => {
+  let c = reasoningCache.get(r);
+  if (c === undefined) {
+    c = sanitizeChatText(r.text);
+    reasoningCache.set(r, c);
   }
   return c;
 };
@@ -158,6 +179,34 @@ export class LuChat extends LuWidget {
         font-size: 11px;
         color: var(--lu-text-dim, #8b949e);
       }
+      .reasoning {
+        margin: 4px 0 0;
+        font-size: 12px;
+        color: var(--lu-text-dim, #8b949e);
+      }
+      .reasoning button {
+        font-size: 12px;
+        padding: 2px 6px;
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--lu-border, #30363d);
+        border-radius: var(--lu-radius, 4px);
+        cursor: pointer;
+      }
+      .reasoning .body {
+        margin: 4px 0 0;
+        padding: 4px 8px;
+        border-inline-start: 2px solid var(--lu-border, #30363d);
+      }
+      .reasoning .body p {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-style: italic;
+      }
+      .reasoning .body p + p {
+        margin-top: 4px;
+      }
       .caret {
         display: inline-block;
         width: 0.5em;
@@ -212,6 +261,10 @@ export class LuChat extends LuWidget {
   @state() private draft = "";
   @state() private editPhase: "idle" | "sending" | "invalid" | DispatchResult = "idle";
   @state() private loadingOlder = false;
+  /** Reply ids whose reasoning the reader has expanded. Collapsed is the default. */
+  @state() private openReasoning: ReadonlySet<string> = new Set();
+  /** Cursors whose stored reasoning this widget already asked for (once each; the feed reports the result). */
+  private askedReasoning = new Set<string>();
   /** The cursor the in-flight "load earlier" asked for: it ends when the value stops offering that cursor. */
   private loadingCursor: string | undefined;
   private stick = true;
@@ -367,6 +420,66 @@ export class LuChat extends LuWidget {
     }
   }
 
+  private toggleReasoning(e: ChatEntry): void {
+    const next = new Set(this.openReasoning);
+    if (next.has(e.id)) next.delete(e.id);
+    else {
+      next.add(e.id);
+      const r = e.reasoning;
+      // First expand of a reply whose stored reasoning is not here yet: ask the host, once.
+      if (
+        r?.status === "unloaded" &&
+        e.cursor !== undefined &&
+        !this.askedReasoning.has(e.cursor)
+      ) {
+        this.askedReasoning.add(e.cursor);
+        const cursor = e.cursor;
+        void dispatch(this.onAction, {
+          type: LOAD_REASONING_ACTION,
+          widgetId: this.widget.id,
+          payload: { cursor },
+        }).then((res) => {
+          // Not handled: allow a later expand to ask again.
+          if (res !== "ok") this.askedReasoning.delete(cursor);
+        });
+      }
+    }
+    this.openReasoning = next;
+  }
+
+  private reasoningBody(r: ChatReasoning): TemplateResult | typeof nothing {
+    switch (r.status) {
+      case "erased":
+        return html`<p data-reasoning-note>${say("lu.chat.reasoning.erased")}</p>`;
+      case "digest-mismatch":
+        return html`<p data-reasoning-note>${say("lu.chat.reasoning.unverified")}</p>`;
+      case "unavailable":
+        return html`<p data-reasoning-note>${say("lu.chat.reasoning.unavailable")}</p>`;
+      case "unloaded":
+      case "loading":
+        return html`<p data-reasoning-note>${say("lu.chat.reasoning.loading")}</p>`;
+      default:
+    }
+    if (r.kind === "redacted")
+      return html`<p data-reasoning-note>${say("lu.chat.reasoning.redacted")}</p>`;
+    return html`${r.kind === "summary" ? html`<p data-reasoning-note>${say("lu.chat.reasoning.summaryNote")}</p>` : nothing}<p data-reasoning-text>${cleanReasoning(r)}</p>${r.truncated === true ? html`<p data-reasoning-note>${say("lu.chat.reasoning.truncated")}</p>` : nothing}`;
+  }
+
+  private reasoning(e: ChatEntry): TemplateResult | typeof nothing {
+    const r = e.reasoning;
+    if (r === undefined || e.role !== "assistant") return nothing;
+    const open = this.openReasoning.has(e.id);
+    const label =
+      r.kind === "summary" && (r.status === undefined || r.status === "ok")
+        ? say("lu.chat.reasoning.summaryLabel")
+        : say("lu.chat.reasoning.label");
+    const state = r.streaming ? ` (${say("lu.chat.reasoning.inProgress")})` : "";
+    return html`<div class="reasoning" data-reasoning data-kind=${r.kind} data-status=${r.status ?? nothing} ?data-streaming=${r.streaming}>
+      <button type="button" data-reasoning-toggle id=${`rb-${e.id}`} aria-expanded=${open ? "true" : "false"} aria-controls=${`rr-${e.id}`} @click=${() => this.toggleReasoning(e)}>${label}${state}</button>
+      <div class="body" id=${`rr-${e.id}`} role="region" aria-labelledby=${`rb-${e.id}`} aria-live="off" ?hidden=${!open}>${open ? this.reasoningBody(r) : nothing}</div>
+    </div>`;
+  }
+
   private entry(e: ChatEntry, v: ChatValue): TemplateResult {
     const speaker = chatSpeaker(e, v, say);
     const note = chatStatusNote(e, say);
@@ -391,6 +504,7 @@ export class LuChat extends LuWidget {
       <header>
         <span class="who">${speaker}</span>${note === "" ? nothing : html`<span class="note">(${note})</span>`}
       </header>
+      ${this.reasoning(e)}
       ${
         editing
           ? this.editor()

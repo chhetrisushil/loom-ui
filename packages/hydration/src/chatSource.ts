@@ -7,6 +7,13 @@ import type { ChatFeed } from "@loom-ui/core/chat";
 //
 //     GET {baseUrl}/history?direction=backward&limit=N[&cursor=C]    a bounded page, newest first
 //     GET {baseUrl}/events[?cursor=C]                                text/event-stream (SSE)
+//     GET {baseUrl}/reasoning?cursor=<reply cursor>                  one reply's stored reasoning (opt-in, lazy)
+//
+// REASONING (loom ADR 0133 D6) is opt-in on the server AND on the feed (`ChatFeed({ reasoning })`). This
+// file only routes: the `reasoning` / `reasoning-partial` events go to the feed (which ignores them unless
+// the host turned reasoning on), and `loadReasoning(cursor)` fetches ONE reply's durable reasoning, only
+// when the host asks (a Chat's `LOAD_REASONING` action, i.e. the reader expanded it), never for the whole
+// history. The body is folded by the feed; a 404 (the server's answer for every reason) is "none kept".
 //
 // and the sends go the other way through the host's write-back (`conversationTarget`), NOT through
 // this file: a submit is an authenticated, signed action the host validates (`acceptChatSubmit`);
@@ -33,6 +40,8 @@ export interface EventSourceLike {
 }
 export interface FetchResponseLike {
   readonly ok: boolean;
+  /** The HTTP status, when the host's `fetch` has one: a 403/404 on the reasoning route means "none for you". */
+  readonly status?: number;
   json(): Promise<unknown>;
 }
 
@@ -48,7 +57,18 @@ export interface ConversationConnectionOptions {
   readonly feed: Pick<
     ChatFeed,
     "applyHistory" | "applyEvent" | "resumeCursor" | "olderCursor" | "value" | "streaming"
-  >;
+  > &
+    Partial<
+      Pick<
+        ChatFeed,
+        "beginReasoning" | "applyReasoning" | "reasoningFailed" | "reasoningUnavailable"
+      >
+    >;
+  /**
+   * The server serves `/reasoning` (loom's `reasoning: { store }`) and the feed is `reasoning: { durable: true }`:
+   * `loadReasoning` then fetches. Default false: `loadReasoning` does nothing.
+   */
+  readonly reasoning?: boolean;
   /** Called with the new value after every change. Deltas arrive fast: throttle here if the host wants. */
   readonly publish: (
     value: ReturnType<ChatFeed["value"]>,
@@ -78,13 +98,31 @@ export interface ConversationConnection {
   start(): Promise<void>;
   /** Load the page before the window (no-op when there is none or one is in flight). */
   loadOlder(): Promise<void>;
+  /**
+   * Fetch the stored reasoning of the reply at `cursor` (the entry's own cursor), once: a no-op unless
+   * `reasoning` is on, the feed offers that reply, and it is not already loaded or loading.
+   */
+  loadReasoning(cursor: string): Promise<void>;
   /** Stop everything. Idempotent. */
   close(): void;
 }
 
 /** A stream open at least this long (ms) was healthy: its end is not a failure streak. */
 const HEALTHY_MS = 5000;
-const EVENTS = ["status", "partial", "delta", "reset", "message", "closed", "reconnect", "error"];
+const EVENTS = [
+  "status",
+  "partial",
+  "delta",
+  "reasoning",
+  "reasoning-partial",
+  "reset",
+  "message",
+  "closed",
+  "reconnect",
+  "error",
+];
+const changedBy = (r: { readonly ok: boolean; readonly changed?: boolean } | undefined): boolean =>
+  r?.ok === true && r.changed === true;
 const finding = (code: string, message: string): Finding => ({ code, severity: "error", message });
 
 const defaultTimer = (fn: () => void, ms: number): (() => void) => {
@@ -221,8 +259,49 @@ export function connectConversation(
     }, delay);
   }
 
+  const loadingReasoning = new Set<string>();
+  async function reasoningFor(cursor: string): Promise<void> {
+    const { feed: f } = options;
+    if (options.reasoning !== true || closed || loadingReasoning.has(cursor)) return;
+    if (f.beginReasoning === undefined || !changedBy(f.beginReasoning(cursor))) return;
+    loadingReasoning.add(cursor);
+    publish(); // the entry now reads "loading"
+    try {
+      let body: unknown;
+      let gone = false;
+      try {
+        const res = await options.fetch(
+          `${baseUrl}/reasoning?cursor=${encodeURIComponent(cursor)}`,
+          {
+            signal: ac.signal,
+          }
+        );
+        if (!res.ok) {
+          gone = res.status === 404 || res.status === 403;
+          throw new Error("not ok");
+        }
+        body = await res.json();
+      } catch {
+        if (closed) return;
+        // A refusal is a settled "none for you" (no retry); anything else is a failure the reader can retry.
+        if (gone) f.reasoningUnavailable?.(cursor);
+        else {
+          f.reasoningFailed?.(cursor);
+          report("reasoning-unavailable", "the reasoning could not be loaded");
+        }
+        publish();
+        return;
+      }
+      if (closed) return;
+      if (changedBy(f.applyReasoning?.(cursor, body))) publish();
+    } finally {
+      loadingReasoning.delete(cursor);
+    }
+  }
+
   return {
     start: begin,
+    loadReasoning: reasoningFor,
     async loadOlder() {
       const cursor = feed.olderCursor();
       if (cursor === undefined || loadingOlder || closed) return;

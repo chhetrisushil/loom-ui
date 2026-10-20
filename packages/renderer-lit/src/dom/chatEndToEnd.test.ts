@@ -95,7 +95,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function rig(headHash: string, renderedHash = headHash) {
+function rig(
+  headHash: string,
+  renderedHash = headHash,
+  feedOptions: ConstructorParameters<typeof ChatFeed>[0] = {}
+) {
   const exp = mkExp(renderedHash);
   const r = compile(exp, {
     surface: "web",
@@ -106,7 +110,7 @@ function rig(headHash: string, renderedHash = headHash) {
   expect(r.findings.filter((f) => f.severity === "error")).toEqual([]);
   const runtime = new InMemoryProjectionRuntime();
   const store = new HydrationStore(runtime, { experienceId: "u8" });
-  const feed = new ChatFeed({ viewer: { actor: "alice" }, mode: "owner" });
+  const feed = new ChatFeed({ viewer: { actor: "alice" }, mode: "owner", ...feedOptions });
   // The page publishes THROUGH a controller's gate: only a handle the server listed, only a valid transcript.
   const controller = new SplitHydrationController({
     store,
@@ -186,6 +190,35 @@ describe("U8: chat through compile, hydration and the DOM", () => {
     await tick();
     expect(root.querySelector(".log")?.getAttribute("aria-busy")).toBe("false");
     expect(root.textContent).toContain("Thinking done");
+    t.handle.dispose();
+  });
+
+  it("reasoning streams through the controller's gate into a collapsed disclosure; the reply text stays its own", async () => {
+    const t = rig("sha256:v1", "sha256:v1", { reasoning: true });
+    const gateFindings: unknown[] = [];
+    const publish = publishChat(t.controller, "h_chat", (f) => gateFindings.push(f));
+    t.apply("message", wire(1, "user"));
+    t.apply("reasoning", { turn: 1, text: "weighing <b>options</b>" });
+    t.apply("delta", { turn: 1, text: "Answer" });
+    publish(t.feed.value(), { streaming: t.feed.streaming });
+    await tick();
+    const root = shadow(t.host, "chat");
+    const btn = root.querySelector("[data-reasoning-toggle]") as HTMLButtonElement;
+    expect(btn.getAttribute("aria-expanded")).toBe("false");
+    expect(root.textContent).not.toContain("weighing");
+    btn.click();
+    await tick();
+    expect(root.querySelector("[data-reasoning-text]")?.textContent).toBe(
+      "weighing <b>options</b>"
+    );
+    expect(root.querySelector("[data-reasoning] b")).toBeNull();
+    expect(root.querySelector("[data-text]")?.textContent).not.toContain("weighing");
+    t.apply("message", wire(1, "assistant", { text: "Answer" }));
+    await tick();
+    expect(root.querySelector("[data-reasoning-text]")?.textContent).toBe(
+      "weighing <b>options</b>"
+    );
+    expect(gateFindings).toEqual([]); // the contract accepted every reasoning-bearing value
     t.handle.dispose();
   });
 

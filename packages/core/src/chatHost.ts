@@ -17,6 +17,7 @@
 //   SELECT        { value, key }           a SelectInput
 //   EDIT_TURN     { turn, text, key }      a Chat: the user revised an earlier turn of their own
 //   LOAD_OLDER    { cursor }               a Chat: show earlier turns (a read; carries no key)
+//   LOAD_REASONING { cursor }              a Chat: fetch one reply's durable reasoning (a read; carries no key)
 //   MEDIA_ATTACH  { ref }                  the existing U9 `MediaInput` (see `acceptMediaAttach`)
 //
 // IDEMPOTENCY. Every submit carries a `key` the widget minted when the draft began. A retry of the
@@ -28,6 +29,7 @@ import { type ActionOutcome, type CurrentHead, actionFreshness } from "./action"
 import {
   EDIT_TURN_ACTION,
   LOAD_OLDER_ACTION,
+  LOAD_REASONING_ACTION,
   SELECT_ACTION,
   SUBMIT_FORM_ACTION,
   SUBMIT_TEXT_ACTION,
@@ -78,7 +80,8 @@ export type Submission =
       readonly turn: number;
       readonly text: string;
     }
-  | { readonly kind: "older"; readonly widgetId: string; readonly cursor: string };
+  | { readonly kind: "older"; readonly widgetId: string; readonly cursor: string }
+  | { readonly kind: "reasoning"; readonly widgetId: string; readonly cursor: string };
 
 export type ChatSubmitRefusal =
   | "not-a-submit" // not one of this vocabulary's actions, or no object payload
@@ -205,12 +208,13 @@ const TYPE_TO_KIND: Readonly<Record<string, InputSpec["kind"]>> = {
   [SELECT_ACTION]: "SelectInput",
   [EDIT_TURN_ACTION]: "Chat",
   [LOAD_OLDER_ACTION]: "Chat",
+  [LOAD_REASONING_ACTION]: "Chat",
 };
 
 /**
  * HOST-SIDE acceptance of an input action. In order:
  *
- *  1. it is one of the five actions with an object payload;
+ *  1. it is one of the chat actions with an object payload;
  *  2. `specOf(widgetId)` knows the widget and the action type matches what it is;
  *  3. the action is `fresh` against `current` (U5);
  *  4. the value re-validates against the host's OWN spec (the client's checks are discarded): text
@@ -243,12 +247,16 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
     if (spec.kind !== TYPE_TO_KIND[type]) return refuse("wrong-input");
     if (actionFreshness(action as never, options.current) !== "fresh") return refuse("stale");
 
-    if (type === LOAD_OLDER_ACTION) {
+    if (type === LOAD_OLDER_ACTION || type === LOAD_REASONING_ACTION) {
       const cursor = own(payload, "cursor");
       if (!isChatCursor(cursor)) return refuse("invalid");
       return {
         ok: true,
-        submission: { kind: "older", widgetId, cursor },
+        submission: {
+          kind: type === LOAD_OLDER_ACTION ? "older" : "reasoning",
+          widgetId,
+          cursor,
+        },
         release: () => {},
         commit: () => {},
       };
@@ -405,7 +413,7 @@ export function conversationTarget(
       return options.edit !== undefined ? options.edit(s) : sendTurn(s.text, { messageId: s.key });
     // LOAD_OLDER is a READ the browser makes itself (`connection.loadOlder()`); routed here by mistake it
     // is refused with a reason, not a TypeError.
-    if (s.kind === "older") return { ok: false, reason: "browser-side" };
+    if (s.kind === "older" || s.kind === "reasoning") return { ok: false, reason: "browser-side" };
     throw new TypeError("a conversation target takes text and edits");
   };
 }
