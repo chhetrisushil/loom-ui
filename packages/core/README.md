@@ -501,13 +501,15 @@ and `reasoning-partial` events into the in-progress reply's `reasoning` (`stream
 channel: it can never land in the reply text); `reset` / `closed` clear it, a `reasoning-partial` REPLACES
 (a reconnect cannot duplicate it), and the durable `message` keeps the live text as that reply's reasoning.
 Off by default: with it off the events are ignored (no finding) and no entry ever carries the field. The
-server sends reasoning only to the viewer allowed to see it (the turn's asker, or the owner), and the
+server sends reasoning only to the viewers allowed to see it (in a shared conversation the turn's asker AND
+the owner), the client never decides the audience (it renders every reasoning event it receives, restricted
+turns excepted), and the
 conversation server must opt in (`reasoning` on `@loom/plugin-conversation-sse`); the client renders what
 it gets and never assumes any. The live events do not say whether the text is the model's own reasoning or
 a provider summary, so the live label defaults to `summary` (never present a summary as the full chain of
 thought); `reasoning: { liveKind: "text" }` is for a provider that streams the raw reasoning.
-`reasoning: { durable: true }` also marks each finished reply `unloaded` (shared mode: only the viewer's
-own turns), and the host fetches ONE reply's stored reasoning lazily: `beginReasoning(cursor)` (`changed:
+`reasoning: { durable: true }` also marks each finished reply `unloaded` (whoever asked: a viewer outside the
+audience gets the server's 404, which settles as `unavailable` with no retry), and the host fetches ONE reply's stored reasoning lazily: `beginReasoning(cursor)` (`changed:
 true` = go; the entry reads `loading`), then `applyReasoning(cursor, body)` with the
 `GET .../reasoning?cursor=` body, or `reasoningFailed` / `reasoningUnavailable`. `chatReasoningFromDurable`
 folds that body (only the recorded attempt of each step, texts joined, a `summary` among them makes the

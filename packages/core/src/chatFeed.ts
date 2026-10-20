@@ -25,7 +25,9 @@
 //    already has its durable reply is dropped; the durable reply replaces the live text in place
 //    (same entry id, so nothing remounts). Deltas for a turn that is restricted, or (when the
 //    viewer is known) asked by someone else, are NOT rendered: the server sends them to the asker
-//    only (ADR 0122 D10.4), and this is the client's second line.
+//    only (ADR 0122 D10.4), and this is the client's second line. REASONING is not filtered by asker:
+//    the server sends it to the asker AND the owner (ADR 0133 D6) and the client cannot tell the owner
+//    from a peer, so it renders whatever arrives (restricted turns excepted).
 //  - BOUNDED. At most `maxEntries` entries (default and ceiling {@link MAX_CHAT_ENTRIES}); the live
 //    reply is bounded like any stream (`appendChunk`: 64 K, closed on overflow).
 //  - REASONING IS OPT-IN AND NEVER TEXT OF THE REPLY (loom ADR 0133 D6). Off unless `options.reasoning`
@@ -378,12 +380,10 @@ export class ChatFeed {
     if (e.cursor === undefined || (e.status !== "complete" && e.status !== "interrupted"))
       return false;
     if (this.mode !== "shared") return true;
-    // Shared: reasoning goes to the turn's asker alone.
-    const qid = this.acceptedUser.get(e.turn);
-    const q = qid === undefined ? undefined : this.list[this.index.get(qid) ?? -1];
-    return (
-      this.viewer !== undefined && q?.asker !== undefined && sameChatActor(q.asker, this.viewer)
-    );
+    // Shared: the server sends reasoning to the turn's asker AND the owner (ADR 0133 D6). The client
+    // cannot tell the owner from a peer, so it offers the marker on every finished reply and the server's
+    // 404 (the same for every reason) settles it as `unavailable`.
+    return true;
   }
 
   /**
@@ -659,7 +659,7 @@ export class ChatFeed {
   }
 
   private applyLiveReasoning(turn: number, text: string, replace: boolean): boolean {
-    if (!this.mayShowLive(turn)) return false;
+    if (!this.mayShowLive(turn, true)) return false;
     const newest = Math.max(this.live?.turn ?? 0, this.liveReasoning?.turn ?? 0);
     if (turn < newest) return false; // a stale turn
     // A newer turn supersedes the older turn's live text (it is not that turn's reply any more).
@@ -685,14 +685,20 @@ export class ChatFeed {
   }
 
   /** May live text for `turn` be shown to THIS viewer? Fail closed on what the client can see. */
-  private mayShowLive(turn: number): boolean {
+  private mayShowLive(turn: number, reasoning = false): boolean {
     if (this.index.has(entryId(turn, "assistant"))) return false; // the durable reply won
     // Bound to the turn's ACCEPTED question: a rejected envelope on the same number is not the asker.
     const qid = this.acceptedUser.get(turn);
     const q = qid === undefined ? undefined : this.list[this.index.get(qid) ?? -1];
     if (q === undefined) return true; // the question has not arrived yet; the server only sends it to the asker
     if (q.status === "restricted") return false;
-    if (this.viewer !== undefined && q.asker !== undefined && !sameChatActor(q.asker, this.viewer))
+    // Reasoning is not filtered by asker here: the server sends it to the asker and the owner (ADR 0133 D6).
+    if (
+      !reasoning &&
+      this.viewer !== undefined &&
+      q.asker !== undefined &&
+      !sameChatActor(q.asker, this.viewer)
+    )
       return false;
     return true;
   }
@@ -784,9 +790,10 @@ export class ChatFeed {
     }
     // Live text shown before its question arrived (or was upgraded) is retracted if the question says it
     // is not this viewer's to see: a restricted question, or another asker's.
-    if (entry.role === "user" && !this.mayShowLive(entry.turn)) {
-      if (this.live?.turn === entry.turn) this.live = undefined;
-      if (this.liveReasoning?.turn === entry.turn) this.liveReasoning = undefined;
+    if (entry.role === "user") {
+      if (!this.mayShowLive(entry.turn) && this.live?.turn === entry.turn) this.live = undefined;
+      if (!this.mayShowLive(entry.turn, true) && this.liveReasoning?.turn === entry.turn)
+        this.liveReasoning = undefined;
     }
     if (entry.role === "assistant") this.running = false;
     else if (entry.status === "complete") this.running = true;

@@ -152,12 +152,30 @@ describe("ChatFeed reasoning: live", () => {
     expect(isChatValue(f.value())).toBe(true);
   });
 
-  it("another asker's turn gets no reasoning (client-side second line)", () => {
+  it("shared mode, viewer is the owner, another participant asks: the live reasoning renders", () => {
     const f = new ChatFeed({ reasoning: true, viewer: { actor: "alice" }, mode: "shared" });
     f.applyEvent("message", wire(1, "user", { asker: { actor: "bob" } }));
     f.applyEvent("reasoning", { turn: 1, text: "bob's thought" });
+    expect(f.value().entries.at(-1)?.reasoning?.text).toBe("bob's thought");
+    f.applyEvent("reasoning-partial", { turn: 1, text: "bob's whole thought" });
+    expect(f.value().entries.at(-1)?.reasoning?.text).toBe("bob's whole thought");
+  });
+
+  it("a non-audience viewer who receives no events sees no reasoning", () => {
+    const f = new ChatFeed({ reasoning: true, viewer: { actor: "carol" }, mode: "shared" });
+    f.applyEvent("message", wire(1, "user", { asker: { actor: "bob" } }));
     expect(f.streaming).toBe(false);
-    expect(JSON.stringify(f.value())).not.toContain("thought");
+    expect(f.value().entries.every((e) => e.reasoning === undefined)).toBe(true);
+  });
+
+  it("reasoning of a restricted turn is still not rendered in shared mode", () => {
+    const f = new ChatFeed({ reasoning: true, viewer: { actor: "alice" }, mode: "shared" });
+    f.applyEvent(
+      "message",
+      wire(1, "user", { status: "restricted", text: "", asker: { actor: "bob" } })
+    );
+    f.applyEvent("reasoning", { turn: 1, text: "secret" });
+    expect(JSON.stringify(f.value())).not.toContain("secret");
   });
 
   it("is untrusted: controls and bidi marks are removed, markup stays literal text", () => {
@@ -387,7 +405,7 @@ describe("ChatFeed reasoning: durable, lazily", () => {
     }
   });
 
-  it("shared mode offers it for the viewer's own turns only", () => {
+  it("shared mode offers it on every finished reply; a 404 becomes unavailable (no retry)", () => {
     const f = new ChatFeed({
       reasoning: { durable: true },
       mode: "shared",
@@ -408,7 +426,11 @@ describe("ChatFeed reasoning: durable, lazily", () => {
     const by = (turn: number) =>
       f.value().entries.find((e) => e.turn === turn && e.role === "assistant");
     expect(by(1)?.reasoning?.status).toBe("unloaded");
-    expect(by(2)?.reasoning).toBeUndefined();
+    expect(by(2)?.reasoning?.status).toBe("unloaded");
+    expect(f.beginReasoning("0.5")).toEqual({ ok: true, changed: true });
+    expect(by(2)?.reasoning?.status).toBe("loading");
+    expect(f.reasoningUnavailable("0.5").ok).toBe(true);
+    expect(by(2)?.reasoning?.status).toBe("unavailable");
     expect(f.beginReasoning("0.5")).toEqual({ ok: true, changed: false });
   });
 
