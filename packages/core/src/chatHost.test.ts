@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   EDIT_TURN_ACTION,
   LOAD_OLDER_ACTION,
+  LOAD_REASONING_ACTION,
   SELECT_ACTION,
   SUBMIT_FORM_ACTION,
   SUBMIT_TEXT_ACTION,
@@ -307,6 +308,35 @@ describe("acceptChatSubmit", () => {
       reason: "invalid",
     });
     expect(o.ledger.size).toBe(0);
+  });
+
+  it("LOAD_REASONING is a read like LOAD_OLDER: a fresh view and a well-formed cursor, no key, nothing claimed, browser-side", async () => {
+    const o = opts();
+    expect(
+      acceptChatSubmit(act(LOAD_REASONING_ACTION, "chat", { cursor: "0.12" }), o)
+    ).toMatchObject({
+      ok: true,
+      submission: { kind: "reasoning", cursor: "0.12" },
+    });
+    expect(acceptChatSubmit(act(LOAD_REASONING_ACTION, "chat", { cursor: "x/../y" }), o)).toEqual({
+      ok: false,
+      reason: "invalid",
+    });
+    // only a Chat may ask
+    expect(acceptChatSubmit(act(LOAD_REASONING_ACTION, "composer", { cursor: "0.12" }), o).ok).toBe(
+      false
+    );
+    expect(o.ledger.size).toBe(0);
+    const wb = createWriteBack({ ...opts(), routes: { chat: conversationTarget(vi.fn()) } });
+    expect(
+      await wb.handle(act(LOAD_REASONING_ACTION, "chat", { cursor: "0.12" }), {
+        principal: "t/alice",
+        current: head,
+      })
+    ).toEqual({
+      ok: false,
+      reason: "browser-side",
+    });
   });
 
   it("a transcript that MOVED is not stale for a chat widget (no bindingSeq), but a recomposed one is", () => {

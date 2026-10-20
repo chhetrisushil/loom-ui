@@ -83,7 +83,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `A2UIView` · `SandboxView` | the bound value as data | mount `lu-a2ui-view` / `lu-sandbox` |
 | `Image` · `Audio` · `Video` · `File` | `MediaRef` — an ADDRESS, never bytes | host supplies a `MediaResolver` |
 | `MediaInput` | static upload control | |
-| `Chat` | `ChatValue` | text is UNTRUSTED, drawn as text only |
+| `Chat` | `ChatValue` | text is UNTRUSTED, drawn as text only; a reply's model reasoning is OFF unless `ChatFeed({ reasoning })` (a collapsed "Reasoning" disclosure; a `summary` is labelled a summary) |
 | `TextInput` · `FormInput` · `SelectInput` | static | emit `SUBMIT_TEXT` / `SUBMIT_FORM` / `SELECT` |
 
 | Export | What |

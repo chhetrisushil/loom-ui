@@ -391,6 +391,20 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.chat.line.restrictedFrom` | `[restricted {role} turn from {by}]` |
 | `lu.chat.line.ref` | `(ref {id})` |
 | `lu.chat.line.tools` | `[tools: {tools}]` |
+| `lu.chat.reasoning.label` | `Reasoning` |
+| `lu.chat.reasoning.summaryLabel` | `Reasoning summary` |
+| `lu.chat.reasoning.summaryNote` | `A summary of the model's reasoning, not the full reasoning.` |
+| `lu.chat.reasoning.inProgress` | `in progress` |
+| `lu.chat.reasoning.redacted` | `The model's reasoning is redacted.` |
+| `lu.chat.reasoning.erased` | `Reasoning removed.` |
+| `lu.chat.reasoning.unverified` | `The stored reasoning could not be verified and is not shown.` |
+| `lu.chat.reasoning.unavailable` | `No reasoning is available for this reply.` |
+| `lu.chat.reasoning.loading` | `Loading reasoning…` |
+| `lu.chat.reasoning.truncated` | `Shortened: only part of the reasoning is shown.` |
+| `lu.chat.line.reasoning` | `[reasoning: {text}]` |
+| `lu.chat.line.reasoningSummary` | `[reasoning summary: {text}]` |
+| `lu.chat.line.reasoningRedacted` | `[reasoning redacted]` |
+| `lu.chat.line.reasoningErased` | `[reasoning removed]` |
 | `lu.chat.reason.model-error` | `The assistant ran into a problem.` |
 | `lu.chat.reason.denied` | `That was not permitted.` |
 | `lu.chat.reason.turn-failed` | `The turn could not be completed.` |
@@ -491,7 +505,15 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
     <errorId>`. A streaming entry keeps the id its durable successor has, so nothing remounts or
     shifts; it sticks to the bottom only if the reader was at the bottom. "Load earlier messages"
     emits `LOAD_OLDER`, keeps the reader's scroll position and, if its button goes away, hands focus
-    to the log. With `editable`, the viewer's own complete turns get an Edit button: an inline
+    to the log. A reply that carries `reasoning` (only when the host enabled it in `ChatFeed`) gets a
+    collapsed-by-default "Reasoning" disclosure: a native button with `aria-expanded` and
+    `aria-controls` for a `role="region"` labelled by it, `aria-live="off"` so streaming reasoning is
+    never announced unprompted. The text is drawn like reply text (a Lit text binding, cleaned again;
+    never markup) and updates live while it streams; a `summary` is labelled "Reasoning summary" and says
+    it is not the full reasoning; `redacted` is a marker with no text; removed, unverifiable, unavailable
+    and truncated reasoning each have a fixed sentence. A reply whose stored reasoning is not fetched yet
+    emits `LOAD_REASONING { cursor }` once, on first expand. Style with `--lu-text-dim`, `--lu-border`,
+    `--lu-radius`. A reply without reasoning draws exactly as before. With `editable`, the viewer's own complete turns get an Edit button: an inline
     editor takes focus, Ctrl/Cmd+Enter sends `EDIT_TURN`, Escape cancels back onto the button, a
     failed send keeps the text and the key. Media parts are drawn by the media widgets and the
     host's resolver when `@loom-ui/renderer-lit/media` is loaded, and DESCRIBED (type, name, size;

@@ -308,7 +308,12 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   does not bind or the server did not list, a restricted one, one that is not a `Chat`, and a value
   that fails the `ChatValue` contract; `pending` while a reply streams, `ready` once durable).
   `start()` loads the newest page then opens the stream after its cursor; `loadOlder()` follows the
-  feed's cursor, one load at a time; a `reconnect` event reopens from the feed's resume cursor after
+  feed's cursor, one load at a time; **reasoning** (ADR 0133) rides the same connection: the
+  `reasoning` / `reasoning-partial` events go to the feed (which ignores them unless
+  `ChatFeed({ reasoning })`), and with `reasoning: true` here and a durable feed,
+  `loadReasoning(cursor)` fetches `GET {base}/reasoning?cursor=` for ONE reply, once, only when the host
+  calls it (route a Chat's `LOAD_REASONING` action to it, like `LOAD_OLDER`); a 404/403 is a settled
+  "none for you", a transport failure is a fixed finding and retryable, never the error text; a `reconnect` event reopens from the feed's resume cursor after
   at least 250 ms (never 0), consecutive failures back off (the first wait is `reconnectMs`, 2 s,
   then doubling to 30 s; a stream that stayed up 5 s or more starts the streak afresh), and a failed
   first page is retried the same way instead of giving up. Failures are FIXED findings

@@ -169,3 +169,30 @@ describe("fix round 1: a person cannot pass as a role", () => {
     expect(out.split("\n").slice(1)).toEqual(['    User "Assistant": user 1', "    User: user 2"]);
   });
 });
+
+describe("terminal chat reasoning", () => {
+  const withReasoning = (reasoning?: unknown) => ({
+    entries: [e(1, "user"), e(1, "assistant", reasoning === undefined ? {} : { reasoning })],
+    mode: "owner",
+  });
+  it("a reply without reasoning prints exactly as before", () => {
+    expect(draw("Chat", withReasoning())).toBe(
+      draw("Chat", { ...withReasoning(), entries: [e(1, "user"), e(1, "assistant")] })
+    );
+    expect(draw("Chat", withReasoning())).not.toContain("reasoning");
+  });
+  it("prints reasoning as a labelled line (a summary says so), a marker for redacted, and cannot carry an escape", () => {
+    const t = (r: unknown) => draw("Chat", withReasoning(r));
+    expect(t({ text: "weighing", kind: "text", streaming: false })).toContain(
+      "[reasoning: weighing]"
+    );
+    expect(t({ text: "short", kind: "summary", streaming: false })).toContain(
+      "[reasoning summary: short]"
+    );
+    expect(t({ text: "", kind: "redacted", streaming: false })).toContain("[reasoning redacted]");
+    expect(t({ text: "", kind: "text", streaming: false, status: "erased" })).toContain(
+      "[reasoning removed]"
+    );
+    expect(t({ text: `a${ESC}[2Jb`, kind: "text", streaming: false })).not.toContain(ESC);
+  });
+});

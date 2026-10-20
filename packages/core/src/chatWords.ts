@@ -79,6 +79,24 @@ const kindOfType = (mediaType: string): string =>
   ) ?? "File";
 
 /**
+ * One line for a reply's reasoning, or `""` when there is nothing to say (none, or not fetched yet). A
+ * summary is labelled as one; redacted and removed reasoning are markers with no text. Untrusted model
+ * output: cleaned and bounded like any turn.
+ */
+export function chatReasoningLine(entry: ChatEntry, maxText = 2000, say: Say = sayEnglish): string {
+  const r = entry.reasoning;
+  if (r === undefined) return "";
+  if (r.status === "erased") return say("lu.chat.line.reasoningErased");
+  if (r.status !== undefined && r.status !== "ok") return "";
+  if (r.kind === "redacted") return say("lu.chat.line.reasoningRedacted");
+  const text = oneLineChatText(r.text, maxText);
+  if (text === "") return "";
+  return say(r.kind === "summary" ? "lu.chat.line.reasoningSummary" : "lu.chat.line.reasoning", {
+    text,
+  });
+}
+
+/**
  * A transcript as plain lines — what the terminal prints and what a screen reader's summary says.
  * Every text is cleaned and bounded; a restricted entry is a bare placeholder; a failure is the
  * fixed sentence plus its reference id. No address, URL or timestamp appears.
@@ -103,6 +121,8 @@ export function chatTranscriptLines(
     const note = chatStatusNote(e, say);
     const head = `${chatSpeaker(e, value, say)}${note === "" ? "" : ` (${note})`}`;
     const body: string[] = [];
+    const reasoning = chatReasoningLine(e, maxText, say);
+    if (reasoning !== "") body.push(reasoning);
     for (const p of e.parts ?? []) {
       if (p.type === "text") {
         const t = oneLineChatText(p.text, maxText);
