@@ -43,7 +43,21 @@ export interface FetchResponseLike {
   /** The HTTP status, when the host's `fetch` has one: a 403/404 on the reasoning route means "none for you". */
   readonly status?: number;
   json(): Promise<unknown>;
+  /**
+   * The body as text, when the host's fetch has it. The reasoning read prefers it: the size is checked
+   * before `JSON.parse`. Without it the read falls back to `json()`, which the host's own fetch must bound.
+   */
+  text?(): Promise<string>;
+  /** Response headers, when the host exposes them: a declared `Content-Length` over the limit refuses the read. */
+  readonly headers?: { get(name: string): string | null };
 }
+
+/**
+ * The most a durable reasoning response may weigh (bytes, or characters for the `text()` check). loom's
+ * route caps the readable text at 1 MiB, so 2 MiB leaves room for the JSON envelope and escaping.
+ * Residual: a host `fetch` that only offers `json()` and sends no `Content-Length` is not bounded here.
+ */
+export const MAX_REASONING_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export interface ConversationConnectionOptions {
   /** `/conversations/<id>` (or absolute). The id was minted by the server; this appends `/history` and `/events`. */
@@ -280,7 +294,14 @@ export function connectConversation(
           gone = res.status === 404 || res.status === 403;
           throw new Error("not ok");
         }
-        body = await res.json();
+        const declared = Number(res.headers?.get("content-length"));
+        if (Number.isFinite(declared) && declared > MAX_REASONING_RESPONSE_BYTES)
+          throw new Error("too large");
+        if (res.text !== undefined) {
+          const raw = await res.text();
+          if (raw.length > MAX_REASONING_RESPONSE_BYTES) throw new Error("too large");
+          body = JSON.parse(raw);
+        } else body = await res.json();
       } catch {
         if (closed) return;
         // A refusal is a settled "none for you" (no retry); anything else is a failure the reader can retry.

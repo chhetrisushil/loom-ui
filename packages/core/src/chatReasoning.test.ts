@@ -271,6 +271,36 @@ describe("chatReasoningFromDurable", () => {
     ).toBe("redacted");
   });
 
+  it("the `redacted` status (loom's vendor-withheld block) renders as hidden reasoning, with no text", () => {
+    expect(chatReasoningFromDurable(body([{ kind: "redacted", status: "redacted" }]))).toEqual({
+      text: "",
+      kind: "redacted",
+      streaming: false,
+    });
+    // readable text wins over a redacted sibling; an unknown status still fails closed
+    expect(
+      chatReasoningFromDurable(
+        body([
+          { kind: "redacted", status: "redacted" },
+          { kind: "summary", status: "ok", text: "shown" },
+        ])
+      )?.text
+    ).toBe("shown");
+    expect(chatReasoningFromDurable(body([{ kind: "redacted", status: "mystery" }]))).toMatchObject(
+      { status: "digest-mismatch" }
+    );
+  });
+
+  it("past the text cap further parts are not folded: no stray ellipsis paragraphs, truncated stays set", () => {
+    const big = "x".repeat(MAX_CHAT_REASONING_TEXT);
+    const parts = Array.from({ length: 12 }, () => ({ kind: "text", status: "ok", text: big }));
+    const r = chatReasoningFromDurable(body(parts));
+    expect(r?.truncated).toBe(true);
+    expect((r?.text.length ?? 0) <= MAX_CHAT_REASONING_TEXT + 1).toBe(true);
+    expect((r?.text.match(/…/g) ?? []).length).toBeLessThanOrEqual(1);
+    expect(r?.text.split("\n\n").length).toBe(1);
+  });
+
   it("erased and digest-mismatch parts never contribute text", () => {
     expect(chatReasoningFromDurable(body([{ kind: "text", status: "erased" }]))).toMatchObject({
       status: "erased",

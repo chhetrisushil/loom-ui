@@ -1,6 +1,10 @@
 import { ChatFeed } from "@loom-ui/core";
 import { describe, expect, it } from "vitest";
-import { type EventSourceLike, connectConversation } from "./chatSource";
+import {
+  type EventSourceLike,
+  MAX_REASONING_RESPONSE_BYTES,
+  connectConversation,
+} from "./chatSource";
 
 // connectConversation + reasoning (loom ADR 0133 D6): the two live events are routed to the feed, and the
 // durable `/reasoning` route is fetched for ONE reply, lazily, only when the host asks.
@@ -42,13 +46,24 @@ const DURABLE = {
 function harness(opts: {
   feed?: ConstructorParameters<typeof ChatFeed>[0];
   reasoning?: boolean;
-  reasoningReply?: { ok: boolean; status?: number; body?: unknown } | "throw";
+  reasoningReply?:
+    | {
+        ok: boolean;
+        status?: number;
+        body?: unknown;
+        /** A `Content-Length` header value, when the host's fetch exposes headers. */
+        contentLength?: string;
+        /** Serve the body through `text()` (the bounded read path) instead of only `json()`. */
+        rawText?: string;
+      }
+    | "throw";
 }) {
   const feed = new ChatFeed({ mode: "owner", ...opts.feed });
   const urls: string[] = [];
   const sources: FakeSource[] = [];
   const published: Array<ReturnType<ChatFeed["value"]>> = [];
   const findings: string[] = [];
+  const reads = { json: 0, text: 0 };
   const conn = connectConversation({
     baseUrl: "/conversations/c1",
     feed,
@@ -61,7 +76,22 @@ function harness(opts: {
         return {
           ok: r.ok,
           ...(r.status !== undefined && { status: r.status }),
-          json: async () => r.body,
+          ...(r.contentLength !== undefined && {
+            headers: {
+              get: (n: string) =>
+                n.toLowerCase() === "content-length" ? (r.contentLength ?? null) : null,
+            },
+          }),
+          ...(r.rawText !== undefined && {
+            text: async () => {
+              reads.text++;
+              return r.rawText as string;
+            },
+          }),
+          json: async () => {
+            reads.json++;
+            return r.body;
+          },
         };
       }
       return {
@@ -78,7 +108,7 @@ function harness(opts: {
     onFinding: (f) => findings.push(`${f.code}: ${f.message}`),
     setTimer: () => () => {},
   });
-  return { conn, feed, urls, sources, published, findings };
+  return { conn, feed, urls, sources, published, findings, reads };
 }
 
 const lastReasoning = (h: ReturnType<typeof harness>) =>
@@ -169,6 +199,41 @@ describe("connectConversation: the durable reasoning route", () => {
     expect(h.findings.join()).not.toContain("secrets");
     await h.conn.loadReasoning("0.3");
     expect(h.urls.filter((u) => u.includes("/reasoning"))).toHaveLength(2);
+  });
+
+  describe("the response read is bounded", () => {
+    const oversize = (over: Record<string, unknown>) =>
+      harness({
+        feed: { reasoning: { durable: true } },
+        reasoning: true,
+        reasoningReply: { ok: true, body: DURABLE, ...over },
+      });
+
+    it("a declared Content-Length over the limit is a retryable transport failure: body never read, no text in the finding", async () => {
+      const h = oversize({ contentLength: String(MAX_REASONING_RESPONSE_BYTES + 1) });
+      await h.conn.start();
+      await h.conn.loadReasoning("0.3");
+      expect(h.reads).toEqual({ json: 0, text: 0 });
+      expect(lastReasoning(h)?.status).toBe("unloaded");
+      expect(h.findings).toEqual(["reasoning-unavailable: the reasoning could not be loaded"]);
+    });
+
+    it("an undeclared oversize body read through text() is refused before JSON.parse", async () => {
+      const h = oversize({ rawText: `{"pad":"${"x".repeat(MAX_REASONING_RESPONSE_BYTES)}"}` });
+      await h.conn.start();
+      await h.conn.loadReasoning("0.3");
+      expect(h.reads.json).toBe(0);
+      expect(lastReasoning(h)?.status).toBe("unloaded");
+      expect(h.findings).toEqual(["reasoning-unavailable: the reasoning could not be loaded"]);
+    });
+
+    it("a body within the limit still loads, through text() when the host offers it", async () => {
+      const h = oversize({ rawText: JSON.stringify(DURABLE), contentLength: "200" });
+      await h.conn.start();
+      await h.conn.loadReasoning("0.3");
+      expect(lastReasoning(h)?.text).toBe("because");
+      expect(h.reads.json).toBe(0);
+    });
   });
 
   it("does nothing when the connection did not enable reasoning, or the feed is not durable", async () => {
