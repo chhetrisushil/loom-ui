@@ -263,11 +263,17 @@ export function chatReasoningFromDurable(body: unknown): ChatReasoning | undefin
         seen++;
         const status = own(p, "status");
         if (status === "erased") erased = true;
+        else if (status === "redacted")
+          hidden = true; // loom: a block the vendor withheld
         else if (status !== "ok")
           mismatch = true; // digest-mismatch, or a status we do not know: fail closed
         else {
           const raw = own(p, "text");
           const room = MAX_CHAT_REASONING_TEXT - used;
+          if (room <= 0) {
+            truncated = true; // the cap is spent: fold nothing more (no stray "…" paragraphs)
+            continue;
+          }
           const clean = kind === "redacted" ? "" : sanitizeChatText(raw, Math.max(0, room));
           if (clean === "") hidden = true;
           else {
