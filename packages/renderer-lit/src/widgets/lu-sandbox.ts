@@ -1,6 +1,7 @@
 import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, css, html } from "lit";
 import { property, query, state } from "lit/decorators.js";
+import { cssomStyle } from "../cssomStyle";
 import {
   SANDBOX_ALLOW,
   buildSandboxSrcdoc,
@@ -78,7 +79,7 @@ export class LuSandbox extends LitElement {
       part="frame"
       sandbox=${SANDBOX_ALLOW}
       srcdoc=${buildSandboxSrcdoc()}
-      style="height:${this.frameHeight}px"
+      ${cssomStyle({ height: `${this.frameHeight}px` })}
     ></iframe>`;
   }
 

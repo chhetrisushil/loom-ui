@@ -75,11 +75,11 @@ describe("app-level elements", () => {
         (el.shadowRoot?.querySelector("iframe") as HTMLIFrameElement).getAttribute("style") ?? ""
       );
     };
-    expect(await report(320)).toContain("height:320px");
+    expect(await report(320)).toContain("height: 320px");
     // The frame's own report goes straight into the host's layout: a million-pixel (or negative,
     // or NaN) claim must not.
-    expect(await report(1e9)).toContain("height:4000px");
-    expect(await report(-50)).toContain("height:0px");
-    expect(await report(Number.NaN)).toContain("height:0px");
+    expect(await report(1e9)).toContain("height: 4000px");
+    expect(await report(-50)).toContain("height: 0px");
+    expect(await report(Number.NaN)).toContain("height: 0px");
   });
 });

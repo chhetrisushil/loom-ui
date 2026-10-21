@@ -10,6 +10,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { describeValue } from "../a11y";
+import { cssomStyle } from "../cssomStyle";
 import { measure } from "../format";
 import { formattingLocale } from "../i18n";
 import { tPlural } from "../plural";
@@ -247,7 +248,7 @@ export class LuTable extends LuWidget {
             ${!Array.isArray(v.rowActions) ? nothing : html`<th class="actions"><span class="sr-only">${say("lu.table.actions")}</span></th>`}
           </tr>
         </thead>
-        <tbody class=${win !== undefined ? "virtual" : ""} style=${win !== undefined && virt ? `--lu-row-h:${virt.rowHeight}px` : ""}>
+        <tbody class=${win !== undefined ? "virtual" : ""} ${cssomStyle(win !== undefined && virt ? { "--lu-row-h": `${virt.rowHeight}px` } : {})}>
           ${win !== undefined ? padRow(win.padTop, cols) : nothing}
           ${repeat(
             windowed,

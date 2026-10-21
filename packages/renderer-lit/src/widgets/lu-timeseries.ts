@@ -12,6 +12,7 @@ import {
   padDomain,
   timeTickIndices,
 } from "../charts/svg";
+import { cssomStyle } from "../cssomStyle";
 import { effectiveFormat, tick as formatTick, measure, timeTick, unitSuffix } from "../format";
 
 import { dirFor } from "../rtl";
@@ -180,7 +181,7 @@ export class LuTimeseries extends LuWidget {
               ${series.map(
                 (s, i) =>
                   html`<span
-                    ><span class="swatch" style="background:${colorFor(i)}"></span
+                    ><span class="swatch" ${cssomStyle({ background: colorFor(i) })}></span
                     >${s.label}${onRight(s) ? ` (${say("lu.a11y.rightAxis")})` : ""}</span
                   >`
               )}
@@ -256,31 +257,25 @@ export class LuTimeseries extends LuWidget {
     const hover = Math.max(0, Math.min(n - 1, Math.round(t * (n - 1))));
     this.hoverIndex = hover;
     // Portal tooltip so it's never clipped by the widget/scroll container.
-    const rows = series
-      .map((s, i) => {
-        const fmt = this.formatOf(s);
-        const v = s.points[hover]?.value ?? 0;
-        const unit = unitSuffix(fmt, this.unitOf(s));
-        const suffix = unit ? ` ${escapeHtml(unit)}` : "";
-        return `<div style="color:${colorFor(i)}">${escapeHtml(s.label)}: ${escapeHtml(
-          measure(v, fmt)
-        )}${suffix}</div>`;
-      })
-      .join("");
-    showTooltip(
-      `<div style="margin-bottom:2px;color:var(--lu-text-dim,#8b949e)">${escapeHtml(timeTick(timestamps[hover] ?? "", 1e12))}</div>${rows}`,
-      rect.left + sx(hover),
-      rect.top + M.top,
-      { html: true }
-    );
+    // Built as DOM (colours set through CSSOM) so no inline `style` attribute is parsed from a string,
+    // which a strict `style-src` CSP would block.
+    const tip = document.createDocumentFragment();
+    const head = document.createElement("div");
+    head.style.marginBottom = "2px";
+    head.style.color = "var(--lu-text-dim,#8b949e)";
+    head.textContent = timeTick(timestamps[hover] ?? "", 1e12);
+    tip.appendChild(head);
+    series.forEach((s, i) => {
+      const fmt = this.formatOf(s);
+      const v = s.points[hover]?.value ?? 0;
+      const unit = unitSuffix(fmt, this.unitOf(s));
+      const row = document.createElement("div");
+      row.style.color = colorFor(i);
+      row.textContent = `${s.label}: ${measure(v, fmt)}${unit ? ` ${unit}` : ""}`;
+      tip.appendChild(row);
+    });
+    showTooltip(tip, rect.left + sx(hover), rect.top + M.top);
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(
-    /[&<>"]/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c
-  );
 }
 
 declare global {

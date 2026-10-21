@@ -4,6 +4,7 @@ import {
   type TemplateResult,
   html,
 } from "lit";
+import { cssomStyle } from "../cssomStyle";
 
 // ── Windowed rendering for large row sets (U17) ───────────────────────────────────────────────
 // `lu-table` / `lu-data-table` used to cap the DOM at 200 rows behind a "show more" button, which is
@@ -179,5 +180,5 @@ export class VirtualRows implements ReactiveController {
 /** A spacer row standing in for the rows that are not mounted. Hidden from assistive tech. */
 export function padRow(height: number, columns: number): TemplateResult | undefined {
   if (height <= 0) return undefined;
-  return html`<tr class="pad" aria-hidden="true" style="height:${height}px"><td colspan=${columns} style="padding:0;border:0;height:${height}px"></td></tr>`;
+  return html`<tr class="pad" aria-hidden="true" ${cssomStyle({ height: `${height}px` })}><td colspan=${columns} ${cssomStyle({ padding: "0", border: "0", height: `${height}px` })}></td></tr>`;
 }
