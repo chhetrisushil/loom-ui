@@ -552,7 +552,7 @@ with `viewedVersion` (U5):
 | Chat (edit a turn) | `EDIT_TURN` | `{ turn, text, key }` |
 | Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
 | MediaInput | `MEDIA_ATTACH` | `{ ref }` (U9; `acceptMediaAttach`) |
-| Table (row action) | `TABLE_ROW_ACTION` | `{ action, rowKey }` (the host decides what it means; no key) |
+| Table (row action) | `TABLE_ROW_ACTION` | `{ action, rowKey }` (the host decides what it means; no key). The payload is untrusted: match `rowKey` and `action` against the value you served |
 
 `key` is an idempotency key the widget minted when the draft began (`newSubmitKey`). The widget
 keeps the draft until the host answers `ok: true` (an `onAction` handler may return `{ ok, reason?

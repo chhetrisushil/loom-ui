@@ -8,13 +8,14 @@ import {
 import { pluralForms } from "@loom-ui/core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import { describeValue } from "../a11y";
 import { measure } from "../format";
 import { formattingLocale } from "../i18n";
 import { tPlural } from "../plural";
 import { say } from "../say";
 import { LuWidget } from "./base";
-import { dispatch } from "./chatShared";
+import { type DispatchResult, dispatch, failureText } from "./chatShared";
 import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
@@ -49,6 +50,10 @@ export class LuTable extends LuWidget {
   @state() private sortCol: number | null = null;
   @state() private sortDir: 1 | -1 = -1;
   @state() private visibleRows = INITIAL_ROWS;
+  /** Row keys with an action in flight (their buttons are off until the host answers). */
+  @state() private busy: ReadonlySet<string> = new Set();
+  /** The last refused or failed answer, in the widget's own fixed words; cleared by the next action. */
+  @state() private failure: DispatchResult | null = null;
   /** U17: windowed rendering (see `./virtual`). Off by default; set by `createLitRegistry({ virtualize })`. */
   @property({ attribute: false }) virtualize?: boolean | VirtualizeOptions;
   private readonly rowsWindow = new VirtualRows(this);
@@ -157,6 +162,11 @@ export class LuTable extends LuWidget {
       outline: 2px solid var(--lu-accent, #6366f1);
       outline-offset: 1px;
     }
+    .status {
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--lu-status-critical, #f87171);
+    }
     .more {
       display: flex;
       align-items: center;
@@ -209,6 +219,7 @@ export class LuTable extends LuWidget {
       });
     }
     const total = order.length;
+    const cols = labels.length + (Array.isArray(v.rowActions) ? 1 : 0);
     const virt = resolveVirtualize(this.virtualize);
     const win = this.rowsWindow.plan(total, virt);
     const shown = win === undefined ? Math.min(this.visibleRows, total) : total;
@@ -232,34 +243,42 @@ export class LuTable extends LuWidget {
                 </button>
               </th>`
             )}
-            ${v.rowActions === undefined ? nothing : html`<th class="actions"><span class="sr-only">${say("lu.table.actions")}</span></th>`}
+            ${!Array.isArray(v.rowActions) ? nothing : html`<th class="actions"><span class="sr-only">${say("lu.table.actions")}</span></th>`}
           </tr>
         </thead>
         <tbody class=${win !== undefined ? "virtual" : ""} style=${win !== undefined && virt ? `--lu-row-h:${virt.rowHeight}px` : ""}>
-          ${win !== undefined ? padRow(win.padTop, labels.length) : nothing}
-          ${windowed.map((ri, i) => {
-            const r = v.rows[ri] as readonly TableCell[];
-            const key = v.rowKeys?.[ri];
-            const acts = v.rowActions?.[ri] ?? [];
-            const first = String(at(r, 0) ?? "");
-            const primary = acts.find((a) => a.primary === true);
-            const button = (
-              a: (typeof acts)[number],
-              cls: string,
-              key: string,
-              body: unknown
-            ): TemplateResult =>
-              html`<button
+          ${win !== undefined ? padRow(win.padTop, cols) : nothing}
+          ${repeat(
+            windowed,
+            (ri) => (Array.isArray(v.rowKeys) ? (v.rowKeys[ri] ?? ri) : ri),
+            (ri, i) => {
+              const r = v.rows[ri] as readonly TableCell[];
+              const key = Array.isArray(v.rowKeys) ? v.rowKeys[ri] : undefined;
+              const rawActs = Array.isArray(v.rowActions) ? v.rowActions[ri] : undefined;
+              const acts = Array.isArray(rawActs) ? rawActs : [];
+              const c0 = at(r, 0);
+              const shownFirst =
+                c0 === null ? "" : typeof c0 === "number" ? measure(c0, formats[0]) : c0;
+              const first = shownFirst.trim() === "" ? (key ?? String(ri + 1)) : shownFirst;
+              const rowBusy = key !== undefined && this.busy.has(key);
+              const primary = acts.find((a) => a.primary === true);
+              const button = (
+                a: (typeof acts)[number],
+                cls: string,
+                key: string,
+                body: unknown
+              ): TemplateResult =>
+                html`<button
                 type="button"
                 class=${cls}
                 data-row-action=${a.id}
                 aria-label=${say("lu.table.rowAction", { label: a.label, row: first })}
-                ?disabled=${this.onAction === undefined}
+                ?disabled=${this.onAction === undefined || rowBusy}
                 @click=${() => this.rowAction(a.id, key)}
               >
                 ${body}
               </button>`;
-            return html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
+              return html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
               ${labels.map((_, ci) => {
                 const c = at(r, ci);
                 const text = c === null ? "—" : typeof c === "number" ? measure(c, formats[ci]) : c;
@@ -272,17 +291,23 @@ export class LuTable extends LuWidget {
                 </td>`;
               })}
               ${
-                v.rowActions === undefined
+                !Array.isArray(v.rowActions)
                   ? nothing
                   : html`<td class="row-actions">
                     ${key === undefined ? nothing : acts.map((a) => button(a, a.destructive === true ? "danger" : "", key, a.label))}
                   </td>`
               }
             </tr>`;
-          })}
-          ${win !== undefined ? padRow(win.padBottom, labels.length) : nothing}
+            }
+          )}
+          ${win !== undefined ? padRow(win.padBottom, cols) : nothing}
         </tbody>
       </table>
+      ${
+        this.failure === null
+          ? nothing
+          : html`<div class="status" role="status" data-error>${failureText(this.failure)}</div>`
+      }
       ${
         shown < total
           ? html`<div class="more">
@@ -295,12 +320,19 @@ export class LuTable extends LuWidget {
       }`;
   }
 
-  private rowAction(action: string, rowKey: string): void {
-    void dispatch(this.onAction, {
+  private async rowAction(action: string, rowKey: string): Promise<void> {
+    if (this.busy.has(rowKey)) return;
+    this.busy = new Set(this.busy).add(rowKey);
+    this.failure = null;
+    const result = await dispatch(this.onAction, {
       type: TABLE_ROW_ACTION,
       widgetId: this.widget.id,
       payload: { action, rowKey },
     });
+    const left = new Set(this.busy);
+    left.delete(rowKey);
+    this.busy = left;
+    this.failure = result === "ok" ? null : result;
   }
 
   private showMore = (): void => {

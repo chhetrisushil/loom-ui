@@ -86,4 +86,77 @@ describe("lu-table row actions", () => {
     );
     expect(q(el, "[data-state='error']")).not.toBeNull();
   });
+
+  it("says so when the host answers stale or fails, and clears it on the next action", async () => {
+    let answer: unknown = { ok: false, reason: "stale" };
+    const el = await mount(value, () => answer);
+    q<HTMLButtonElement>(el, "button[aria-label='Delete: bravo']").click();
+    for (let i = 0; i < 3; i++) {
+      await Promise.resolve();
+      await el.updateComplete;
+    }
+    expect(q(el, "[role='status']")?.textContent?.trim()).toBeTruthy();
+    answer = undefined;
+    q<HTMLButtonElement>(el, "button[aria-label='Delete: bravo']").click();
+    for (let i = 0; i < 3; i++) {
+      await Promise.resolve();
+      await el.updateComplete;
+    }
+    expect(q(el, "[role='status']")).toBeNull();
+  });
+
+  it("ignores a second activation of a row while its action is in flight", async () => {
+    let release: () => void = () => undefined;
+    const seen: unknown[] = [];
+    const el = await mount(value, (a) => {
+      seen.push(a);
+      return new Promise<void>((r) => {
+        release = r;
+      });
+    });
+    const del = q<HTMLButtonElement>(el, "button[aria-label='Delete: bravo']");
+    del.click();
+    del.click();
+    await el.updateComplete;
+    expect(seen).toHaveLength(1);
+    expect(q<HTMLButtonElement>(el, "button[aria-label='Delete: bravo']").disabled).toBe(true);
+    release();
+    for (let i = 0; i < 3; i++) {
+      await Promise.resolve();
+      await el.updateComplete;
+    }
+    expect(q<HTMLButtonElement>(el, "button[aria-label='Delete: bravo']").disabled).toBe(false);
+  });
+
+  it("keeps a row's DOM (and so focus) with its key when rows are replaced", async () => {
+    const el = await mount(value, () => undefined);
+    const alpha = q<HTMLButtonElement>(el, "td.row-actions button[aria-label='Open: alpha']");
+    const next = {
+      ...value,
+      rows: [value.rows[1], value.rows[0]],
+      rowKeys: ["k-alpha", "k-bravo"],
+      rowActions: [value.rowActions[1], value.rowActions[0]],
+    };
+    (el as unknown as { value: unknown }).value = next;
+    await el.updateComplete;
+    await Promise.resolve();
+    await el.updateComplete;
+    expect(all<HTMLButtonElement>(el, "td.row-actions button").includes(alpha)).toBe(true);
+    expect(alpha.closest("tr")?.querySelector("td")?.textContent?.trim()).toBe("alpha");
+  });
+
+  it("names a button by the displayed first cell, with a fallback for an empty one", async () => {
+    const el = await mount(
+      {
+        columns: ["Name"],
+        rows: [[null]],
+        rowKeys: ["r9"],
+        rowActions: [[{ id: "open", label: "Open" }]],
+      },
+      () => undefined
+    );
+    expect(q<HTMLButtonElement>(el, "td.row-actions button").getAttribute("aria-label")).toBe(
+      "Open: r9"
+    );
+  });
 });

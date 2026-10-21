@@ -130,13 +130,14 @@ export const TableColumn = z.union([
 export type TableColumn = z.infer<typeof TableColumn>;
 export const TableCell = z.union([z.string(), z.number(), z.null()]);
 export type TableCell = z.infer<typeof TableCell>;
-/** Columnar: headings (with optional per-column semantics) and rows of cells in column order. */
+/** One action a table row offers. */
 export const TableRowAction = z.object({
   id: z.string(),
   label: z.string(),
   primary: z.boolean().optional(),
   destructive: z.boolean().optional(),
 });
+/** Columnar: headings (with optional per-column semantics) and rows of cells in column order. */
 export const TableValue = z
   .object({
     columns: z.array(TableColumn),
