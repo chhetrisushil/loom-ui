@@ -237,6 +237,7 @@ export class LuChat extends LuWidget {
         margin-top: 4px;
       }
       .md { overflow-wrap: anywhere; }
+      .md .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
       .md > :first-child { margin-top: 0; }
       .md > :last-child { margin-bottom: 0; }
       .md p { margin: 0 0 0.6em; }

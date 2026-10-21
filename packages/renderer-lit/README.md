@@ -372,7 +372,10 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.chat.restrictedMessage` | `Restricted message` |
 | `lu.chat.restricted` | `Restricted` |
 | `lu.chat.ref` | `Source {n}` |
-| `lu.chat.table` | `Table` |
+| `lu.chat.table` | `Table {n}` |
+| `lu.chat.code` | `Code` |
+| `lu.chat.cut` | `(reply cut short)` |
+| `lu.chat.newTab` | `(opens in a new tab)` |
 | `lu.chat.edit` | `Edit` |
 | `lu.chat.editThis` | `Edit this message` |
 | `lu.chat.editYour` | `Edit your message` |
@@ -503,8 +506,8 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   - **`lu-chat`** is a focusable `role="log"` region (`aria-live="polite"`, `aria-busy` while a
     reply streams, so a screen reader hears the settled reply once). Every entry is an `<article>`
     labelled with its speaker and status. Text is a Lit text binding, cleaned again with
-    `sanitizeChatText` (memoised per part): never `unsafeHTML` or an auto-link. A part marked
-    `format: "markdown"` (assistant entries only, opt-in) is drawn by `chatMarkdown.ts` from core's closed
+    `sanitizeChatText` (memoised per part): never `unsafeHTML` or an auto-link. The renderer draws any assistant part marked
+    `format: "markdown"`, whatever its source (the opt-in is the feed's, `ChatFeed({ markdown })`, not the renderer's); a part on any other role is plain text. It is drawn by `chatMarkdown.ts` from core's closed
     tree as elements the template builds: links only http, https and mailto, `target="_blank"` with
     `rel="noopener noreferrer nofollow"`, the host shown after the label, no images, no html. The fuzz test
     asserts no random text ever creates an element or attribute, and the markdown test walks the DOM of a

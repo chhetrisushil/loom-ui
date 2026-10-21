@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CHAT_REF_OPEN_ACTION, MD_MAX_NODES } from "@loom-ui/core/chat-ui";
 import { customWidget$ } from "@loom/blueprint-runtime";
-import { render } from "lit";
+import { nothing, render } from "lit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-chat";
+import { drawMarkdown } from "./chatMarkdown";
 
 const b = { projectionId: "hydration", path: "values.h" };
 beforeEach(() => vi.stubGlobal("IntersectionObserver", undefined));
@@ -64,7 +65,7 @@ describe("lu-chat, a markdown part", () => {
     const el = await mount({ entries: [reply("| item | qty |\n|:--|--:|\n| nut | 4 |")] });
     const region = md(el).querySelector(".table") as HTMLElement;
     expect(region.getAttribute("role")).toBe("region");
-    expect(region.getAttribute("aria-label")).toBe("Table");
+    expect(region.getAttribute("aria-label")).toBe("Table 1");
     expect(
       [...region.querySelectorAll("th")].map((x) => [
         x.textContent,
@@ -101,7 +102,10 @@ describe("lu-chat, a markdown part", () => {
       "mailto:a@b.example",
     ]);
     for (const a of links) {
-      expect(a.getAttribute("target")).toBe("_blank");
+      // a mailto link opens the mail client, not an empty tab
+      if (a.getAttribute("href")?.startsWith("mailto:"))
+        expect(a.hasAttribute("target")).toBe(false);
+      else expect(a.getAttribute("target")).toBe("_blank");
       expect(a.getAttribute("rel")).toBe("noopener noreferrer nofollow");
       expect(a.getAttribute("referrerpolicy")).toBe("no-referrer");
       expect(a.getAttribute("title")).toBe(a.getAttribute("href"));
@@ -111,7 +115,9 @@ describe("lu-chat, a markdown part", () => {
       " (example.com)",
       " (b.example)",
     ]);
-    expect(md(el).textContent).toContain("a (example.com) b c (b.example) d e");
+    expect(md(el).textContent).toContain(
+      "a (example.com) (opens in a new tab) b c (b.example) d e"
+    );
     expect(md(el).querySelector("img")).toBeNull();
     expect(md(el).innerHTML).not.toContain("tracker.example");
   });
@@ -167,6 +173,7 @@ describe("lu-chat, a markdown part", () => {
       "scope",
       "type",
       "aria-disabled",
+      "aria-hidden",
     ]);
     for (const text of hostile) {
       const el = await mount({
@@ -237,17 +244,59 @@ describe("lu-chat, a markdown part", () => {
     expect(host.querySelector("a, strong, b")).toBeNull();
     expect(host.textContent).toBe(text);
   });
-  it("shows a link's host after a label that names another site", async () => {
+  const linkTexts = async (text: string) => {
+    const el = await mount({ entries: [reply(text)] });
+    return [...md(el).querySelectorAll("a")].map(
+      (a) => a.querySelector(".dest")?.textContent ?? null
+    );
+  };
+  it("shows the host unless the label IS that site (same host after normalisation, or the full address)", async () => {
+    expect(await linkTexts("[bank.example](https://evil.example/login)")).toEqual([
+      " (evil.example)",
+    ]);
+    expect(await linkTexts("[https://bank.example/?evil.example](https://evil.example/)")).toEqual([
+      " (evil.example)",
+    ]);
+    expect(await linkTexts("[data.com](https://a.co/)")).toEqual([" (a.co)"]);
+    expect(await linkTexts("[evil.example.bank.example](https://bank.example/)")).toEqual([
+      " (bank.example)",
+    ]);
+    expect(await linkTexts("[example.com](https://example.com/x)")).toEqual([null]);
+    expect(await linkTexts("[WWW.Example.com](https://example.com/x)")).toEqual([null]);
+    expect(await linkTexts("[https://example.com/x?y=1](https://example.com/x?y=1)")).toEqual([
+      null,
+    ]);
+    expect(await linkTexts("[http://example.com/other](https://example.com/x)")).toEqual([null]);
+  });
+  it("shows an international host in punycode, and one address for mailto", async () => {
+    expect(await linkTexts("[x](https://b\u00fccher.example/)")).toEqual([
+      " (xn--bcher-kva.example)",
+    ]);
+    expect(await linkTexts("[x](mailto:a@b\u00fccher.example)")).toEqual([
+      " (xn--bcher-kva.example)",
+    ]);
+    // several addresses: no link is made, the label stays as text
     const el = await mount({
       entries: [
-        reply("[bank.example](https://evil.example/login) [evil.example](https://evil.example/)"),
+        reply("[m](mailto:a@evil.example,b@bank.example) [n](mailto:a@x.example;b@y.example)"),
       ],
     });
-    const links = [...md(el).querySelectorAll("a")];
-    expect(links.map((a) => a.textContent)).toEqual([
-      "bank.example (evil.example)",
-      "evil.example",
-    ]);
+    expect(md(el).querySelector("a")).toBeNull();
+    expect(md(el).textContent).toContain("m n");
+  });
+  it("names each table, each code block, and announces cut-short text and new tabs", async () => {
+    const el = await mount({
+      entries: [reply("|a|\n|-|\n|1|\n\n|b|\n|-|\n|2|\n\n```\nx\n```\n\n[l](https://e.example)")],
+    });
+    expect([...md(el).querySelectorAll(".table")].map((x) => x.getAttribute("aria-label"))).toEqual(
+      ["Table 1", "Table 2"]
+    );
+    expect(md(el).querySelector("pre")?.getAttribute("aria-label")).toBe("Code");
+    expect(md(el).querySelector("a .sr-only")?.textContent).toBe(" (opens in a new tab)");
+    const cut = await mount({
+      entries: [reply("**a** [b](https://e.example) `c`\n\n".repeat(1800))],
+    });
+    expect(md(cut).querySelector("p.cut .sr-only")?.textContent).toBe("(reply cut short)");
   });
   it("draws a huge input cut short: bounded elements and an unspoken ellipsis", async () => {
     const el = await mount({
@@ -255,7 +304,7 @@ describe("lu-chat, a markdown part", () => {
     });
     const n = all(md(el)).length;
     expect(n).toBeLessThanOrEqual(MD_MAX_NODES * 3 + 50);
-    expect(md(el).querySelector("p.cut")?.getAttribute("aria-hidden")).toBe("true");
+    expect(md(el).querySelector("p.cut")).not.toBeNull();
   });
 });
 
@@ -344,5 +393,94 @@ describe("the markdown renderer's source", () => {
         /unsafe[A-Z]\w*|static-html|unsafe-html|unsafe-svg|innerHTML|outerHTML|insertAdjacentHTML|createContextualFragment|document\.write|DOMParser|\.setAttribute\(\s*["']on|style=/
       );
     }
+  });
+});
+
+describe("drawMarkdown re-checks what it draws (hand-built nodes, no parser)", () => {
+  const ref = (): never => nothing as never;
+  const draw = (doc: unknown): HTMLElement => {
+    const host = document.createElement("div");
+    render(drawMarkdown(doc as never, { ref }), host);
+    return host;
+  };
+  const para = (...inlines: unknown[]) => ({ type: "paragraph", inlines });
+  const text = (t: string) => ({ type: "text", text: t });
+  const link = (href: unknown) => ({ type: "link", href, children: [text("L")] });
+  it("never makes a link of an address the link rule refuses", () => {
+    for (const href of [
+      "javascript:alert(1)",
+      "JaVaScRiPt:alert(1)",
+      " https://x.example",
+      "//x.example",
+      "data:text/html,x",
+      "https://u@x.example",
+      "https://x.example/a b",
+      "ftp://x.example",
+      "",
+      undefined,
+      42,
+      { toString: () => "https://x.example" },
+    ]) {
+      const host = draw({ blocks: [para(link(href))], truncated: false });
+      expect(host.querySelector("a"), String(href)).toBeNull();
+      expect(host.textContent).toBe("L");
+    }
+    expect(
+      draw({ blocks: [para(link("https://x.example/"))], truncated: false }).querySelector("a")
+    ).not.toBeNull();
+  });
+  it("clamps or drops every other attribute value", () => {
+    const host = draw({
+      truncated: false,
+      blocks: [
+        { type: "heading", level: 99, inlines: [text("h")] },
+        { type: "heading", level: '1" onclick="x', inlines: [text("h")] },
+        { type: "code", lang: '"><x onmouseover=1', text: "c" },
+        { type: "code", lang: "ts", text: "c" },
+        { type: "list", ordered: true, start: '1" onclick="x', items: [[para(text("i"))]] },
+        {
+          type: "table",
+          align: ["x", "right", 'left" onclick="y', null],
+          head: [[text("a")], [text("b")], [text("c")], [text("d")]],
+          rows: [],
+        },
+      ],
+    });
+    const heads = [...host.querySelectorAll("[role=heading]")];
+    expect(heads.map((h) => h.getAttribute("aria-level"))).toEqual(["6", "6"]);
+    expect(heads.map((h) => h.className)).toEqual(["h h6", "h h6"]);
+    expect([...host.querySelectorAll("code")].map((c) => c.getAttribute("data-lang"))).toEqual([
+      null,
+      "ts",
+    ]);
+    expect(host.querySelector("ol")?.getAttribute("start")).toBe("1");
+    expect([...host.querySelectorAll("th")].map((c) => c.getAttribute("data-align"))).toEqual([
+      null,
+      "right",
+      null,
+      null,
+    ]);
+    for (const n of [host, ...host.querySelectorAll("*")])
+      for (const a of n.getAttributeNames()) expect(a.startsWith("on"), a).toBe(false);
+  });
+  it("draws an unknown or malformed node as nothing and never throws", () => {
+    const host = draw({
+      truncated: false,
+      blocks: [
+        { type: "script", text: "x" },
+        null,
+        42,
+        para(
+          { type: "img", src: "x" },
+          null,
+          { type: "text", text: { _$litType$: 1, strings: ["<b>"], values: [] } },
+          text("ok")
+        ),
+        { type: "list", ordered: false, start: 1, items: "nope" },
+        { type: "quote", blocks: undefined },
+      ],
+    });
+    expect(host.querySelector("b, img, script")).toBeNull();
+    expect(host.textContent).toContain("ok");
   });
 });
