@@ -401,8 +401,10 @@ const mediaInput =
 // ── Chat and inputs (U8) ───────────────────────────────────────────────────────
 // The transcript prints as the SAME lines the web surface speaks (`chatTranscriptLines`: speaker,
 // status note, fixed failure sentence + reference id, restricted entries as bare placeholders, media
-// described without an address), under the title. Untrusted text is cleaned to one bounded line per
-// turn: a terminal escape (ESC) or a bidi override in a turn cannot reach the screen.
+// described without an address), under the title. Untrusted text is cleaned and bounded: a plain part is one
+// line of at most `maxText` characters, a markdown part is up to 200 plain lines of at most 4 x `maxText`
+// characters in all (`chatMarkdownLines`). A terminal escape (ESC), a C1 control or a bidi override in a turn
+// cannot reach the screen.
 const chatTranscript = (host: boolean, x: Env) =>
   guarded(host, "Chat", (w, v) => {
     const chat = v as ChatValue;

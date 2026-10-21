@@ -114,7 +114,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // counter lives in `chatMdMeter.test-support.ts` and is not in the bundle.
     // Markdown as plain lines (176j): 110 -> 114 kB (measured 109_457): `chatWords` now reaches core's `chatMdText` and the shared
     // link check `chatMdDest` (the drawer uses the latter; the former rides in with the transcript words).
-    ["chat.js", 114 * 1000],
+    // Follow-ups (176k): 114 -> 112 kB: the first number was looser than needed; 112 keeps about 2.5 kB over the measurement.
+    ["chat.js", 112 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

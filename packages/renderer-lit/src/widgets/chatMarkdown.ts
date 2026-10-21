@@ -40,15 +40,20 @@ const ALIGN = new Set(["left", "center", "right"]);
 const align = (a: unknown): string | typeof nothing =>
   typeof a === "string" && ALIGN.has(a) ? a : nothing;
 
+/** Nodes one drawing may visit: a parsed document has at most 2000; a forged tree with shared children stops here. */
+const MAX_VISITS = 4000;
+
 interface Ctx {
   readonly d: MarkdownDraw;
   tables: number;
+  visits: number;
 }
 
 const inlines = (nodes: readonly MdInline[] | undefined, c: Ctx): unknown[] =>
   arr(nodes).map((n) => inline(n, c));
 
 function inline(n: MdInline, c: Ctx): unknown {
+  if (c.visits-- <= 0) return nothing;
   switch ((n as { type?: unknown } | null)?.type) {
     case "text":
       return str((n as { text?: unknown }).text);
@@ -81,6 +86,7 @@ function inline(n: MdInline, c: Ctx): unknown {
 }
 
 function block(b: MdBlock, c: Ctx): unknown {
+  if (c.visits-- <= 0) return nothing;
   switch ((b as { type?: unknown } | null)?.type) {
     case "paragraph":
       return html`<p>${inlines((b as { inlines?: readonly MdInline[] }).inlines, c)}</p>`;
@@ -133,6 +139,6 @@ function block(b: MdBlock, c: Ctx): unknown {
 
 /** The document as Lit templates. A document a bound cut short ends in an ellipsis, with the fact said in words for a screen reader. */
 export function drawMarkdown(doc: MdDoc, d: MarkdownDraw): TemplateResult {
-  const c: Ctx = { d, tables: 0 };
+  const c: Ctx = { d, tables: 0, visits: MAX_VISITS };
   return html`${arr(doc.blocks).map((b) => block(b, c))}${doc.truncated === true ? html`<p class="cut"><span aria-hidden="true">…</span><span class="sr-only">${say("lu.chat.cut")}</span></p>` : nothing}`;
 }

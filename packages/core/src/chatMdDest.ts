@@ -3,7 +3,8 @@ import { safeLinkHref } from "./chatMdTypes";
 // ── Where a markdown link goes (U8c) ────────────────────────────────────────────────────────────────
 // The render-time re-check every renderer applies to a link node (the parser applied `safeLinkHref` already; a node is
 // never trusted): http(s) or mailto only, and a mailto names exactly ONE address, with nothing that adds recipients
-// (a list, a percent-encoded `,` or `;`, or a `to` / `cc` / `bcc` parameter). The host is the URL parser's, so an
+// (a list, a percent-encoded `,` or `;`, a `to` / `cc` / `bcc` parameter after `?`, `&` or `;`, a second `?`, a `#`, an
+// encoded `@`, any control character). The host is the URL parser's, so an
 // international name is its punycode form.
 
 export type MdDestination = { readonly href: string; readonly host: string; readonly web: boolean };
@@ -30,7 +31,12 @@ export function mdDestination(raw: unknown): MdDestination | undefined {
   if (href === undefined) return undefined;
   try {
     if (/^mailto:/i.test(href)) {
-      const rest = href.slice(7).split("#")[0] ?? "";
+      // nothing a lenient client could read as a second recipient or a hidden byte: no `#` (a fragment that looks like a
+      // query), a second `?`, an encoded `@` or any NUL / control character, raw or percent-encoded, anywhere
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing controls is the point
+      if (/#|\?.*\?|%40|%[01][0-9a-f]|%7f|[\u0000-\u001f\u007f-\u009f]/i.test(href.slice(7)))
+        return undefined;
+      const rest = href.slice(7);
       const q = rest.indexOf("?");
       const addr = q < 0 ? rest : rest.slice(0, q);
       const query = q < 0 ? "" : rest.slice(q + 1);
@@ -38,7 +44,7 @@ export function mdDestination(raw: unknown): MdDestination | undefined {
       // one address: no list (`,` `;`, or their percent forms), one `@`, something on both sides
       if (at < 1 || at !== addr.lastIndexOf("@") || /[,;]|%2c|%3b/i.test(addr)) return undefined;
       // no parameter that adds recipients
-      for (const pair of query.split("&")) {
+      for (const pair of query.split(/[&;]/)) {
         const name = decodeURIComponent((pair.split("=")[0] ?? "").replace(/\+/g, " "))
           .trim()
           .toLowerCase();

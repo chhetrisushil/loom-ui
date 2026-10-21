@@ -98,15 +98,19 @@ export function chatReasoningLine(entry: ChatEntry, maxText = 2000, say: Say = s
   });
 }
 
-/** A markdown reply as plain lines (one string, newline-joined): markers numbered when listed, hidden while the reply streams. */
-function markdownBody(e: ChatEntry, text: string, value: ChatValue): string {
+/**
+ * A markdown reply as plain lines (one string, newline-joined): markers numbered when listed, hidden while the reply
+ * streams. The whole part is capped at 4 x `maxText` characters (markup and link addresses take room a plain text does
+ * not), then `…`: a part's size is bounded as a plain part's is, by the caller's `maxText`.
+ */
+function markdownBody(e: ChatEntry, text: string, value: ChatValue, maxChars: number): string {
   const markers = value.refMarkers === true;
   const streaming = e.status === "streaming";
   const doc = parseChatMarkdown(text, { markers, streaming });
   const shown = markers
     ? resolveMdMarkers(doc, new Set((e.refs ?? []).map((r) => r.id)), { hideAll: streaming })
     : doc;
-  return chatMarkdownLines(shown).join("\n");
+  return chatMarkdownLines(shown, { maxChars }).join("\n");
 }
 
 /**
@@ -134,12 +138,13 @@ export function chatTranscriptLines(
     const note = chatStatusNote(e, say);
     const head = `${chatSpeaker(e, value, say)}${note === "" ? "" : ` (${note})`}`;
     const body: string[] = [];
+    const multi = new Set<number>(); // body items that are markdown (several lines): they start on their own line
     const reasoning = chatReasoningLine(e, maxText, say);
     if (reasoning !== "") body.push(reasoning);
     for (const p of e.parts ?? []) {
       if (p.type === "text" && p.format === "markdown" && e.role === "assistant") {
-        const t = markdownBody(e, p.text, value);
-        if (t !== "") body.push(t);
+        const t = markdownBody(e, p.text, value, 4 * maxText);
+        if (t !== "") multi.add(body.push(t) - 1);
       } else if (p.type === "text") {
         const t = oneLineChatText(p.text, maxText);
         if (t !== "") body.push(t);
@@ -156,7 +161,10 @@ export function chatTranscriptLines(
         })
       );
     // A markdown reply is several lines: the rest are indented under the speaker's.
-    const [first = "", ...rest] = `${head}: ${body.join(" ")}`.trimEnd().split("\n");
+    const [first = "", ...rest] =
+      `${head}: ${body.map((b, k) => (k === 0 ? b : `${multi.has(k) || multi.has(k - 1) ? "\n" : " "}${b}`)).join("")}`
+        .trimEnd()
+        .split("\n");
     lines.push(first, ...rest.map((l) => (l === "" ? "" : `  ${l}`)));
   }
   return lines;
