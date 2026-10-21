@@ -208,11 +208,12 @@ export interface AcceptChatOptions {
   /**
    * Did the host serve a reference `refId` on the entry `entryId` of this widget? Required for `CHAT_REF_OPEN`:
    * absent, every reference open is refused. The payload is client input, so it is matched against what the host
-   * served, never trusted for its own sake.
+   * served, never trusted for its own sake. Like `canEdit` it receives the principal, so a host can decide per viewer.
    */
   readonly hasRef?: (
     entryId: string,
     refId: string,
+    principal: string,
     context: { readonly widgetId: string }
   ) => boolean;
   /** Longest accepted text (default and ceiling {@link MAX_INPUT_CHARS}); a TextInput's own `maxChars` also applies. */
@@ -299,7 +300,7 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
         return refuse("invalid");
       let known = false;
       try {
-        known = options.hasRef?.(entryId, refId, { widgetId }) === true;
+        known = options.hasRef?.(entryId, refId, options.principal, { widgetId }) === true;
       } catch {
         known = false;
       }

@@ -551,7 +551,7 @@ with `viewedVersion` (U5):
 | SelectInput | `SELECT` | `{ value, key }` |
 | Chat (edit a turn) | `EDIT_TURN` | `{ turn, text, key }` |
 | Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
-| Chat (open a reference) | `CHAT_REF_OPEN` | `{ entryId, refId, n }` (a read: no key). Untrusted: `acceptChatSubmit` matches `entryId`/`refId` against `hasRef`, your record of what you served; without `hasRef` it refuses (`ref-not-allowed`) |
+| Chat (open a reference) | `CHAT_REF_OPEN` | `{ entryId, refId, n }` (a read: no key). Untrusted: `acceptChatSubmit` matches `entryId`/`refId` against `hasRef(entryId, refId, principal, { widgetId })`, your record of what you served (per viewer, like `canEdit`); without `hasRef` it refuses (`ref-not-allowed`) |
 | MediaInput | `MEDIA_ATTACH` | `{ ref }` (U9; `acceptMediaAttach`) |
 | Table (row action) | `TABLE_ROW_ACTION` | `{ action, rowKey }` (the host decides what it means; no key). The payload is untrusted: match `rowKey` and `action` against the value you served |
 

@@ -101,8 +101,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 71 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
-    // Chat reference markers (176b): 91 -> 93 kB (measured 92_615): `splitRefMarkers`, the ref button and its status line.
-    ["chat.js", 93 * 1000],
+    // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
+    ["chat.js", 94 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

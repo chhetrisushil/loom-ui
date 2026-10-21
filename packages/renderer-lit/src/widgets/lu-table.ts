@@ -164,6 +164,7 @@ export class LuTable extends LuWidget {
     }
     .status {
       padding: 6px 10px;
+      min-height: 1em;
       font-size: 11px;
       color: var(--lu-status-critical, #f87171);
     }
@@ -303,11 +304,7 @@ export class LuTable extends LuWidget {
           ${win !== undefined ? padRow(win.padBottom, cols) : nothing}
         </tbody>
       </table>
-      ${
-        this.failure === null
-          ? nothing
-          : html`<div class="status" role="status" data-error>${failureText(this.failure)}</div>`
-      }
+      <div class="status" role="status" ?data-error=${this.failure !== null}>${this.failure === null ? "" : failureText(this.failure)}</div>
       ${
         shown < total
           ? html`<div class="more">
