@@ -14,6 +14,7 @@
 import { CHAT_INPUT_KINDS, CHAT_KIND, chatValueIssues } from "./chatValue";
 import type { Finding } from "./experience";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
+import { tableRowProblems } from "./tableRows";
 import type { SemanticFormat, TableColumn } from "./values";
 
 /**
@@ -371,11 +372,45 @@ const tableColumn = (v: unknown, p: Path, out: Out): Status =>
 const tableCell = (v: unknown, p: Path, out: Out): Status =>
   union(v, p, out, [string, number, (x, xp, xo) => type("null", x, xp, xo)]);
 
-const table = (v: unknown, p: Path, out: Out): Status =>
+const optionalBoolean = (v: unknown, p: Path, out: Out): Status =>
+  opt(v, p, out, { optional: true }, (x, xp, xo) => type("boolean", x, xp, xo));
+const rowAction = (v: unknown, p: Path, out: Out): Status =>
   object(v, p, out, [
+    ["id", string],
+    ["label", string],
+    ["primary", optionalBoolean],
+    ["destructive", optionalBoolean],
+  ]);
+
+const table = (v: unknown, p: Path, out: Out): Status => {
+  const status = object(v, p, out, [
     ["columns", (c, cp, co) => array(c, cp, co, tableColumn)],
     ["rows", (r, rp, ro) => array(r, rp, ro, (row, rwp, rwo) => array(row, rwp, rwo, tableCell))],
+    [
+      "rowKeys",
+      (k, kp, ko) => opt(k, kp, ko, { optional: true }, (x, xp, xo) => array(x, xp, xo, string)),
+    ],
+    [
+      "rowActions",
+      (a, ap, ao) =>
+        opt(a, ap, ao, { optional: true }, (x, xp, xo) =>
+          array(x, xp, xo, (r, rp, ro) => array(r, rp, ro, rowAction))
+        ),
+    ],
   ]);
+  // Like zod's `superRefine`: the cross-field rules run unless a type error aborted the parse.
+  if (status === "aborted") return status;
+  let worst: Status = status;
+  for (const problem of tableRowProblems(
+    v as { rows: readonly unknown[]; rowKeys?: unknown; rowActions?: unknown }
+  )) {
+    for (const seg of problem.path) p.push(seg);
+    fail(out, p, problem.message);
+    p.length -= problem.path.length;
+    worst = "dirty";
+  }
+  return worst;
+};
 
 const statusCard = (v: unknown, p: Path, out: Out): Status =>
   object(v, p, out, [

@@ -12,6 +12,7 @@ import {
   tableColumnLabel,
 } from "./kindValues";
 import { mediaValueIssues } from "./mediaRef";
+import { tableRowProblems } from "./tableRows";
 
 // The zod-free vocabulary lives in kindValues.ts (a browser bundle imports it without zod);
 // re-exported here so this module keeps its public surface.
@@ -130,10 +131,23 @@ export type TableColumn = z.infer<typeof TableColumn>;
 export const TableCell = z.union([z.string(), z.number(), z.null()]);
 export type TableCell = z.infer<typeof TableCell>;
 /** Columnar: headings (with optional per-column semantics) and rows of cells in column order. */
-export const TableValue = z.object({
-  columns: z.array(TableColumn),
-  rows: z.array(z.array(TableCell)),
+export const TableRowAction = z.object({
+  id: z.string(),
+  label: z.string(),
+  primary: z.boolean().optional(),
+  destructive: z.boolean().optional(),
 });
+export const TableValue = z
+  .object({
+    columns: z.array(TableColumn),
+    rows: z.array(z.array(TableCell)),
+    rowKeys: z.array(z.string()).optional(),
+    rowActions: z.array(z.array(TableRowAction)).optional(),
+  })
+  .superRefine((v, ctx) => {
+    for (const p of tableRowProblems(v))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: p.path, message: p.message });
+  });
 export type TableValue = z.infer<typeof TableValue>;
 
 export const StatusLevel = z.enum(["ok", "warning", "critical"]);

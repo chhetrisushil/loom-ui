@@ -201,10 +201,29 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
         ? pick(r, strs)
         : { label: pick(r, strs), ...(chance(r, 0.5) ? { format: genFormat(r) } : {}) }
     );
-    return {
-      columns,
-      rows: arr(r, () => arr(r, () => pick(r, [...strs, 1, 2.5, null, -0, Number.NaN])), 5),
-    };
+    const rows = arr(r, () => arr(r, () => pick(r, [...strs, 1, 2.5, null, -0, Number.NaN])), 5);
+    const o: Record<string, unknown> = { columns, rows };
+    // Row keys and actions: mostly aligned with the rows, sometimes near-valid (short, repeated,
+    // badly spelled, over-long, doubly primary), so the cross-field rules are compared too.
+    if (chance(r, 0.6)) {
+      const keyPool = ["r1", "r2", "r3", "r4", "r5", "bad key", "", "r1", "a".repeat(129)];
+      o.rowKeys = chance(r, 0.7) ? rows.map((_, i) => `k${i}`) : arr(r, () => pick(r, keyPool), 6);
+    }
+    if (chance(r, 0.5)) {
+      const act = (): Record<string, unknown> => {
+        const a: Record<string, unknown> = {
+          id: pick(r, ["open", "delete", "Open!", "a-b", "x"]),
+          label: pick(r, strs),
+        };
+        withOptional(r, a, "primary", () => chance(r, 0.5));
+        withOptional(r, a, "destructive", () => chance(r, 0.5));
+        return a;
+      };
+      o.rowActions = chance(r, 0.7)
+        ? rows.map(() => arr(r, act, 6))
+        : arr(r, () => arr(r, act, 6), 6);
+    }
+    return o;
   },
   StatusCard: (r) => {
     const o: Record<string, unknown> = {

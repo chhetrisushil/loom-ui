@@ -57,6 +57,8 @@ export const LU_MESSAGES = {
   // ── tables ────────────────────────────────────────────────────────────────────────────────────
   "lu.table.showing": "Showing {shown} of {total} {noun}",
   "lu.table.showMore": "Show {n} more",
+  "lu.table.actions": "Actions",
+  "lu.table.rowAction": "{label}: {row}",
   "lu.terminal.table.moreRows": "… {n} more {noun}",
 
   // ── containers (tabs / stepper) ───────────────────────────────────────────────────────────────

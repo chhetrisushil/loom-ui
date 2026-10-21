@@ -264,7 +264,9 @@ never forward them to the viewer.
   `undefined` (not hydrated yet) or an unknown kind always passes.
 - `TimeSeriesValue`, `BarChartValue`, `KpiValue`, `TableValue`, `TableColumn`, `TableCell`,
   `StatusCardValue`, `StatusLevel`, `ChartAxis` — the value shapes; `tableColumnLabel(column)` /
-  `tableColumnFormat(column)` read a `TableColumn` regardless of its string-or-object form.
+  `tableColumnFormat(column)` read a `TableColumn` regardless of its string-or-object form. A `Table` may carry
+  `rowKeys` (one stable key per row) and `rowActions` (up to `MAX_ROW_ACTIONS` per row, `TableRowAction`);
+  `tableRowProblems(v)` is the one zod-free rule check both contracts call, and the widget emits `TABLE_ROW_ACTION`.
 - `SemanticFormat`, `effectiveFormat`, `formatFromUnit`, `formatSemanticNumber`,
   `semanticNumberFormatOptions`, `unitSuffix`, `deltaDirection`, `DELTA_FORMAT` — what a bound
   number MEANS (`number` / `integer` / `decimal` / `percentage` / `currency`, with `notation` and
@@ -550,6 +552,7 @@ with `viewedVersion` (U5):
 | Chat (edit a turn) | `EDIT_TURN` | `{ turn, text, key }` |
 | Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
 | MediaInput | `MEDIA_ATTACH` | `{ ref }` (U9; `acceptMediaAttach`) |
+| Table (row action) | `TABLE_ROW_ACTION` | `{ action, rowKey }` (the host decides what it means; no key) |
 
 `key` is an idempotency key the widget minted when the draft began (`newSubmitKey`). The widget
 keeps the draft until the host answers `ok: true` (an `onAction` handler may return `{ ok, reason?
