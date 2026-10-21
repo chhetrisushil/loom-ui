@@ -58,7 +58,13 @@ export interface MdState {
   truncated: boolean;
   readonly markers: boolean;
   readonly streaming: boolean;
+  /** Test-only work counter: bumped once per scanned character or delimiter step. Absent in production. */
+  readonly meter?: { steps: number };
 }
+/** Charge `n` steps to the work counter, when there is one. */
+export const work = (st: { readonly meter?: { steps: number } }, n = 1): void => {
+  if (st.meter) st.meter.steps += n;
+};
 export const take = (st: MdState): boolean => {
   if (st.nodes >= MD_MAX_NODES) {
     st.truncated = true;

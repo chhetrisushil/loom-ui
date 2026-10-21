@@ -87,6 +87,10 @@ describe("scanning helpers", () => {
     // every run is a single tick, so each one's "next" is the following run: a chain, built in one pass
     expect(runs.slice(0, -1).every((r, k) => r.next === k + 1)).toBe(true);
     expect(runs[29999]?.next).toBe(-1);
-    for (let k = 0; k < 20; k++) expect(destAt(`(${"(".repeat(30000)}`, 0)).toBe("eof");
+    // a destination longer than MD_MAX_URL is no link, and the scan stops there: the cost of one call has a constant bound
+    const meter = { steps: 0 };
+    for (let k = 0; k < 20; k++) expect(destAt(`(${"(".repeat(30000)}`, 0, meter)).toBeUndefined();
+    expect(meter.steps).toBeLessThanOrEqual(20 * (MD_MAX_URL + 10));
+    expect(destAt("(https://x.exam", 0)).toBe("eof");
   });
 });
