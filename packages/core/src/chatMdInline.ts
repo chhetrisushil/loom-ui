@@ -9,18 +9,72 @@ import {
 } from "./chatMdTypes";
 import { partialRefMarkerAt } from "./chatRefs";
 
-// ── Markdown inlines: escapes, code spans, links, images, markers (U8c) ───────────────────
+// ── Markdown inlines: escapes, code spans, links, images, markers, emphasis (U8c) ───────────────────
 
-type Node = MdInline | Bracket;
+const MAX_DELIMS = 200;
+
+type Node = MdInline | Delim | Bracket;
+interface Delim {
+  readonly type: "delim";
+  readonly ch: string;
+  count: number;
+  readonly open: boolean;
+  readonly close: boolean;
+}
 interface Bracket {
   readonly type: "bracket";
   readonly image: boolean;
 }
+const PUNCT = /[!-/:-@[-`{-~\p{P}\p{S}]/u;
+const isWs = (c: string | undefined): boolean => c === undefined || c === " " || c === "\n";
 const hasLink = (nodes: readonly Node[]): boolean =>
   nodes.some(
     (n) => n.type === "link" || ((n.type === "em" || n.type === "strong") && hasLink(n.children))
   );
 
+/** Resolve emphasis over `nodes` (CommonMark's delimiter-stack rules) and turn what is left of delimiters and brackets into text. */
+function settle(nodes: Node[]): MdInline[] {
+  let ci = 0;
+  while (ci < nodes.length) {
+    const closer = nodes[ci] as Node;
+    if (closer.type !== "delim" || !closer.close || closer.count === 0) {
+      ci++;
+      continue;
+    }
+    let oi = ci - 1;
+    let opener: Delim | undefined;
+    while (oi >= 0) {
+      const o = nodes[oi] as Node;
+      if (
+        o.type === "delim" &&
+        o.ch === closer.ch &&
+        o.open &&
+        o.count > 0 &&
+        !(
+          (o.close || closer.open) &&
+          (o.count + closer.count) % 3 === 0 &&
+          !(o.count % 3 === 0 && closer.count % 3 === 0)
+        )
+      ) {
+        opener = o;
+        break;
+      }
+      oi--;
+    }
+    if (!opener) {
+      ci++;
+      continue;
+    }
+    const use = opener.count >= 2 && closer.count >= 2 ? 2 : 1;
+    const inner = finish(nodes.slice(oi + 1, ci));
+    opener.count -= use;
+    closer.count -= use;
+    nodes.splice(oi + 1, ci - oi - 1, { type: use === 2 ? "strong" : "em", children: inner });
+    ci = oi + 2;
+    if (closer.count === 0) ci++;
+  }
+  return finish(nodes);
+}
 function finish(nodes: readonly Node[]): MdInline[] {
   const out: MdInline[] = [];
   const push = (n: MdInline): void => {
@@ -30,7 +84,8 @@ function finish(nodes: readonly Node[]): MdInline[] {
     else if (!(n.type === "text" && n.text === "")) out.push(n);
   };
   for (const n of nodes) {
-    if (n.type === "bracket") push({ type: "text", text: n.image ? "![" : "[" });
+    if (n.type === "delim") push({ type: "text", text: n.ch.repeat(n.count) });
+    else if (n.type === "bracket") push({ type: "text", text: n.image ? "![" : "[" });
     else push(n);
   }
   return out;
@@ -49,6 +104,7 @@ export function parseInlines(source: string, st: MdState): MdInline[] {
   const out: Node[] = [];
   const ticks = tickRuns(src);
   let tick = 0;
+  let delims = 0;
   let buf = "";
   const flush = (): void => {
     if (buf !== "") out.push({ type: "text", text: buf });
@@ -123,7 +179,7 @@ export function parseInlines(source: string, st: MdState): MdInline[] {
       const bracket = out[bi] as Bracket;
       const inner = out.splice(bi);
       inner.shift();
-      const kids = finish(inner);
+      const kids = settle(inner);
       const label = kids.filter((n) => n.type !== "marker");
       if (dest === undefined || dest === "eof") {
         // streaming: `[label](half-written` or `[label]` at the very end: the label, nothing else, until it settles
@@ -141,6 +197,26 @@ export function parseInlines(source: string, st: MdState): MdInline[] {
         else for (const n of label) out.push(n);
         i = dest.end;
       }
+    } else if (c === "*" || c === "_") {
+      let k = i;
+      while (src[k] === c) k++;
+      const count = k - i;
+      const before = src[i - 1];
+      const after = src[k];
+      const wsB = isWs(before);
+      const wsA = isWs(after);
+      const pB = before !== undefined && PUNCT.test(before);
+      const pA = after !== undefined && PUNCT.test(after);
+      const left = !wsA && (!pA || wsB || pB);
+      const right = !wsB && (!pB || wsA || pA);
+      const open = c === "*" ? left : left && (!right || pB);
+      const close = c === "*" ? right : right && (!left || pA);
+      if (delims < MAX_DELIMS && (open || close)) {
+        flush();
+        delims++;
+        out.push({ type: "delim", ch: c, count, open, close });
+      } else buf += c.repeat(count);
+      i = k;
     } else {
       buf += c;
       i++;
@@ -148,7 +224,7 @@ export function parseInlines(source: string, st: MdState): MdInline[] {
   }
   buf = buf.trimEnd();
   flush();
-  return limit(finish(out), MD_MAX_INLINE_DEPTH, st);
+  return limit(settle(out), MD_MAX_INLINE_DEPTH, st);
 }
 
 /** Flatten nesting deeper than `depth` and charge every node to the budget (the rest is cut). */
