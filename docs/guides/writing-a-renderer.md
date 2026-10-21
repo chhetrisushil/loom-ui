@@ -158,13 +158,17 @@ failure; both shipped renderers do.
 | `untrusted-text` | markup in a text is shown literally; on a surface that interprets control characters, none reach it |
 | `media-refs` | a media reference is described and its address, or any prefix of it, is never shown |
 | `chat` | complete turns in order; a restricted turn only as a placeholder; a field outside the `ChatValue` contract is not drawn |
+| `chat-markdown` | markdown in an assistant part: html literal, no unsafe link target, no image address, a part with no format never parsed, a person's turn never markdown |
 | `i18n` | the host's messages replace fixed words (`LU_MESSAGES` keys) and its locale formats numbers |
 | `actions` | controls emit the shared `WidgetAction` shapes, with a well-formed idempotency `key` for `SELECT` and `SUBMIT_TEXT` |
 
 ## Security rules your renderer owns
 
 - **Text from models, tools, users and peers is untrusted.** Draw it as text; never interpret markup,
-  links or control characters (chat text is text only; there is no markdown).
+  links or control characters. The one exception is an assistant chat part that says `format: "markdown"`:
+  parse it with core's `parseChatMarkdown` (or read `chatMarkdownLines`), draw only the tree's nodes, keep a
+  link only through `safeLinkHref`, never draw an image or an unresolved marker, and never build the parts
+  from HTML.
 - **An address is a capability.** Never display a media address, a prefix of it, or a URL you built
   yourself; ask the host's resolver for a viewer-scoped URL and re-check it.
 - **A redacted widget draws a constant marker and nothing else**: no kind, title, value or attribute

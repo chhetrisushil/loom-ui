@@ -121,6 +121,32 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
   ],
   ["untrusted-text", "interprets markup", textOf((t) => t.replace(/<\/?b>/g, ""))],
   [
+    "chat-markdown",
+    "draws an address outside the allowlist",
+    textOf((t) => `${t} javascript:alert-sentinel`),
+  ],
+  [
+    "chat-markdown",
+    "draws an image address",
+    textOf((t) => `${t} https://tracker.example/pixel.png`),
+  ],
+  [
+    "chat-markdown",
+    "interprets html in markdown",
+    textOf((t) => t.replace("<b>raw-html-leak</b>", "raw-html-leak")),
+  ],
+  [
+    "chat-markdown",
+    "parses a part that did not ask for markdown",
+    textOf((t) => t.replace("**stay-literal**", "stay-literal")),
+  ],
+  ["chat-markdown", "draws a person's turn as markdown", textOf((t) => `${t} user-md-refused`)],
+  [
+    "chat-markdown",
+    "claims markdown and shows its source",
+    textOf((t) => `${t} [good-label] and a fence ${"`".repeat(3)}`),
+  ],
+  [
     "media-refs",
     "prints a media address",
     textOf((t) => `${t} sha256:0123456789abcdef0123456789abcdef`),

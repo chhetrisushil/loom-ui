@@ -44,7 +44,13 @@ export const speechAdapter: RendererAdapter = {
   name: "speech (reference third-party renderer)",
   surface: "voice",
   kinds: SPOKEN,
-  capabilities: { update: true, invoke: true, i18n: true, interpretsControlCharacters: true },
+  capabilities: {
+    update: true,
+    invoke: true,
+    i18n: true,
+    interpretsControlCharacters: true,
+    chatMarkdown: true,
+  },
   mount(initial, { values, onAction, i18n }) {
     const data = new Map(Object.entries(values));
     const base = createSay(i18n as LuI18n | undefined);

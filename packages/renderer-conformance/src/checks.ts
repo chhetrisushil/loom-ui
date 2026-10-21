@@ -706,6 +706,94 @@ check(
     })
 );
 
+// ── chat markdown ─────────────────────────────────────────────────────────────────────────────
+// An assistant part that says `format: "markdown"` is read as the closed subset core parses (`parseChatMarkdown`), never as
+// HTML: markup stays the literal characters, a link keeps its target only when it is http, https or mailto, an image is
+// its alt text, a part with no format is never parsed, and a person's turn is never markdown. A surface that draws the
+// transcript with `chatTranscriptLines` gets all of it for free; one that draws it itself must pass here.
+const MARKDOWN_SOURCE = [
+  "Total is **due-in-30** days.",
+  "",
+  "<b>raw-html-leak</b> &amp; <script>x</script>",
+  "",
+  "[good-label](https://docs.example/terms) and [evil-label](javascript:alert-sentinel)",
+  "",
+  "![alt-sentinel](https://tracker.example/pixel.png)",
+  "",
+  "- item-one",
+  "",
+  "```",
+  HOSTILE,
+  "```",
+].join("\n");
+const turn = (id: string, n: number, role: string, t: string, format?: string) => ({
+  id,
+  turn: n,
+  role,
+  status: "complete",
+  parts: [{ type: "text", text: t, ...(format === undefined ? {} : { format }) }],
+});
+check(
+  "chat-markdown",
+  "markdown in an assistant reply is drawn as text: html stays literal, only safe links keep a target, an image is its alt text, a part with no format is never parsed",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      if (!adapter.kinds.includes("Chat")) throw new ConformanceSkip("adapter does not claim Chat");
+      const value = {
+        mode: "owner",
+        entries: [
+          turn("t1.user", 1, "user", "user-plain **kept**"),
+          turn("t1.assistant", 1, "assistant", MARKDOWN_SOURCE, "markdown"),
+          turn("t2.assistant", 2, "assistant", "**stay-literal** [x](https://plain.example)"),
+        ],
+      };
+      const m = await s.mount(viewOf([bound("Chat", "chat", "Support chat", "h-chat")]), {
+        "h-chat": { value, state: "ready" },
+      });
+      const out = await m.text();
+      must(has(out, "due-in-30") && has(out, "item-one"), `markdown text is missing: ${show(out)}`);
+      must(out.includes("<b>raw-html-leak</b>"), `html was interpreted or dropped: ${show(out)}`);
+      must(
+        !out.includes("javascript:"),
+        `an address outside the allowlist reached the surface: ${show(out)}`
+      );
+      must(has(out, "evil-label"), `the label of a refused link was dropped: ${show(out)}`);
+      must(
+        has(out, "good-label") && has(out, "docs.example/terms"),
+        `a safe link lost its label or its target: ${show(out)}`
+      );
+      must(
+        has(out, "alt-sentinel") && !out.includes("tracker.example"),
+        `an image address reached the surface (or its alt text was lost): ${show(out)}`
+      );
+      for (const [what, ch] of FORBIDDEN)
+        must(!out.includes(ch), `${what} reached the surface through a markdown code block`);
+      must(
+        has(out, "**stay-literal**") && has(out, "[x](https://plain.example)"),
+        `a part with no format was parsed: ${show(out)}`
+      );
+      must(has(out, "user-plain **kept**"), `a person's turn was altered: ${show(out)}`);
+      if (adapter.capabilities?.chatMarkdown === true)
+        must(
+          !out.includes("[good-label]") && !out.includes("```"),
+          `the adapter claims markdown but shows its source: ${show(out)}`
+        );
+      // A person's own turn is never markdown: the contract refuses it, and the view says so instead of drawing it.
+      await m.set("h-chat", {
+        value: {
+          mode: "owner",
+          entries: [turn("t1.user", 1, "user", "user-md-refused", "markdown")],
+        },
+        state: "ready",
+      });
+      const refused = await m.text();
+      must(
+        !has(refused, "user-md-refused"),
+        `a person's turn was drawn as markdown: ${show(refused)}`
+      );
+    })
+);
+
 // ── i18n ───────────────────────────────────────────────────────────────────────────────────────
 check("i18n", "the host's words and locale replace the fixed ones", (adapter) =>
   withSession(adapter, async (s) => {
