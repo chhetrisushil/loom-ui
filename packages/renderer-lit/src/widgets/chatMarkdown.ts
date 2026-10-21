@@ -42,18 +42,29 @@ const align = (a: unknown): string | typeof nothing =>
 
 /** Nodes one drawing may visit: a parsed document has at most 2000; a forged tree with shared children stops here. */
 const MAX_VISITS = 4000;
+/** Nesting (blocks and inlines) drawn; deeper is nothing, so a forged chain cannot overflow the stack. */
+const MAX_DEPTH = 16;
 
 interface Ctx {
   readonly d: MarkdownDraw;
   tables: number;
   visits: number;
+  depth: number;
 }
 
 const inlines = (nodes: readonly MdInline[] | undefined, c: Ctx): unknown[] =>
   arr(nodes).map((n) => inline(n, c));
 
 function inline(n: MdInline, c: Ctx): unknown {
-  if (c.visits-- <= 0) return nothing;
+  if (c.visits-- <= 0 || c.depth >= MAX_DEPTH) return nothing;
+  c.depth++;
+  try {
+    return inlineNode(n, c);
+  } finally {
+    c.depth--;
+  }
+}
+function inlineNode(n: MdInline, c: Ctx): unknown {
   switch ((n as { type?: unknown } | null)?.type) {
     case "text":
       return str((n as { text?: unknown }).text);
@@ -86,7 +97,15 @@ function inline(n: MdInline, c: Ctx): unknown {
 }
 
 function block(b: MdBlock, c: Ctx): unknown {
-  if (c.visits-- <= 0) return nothing;
+  if (c.visits-- <= 0 || c.depth >= MAX_DEPTH) return nothing;
+  c.depth++;
+  try {
+    return blockNode(b, c);
+  } finally {
+    c.depth--;
+  }
+}
+function blockNode(b: MdBlock, c: Ctx): unknown {
   switch ((b as { type?: unknown } | null)?.type) {
     case "paragraph":
       return html`<p>${inlines((b as { inlines?: readonly MdInline[] }).inlines, c)}</p>`;
@@ -139,6 +158,6 @@ function block(b: MdBlock, c: Ctx): unknown {
 
 /** The document as Lit templates. A document a bound cut short ends in an ellipsis, with the fact said in words for a screen reader. */
 export function drawMarkdown(doc: MdDoc, d: MarkdownDraw): TemplateResult {
-  const c: Ctx = { d, tables: 0, visits: MAX_VISITS };
+  const c: Ctx = { d, tables: 0, visits: MAX_VISITS, depth: 0 };
   return html`${arr(doc.blocks).map((b) => block(b, c))}${doc.truncated === true ? html`<p class="cut"><span aria-hidden="true">…</span><span class="sr-only">${say("lu.chat.cut")}</span></p>` : nothing}`;
 }

@@ -39,6 +39,8 @@ describe("mdDestination", () => {
       "mailto:a@x.example?subject=a%0d%0abcc:b@y.example", // encoded CR LF
       "mailto:a@x.example?subject=a%1Bb",
       "mailto:a@x.example?subject=a%7Fb",
+      "mailto:a@x.example?subject=a%C2%9Bb", // encoded UTF-8 C1
+      "mailto:a%c2%80@x.example",
       "mailto:a\u0000@x.example", // raw NUL
       "mailto:a@x.example?subject=a\u0001b",
       "mailto:a@x.example?subject=a\u009bb",

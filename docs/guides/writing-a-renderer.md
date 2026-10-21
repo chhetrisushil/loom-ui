@@ -167,7 +167,7 @@ failure; both shipped renderers do.
 - **Text from models, tools, users and peers is untrusted.** Draw it as text; never interpret markup,
   links or control characters. The one exception is an assistant chat part that says `format: "markdown"`:
   parse it with core's `parseChatMarkdown` (or read `chatMarkdownLines`), draw only the tree's nodes, keep a
-  link only through `safeLinkHref`, never draw an image or an unresolved marker, and never build the parts
+  link only through core's `mdDestination` (the render-time check: http, https, or a mailto naming exactly one address), never draw an image or an unresolved marker, and never build the parts
   from HTML.
 - **An address is a capability.** Never display a media address, a prefix of it, or a URL you built
   yourself; ask the host's resolver for a viewer-scoped URL and re-check it.

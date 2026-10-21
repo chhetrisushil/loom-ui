@@ -434,17 +434,23 @@ describe("drawMarkdown re-checks what it draws (hand-built nodes, no parser)", (
   it("draws a forged tree with shared children (a DAG) within a fixed node budget", () => {
     let inl: unknown = text("shared-leaf ");
     let blk: unknown = para(inl);
-    for (let k = 0; k < 16; k++) {
+    for (let k = 0; k < 6; k++) {
       inl = { type: "em", children: Array(8).fill(inl) };
       blk = { type: "list", ordered: false, items: Array(8).fill([blk]) };
     }
-    const t0 = Date.now();
     const a = draw({ blocks: [para(inl)], truncated: false });
     const b = draw({ blocks: [blk], truncated: false });
-    expect(Date.now() - t0).toBeLessThan(10000);
-    // 4000 visited nodes, each at most one 12-character leaf
-    for (const host of [a, b])
-      expect((host.textContent ?? "").length).toBeLessThanOrEqual(4000 * 12);
+    for (const host of [a, b]) {
+      const n = (host.textContent ?? "").split("shared-leaf").length - 1;
+      expect(n).toBeGreaterThan(0);
+      expect(n).toBeLessThanOrEqual(4000);
+    }
+  });
+  it("draws a forged quote chain thousands deep without throwing, bounded", () => {
+    let node: unknown = para(text("deep-leaf"));
+    for (let k = 0; k < 5000; k++) node = { type: "quote", blocks: [node] };
+    const host = draw({ blocks: [node], truncated: false });
+    expect(host.querySelectorAll("blockquote").length).toBeLessThanOrEqual(16);
   });
   it("clamps or drops every other attribute value", () => {
     const host = draw({

@@ -25,6 +25,10 @@ function labelHost(label: string): string | undefined {
   return undefined;
 }
 
+const MAILTO_REFUSED =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing controls is the point
+  /#|\?.*\?|%40|%[01][0-9a-f]|%7f|%c2%[89][0-9a-f]|[\u0000-\u001f\u007f-\u009f]/i;
+
 /** Where a link goes, or undefined when it is not a link a transcript may carry. */
 export function mdDestination(raw: unknown): MdDestination | undefined {
   const href = typeof raw === "string" ? safeLinkHref(raw) : undefined;
@@ -33,9 +37,7 @@ export function mdDestination(raw: unknown): MdDestination | undefined {
     if (/^mailto:/i.test(href)) {
       // nothing a lenient client could read as a second recipient or a hidden byte: no `#` (a fragment that looks like a
       // query), a second `?`, an encoded `@` or any NUL / control character, raw or percent-encoded, anywhere
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing controls is the point
-      if (/#|\?.*\?|%40|%[01][0-9a-f]|%7f|[\u0000-\u001f\u007f-\u009f]/i.test(href.slice(7)))
-        return undefined;
+      if (MAILTO_REFUSED.test(href.slice(7))) return undefined;
       const rest = href.slice(7);
       const q = rest.indexOf("?");
       const addr = q < 0 ? rest : rest.slice(0, q);
