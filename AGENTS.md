@@ -244,7 +244,9 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   `acceptMediaAttach` on every `MEDIA_ATTACH`; the default lit registry draws a fixed "not loaded" placeholder for media kinds.
 - Chat and inputs (U8): `Chat` is bound to a `ChatValue` (bounded entries, a bare `restricted` placeholder, a fixed `reason`
   token + `errorId`, `editOf`), `TextInput`/`FormInput`/`SelectInput` are static (file upload is `MediaInput`). Chat text is
-  UNTRUSTED and drawn as text only (no markdown, no links; `sanitizeChatText`). `ChatFeed` (pure) folds loom's conversation
+  UNTRUSTED and drawn as text (`sanitizeChatText`); markdown ONLY when the source opts in per assistant text part
+  (`format: "markdown"`, `ChatFeed({ markdown: true })`), as a closed, bounded tree (`parseChatMarkdown`: hand-written,
+  no dependency, never part of a value), drawn as DOM, links http/https/mailto only, no images, never HTML. `ChatFeed` (pure) folds loom's conversation
   API (history pages + SSE events; ADR 0122) append-only, idempotently, dropping everything the contract does not name;
   `connectConversation` (hydration client) is the browser transport. Inputs emit `SUBMIT_TEXT` / `SUBMIT_FORM` / `SELECT` /
   `EDIT_TURN` / `LOAD_OLDER` stamped with `viewedVersion`, each with an idempotency `key`; the HOST runs `acceptChatSubmit`

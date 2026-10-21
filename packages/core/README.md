@@ -490,13 +490,31 @@ refused on it by the CONTRACT, so a value that leaks content through a placehold
 store. A field outside the list (loom's `classes`, `turnExecutionId`...) is refused too.
 
 **Untrusted text.** Everything in a turn (a person's words, a model's, a tool's) is text to DRAW,
-never to interpret. No renderer here turns chat text into markup, applies a markdown pass or
-auto-links: markdown is deliberately NOT offered (a "safe subset" is a parser to get wrong; see
-Questions in the PR). `sanitizeChatText` removes what changes what a reader SEES or what a terminal
+never to interpret. No renderer here turns chat text into markup or auto-links. By default a text
+part is drawn exactly as typed. A source MAY opt in to markdown for ASSISTANT text only (`format:
+"markdown"` on the part, or `new ChatFeed({ markdown: true })`; see "Markdown" below). `sanitizeChatText` removes what changes what a reader SEES or what a terminal
 DOES (C0/C1 controls incl. ESC, bidi overrides and isolates, zero-width marks, Unicode TAG
 characters), keeps ZWJ/ZWNJ (emoji, Indic scripts), normalises line breaks and collapses
 vertical-space bombs. Linear time; the input is cut before it is scanned (100 KB adversarial tests
 with absolute bounds).
+
+**Markdown, opt-in.** A text part with `format: "markdown"` (assistant entries only; the contract refuses it
+on a person's turn, and refuses any other format value) is read as a CLOSED subset of CommonMark/GFM:
+paragraphs, ATX headings, emphasis and strong, inline code, fenced code, bullet and ordered lists,
+blockquotes, rules, tables, `[label](url)` links and the `[[id]]` reference markers. Raw html and entities
+are shown as the characters; images, autolinks, reference links and footnotes do not exist (a markdown image
+is an address fetched on render, the classic exfiltration channel). A link is kept only for `http:`,
+`https:` and `mailto:` (no whitespace, controls or userinfo, at most 2048 characters); otherwise its label
+stays as text. The parser (`parseChatMarkdown`, hand-written, no dependency) is a pure, total, linear
+function of the cleaned text into a bounded tree (2000 nodes, block depth 6, inline depth 4, tables 12 x 100);
+the tree is NEVER part of a value, so every renderer parses the text itself and a source cannot forge a
+node. `resolveMdMarkers` applies the reference-marker rules (listed ids numbered, unlisted removed, all
+hidden while streaming); markers never act inside code or a link label. Streaming needs no special case:
+the text so far is parsed each time, an unclosed fence is code to the end, an unmatched `*` is literal, a
+half-written `[label](ur` shows its label only. Renderers: `lu-chat` builds elements from the tree (links
+open in a new context with `rel="noopener noreferrer nofollow"`); everything without a DOM reads it as plain
+lines through `chatMarkdownLines` (no ANSI). `docs/snippets/src/chatMarkdown.test.ts` is the reference
+example.
 
 **Reasoning (loom ADR 0133 D6), opt-in.** `new ChatFeed({ reasoning: true })` folds the SSE `reasoning`
 and `reasoning-partial` events into the in-progress reply's `reasoning` (`streaming: true`, a separate

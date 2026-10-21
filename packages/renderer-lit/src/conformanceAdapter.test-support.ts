@@ -90,7 +90,7 @@ export const litAdapter: RendererAdapter = {
     "TextInput",
     "SelectInput",
   ],
-  capabilities: { update: true, invoke: true, i18n: true },
+  capabilities: { update: true, invoke: true, i18n: true, chatMarkdown: true },
   mount(blueprint, { values, onAction, i18n }) {
     vi.stubGlobal("IntersectionObserver", undefined);
     if (i18n !== undefined) {

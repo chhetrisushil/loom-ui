@@ -23,7 +23,7 @@ export const terminalAdapter: RendererAdapter = {
     "TextInput",
     "SelectInput",
   ],
-  capabilities: { update: true, invoke: true, i18n: true, interpretsControlCharacters: true },
+  capabilities: { update: true, invoke: true, i18n: true, interpretsControlCharacters: true, chatMarkdown: true },
   mount(blueprint, { values, onAction, i18n }) {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "kit" });
     const put = (handle: string, e: HandleEntry): void => {

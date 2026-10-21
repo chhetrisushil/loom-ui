@@ -1,8 +1,9 @@
 // ── Untrusted chat text (U8) ────────────────────────────────────────────────────────────────────
 //
 // Everything a person typed, and everything a model or tool said about it, is UNTRUSTED text
-// (loom ADR 0085, ADR 0122 D6). It is drawn as TEXT, always: no renderer in this repository turns
-// chat text into markup, and none auto-links it. What this module adds is the part markup escaping
+// (loom ADR 0085, ADR 0122 D6). It is drawn as TEXT unless the source opts in to markdown for an assistant
+// part (`chatMarkdown.ts`: a closed, bounded tree, drawn as DOM, never HTML); no renderer in this repository
+// turns chat text into markup any other way, and none auto-links it. What this module adds is the part markup escaping
 // cannot do: it removes the characters that change what a reader SEES or what a terminal DOES.
 //
 //  - C0/C1 controls (a terminal's escape sequences begin with ESC), except newline and tab;

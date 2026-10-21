@@ -67,6 +67,12 @@ export interface AdapterCapabilities {
    * this off. Whatever the surface, markup in a text is always shown as the literal characters.
    */
   readonly interpretsControlCharacters?: boolean;
+  /**
+   * The renderer parses a `format: "markdown"` text part (core's `parseChatMarkdown`) and draws its structure. Every
+   * renderer must pass the safety half of `chat-markdown` (markup literal, no unsafe link, no image address, a plain part
+   * never parsed); this adds the check that the markdown source itself is not what a viewer reads.
+   */
+  readonly chatMarkdown?: boolean;
 }
 
 export interface RendererAdapter {
