@@ -1,4 +1,5 @@
 import {
+  CHAT_REF_OPEN_ACTION,
   type ChatEntry,
   type ChatPart,
   type ChatReasoning,
@@ -16,6 +17,7 @@ import {
   newSubmitKey,
   oneLineChatText,
   sanitizeChatText,
+  splitRefMarkers,
   validateTextValue,
 } from "@loom-ui/core/chat-ui";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
@@ -51,6 +53,12 @@ import { type VirtualizeOptions, resolveVirtualize } from "./virtual";
 // says it is a summary; `redacted` / removed / unverifiable reasoning is a marker with no text. A reply whose
 // stored reasoning has not been fetched (`unloaded`) asks the host for it ONCE, when first expanded
 // (LOAD_REASONING `{ cursor }`, a read), never eagerly.
+//
+// REFERENCE MARKERS. When the source says `refMarkers`, `[[id]]` in an assistant text part is replaced, for an id
+// the entry lists in `refs`, by a button this widget builds (numbered by first appearance); any other marker is
+// removed, and while the reply streams every marker is hidden. Nothing else in the text becomes markup. A press
+// emits CHAT_REF_OPEN `{ entryId, refId, n }` (a read), awaits the host, and shows a refused or failed answer in a
+// status line; a button whose open is in flight is `aria-disabled` (it keeps focus) and ignores further presses.
 //
 // EDIT. "Edit" on the viewer's own complete turn opens an inline editor and emits EDIT_TURN
 // `{ turn, text, key }`. It never changes what is drawn: the host decides what an edit means
@@ -207,6 +215,34 @@ export class LuChat extends LuWidget {
       .reasoning .body p + p {
         margin-top: 4px;
       }
+      button.ref {
+        all: unset;
+        cursor: pointer;
+        display: inline-block;
+        min-width: 1.4em;
+        margin: 0 1px;
+        padding: 0 4px;
+        text-align: center;
+        font-size: 0.8em;
+        line-height: 1.5;
+        vertical-align: super;
+        border-radius: var(--lu-radius, 6px);
+        background: var(--lu-panel-2, rgba(99, 102, 241, 0.16));
+        color: var(--lu-accent, #6366f1);
+      }
+      button.ref[aria-disabled="true"] {
+        cursor: progress;
+        color: var(--lu-text-dim, #8b949e);
+      }
+      button.ref:focus-visible {
+        outline: 2px solid var(--lu-accent, #6366f1);
+        outline-offset: 1px;
+      }
+      .ref-status {
+        margin: 0 0 6px;
+        font-size: 12px;
+        color: var(--lu-status-critical, #f87171);
+      }
       .caret {
         display: inline-block;
         width: 0.5em;
@@ -261,6 +297,10 @@ export class LuChat extends LuWidget {
   @state() private draft = "";
   @state() private editPhase: "idle" | "sending" | "invalid" | DispatchResult = "idle";
   @state() private loadingOlder = false;
+  /** Reference openings in flight (`entryId` + `refId`): their buttons are inert until the host answers. */
+  private openingRefs = new Set<string>();
+  /** The last refused or failed reference opening, in the widget's own fixed words; cleared by the next one. */
+  @state() private refFailure: DispatchResult | null = null;
   /** Reply ids whose reasoning the reader has expanded. Collapsed is the default. */
   @state() private openReasoning: ReadonlySet<string> = new Set();
   /** Cursors whose stored reasoning this widget already asked for (once each; the feed reports the result). */
@@ -333,6 +373,43 @@ export class LuChat extends LuWidget {
       this.anchor = undefined;
     }
   };
+
+  // ── reference markers ────────────────────────────────────────────────────────────────────────
+
+  /** The text part as text, with listed reference markers drawn as buttons when the source writes markers. */
+  private textOf(
+    e: ChatEntry,
+    p: ChatPart & { type: "text" },
+    v: ChatValue
+  ): TemplateResult | string {
+    const clean = cleanText(p);
+    if (v.refMarkers !== true || e.role !== "assistant") return clean;
+    const known = new Set((e.refs ?? []).map((r) => r.id));
+    const segs = splitRefMarkers(clean, known, { hideAll: e.status === "streaming" });
+    return html`${segs.map((s) =>
+      s.type === "text"
+        ? s.text
+        : html`<button type="button" class="ref" data-ref=${s.id} aria-label=${say("lu.chat.ref", { n: s.n })} aria-disabled=${this.openingRefs.has(`${e.id}\u0000${s.id}`) ? "true" : "false"} @click=${() => void this.openRef(e.id, s.id, s.n)}>${s.n}</button>`
+    )}`;
+  }
+
+  private async openRef(entryId: string, refId: string, n: number): Promise<void> {
+    const slot = `${entryId}\u0000${refId}`;
+    if (this.openingRefs.has(slot)) return;
+    this.openingRefs = new Set(this.openingRefs).add(slot);
+    this.refFailure = null;
+    this.requestUpdate();
+    const result = await dispatch(this.onAction, {
+      type: CHAT_REF_OPEN_ACTION,
+      widgetId: this.widget.id,
+      payload: { entryId, refId, n },
+    });
+    const left = new Set(this.openingRefs);
+    left.delete(slot);
+    this.openingRefs = left;
+    this.refFailure = result === "ok" ? null : result;
+    this.requestUpdate();
+  }
 
   // ── editing ──────────────────────────────────────────────────────────────────────────────────
 
@@ -510,7 +587,7 @@ export class LuChat extends LuWidget {
           ? this.editor()
           : html`${(e.parts ?? []).map((p, i) =>
               p.type === "text"
-                ? html`<p class="text" data-text>${cleanText(p)}${e.status === "streaming" ? html`<span class="caret" aria-hidden="true"></span>` : nothing}</p>`
+                ? html`<p class="text" data-text>${this.textOf(e, p, v)}${e.status === "streaming" ? html`<span class="caret" aria-hidden="true"></span>` : nothing}</p>`
                 : this.mediaPart(e, p, i)
             )}`
       }
@@ -588,6 +665,7 @@ export class LuChat extends LuWidget {
           (e) => this.entry(e, v)
         )}
       </div>
+      <p class="ref-status" role="status" data-ref-status ?hidden=${this.refFailure === null}>${this.refFailure === null ? "" : failureText(this.refFailure)}</p>
       <p class="typing" role="status">${v.running === true && !streaming && v.state !== "closed" ? say("lu.chat.replying") : ""}</p>
       ${v.state === "closed" ? html`<p class="closed" role="note">${say("lu.chat.closed")}</p>` : nothing}
     </section>`;

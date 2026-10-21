@@ -133,6 +133,7 @@ export const LU_MESSAGES = {
   "lu.chat.status.editOf": "edit of turn {turn}",
   "lu.chat.line.restricted": "[restricted {role} turn]",
   "lu.chat.line.restrictedFrom": "[restricted {role} turn from {by}]",
+  "lu.chat.ref": "Source {n}",
   "lu.chat.line.ref": "(ref {id})",
   "lu.chat.line.tools": "[tools: {tools}]",
   "lu.chat.reason.model-error": "The assistant ran into a problem.",

@@ -21,6 +21,7 @@
 // Zod-free and DOM-free on purpose, like `mediaRef.ts`: it rides in `checkKindValue` on the browser
 // entry, and the rest of the chat surface is the opt-in `@loom-ui/core/chat`.
 
+import { MAX_CHAT_REFS } from "./chatRefs";
 import { type MediaRef, mediaValueIssues } from "./mediaRef";
 
 /** The kind that DISPLAYS a transcript: bound to a {@link ChatValue}. */
@@ -102,6 +103,11 @@ export interface ChatReasoning {
   readonly status?: ChatReasoningStatus;
 }
 
+/** One thing an entry may cite with a `[[id]]` marker. */
+export interface ChatRef {
+  readonly id: string;
+}
+
 export interface ChatEntry {
   /** Stable for the life of the turn's slot (`t<turn>.<role>`): the streaming entry and its durable successor share it, so nothing remounts. */
   readonly id: string;
@@ -125,6 +131,8 @@ export interface ChatEntry {
   readonly tools?: readonly ChatToolActivity[];
   /** An assistant entry's reasoning, when the host asked for it and the server sent it to this viewer. */
   readonly reasoning?: ChatReasoning;
+  /** Ids the entry's text may cite as [[id]] markers (an assistant entry; the source sets ChatValue.refMarkers). */
+  readonly refs?: readonly ChatRef[];
 }
 
 export interface ChatValue {
@@ -145,6 +153,8 @@ export interface ChatValue {
    * never "You" and never editable.
    */
   readonly mode?: "owner" | "shared";
+  /** The source writes `[[id]]` markers in assistant text: only then does a widget process them (absent = text exactly as sent). */
+  readonly refMarkers?: boolean;
 }
 
 export const MAX_CHAT_ENTRIES = 500;
@@ -219,6 +229,7 @@ const ENTRY_KEYS: ReadonlySet<string> = new Set([
   "editOf",
   "tools",
   "reasoning",
+  "refs",
 ]);
 const REASONING_KEYS: ReadonlySet<string> = new Set([
   "text",
@@ -244,6 +255,7 @@ const VALUE_KEYS: ReadonlySet<string> = new Set([
   "state",
   "running",
   "mode",
+  "refMarkers",
 ]);
 const MAX_ISSUES = 20;
 
@@ -397,9 +409,26 @@ function entryIssues(e: unknown, index: number, ids: Set<string>, out: ChatIssue
       if (extraKey(reasoning, REASONING_KEYS)) at("unexpected field", ["reasoning"]);
     }
   }
+  const refs = own(e, "refs");
+  if (refs !== undefined) {
+    if (role !== "assistant") at("only an assistant entry has refs", ["refs"]);
+    else if (!Array.isArray(refs)) at("refs must be a list", ["refs"]);
+    else if (refs.length > MAX_CHAT_REFS) at(`at most ${MAX_CHAT_REFS} refs`, ["refs"]);
+    else {
+      const seen = new Set<string>();
+      for (let i = 0; i < refs.length; i++) {
+        const r = refs[i];
+        const id = isRecord(r) ? own(r, "id") : undefined;
+        if (!isRecord(r) || !isChatEntryId(id) || extraKey(r, new Set(["id"])))
+          at("a ref id must be a short identifier", ["refs", i]);
+        else if (seen.has(id)) at("ref ids must be unique", ["refs", i]);
+        else seen.add(id);
+      }
+    }
+  }
   // A restricted entry is a bare placeholder: nothing a viewer is not cleared for may ride on it.
   if (status === "restricted") {
-    for (const k of ["parts", "tools", "reason", "errorId", "editOf", "reasoning"] as const)
+    for (const k of ["parts", "tools", "reason", "errorId", "editOf", "reasoning", "refs"] as const)
       if (own(e, k) !== undefined) at("a restricted entry carries no content", [k]);
   }
   if (extraKey(e, ENTRY_KEYS)) at("unexpected field");
@@ -439,6 +468,9 @@ export function chatValueIssues(value: unknown): ChatIssue[] {
   const running = own(value, "running");
   if (running !== undefined && typeof running !== "boolean")
     out.push({ path: ["running"], message: "running must be true or false" });
+  const refMarkers = own(value, "refMarkers");
+  if (refMarkers !== undefined && typeof refMarkers !== "boolean")
+    out.push({ path: ["refMarkers"], message: "refMarkers must be true or false" });
   if (extraKey(value, VALUE_KEYS)) out.push({ path: [], message: "unexpected field" });
   return out;
 }

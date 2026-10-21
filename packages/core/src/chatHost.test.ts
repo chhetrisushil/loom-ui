@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  CHAT_REF_OPEN_ACTION,
   EDIT_TURN_ACTION,
   LOAD_OLDER_ACTION,
   LOAD_REASONING_ACTION,
@@ -308,6 +309,79 @@ describe("acceptChatSubmit", () => {
       reason: "invalid",
     });
     expect(o.ledger.size).toBe(0);
+  });
+
+  it("CHAT_REF_OPEN is a read matched against what the host served: shape, a served ref, a fresh view, no key, nothing claimed, browser-side", async () => {
+    const hasRef = (e: string, r: string) => e === "t1.assistant" && r === "a1";
+    const o = opts({ hasRef });
+    const open = (payload: unknown, widget = "chat") =>
+      acceptChatSubmit(act(CHAT_REF_OPEN_ACTION, widget, payload), o);
+    expect(open({ entryId: "t1.assistant", refId: "a1", n: 1 })).toMatchObject({
+      ok: true,
+      submission: { kind: "ref", entryId: "t1.assistant", refId: "a1", n: 1 },
+    });
+    // a ref the host did not serve (another entry, another id): refused, whatever its shape
+    expect(open({ entryId: "t1.assistant", refId: "zz", n: 1 })).toEqual({
+      ok: false,
+      reason: "ref-not-allowed",
+    });
+    expect(open({ entryId: "t2.assistant", refId: "a1", n: 1 })).toEqual({
+      ok: false,
+      reason: "ref-not-allowed",
+    });
+    // malformed payloads
+    for (const bad of [
+      { entryId: "t1 assistant", refId: "a1", n: 1 },
+      { entryId: "t1.assistant", refId: "a1", n: 0 },
+      { entryId: "t1.assistant", refId: "a1", n: 65 },
+      { entryId: "t1.assistant", refId: "a1", n: 1.5 },
+      { entryId: "t1.assistant", refId: "a1", n: "1" },
+      { entryId: "t1.assistant", refId: "a1" },
+    ])
+      expect(open(bad)).toEqual({ ok: false, reason: "invalid" });
+    // only a Chat may open one; the view must be fresh
+    expect(open({ entryId: "t1.assistant", refId: "a1", n: 1 }, "composer").ok).toBe(false);
+    expect(
+      acceptChatSubmit(
+        act(
+          CHAT_REF_OPEN_ACTION,
+          "chat",
+          { entryId: "t1.assistant", refId: "a1", n: 1 },
+          { viewedVersion: stamp({ versionHash: "sha256:v1" }) }
+        ),
+        o
+      )
+    ).toMatchObject({ ok: false, reason: "stale" });
+    // a host that serves no refs (no hasRef), or whose hasRef throws, refuses everything
+    const payload = { entryId: "t1.assistant", refId: "a1", n: 1 };
+    expect(acceptChatSubmit(act(CHAT_REF_OPEN_ACTION, "chat", payload), opts())).toEqual({
+      ok: false,
+      reason: "ref-not-allowed",
+    });
+    expect(
+      acceptChatSubmit(
+        act(CHAT_REF_OPEN_ACTION, "chat", payload),
+        opts({
+          hasRef: () => {
+            throw new Error("x");
+          },
+        })
+      )
+    ).toEqual({ ok: false, reason: "ref-not-allowed" });
+    expect(o.ledger.size).toBe(0);
+    const wb = createWriteBack({
+      ...opts({ hasRef }),
+      routes: { chat: conversationTarget(vi.fn()) },
+    });
+    expect(
+      await wb.handle(act(CHAT_REF_OPEN_ACTION, "chat", payload), {
+        principal: "t/alice",
+        current: head,
+      })
+    ).toEqual({
+      ok: false,
+      reason: "browser-side",
+    });
   });
 
   it("LOAD_REASONING is a read like LOAD_OLDER: a fresh view and a well-formed cursor, no key, nothing claimed, browser-side", async () => {

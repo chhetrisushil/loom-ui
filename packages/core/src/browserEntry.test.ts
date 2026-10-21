@@ -64,6 +64,7 @@ describe("@loom-ui/core/browser", () => {
     expect(files).toEqual([
       "action.js",
       "browser.js",
+      "chatRefs.js",
       "chatValue.js",
       "containerRoles.js",
       "format.js",

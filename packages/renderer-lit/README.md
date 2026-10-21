@@ -371,6 +371,7 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.chat.closed` | `This conversation is closed.` |
 | `lu.chat.restrictedMessage` | `Restricted message` |
 | `lu.chat.restricted` | `Restricted` |
+| `lu.chat.ref` | `Source {n}` |
 | `lu.chat.edit` | `Edit` |
 | `lu.chat.editThis` | `Edit this message` |
 | `lu.chat.editYour` | `Edit your message` |
@@ -515,7 +516,11 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
     it is not the full reasoning; `redacted` is a marker with no text; removed, unverifiable, unavailable
     and truncated reasoning each have a fixed sentence. A reply whose stored reasoning is not fetched yet
     emits `LOAD_REASONING { cursor }` once, on first expand. Style with `--lu-text-dim`, `--lu-border`,
-    `--lu-radius`. A reply without reasoning draws exactly as before. With `editable`, the viewer's own complete turns get an Edit button: an inline
+    `--lu-radius`. A reply without reasoning draws exactly as before. When the value says `refMarkers`, `[[id]]` in an assistant
+    text part is drawn, for an id the entry lists in `refs`, as `<button class="ref" aria-label="Source n">n</button>`
+    (numbered by first appearance); an unlisted marker is removed, every marker is hidden while the reply streams, and
+    a press emits `CHAT_REF_OPEN { entryId, refId, n }`, awaits the host and shows a refused answer in a status line
+    (the button is `aria-disabled` while it is in flight). Style with `--lu-accent`, `--lu-panel-2`. With `editable`, the viewer's own complete turns get an Edit button: an inline
     editor takes focus, Ctrl/Cmd+Enter sends `EDIT_TURN`, Escape cancels back onto the button, a
     failed send keeps the text and the key. Media parts are drawn by the media widgets and the
     host's resolver when `@loom-ui/renderer-lit/media` is loaded, and DESCRIBED (type, name, size;
