@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkKindValue } from "./browser";
 import { ChatFeed } from "./chatFeed";
-import { CHAT_REF_OPEN_ACTION, splitRefMarkers } from "./chatRefs";
+import { CHAT_REF_OPEN_ACTION, partialRefMarkerAt, refMarkerAt, splitRefMarkers } from "./chatRefs";
 
 const ids = new Set(["a1", "b2"]);
 const seg = (text: string, o = { hideAll: false }) => splitRefMarkers(text, ids, o);
@@ -94,5 +94,17 @@ describe("refs on an entry and the feed", () => {
     expect(v.refMarkers).toBe(true);
     expect(v.entries[0]?.refs).toEqual([{ id: "a1" }]);
     expect(new ChatFeed().value().refMarkers).toBeUndefined();
+  });
+});
+
+describe("refMarkerAt and partialRefMarkerAt", () => {
+  it("read the same id pattern splitRefMarkers does", () => {
+    expect(refMarkerAt("x [[a_1.b:c-d]] y", 2)).toEqual({ id: "a_1.b:c-d", end: 15 });
+    expect(refMarkerAt("x [[a_1]] y", 0)).toBeUndefined();
+    expect(refMarkerAt(`[[${"a".repeat(129)}]]`, 0)).toBeUndefined();
+    expect(partialRefMarkerAt("Due [[a1")).toBe(4);
+    expect(partialRefMarkerAt("Due [[a1]")).toBe(4);
+    expect(partialRefMarkerAt("Due [[a1]] done")).toBe(-1);
+    expect(partialRefMarkerAt("Due [")).toBe(-1);
   });
 });
