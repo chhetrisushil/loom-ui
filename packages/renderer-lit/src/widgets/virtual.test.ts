@@ -107,6 +107,24 @@ describe("lu-table windowing", () => {
     }
   });
 
+  it("virtualized: spacer rows and the tbody carry their sizes via the CSSOM, and clear at the top", async () => {
+    const el = await mount("lu-table", {
+      widget,
+      value,
+      virtualize: { rowHeight: 30, overscan: 4 },
+    });
+    const tbody = () => el.shadowRoot?.querySelector("tbody") as HTMLElement;
+    expect(tbody().style.getPropertyValue("--lu-row-h")).toBe("30px");
+    await scrollTo(el, 30 * 2500);
+    const pads = [...(el.shadowRoot?.querySelectorAll("tr.pad") ?? [])] as HTMLElement[];
+    expect(pads).toHaveLength(2);
+    for (const p of pads) expect(Number.parseInt(p.style.height, 10)).toBeGreaterThan(0);
+    await scrollTo(el, 0);
+    const top = [...(el.shadowRoot?.querySelectorAll("tr.pad") ?? [])] as HTMLElement[];
+    expect(top).toHaveLength(1); // padTop is 0 again: only the bottom spacer remains
+    expect(Number.parseInt(top[0]?.style.height ?? "0", 10)).toBeGreaterThan(0);
+  });
+
   it("a small table is rendered whole and plainly even with virtualize on", async () => {
     const small = { columns: ["id"], rows: rows.slice(0, 50).map((r) => [r[0]]) };
     const el = await mount("lu-table", { widget, value: small, virtualize: true });
