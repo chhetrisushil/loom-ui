@@ -431,6 +431,21 @@ describe("drawMarkdown re-checks what it draws (hand-built nodes, no parser)", (
       draw({ blocks: [para(link("https://x.example/"))], truncated: false }).querySelector("a")
     ).not.toBeNull();
   });
+  it("draws a forged tree with shared children (a DAG) within a fixed node budget", () => {
+    let inl: unknown = text("shared-leaf ");
+    let blk: unknown = para(inl);
+    for (let k = 0; k < 16; k++) {
+      inl = { type: "em", children: Array(8).fill(inl) };
+      blk = { type: "list", ordered: false, items: Array(8).fill([blk]) };
+    }
+    const t0 = Date.now();
+    const a = draw({ blocks: [para(inl)], truncated: false });
+    const b = draw({ blocks: [blk], truncated: false });
+    expect(Date.now() - t0).toBeLessThan(10000);
+    // 4000 visited nodes, each at most one 12-character leaf
+    for (const host of [a, b])
+      expect((host.textContent ?? "").length).toBeLessThanOrEqual(4000 * 12);
+  });
   it("clamps or drops every other attribute value", () => {
     const host = draw({
       truncated: false,

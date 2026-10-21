@@ -75,4 +75,33 @@ describe("chatTranscriptLines, markdown replies", () => {
     expect(out).toContain("search done");
     expect([...out].some((ch) => ch.charCodeAt(0) < 32 && ch !== "\n")).toBe(false);
   });
+  it("a markdown reply is capped in total characters, comparable to a plain part's maxText", () => {
+    const out = lines({ entries: [md("word ".repeat(4000))] });
+    expect(out.join("").length).toBeLessThanOrEqual(4 * 2000 + 40);
+    expect(out.join("\n")).toContain("…");
+    const small = chatTranscriptLines(
+      { entries: [md("word ".repeat(4000))] } as unknown as ChatValue,
+      { maxText: 100 }
+    );
+    expect(small.join("").length).toBeLessThanOrEqual(4 * 100 + 40);
+  });
+  it("strips C1 (incl. U+009B), bidi overrides and isolates and ZWSP on the transcript path", () => {
+    const out = lines({
+      entries: [
+        md("a\u009b31m b\u202ec \u2066d\u2069 e\u200bf [l\u009b](https://e.example/\u202e)"),
+      ],
+    }).join("\n");
+    expect(out).not.toMatch(/[\u0080-\u009f\u202a-\u202e\u2066-\u2069\u200b]/);
+    expect(out).toContain("a31m bc d ef");
+  });
+  it("puts a second markdown part on its own line, not mid-line after a plain one", () => {
+    const e = {
+      ...md("# h"),
+      parts: [
+        { type: "text", text: "plain" },
+        { type: "text", text: "# h", format: "markdown" },
+      ],
+    };
+    expect(lines({ entries: [e] }).join("\n")).not.toContain("plain # h");
+  });
 });
