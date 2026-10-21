@@ -56,6 +56,7 @@ describe("per-element entries", () => {
         "base",
         "chatShared",
         "virtual",
+        ...(m === "lu-chat" ? ["chatMarkdown"] : []),
         m,
         ...(m === "lu-embedded" ? ["lu-a2ui-view", "lu-sandbox"] : []),
       ]);

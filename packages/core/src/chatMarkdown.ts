@@ -45,21 +45,11 @@ export type { ChatMarkdownOptions, MdAlign, MdBlock, MdDoc, MdInline } from "./c
  * Total, linear, never throws.
  */
 export function parseChatMarkdown(text: unknown, options: ChatMarkdownOptions = {}): MdDoc {
-  return parseChatMarkdownMetered(text, options);
-}
-
-/** {@link parseChatMarkdown} with a work counter, for tests that pin a step bound instead of a time. Not part of the public entry. */
-export function parseChatMarkdownMetered(
-  text: unknown,
-  options: ChatMarkdownOptions = {},
-  meter?: { steps: number }
-): MdDoc {
   const st: MdState = {
     nodes: 0,
     truncated: false,
     markers: options.markers === true,
     streaming: options.streaming === true,
-    ...(meter && { meter }),
   };
   const clean = sanitizeChatText(text).replace(/\t/g, "    ");
   const blocks = parseBlocks(clean.split("\n"), 0, st);
@@ -79,7 +69,9 @@ export function resolveMdMarkers(
   const numbers = new Map<string, number>();
   const inl = (nodes: readonly MdInline[]): MdInline[] => {
     const out: MdInline[] = [];
+    let cutLast = false; // the node just handled was removed (a marker, or markup it emptied)
     for (const n of nodes) {
+      cutLast = false;
       const prev = out[out.length - 1];
       if (n.type === "text" && prev?.type === "text")
         out[out.length - 1] = { type: "text", text: prev.text + n.text };
@@ -87,6 +79,7 @@ export function resolveMdMarkers(
         if (o.hideAll || !known.has(n.id)) {
           if (prev?.type === "text" && prev.text.endsWith(" "))
             out[out.length - 1] = { type: "text", text: prev.text.slice(0, -1) };
+          cutLast = true;
           continue;
         }
         let num = numbers.get(n.id);
@@ -95,10 +88,15 @@ export function resolveMdMarkers(
           numbers.set(n.id, num);
         }
         out.push({ type: "ref", id: n.id, n: num });
-      } else if (n.type === "em" || n.type === "strong" || n.type === "link")
-        out.push({ ...n, children: inl(n.children) });
-      else out.push(n);
+      } else if (n.type === "em" || n.type === "strong" || n.type === "link") {
+        const children = inl(n.children);
+        // Emphasis or a link a removed marker emptied would draw an empty element: drop it.
+        if (children.length > 0) out.push({ ...n, children });
+        else cutLast = true;
+      } else out.push(n);
     }
+    // A hard break whose following marker was removed would end the run in a stray line break.
+    if (cutLast && out[out.length - 1]?.type === "br") out.pop();
     return out;
   };
   const blk = (blocks: readonly MdBlock[]): MdBlock[] =>

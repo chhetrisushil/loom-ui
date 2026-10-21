@@ -372,6 +372,7 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.chat.restrictedMessage` | `Restricted message` |
 | `lu.chat.restricted` | `Restricted` |
 | `lu.chat.ref` | `Source {n}` |
+| `lu.chat.table` | `Table` |
 | `lu.chat.edit` | `Edit` |
 | `lu.chat.editThis` | `Edit this message` |
 | `lu.chat.editYour` | `Edit your message` |
@@ -502,8 +503,12 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   - **`lu-chat`** is a focusable `role="log"` region (`aria-live="polite"`, `aria-busy` while a
     reply streams, so a screen reader hears the settled reply once). Every entry is an `<article>`
     labelled with its speaker and status. Text is a Lit text binding, cleaned again with
-    `sanitizeChatText` (memoised per part): never `unsafeHTML`, markdown or a link; the fuzz test
-    asserts no random text ever creates an element or attribute. A restricted entry draws
+    `sanitizeChatText` (memoised per part): never `unsafeHTML` or an auto-link. A part marked
+    `format: "markdown"` (assistant entries only, opt-in) is drawn by `chatMarkdown.ts` from core's closed
+    tree as elements the template builds: links only http, https and mailto, `target="_blank"` with
+    `rel="noopener noreferrer nofollow"`, the host shown after the label, no images, no html. The fuzz test
+    asserts no random text ever creates an element or attribute, and the markdown test walks the DOM of a
+    hostile corpus for any tag, attribute or address outside a closed list. A restricted entry draws
     "Restricted" and nothing else; a failed / rejected turn draws a FIXED sentence plus `ref
     <errorId>`. A streaming entry keeps the id its durable successor has, so nothing remounts or
     shifts; it sticks to the bottom only if the reader was at the bottom. "Load earlier messages"

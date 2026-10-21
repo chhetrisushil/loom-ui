@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseChatMarkdownMetered } from "./chatMarkdown";
+import { parseChatMarkdownMetered } from "./chatMdMeter.test-support";
 import { MD_MAX_NODES } from "./chatMdTypes";
 
 const run = (t: string, o: { markers?: boolean; streaming?: boolean } = {}) => {

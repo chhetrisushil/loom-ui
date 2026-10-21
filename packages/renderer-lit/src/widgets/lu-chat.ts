@@ -7,6 +7,7 @@ import {
   EDIT_TURN_ACTION,
   LOAD_OLDER_ACTION,
   LOAD_REASONING_ACTION,
+  type MdDoc,
   chatActorLabel,
   chatReasonText,
   chatSpeaker,
@@ -16,6 +17,8 @@ import {
   mediaFamily,
   newSubmitKey,
   oneLineChatText,
+  parseChatMarkdown,
+  resolveMdMarkers,
   sanitizeChatText,
   splitRefMarkers,
   validateTextValue,
@@ -26,6 +29,7 @@ import { repeat } from "lit/directives/repeat.js";
 
 import { say } from "../say";
 import { LuWidget } from "./base";
+import { drawMarkdown } from "./chatMarkdown";
 import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
 import type { MediaHostOptions } from "./lu-media";
 import { type VirtualizeOptions, resolveVirtualize } from "./virtual";
@@ -35,7 +39,9 @@ import { type VirtualizeOptions, resolveVirtualize } from "./virtual";
 // Bound to a `ChatValue` (the contract `checkKindValue` enforces before this draws anything).
 //
 // EVERYTHING IN A TURN IS UNTRUSTED TEXT and is drawn as a Lit text binding — never `unsafeHTML`,
-// never a markdown pass, never an auto-link. The value may come from a source that did not sanitise
+// never an auto-link. A part that says `format: "markdown"` (an assistant entry's, and only when the source
+// opted in) is parsed by core into a closed, bounded tree and drawn by `chatMarkdown.ts` as elements the template
+// builds, never as HTML; a part with no format is exactly what it was. The value may come from a source that did not sanitise
 // (a hydrated provider rather than `ChatFeed`), so text is cleaned again here (`sanitizeChatText`:
 // terminal escapes, bidi overrides, TAG characters), memoised per part. A failure is a FIXED
 // sentence plus a reference id; the source's error text does not exist in the value. A RESTRICTED
@@ -78,6 +84,21 @@ const cleanText = (part: ChatPart & { type: "text" }): string => {
     textCache.set(part, c);
   }
   return c;
+};
+
+const mdCache = new WeakMap<ChatPart, { key: string; doc: MdDoc }>();
+/** The parsed markdown of a text part, memoised per part while its reading (markers, streaming) is the same. */
+const markdownOf = (
+  part: ChatPart & { type: "text" },
+  markers: boolean,
+  streaming: boolean
+): MdDoc => {
+  const key = `${markers ? "m" : "-"}${streaming ? "s" : "-"}`;
+  const hit = mdCache.get(part);
+  if (hit?.key === key) return hit.doc;
+  const doc = parseChatMarkdown(part.text, { markers, streaming });
+  mdCache.set(part, { key, doc });
+  return doc;
 };
 
 const reasoningCache = new WeakMap<ChatReasoning, string>();
@@ -215,6 +236,26 @@ export class LuChat extends LuWidget {
       .reasoning .body p + p {
         margin-top: 4px;
       }
+      .md { overflow-wrap: anywhere; }
+      .md > :first-child { margin-top: 0; }
+      .md > :last-child { margin-bottom: 0; }
+      .md p { margin: 0 0 0.6em; }
+      .md .h { margin: 0.8em 0 0.4em; font-weight: 600; }
+      .md .h1, .md .h2 { font-size: 1.15em; }
+      .md .h3 { font-size: 1.05em; }
+      .md ul, .md ol { margin: 0 0 0.6em; padding-inline-start: 1.4em; }
+      .md blockquote { margin: 0 0 0.6em; padding-inline-start: 0.8em; border-inline-start: 3px solid var(--lu-border, #30363d); color: var(--lu-text-dim, #8b949e); }
+      .md code { font-family: var(--lu-mono, ui-monospace, monospace); font-size: 0.92em; padding: 0 0.25em; border-radius: 4px; background: var(--lu-panel, rgba(127, 127, 127, 0.15)); }
+      .md pre { margin: 0 0 0.6em; padding: 0.6em 0.8em; overflow: auto; white-space: pre; border-radius: var(--lu-radius, 6px); background: var(--lu-panel, rgba(127, 127, 127, 0.15)); }
+      .md pre code { padding: 0; background: none; }
+      .md pre:focus-visible, .md .table:focus-visible { outline: 2px solid var(--lu-accent, #6366f1); outline-offset: 1px; }
+      .md .table { margin: 0 0 0.6em; overflow: auto; }
+      .md table { border-collapse: collapse; }
+      .md th, .md td { padding: 0.25em 0.6em; text-align: start; border: 1px solid var(--lu-border, #30363d); }
+      .md [data-align="center"] { text-align: center; }
+      .md [data-align="right"] { text-align: end; }
+      .md a { color: var(--lu-accent, #6366f1); }
+      .md hr { margin: 0.8em 0; border: 0; border-top: 1px solid var(--lu-border, #30363d); }
       button.ref {
         all: unset;
         position: relative;
@@ -304,7 +345,7 @@ export class LuChat extends LuWidget {
   /** Host seams for media parts (the same options the media widgets take). */
   @property({ attribute: false }) media?: MediaHostOptions;
   /**
-   * U17: long transcripts. Entries are variable height (markdown-free text, media, tool lines), so the
+   * U17: long transcripts. Entries are variable height (text, markdown, media, tool lines), so the
    * window is the BROWSER'S: past `minRows` entries each article is `content-visibility: auto` with an
    * intrinsic size estimate, so off-screen turns are not laid out or painted, while the DOM, the scroll
    * geometry, "stick to the bottom" and the "load earlier" anchor all keep working unchanged. Off by default.
@@ -403,11 +444,27 @@ export class LuChat extends LuWidget {
     if (v.refMarkers !== true || e.role !== "assistant") return clean;
     const known = new Set((e.refs ?? []).map((r) => r.id));
     const segs = splitRefMarkers(clean, known, { hideAll: e.status === "streaming" });
-    return html`${segs.map((s) =>
-      s.type === "text"
-        ? s.text
-        : html`<button type="button" class="ref" data-ref=${s.id} aria-label=${say("lu.chat.ref", { n: s.n })} aria-disabled=${this.openingRefs.has(`${e.id}\u0000${s.id}`) ? "true" : "false"} @click=${() => void this.openRef(e.id, s.id, s.n)}>${s.n}</button>`
-    )}`;
+    return html`${segs.map((s) => (s.type === "text" ? s.text : this.refButton(e.id, s.id, s.n)))}`;
+  }
+
+  /** A reference marker the host listed, as the button that reports its activation. */
+  private refButton(entryId: string, refId: string, n: number): TemplateResult {
+    return html`<button type="button" class="ref" data-ref=${refId} aria-label=${say("lu.chat.ref", { n })} aria-disabled=${this.openingRefs.has(`${entryId}\u0000${refId}`) ? "true" : "false"} @click=${() => void this.openRef(entryId, refId, n)}>${n}</button>`;
+  }
+
+  /** One text part: as typed (plain, the default, and always for a person's turn), or an assistant part's markdown drawn as DOM. */
+  private textPart(e: ChatEntry, p: ChatPart & { type: "text" }, v: ChatValue): TemplateResult {
+    const caret =
+      e.status === "streaming" ? html`<span class="caret" aria-hidden="true"></span>` : nothing;
+    if (p.format !== "markdown" || e.role !== "assistant")
+      return html`<p class="text" data-text>${this.textOf(e, p, v)}${caret}</p>`;
+    const markers = v.refMarkers === true;
+    const streaming = e.status === "streaming";
+    const doc = markdownOf(p, markers, streaming);
+    const shown = markers
+      ? resolveMdMarkers(doc, new Set((e.refs ?? []).map((r) => r.id)), { hideAll: streaming })
+      : doc;
+    return html`<div class="md" data-text data-format="markdown">${drawMarkdown(shown, { ref: (id, n) => this.refButton(e.id, id, n) })}${caret}</div>`;
   }
 
   private async openRef(entryId: string, refId: string, n: number): Promise<void> {
@@ -603,9 +660,7 @@ export class LuChat extends LuWidget {
         editing
           ? this.editor()
           : html`${(e.parts ?? []).map((p, i) =>
-              p.type === "text"
-                ? html`<p class="text" data-text>${this.textOf(e, p, v)}${e.status === "streaming" ? html`<span class="caret" aria-hidden="true"></span>` : nothing}</p>`
-                : this.mediaPart(e, p, i)
+              p.type === "text" ? this.textPart(e, p, v) : this.mediaPart(e, p, i)
             )}`
       }
       ${
