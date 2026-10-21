@@ -193,7 +193,22 @@ export function compareChatCursors(a: string | undefined, b: string | undefined)
   return x[0] - y[0] || x[1] - y[1];
 }
 
+/** An assistant entry with its text parts marked markdown (see {@link ChatFeedOptions.markdown}); any other entry as it is. */
+function markdownEntry(e: ChatEntry): ChatEntry {
+  if (e.role !== "assistant" || e.status === "restricted" || e.parts === undefined) return e;
+  return {
+    ...e,
+    parts: e.parts.map((p) => (p.type === "text" ? { ...p, format: "markdown" as const } : p)),
+  };
+}
+
 export interface ChatFeedOptions {
+  /**
+   * The source writes markdown in its replies: every text part of an assistant entry (the live reply included) is marked
+   * `format: "markdown"`, so a renderer parses it (the closed subset in `chatMarkdown.ts`) instead of drawing it as typed.
+   * OFF by default; a person's own turns are never marked.
+   */
+  readonly markdown?: boolean;
   /** The viewer. Enables "my turns" in the value and the client-side filter on other askers' live text. */
   readonly viewer?: ChatActor;
   /** The most entries held (default and ceiling {@link MAX_CHAT_ENTRIES}). */
@@ -324,6 +339,7 @@ export function chatReasoningFromDurable(body: unknown): ChatReasoning | undefin
 export class ChatFeed {
   private readonly viewer: ChatActor | undefined;
   private readonly mode: "owner" | "shared" | undefined;
+  private readonly markdown: boolean;
   /** The most entries the VALUE holds (the live reply included). */
   private readonly max: number;
   /** The most DURABLE entries: one slot is always left for the live reply. */
@@ -353,6 +369,7 @@ export class ChatFeed {
   constructor(options: ChatFeedOptions = {}) {
     this.viewer = options.viewer;
     this.mode = options.mode;
+    this.markdown = options.markdown === true;
     this.max = Math.max(2, Math.min(options.maxEntries ?? MAX_CHAT_ENTRIES, MAX_CHAT_ENTRIES));
     this.cap = this.max - 1;
     this.refMarkers = options.refMarkers === true;
@@ -390,6 +407,8 @@ export class ChatFeed {
     });
     const live = this.liveEntry();
     if (live !== undefined) insertSorted(entries, live);
+    if (this.markdown)
+      for (let i = 0; i < entries.length; i++) entries[i] = markdownEntry(entries[i] as ChatEntry);
     const older = this.startReached || this.list.length >= this.cap ? undefined : this.older;
     this.snapshot = {
       entries,

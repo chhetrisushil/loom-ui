@@ -31,6 +31,11 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   // of them fails this test.
   "chatActions.js",
   "chatForm.js",
+  "chatMarkdown.js",
+  "chatMdBlock.js",
+  "chatMdInline.js",
+  "chatMdScan.js",
+  "chatMdTypes.js",
   "chatRefs.js",
   "chatText.js",
   "chatUi.js",

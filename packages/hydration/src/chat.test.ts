@@ -103,6 +103,41 @@ describe("a Chat-bound handle at the data boundary", () => {
     expect(JSON.stringify(r.store.state())).not.toContain("SECRET");
   });
 
+  it("publishes a transcript whose assistant text says markdown, and refuses markdown on a person's turn", async () => {
+    const md = {
+      entries: [
+        {
+          id: "t1.assistant",
+          turn: 1,
+          role: "assistant",
+          status: "complete",
+          parts: [{ type: "text", text: "**x**", format: "markdown" }],
+        },
+      ],
+    };
+    const ok = rig(md);
+    ok.ctl.load(exp(shapeSpec()));
+    await flush();
+    expect(ok.store.status("h")?.state).toBe("ready");
+    expect(ok.store.value("h")).toEqual(md);
+    const bad = rig({
+      entries: [
+        {
+          id: "t1.user",
+          turn: 1,
+          role: "user",
+          status: "complete",
+          parts: [{ type: "text", text: "SECRET", format: "markdown" }],
+        },
+      ],
+    });
+    bad.ctl.load(exp(shapeSpec()));
+    await flush();
+    expect(bad.store.status("h")?.state).not.toBe("ready");
+    expect(bad.store.value("h")).toBeUndefined();
+    expect(JSON.stringify(bad.store.state())).not.toContain("SECRET");
+  });
+
   it("is never streamable: a text chunk cannot overwrite a transcript", async () => {
     const r = rig(GOOD);
     r.ctl.load(exp(shapeSpec()));

@@ -15,8 +15,8 @@
 //       characters. A link that fails the rule is dropped and its label stays as text.
 //  BOUNDS: {@link MD_MAX_NODES} nodes in all (the rest is cut and `truncated` is set), blocks nest at most
 //       {@link MD_MAX_DEPTH} deep (deeper container syntax is plain text), inline nesting at most
-//       {@link MD_MAX_INLINE_DEPTH}, at most 200 emphasis delimiter runs per inline run (more are literal), tables at most
-//       {@link MD_MAX_TABLE_COLS} columns and {@link MD_MAX_TABLE_ROWS} rows. Every scan is a single pass or a
+//       {@link MD_MAX_INLINE_DEPTH}, at most 200 emphasis delimiter runs per inline run (more are literal), a run of `*` or `_`
+//       longer than 8 is literal, tables at most {@link MD_MAX_TABLE_COLS} columns and {@link MD_MAX_TABLE_ROWS} rows. Every scan is a single pass or a
 //       pre-indexed lookup, so the cost is linear in the (cut) input; `chatMarkdown.test.ts` pins absolute bounds on
 //       adversarial input. Total: it never throws.
 //  STREAMING: parsing is a pure function of the text so far, so a half-written reply is just a shorter text. The
@@ -24,7 +24,7 @@
 //       `streaming: true` a trailing half-written `[[id`, and a half-written `[label](ur`, are not drawn at all.
 
 import { parseBlocks } from "./chatMdBlock";
-import type { ChatMarkdownOptions, MdDoc, MdState } from "./chatMdTypes";
+import type { ChatMarkdownOptions, MdBlock, MdDoc, MdInline, MdState } from "./chatMdTypes";
 import { sanitizeChatText } from "./chatText";
 
 export {
@@ -64,4 +64,58 @@ export function parseChatMarkdownMetered(
   const clean = sanitizeChatText(text).replace(/\t/g, "    ");
   const blocks = parseBlocks(clean.split("\n"), 0, st);
   return { blocks, truncated: st.truncated };
+}
+
+/**
+ * The same numbering and removal rules as `splitRefMarkers`, over a parsed document: a marker the entry listed becomes
+ * `ref` (numbered by first appearance of the id), any other marker, and every marker while `hideAll`, is removed with
+ * the one space before it. A renderer draws `ref` and never `marker`.
+ */
+export function resolveMdMarkers(
+  doc: MdDoc,
+  known: ReadonlySet<string>,
+  o: { readonly hideAll: boolean }
+): MdDoc {
+  const numbers = new Map<string, number>();
+  const inl = (nodes: readonly MdInline[]): MdInline[] => {
+    const out: MdInline[] = [];
+    for (const n of nodes) {
+      const prev = out[out.length - 1];
+      if (n.type === "text" && prev?.type === "text")
+        out[out.length - 1] = { type: "text", text: prev.text + n.text };
+      else if (n.type === "marker") {
+        if (o.hideAll || !known.has(n.id)) {
+          if (prev?.type === "text" && prev.text.endsWith(" "))
+            out[out.length - 1] = { type: "text", text: prev.text.slice(0, -1) };
+          continue;
+        }
+        let num = numbers.get(n.id);
+        if (num === undefined) {
+          num = numbers.size + 1;
+          numbers.set(n.id, num);
+        }
+        out.push({ type: "ref", id: n.id, n: num });
+      } else if (n.type === "em" || n.type === "strong" || n.type === "link")
+        out.push({ ...n, children: inl(n.children) });
+      else out.push(n);
+    }
+    return out;
+  };
+  const blk = (blocks: readonly MdBlock[]): MdBlock[] =>
+    blocks.map((b): MdBlock => {
+      switch (b.type) {
+        case "paragraph":
+        case "heading":
+          return { ...b, inlines: inl(b.inlines) };
+        case "quote":
+          return { ...b, blocks: blk(b.blocks) };
+        case "list":
+          return { ...b, items: b.items.map(blk) };
+        case "table":
+          return { ...b, head: b.head.map(inl), rows: b.rows.map((r) => r.map(inl)) };
+        default:
+          return b;
+      }
+    });
+  return { blocks: blk(doc.blocks), truncated: doc.truncated };
 }
