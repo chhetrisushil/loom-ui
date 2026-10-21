@@ -12,8 +12,22 @@ export type RefSegment =
   | { readonly type: "ref"; readonly id: string; readonly n: number };
 
 const MARKER = /\[\[([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\]\]/g;
+const MARKER_AT = new RegExp(MARKER.source, "y");
 // `[[`, then up to 128 id characters, then at most one `]`, at the very end: a marker still arriving.
 const PARTIAL = /\[\[[A-Za-z0-9._:-]{0,128}\]?$/;
+
+/** The `[[id]]` marker starting exactly at `at` in `s` (same id pattern as {@link splitRefMarkers}), or undefined. */
+export function refMarkerAt(s: string, at: number): { id: string; end: number } | undefined {
+  MARKER_AT.lastIndex = at;
+  const m = MARKER_AT.exec(s);
+  return m ? { id: m[1] as string, end: at + m[0].length } : undefined;
+}
+
+/** Where a trailing half-written marker (`[[`, `[[id`, `[[id]`) begins in `s`, or -1 when `s` does not end in one. */
+export function partialRefMarkerAt(s: string): number {
+  const open = s.lastIndexOf("[[");
+  return open >= 0 && PARTIAL.test(s.slice(open)) ? open : -1;
+}
 
 /**
  * Split `text` into text and numbered reference segments. A marker whose id is in `known` becomes a `ref`
