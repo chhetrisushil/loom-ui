@@ -45,11 +45,21 @@ export type { ChatMarkdownOptions, MdAlign, MdBlock, MdDoc, MdInline } from "./c
  * Total, linear, never throws.
  */
 export function parseChatMarkdown(text: unknown, options: ChatMarkdownOptions = {}): MdDoc {
+  return parseChatMarkdownMetered(text, options);
+}
+
+/** {@link parseChatMarkdown} with a work counter, for tests that pin a step bound instead of a time. Not part of the public entry. */
+export function parseChatMarkdownMetered(
+  text: unknown,
+  options: ChatMarkdownOptions = {},
+  meter?: { steps: number }
+): MdDoc {
   const st: MdState = {
     nodes: 0,
     truncated: false,
     markers: options.markers === true,
     streaming: options.streaming === true,
+    ...(meter && { meter }),
   };
   const clean = sanitizeChatText(text).replace(/\t/g, "    ");
   const blocks = parseBlocks(clean.split("\n"), 0, st);
