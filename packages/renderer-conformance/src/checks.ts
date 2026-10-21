@@ -718,6 +718,8 @@ const MARKDOWN_SOURCE = [
   "",
   "[good-label](https://docs.example/terms) and [evil-label](javascript:alert-sentinel)",
   "",
+  "[cc-label](mailto:a@x.example?cc=evil@y.example)",
+  "",
   "![alt-sentinel](https://tracker.example/pixel.png)",
   "",
   "- item-one",
@@ -756,6 +758,10 @@ check(
       must(
         !out.includes("javascript:"),
         `an address outside the allowlist reached the surface: ${show(out)}`
+      );
+      must(
+        has(out, "cc-label") && !out.includes("evil@y.example"),
+        `a mailto that adds a recipient was drawn as a link (or its label was lost): ${show(out)}`
       );
       must(has(out, "evil-label"), `the label of a refused link was dropped: ${show(out)}`);
       must(

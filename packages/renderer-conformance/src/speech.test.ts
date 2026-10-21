@@ -127,6 +127,16 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
   ],
   [
     "chat-markdown",
+    "draws a mailto that adds a recipient",
+    textOf((t) => `${t} mailto:a@x.example?cc=evil@y.example evil@y.example`),
+  ],
+  [
+    "chat-markdown",
+    "lets a control sequence through a markdown code block",
+    textOf((t) => `${t} \u001b[2J`),
+  ],
+  [
+    "chat-markdown",
     "draws an image address",
     textOf((t) => `${t} https://tracker.example/pixel.png`),
   ],

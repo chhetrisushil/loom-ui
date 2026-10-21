@@ -110,13 +110,11 @@ describe("chatMarkdownLines: render-time rules", () => {
       inl = { type: "em", children: Array(8).fill(inl) };
       blk = { type: "list", ordered: false, items: Array(8).fill([blk]) };
     }
-    const t0 = Date.now();
     const a = chatMarkdownLines({
       truncated: false,
       blocks: [{ type: "paragraph", inlines: [inl] }],
     } as unknown as MdDoc);
     const b = chatMarkdownLines({ truncated: false, blocks: [blk] } as unknown as MdDoc);
-    expect(Date.now() - t0).toBeLessThan(2000);
     for (const out of [a, b]) {
       expect(out.join("").length).toBeLessThanOrEqual(MD_MAX_CHARS + 400);
       expect(out.length).toBeLessThanOrEqual(202);

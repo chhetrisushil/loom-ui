@@ -506,13 +506,13 @@ are shown as the characters; images, autolinks, reference links and footnotes do
 is an address fetched on render, the classic exfiltration channel). A link is kept only for `http:`,
 `https:` and `mailto:` (no whitespace, controls or userinfo, at most 2048 characters); otherwise its label
 stays as text. The parser (`parseChatMarkdown`, hand-written, no dependency) is a pure, total, linear
-function of the cleaned text into a bounded tree (2000 nodes, block depth 6, inline depth 4, tables 12 x 100);
+function of the cleaned text into a bounded tree (2000 nodes, block depth 6, inline depth 4, tables 12 x 100). Rendering is bounded too: `chatMarkdownLines` visits at most 10000 nodes and emits at most 400k characters (200 lines of 2000), the `lu-chat` drawer draws at most 4000 nodes, and a transcript caps a markdown part at 4 x `maxText` characters; a cut ends in `…`;
 the tree is NEVER part of a value, so every renderer parses the text itself and a source cannot forge a
 node. `resolveMdMarkers` applies the reference-marker rules (listed ids numbered, unlisted removed, all
 hidden while streaming); markers never act inside code or a link label. Streaming needs no special case:
 the text so far is parsed each time, an unclosed fence is code to the end, an unmatched `*` is literal, a
 half-written `[label](ur` shows its label only. Renderers: `lu-chat` builds elements from the tree (links
-open in a new context with `rel="noopener noreferrer nofollow"`); everything without a DOM reads it as plain
+a web link opens in a new context; all carry `rel="noopener noreferrer nofollow"`); everything without a DOM reads it as plain
 lines through `chatMarkdownLines` (no ANSI). `docs/snippets/src/chatMarkdown.test.ts` is the reference
 example.
 
