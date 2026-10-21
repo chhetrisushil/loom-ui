@@ -217,6 +217,7 @@ export class LuChat extends LuWidget {
       }
       button.ref {
         all: unset;
+        position: relative;
         cursor: pointer;
         display: inline-block;
         min-width: 1.4em;
@@ -229,6 +230,22 @@ export class LuChat extends LuWidget {
         border-radius: var(--lu-radius, 6px);
         background: var(--lu-panel-2, rgba(99, 102, 241, 0.16));
         color: var(--lu-accent, #6366f1);
+      }
+      /* A 24 x 24 px hit area (WCAG 2.2 2.5.8) around the small superscript, without changing its size. */
+      button.ref::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        min-width: 24px;
+        min-height: 24px;
+        width: 100%;
+        height: 100%;
+        transform: translate(-50%, -50%);
+      }
+      button.ref:hover {
+        background: var(--lu-accent, #6366f1);
+        color: var(--lu-bg, #fff);
       }
       button.ref[aria-disabled="true"] {
         cursor: progress;
@@ -665,7 +682,7 @@ export class LuChat extends LuWidget {
           (e) => this.entry(e, v)
         )}
       </div>
-      <p class="ref-status" role="status" data-ref-status ?hidden=${this.refFailure === null}>${this.refFailure === null ? "" : failureText(this.refFailure)}</p>
+      <p class="ref-status" role="status" data-ref-status ?data-error=${this.refFailure !== null}>${this.refFailure === null ? "" : failureText(this.refFailure)}</p>
       <p class="typing" role="status">${v.running === true && !streaming && v.state !== "closed" ? say("lu.chat.replying") : ""}</p>
       ${v.state === "closed" ? html`<p class="closed" role="note">${say("lu.chat.closed")}</p>` : nothing}
     </section>`;

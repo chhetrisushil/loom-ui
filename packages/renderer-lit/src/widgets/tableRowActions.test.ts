@@ -102,7 +102,8 @@ describe("lu-table row actions", () => {
       await Promise.resolve();
       await el.updateComplete;
     }
-    expect(q(el, "[role='status']")).toBeNull();
+    expect(q(el, "[role='status']")).not.toBeNull();
+    expect(q(el, "[role='status']")?.textContent?.trim()).toBe("");
   });
 
   it("ignores a second activation of a row while its action is in flight", async () => {

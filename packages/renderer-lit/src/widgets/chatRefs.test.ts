@@ -97,6 +97,8 @@ describe("lu-chat reference markers", () => {
     btn().click();
     await el.updateComplete;
     expect(seen.length).toBe(1);
+    // the status region is always present (empty until there is something to say)
+    expect(el.shadowRoot?.querySelector("[data-ref-status]")?.textContent?.trim()).toBe("");
     expect(btn().getAttribute("aria-disabled")).toBe("true");
     expect(btn().disabled).toBe(false);
     expect(el.shadowRoot?.activeElement).toBe(btn());
