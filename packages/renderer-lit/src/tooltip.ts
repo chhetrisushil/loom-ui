@@ -34,8 +34,6 @@ function portal(): HTMLDivElement {
 }
 
 export interface ShowTooltipOptions {
-  /** Treat content as HTML rather than plain text. */
-  html?: boolean;
   /** Anchor the tooltip above this rect's top-center (else at the point). */
   anchor?: DOMRect;
 }
@@ -48,9 +46,9 @@ export function showTooltip(
   opts: ShowTooltipOptions = {}
 ): void {
   const t = portal();
-  if (typeof content !== "string") t.replaceChildren(content);
-  else if (opts.html) t.innerHTML = content;
-  else t.textContent = content;
+  // A string is always TEXT (never parsed as HTML); markup is passed as a Node built by the caller.
+  if (typeof content === "string") t.textContent = content;
+  else t.replaceChildren(content);
   t.style.display = "block";
 
   const rect = t.getBoundingClientRect();

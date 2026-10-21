@@ -17,16 +17,24 @@ function sources(dir: string): string[] {
   });
 }
 
+// `.style=${...}` (a property binding) and `el.style.x` (property access) are CSSOM and fine.
+const BANNED: [string, RegExp][] = [
+  ["style= attribute binding", /(?<![.\w$])style\s*=/],
+  ["styleMap", /\bstyleMap\b/],
+  ['setAttribute("style"', /setAttribute\(\s*["'`]style["'`]/],
+  ["cssText", /\bcssText\b/],
+];
+
 describe("renderer-lit emits no inline style attribute", () => {
-  it("no template binds a `style=` attribute", () => {
+  it("no source binds a style attribute (use cssomStyle)", () => {
     const offenders: string[] = [];
     for (const file of sources(SRC)) {
       readFileSync(file, "utf8")
         .split("\n")
         .forEach((line, i) => {
-          for (const m of line.matchAll(/\bstyle\s*=/g)) {
-            void m;
-            offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+          if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+          for (const [what, re] of BANNED) {
+            if (re.test(line)) offenders.push(`${what}: ${file}:${i + 1}: ${line.trim()}`);
           }
         });
     }

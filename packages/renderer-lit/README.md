@@ -636,6 +636,14 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   framework kinds, whose contracts a host cannot change; its `renderExperience` `contracts` option
   feeds loom's check for host kinds.)
 
+### Inline styles are CSP-safe
+
+No widget emits a `style` attribute binding, so a strict `style-src 'self'` policy (no `'unsafe-inline'`) reports no
+violation from a render. Properties are written through the CSSOM (`cssomStyle`, an element directive), which
+serialises as `height: 320px;` (with a space) where the old attribute read `height:320px`; a selector or assertion
+that matched the exact attribute text must change. The tooltip portal's `showTooltip` accepts `string | Node`: a
+string is always plain text, markup is passed as a Node.
+
 ## See also
 
 - [../core/README.md](../core/README.md) — `Blueprint` compilation, framework kinds and number

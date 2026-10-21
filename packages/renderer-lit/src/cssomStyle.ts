@@ -6,6 +6,10 @@ import { Directive, type ElementPart, type PartInfo, PartType, directive } from 
 // `style` ATTRIBUTE, even an empty one, and Lit's `styleMap` commits its first render as an attribute
 // string. This is an ELEMENT directive (`<div ${cssomStyle({...})}>`): it writes each property through
 // the CSSOM (`style.setProperty`), which CSP permits, and never emits a `style` attribute binding.
+// Keys must be kebab-case CSS property names (`background-color`) or custom properties (`--x`);
+// camelCase keys (`backgroundColor`) are NOT supported and are silently ignored by `setProperty`.
+// `!important` in a value is not supported either (`setProperty` would need its third argument).
+// A property dropped from a later render is removed; null, undefined and "" values are skipped.
 
 export type CssomStyle = Readonly<Record<string, string | number | undefined | null>>;
 
