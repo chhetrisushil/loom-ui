@@ -39,6 +39,7 @@
 //  - EDITS ARE NEW TURNS. `annotate(turn, { editOf })` labels a turn the host KNOWS is an edit; the
 //    feed never infers one (loom's record has no such field today, see the README).
 
+import { MAX_CHAT_REFS } from "./chatRefs";
 import { sanitizeChatText } from "./chatText";
 import {
   type ChatActor,
@@ -50,7 +51,13 @@ import {
   MAX_CHAT_REASONING_TEXT,
   sameChatActor,
 } from "./chatValue";
-import { MAX_ACTOR_FIELD, isChatCursor, isChatErrorId, isChatReason } from "./chatValue";
+import {
+  MAX_ACTOR_FIELD,
+  isChatCursor,
+  isChatEntryId,
+  isChatErrorId,
+  isChatReason,
+} from "./chatValue";
 import type { Finding } from "./experience";
 import { MAX_CHUNK_TEXT, type StreamedText, appendChunk } from "./streamText";
 
@@ -138,6 +145,7 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
   // loom's `editOf` is the edited RECORD's `ord`; the edited TURN number (what this value calls
   // `editOf` and draws as "edit of turn N") is `editOfTurn` (ADR 0122 R17b). Only the turn number is used.
   const editOf = own(raw, "editOfTurn");
+  const refs = !bare && role === "assistant" ? refIdsFromWire(own(raw, "refs")) : [];
   return {
     id,
     turn,
@@ -156,7 +164,19 @@ export function chatEntryFromWire(raw: unknown): ChatEntry | undefined {
       Number.isSafeInteger(editOf) &&
       editOf >= 1 &&
       editOf < turn && { editOf }),
+    ...(refs.length > 0 && { refs: refs.map((id) => ({ id })) }),
   };
+}
+
+/** The wire `refs` (ids): the strings that are ids, once each, at most {@link MAX_CHAT_REFS}. */
+function refIdsFromWire(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (let i = 0; i < raw.length && i < MAX_CHAT_REFS * 4 && out.size < MAX_CHAT_REFS; i++) {
+    const id: unknown = raw[i];
+    if (isChatEntryId(id)) out.add(id);
+  }
+  return [...out];
 }
 
 /** `<generation>.<sequence>` as numbers, or undefined. */
@@ -190,6 +210,11 @@ export interface ChatFeedOptions {
   readonly reasoning?:
     | boolean
     | { readonly durable?: boolean; readonly liveKind?: "text" | "summary" };
+  /**
+   * The source writes `[[id]]` reference markers in replies. ON: the value says so (`ChatValue.refMarkers`) and an
+   * entry keeps the wire `refs` (ids) it may cite. OFF (default): `refs` are dropped and the value is unchanged.
+   */
+  readonly refMarkers?: boolean;
 }
 
 interface Live {
@@ -317,6 +342,7 @@ export class ChatFeed {
   private running = false;
   private readonly edits = new Map<number, number>();
   private snapshot: ChatValue | undefined;
+  private readonly refMarkers: boolean;
   private readonly reasoningOn: boolean;
   private readonly durable: boolean;
   private readonly liveKind: ChatReasoningKind;
@@ -329,11 +355,20 @@ export class ChatFeed {
     this.mode = options.mode;
     this.max = Math.max(2, Math.min(options.maxEntries ?? MAX_CHAT_ENTRIES, MAX_CHAT_ENTRIES));
     this.cap = this.max - 1;
+    this.refMarkers = options.refMarkers === true;
     const r = options.reasoning;
     this.reasoningOn = r === true || (typeof r === "object" && r !== null);
     this.durable = typeof r === "object" && r !== null && r.durable === true;
     this.liveKind =
       typeof r === "object" && r !== null && r.liveKind === "text" ? "text" : "summary";
+  }
+
+  /** A wire entry as an entry; `refs` only when the source writes markers. */
+  private entryFromWire(raw: unknown): ChatEntry | undefined {
+    const e = chatEntryFromWire(raw);
+    if (e === undefined || this.refMarkers || e.refs === undefined) return e;
+    const { refs: _dropped, ...rest } = e;
+    return rest;
   }
 
   // ── reading ────────────────────────────────────────────────────────────────────────────────
@@ -363,6 +398,7 @@ export class ChatFeed {
       state: this.state,
       running: this.running || live !== undefined,
       ...(this.mode !== undefined && { mode: this.mode }),
+      ...(this.refMarkers && { refMarkers: true }),
     };
     return this.snapshot;
   }
@@ -475,7 +511,7 @@ export class ChatFeed {
     // Newest first for a backward page: the entries closest to the window go in first, so if the
     // window fills, what is kept is contiguous with it.
     for (const raw of entries) {
-      const entry = chatEntryFromWire(raw);
+      const entry = this.entryFromWire(raw);
       if (entry === undefined) continue;
       if (direction === "backward" && !this.hasRoomFor(entry)) break;
       changed = this.upsert(entry) || changed;
@@ -510,7 +546,7 @@ export class ChatFeed {
   applyEvent(name: string, data: unknown): ChatFeedResult {
     switch (name) {
       case "message": {
-        const entry = chatEntryFromWire(data);
+        const entry = this.entryFromWire(data);
         if (entry === undefined)
           return refuse("message-invalid", "a message event is a conversation entry");
         return this.finish(this.upsert(entry));

@@ -31,6 +31,7 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   // of them fails this test.
   "chatActions.js",
   "chatForm.js",
+  "chatRefs.js",
   "chatText.js",
   "chatUi.js",
   "chatValue.js",
@@ -100,7 +101,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     ["media.js", 71 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
-    ["chat.js", 91 * 1000],
+    // Chat reference markers (176b): 91 -> 93 kB (measured 92_615): `splitRefMarkers`, the ref button and its status line.
+    ["chat.js", 93 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

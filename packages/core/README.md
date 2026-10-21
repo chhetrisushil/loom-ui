@@ -551,6 +551,7 @@ with `viewedVersion` (U5):
 | SelectInput | `SELECT` | `{ value, key }` |
 | Chat (edit a turn) | `EDIT_TURN` | `{ turn, text, key }` |
 | Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
+| Chat (open a reference) | `CHAT_REF_OPEN` | `{ entryId, refId, n }` (a read: no key). Untrusted: `acceptChatSubmit` matches `entryId`/`refId` against `hasRef`, your record of what you served; without `hasRef` it refuses (`ref-not-allowed`) |
 | MediaInput | `MEDIA_ATTACH` | `{ ref }` (U9; `acceptMediaAttach`) |
 | Table (row action) | `TABLE_ROW_ACTION` | `{ action, rowKey }` (the host decides what it means; no key). The payload is untrusted: match `rowKey` and `action` against the value you served |
 
@@ -606,6 +607,17 @@ is (`"shared"` there), or leave it unset (neutral "User").
 `LOAD_OLDER` is not a write: the widget emits it so the page can call `connection.loadOlder()` (the
 cursor is the feed's own). Routed to a `conversationTarget` anyway it is refused with the reason
 `browser-side`.
+
+**Reference markers.** A source that cites (retrieval answers, support replies that point at tickets) writes
+`[[id]]` inside an assistant text part and lists the ids the entry may cite in `refs` (`[{ id }]`, at most 64,
+unique, assistant entries only, refused on a restricted entry). Only when the value says `refMarkers: true` (set by
+`ChatFeed({ refMarkers: true })`, which also folds a wire `refs: string[]` into `refs`) does the widget process
+markers; otherwise text is drawn exactly as sent. `splitRefMarkers(text, known, { hideAll })` (zod-free, in
+`@loom-ui/core/chat-ui`) turns a listed marker into a `ref` segment numbered by first appearance of the id, removes
+every other marker with the one space before it, and with `hideAll` (a streaming reply) removes every marker and a
+half-written `[[...`. The widget draws each `ref` segment as a button it builds itself (chat stays text-only) and
+emits `CHAT_REF_OPEN { entryId, refId, n }`. It is a read: it carries no key, and routed to a `conversationTarget`
+it is refused with `browser-side`.
 
 `acceptChatSubmit` (what `handle` runs first) is total and returns a typed refusal: `not-a-submit`,
 `not-an-input`, `wrong-input`, `bad-key`, `invalid` (with fixed per-field codes), `stale` (not

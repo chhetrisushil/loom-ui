@@ -10,6 +10,7 @@ export * from "./chatValue";
 export * from "./chatText";
 export * from "./chatForm";
 export * from "./chatActions";
+export { MAX_CHAT_REFS, splitRefMarkers, type RefSegment } from "./chatRefs";
 export * from "./chatWords";
 export { describeMedia } from "./mediaText";
 export { mediaFamily } from "./mediaRef";

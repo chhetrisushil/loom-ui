@@ -18,6 +18,7 @@
 //   EDIT_TURN     { turn, text, key }      a Chat: the user revised an earlier turn of their own
 //   LOAD_OLDER    { cursor }               a Chat: show earlier turns (a read; carries no key)
 //   LOAD_REASONING { cursor }              a Chat: fetch one reply's durable reasoning (a read; carries no key)
+//   CHAT_REF_OPEN { entryId, refId, n }   a Chat: the user opened a reference marker (a read; carries no key)
 //   MEDIA_ATTACH  { ref }                  the existing U9 `MediaInput` (see `acceptMediaAttach`)
 //
 // IDEMPOTENCY. Every submit carries a `key` the widget minted when the draft began. A retry of the
@@ -27,6 +28,7 @@
 
 import { type ActionOutcome, type CurrentHead, actionFreshness } from "./action";
 import {
+  CHAT_REF_OPEN_ACTION,
   EDIT_TURN_ACTION,
   LOAD_OLDER_ACTION,
   LOAD_REASONING_ACTION,
@@ -45,7 +47,8 @@ import {
   validateSelectValue,
   validateTextValue,
 } from "./chatForm";
-import { isChatCursor } from "./chatValue";
+import { MAX_CHAT_REFS } from "./chatRefs";
+import { isChatCursor, isChatEntryId } from "./chatValue";
 
 /** What the host knows an input node is: derived from the node's own props, never from the action. */
 export type InputSpec =
@@ -81,7 +84,14 @@ export type Submission =
       readonly text: string;
     }
   | { readonly kind: "older"; readonly widgetId: string; readonly cursor: string }
-  | { readonly kind: "reasoning"; readonly widgetId: string; readonly cursor: string };
+  | { readonly kind: "reasoning"; readonly widgetId: string; readonly cursor: string }
+  | {
+      readonly kind: "ref";
+      readonly widgetId: string;
+      readonly entryId: string;
+      readonly refId: string;
+      readonly n: number;
+    };
 
 export type ChatSubmitRefusal =
   | "not-a-submit" // not one of this vocabulary's actions, or no object payload
@@ -92,6 +102,7 @@ export type ChatSubmitRefusal =
   | "stale" // the action was not taken on the current view
   | "duplicate" // this (principal, widget, key) was already accepted AND acted on
   | "in-flight" // this (principal, widget, key) was accepted and its write has not finished: it may still fail
+  | "ref-not-allowed" // the host did not list this reference on this entry (or serves no references at all)
   | "edit-not-allowed"; // the host does not allow this edit (no policy, not the user's, not editable)
 
 export type ChatSubmitResult =
@@ -194,6 +205,16 @@ export interface AcceptChatOptions {
     principal: string,
     context: { readonly widgetId: string }
   ) => boolean;
+  /**
+   * Did the host serve a reference `refId` on the entry `entryId` of this widget? Required for `CHAT_REF_OPEN`:
+   * absent, every reference open is refused. The payload is client input, so it is matched against what the host
+   * served, never trusted for its own sake.
+   */
+  readonly hasRef?: (
+    entryId: string,
+    refId: string,
+    context: { readonly widgetId: string }
+  ) => boolean;
   /** Longest accepted text (default and ceiling {@link MAX_INPUT_CHARS}); a TextInput's own `maxChars` also applies. */
   readonly maxTextChars?: number;
 }
@@ -209,6 +230,7 @@ const TYPE_TO_KIND: Readonly<Record<string, InputSpec["kind"]>> = {
   [EDIT_TURN_ACTION]: "Chat",
   [LOAD_OLDER_ACTION]: "Chat",
   [LOAD_REASONING_ACTION]: "Chat",
+  [CHAT_REF_OPEN_ACTION]: "Chat",
 };
 
 /**
@@ -257,6 +279,34 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
           widgetId,
           cursor,
         },
+        release: () => {},
+        commit: () => {},
+      };
+    }
+
+    if (type === CHAT_REF_OPEN_ACTION) {
+      const entryId = own(payload, "entryId");
+      const refId = own(payload, "refId");
+      const n = own(payload, "n");
+      if (
+        !isChatEntryId(entryId) ||
+        !isChatEntryId(refId) ||
+        typeof n !== "number" ||
+        !Number.isSafeInteger(n) ||
+        n < 1 ||
+        n > MAX_CHAT_REFS
+      )
+        return refuse("invalid");
+      let known = false;
+      try {
+        known = options.hasRef?.(entryId, refId, { widgetId }) === true;
+      } catch {
+        known = false;
+      }
+      if (!known) return refuse("ref-not-allowed");
+      return {
+        ok: true,
+        submission: { kind: "ref", widgetId, entryId, refId, n },
         release: () => {},
         commit: () => {},
       };
@@ -413,7 +463,8 @@ export function conversationTarget(
       return options.edit !== undefined ? options.edit(s) : sendTurn(s.text, { messageId: s.key });
     // LOAD_OLDER is a READ the browser makes itself (`connection.loadOlder()`); routed here by mistake it
     // is refused with a reason, not a TypeError.
-    if (s.kind === "older" || s.kind === "reasoning") return { ok: false, reason: "browser-side" };
+    if (s.kind === "older" || s.kind === "reasoning" || s.kind === "ref")
+      return { ok: false, reason: "browser-side" };
     throw new TypeError("a conversation target takes text and edits");
   };
 }
