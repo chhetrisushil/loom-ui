@@ -1,5 +1,14 @@
 import { parseInlines } from "./chatMdInline";
-import { MD_MAX_DEPTH, type MdBlock, type MdState, take } from "./chatMdTypes";
+import {
+  MD_MAX_DEPTH,
+  MD_MAX_TABLE_COLS,
+  MD_MAX_TABLE_ROWS,
+  type MdAlign,
+  type MdBlock,
+  type MdInline,
+  type MdState,
+  take,
+} from "./chatMdTypes";
 
 // ── Markdown blocks: fences, headings, rules, quotes, lists, tables, paragraphs (U8c) ─────────────────
 
@@ -92,6 +101,35 @@ function startsBlock(l: string, nest: boolean): boolean {
   return m !== undefined && m.rest.trim() !== "" && (!m.ordered || m.start === 1);
 }
 
+function splitRow(l: string): string[] {
+  let t = l.trim();
+  if (t.startsWith("|")) t = t.slice(1);
+  if (t.endsWith("|") && !t.endsWith("\\|")) t = t.slice(0, -1);
+  const cells: string[] = [];
+  let cur = "";
+  for (let k = 0; k < t.length; k++) {
+    const c = t[k] as string;
+    if (c === "\\" && t[k + 1] === "|") {
+      cur += "|";
+      k++;
+    } else if (c === "|") {
+      cells.push(cur.trim());
+      cur = "";
+    } else cur += c;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+const DELIM_CELL = /^:?-+:?$/;
+function tableAlign(l: string, cols: number): MdAlign[] | undefined {
+  if (!l.includes("-")) return undefined;
+  const cells = splitRow(l);
+  if (cells.length !== cols || !cells.every((c) => DELIM_CELL.test(c))) return undefined;
+  return cells.map((c) =>
+    c.startsWith(":") ? (c.endsWith(":") ? "center" : "left") : c.endsWith(":") ? "right" : null
+  );
+}
+
 export function parseBlocks(lines: readonly string[], depth: number, st: MdState): MdBlock[] {
   const out: MdBlock[] = [];
   const nest = depth < MD_MAX_DEPTH;
@@ -141,6 +179,69 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
         inner.push(quoteOf(lines[i] as string) as string);
       out.push({ type: "quote", blocks: parseBlocks(inner, depth + 1, st) });
       continue;
+    }
+    const mk = nest ? markerOf(l) : undefined;
+    if (mk) {
+      const items: MdBlock[][] = [];
+      while (i < n) {
+        let next = i;
+        while (next < n && blank(lines[next] as string)) next++;
+        const m = next < n ? markerOf(lines[next] as string) : undefined;
+        if (!m || m.ordered !== mk.ordered || m.ch !== mk.ch || isRule(lines[next] as string))
+          break;
+        i = next;
+        const body: string[] = [m.rest];
+        for (i++; i < n; i++) {
+          const c = lines[i] as string;
+          if (blank(c)) {
+            let j = i;
+            while (j < n && blank(lines[j] as string)) j++;
+            if (j < n && lead(lines[j] as string) >= 2) {
+              body.push("");
+              continue;
+            }
+            break;
+          }
+          const ind = lead(c);
+          if (ind >= 2) body.push(c.slice(Math.min(ind, m.offset)));
+          else if (
+            !startsBlock(c, true) &&
+            markerOf(c) === undefined &&
+            body[body.length - 1] !== ""
+          )
+            body.push(c);
+          else break;
+        }
+        if (!take(st)) break;
+        items.push(parseBlocks(body, depth + 1, st));
+      }
+      out.push({ type: "list", ordered: mk.ordered, start: mk.start, items });
+      continue;
+    }
+    // a table: a header row, then a delimiter row of the same width
+    if (l.includes("|") && i + 1 < n) {
+      const head = splitRow(l);
+      const align =
+        head.length <= MD_MAX_TABLE_COLS
+          ? tableAlign(lines[i + 1] as string, head.length)
+          : undefined;
+      if (align) {
+        const rows: MdInline[][][] = [];
+        for (
+          i += 2;
+          i < n && !blank(lines[i] as string) && !startsBlock(lines[i] as string, nest);
+          i++
+        ) {
+          if (rows.length >= MD_MAX_TABLE_ROWS) {
+            st.truncated = true;
+            continue;
+          }
+          const cells = splitRow(lines[i] as string);
+          rows.push(head.map((_, c) => parseInlines(cells[c] ?? "", st)));
+        }
+        out.push({ type: "table", align, head: head.map((c) => parseInlines(c, st)), rows });
+        continue;
+      }
     }
     const para: string[] = [l.trimStart()];
     for (i++; i < n && !blank(lines[i] as string) && !startsBlock(lines[i] as string, nest); i++)
