@@ -44,6 +44,7 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "messages.js",
   "paths.js",
   "streamText.js",
+  "tableRows.js",
   "viewer.js",
 ]);
 

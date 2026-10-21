@@ -1,4 +1,5 @@
 import {
+  TABLE_ROW_ACTION,
   type TableCell,
   type TableValue,
   tableColumnFormat,
@@ -13,6 +14,7 @@ import { formattingLocale } from "../i18n";
 import { tPlural } from "../plural";
 import { say } from "../say";
 import { LuWidget } from "./base";
+import { dispatch } from "./chatShared";
 import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
@@ -127,6 +129,34 @@ export class LuTable extends LuWidget {
       height: var(--lu-row-h);
       padding-block: 0;
     }
+    td.row-actions {
+      white-space: nowrap;
+      text-align: end;
+    }
+    td.row-actions button,
+    .cell-link {
+      all: unset;
+      cursor: pointer;
+      font: inherit;
+      color: var(--lu-accent, #6366f1);
+      padding: 2px 6px;
+      border-radius: var(--lu-radius, 6px);
+    }
+    .cell-link {
+      color: inherit;
+      text-decoration: underline;
+    }
+    td.row-actions button.danger {
+      color: var(--lu-status-critical, #f87171);
+    }
+    button[data-row-action]:disabled {
+      color: var(--lu-text-dim, #8b949e);
+      cursor: default;
+    }
+    button[data-row-action]:focus-visible {
+      outline: 2px solid var(--lu-accent, #6366f1);
+      outline-offset: 1px;
+    }
     .more {
       display: flex;
       align-items: center;
@@ -167,27 +197,27 @@ export class LuTable extends LuWidget {
     const labels = v.columns.map(tableColumnLabel);
     const formats = v.columns.map(tableColumnFormat);
     const numeric = this.numeric(v);
-    let rows = v.rows;
+    let order = v.rows.map((_, i) => i);
     const col = this.sortCol;
     if (col !== null && col < labels.length) {
       const dir = this.sortDir;
-      rows = [...rows].sort((a, b) => {
-        const x = at(a, col);
-        const y = at(b, col);
+      order = [...order].sort((i, j) => {
+        const x = at(v.rows[i] as readonly TableCell[], col);
+        const y = at(v.rows[j] as readonly TableCell[], col);
         if (x === null || y === null) return compareCells(x, y);
         return compareCells(x, y) * dir;
       });
     }
-    const total = rows.length;
+    const total = order.length;
     const virt = resolveVirtualize(this.virtualize);
     const win = this.rowsWindow.plan(total, virt);
     const shown = win === undefined ? Math.min(this.visibleRows, total) : total;
     const windowed =
       win !== undefined
-        ? rows.slice(win.start, win.end)
+        ? order.slice(win.start, win.end)
         : shown < total
-          ? rows.slice(0, shown)
-          : rows;
+          ? order.slice(0, shown)
+          : order;
     return html`<table aria-rowcount=${win !== undefined ? total + 1 : nothing}>
         <caption class="sr-only">${describeValue("Table", v, this.title_)}</caption>
         <thead>
@@ -202,20 +232,54 @@ export class LuTable extends LuWidget {
                 </button>
               </th>`
             )}
+            ${v.rowActions === undefined ? nothing : html`<th class="actions"><span class="sr-only">${say("lu.table.actions")}</span></th>`}
           </tr>
         </thead>
         <tbody class=${win !== undefined ? "virtual" : ""} style=${win !== undefined && virt ? `--lu-row-h:${virt.rowHeight}px` : ""}>
           ${win !== undefined ? padRow(win.padTop, labels.length) : nothing}
-          ${windowed.map(
-            (r, i) => html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
-              ${labels.map((_, i) => {
-                const c = at(r, i);
-                return html`<td class=${numeric[i] ? "num" : ""}>
-                  ${c === null ? "—" : typeof c === "number" ? measure(c, formats[i]) : c}
+          ${windowed.map((ri, i) => {
+            const r = v.rows[ri] as readonly TableCell[];
+            const key = v.rowKeys?.[ri];
+            const acts = v.rowActions?.[ri] ?? [];
+            const first = String(at(r, 0) ?? "");
+            const primary = acts.find((a) => a.primary === true);
+            const button = (
+              a: (typeof acts)[number],
+              cls: string,
+              key: string,
+              body: unknown
+            ): TemplateResult =>
+              html`<button
+                type="button"
+                class=${cls}
+                data-row-action=${a.id}
+                aria-label=${say("lu.table.rowAction", { label: a.label, row: first })}
+                ?disabled=${this.onAction === undefined}
+                @click=${() => this.rowAction(a.id, key)}
+              >
+                ${body}
+              </button>`;
+            return html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
+              ${labels.map((_, ci) => {
+                const c = at(r, ci);
+                const text = c === null ? "—" : typeof c === "number" ? measure(c, formats[ci]) : c;
+                return html`<td class=${numeric[ci] ? "num" : ""}>
+                  ${
+                    ci === 0 && primary !== undefined && key !== undefined
+                      ? button(primary, "cell-link", key, text)
+                      : text
+                  }
                 </td>`;
               })}
-            </tr>`
-          )}
+              ${
+                v.rowActions === undefined
+                  ? nothing
+                  : html`<td class="row-actions">
+                    ${key === undefined ? nothing : acts.map((a) => button(a, a.destructive === true ? "danger" : "", key, a.label))}
+                  </td>`
+              }
+            </tr>`;
+          })}
           ${win !== undefined ? padRow(win.padBottom, labels.length) : nothing}
         </tbody>
       </table>
@@ -229,6 +293,14 @@ export class LuTable extends LuWidget {
             </div>`
           : nothing
       }`;
+  }
+
+  private rowAction(action: string, rowKey: string): void {
+    void dispatch(this.onAction, {
+      type: TABLE_ROW_ACTION,
+      widgetId: this.widget.id,
+      payload: { action, rowKey },
+    });
   }
 
   private showMore = (): void => {

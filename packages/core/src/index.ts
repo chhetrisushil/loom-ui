@@ -251,6 +251,8 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./values";
+export { MAX_ROW_ACTIONS, TABLE_ROW_ACTION, tableRowProblems } from "./tableRows";
+export type { TableRowAction } from "./tableRows";
 export { effectiveViewer, isBroadcast, mayView, strictestClass } from "./viewer";
 export type { Audience, Viewer } from "./viewer";
 export {

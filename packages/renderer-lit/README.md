@@ -326,6 +326,8 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.level.critical` | `critical` |
 | `lu.table.showing` | `Showing {shown} of {total} {noun}` |
 | `lu.table.showMore` | `Show {n} more` |
+| `lu.table.actions` | `Actions` |
+| `lu.table.rowAction` | `{label}: {row}` |
 | `lu.container.tab` | `Tab` |
 | `lu.container.step` | `Step` |
 | `lu.container.steps` | `Steps` |
