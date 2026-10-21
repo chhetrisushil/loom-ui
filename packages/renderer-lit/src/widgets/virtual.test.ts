@@ -89,6 +89,24 @@ describe("lu-table windowing", () => {
     expect(el.shadowRoot?.querySelector("tr.pad")).toBeNull();
   });
 
+  it("renders no `style` attribute (a strict style-src CSP rejects inline style attributes)", async () => {
+    const cases: [string, unknown][] = [
+      ["lu-table", { columns: ["id", "n"], rows: rows.slice(0, 5) }],
+      ["lu-data-table", rows.slice(0, 5).map(([id, n]) => ({ id, n }))],
+    ];
+    for (const [tag, v] of cases) {
+      const w = customWidget$({
+        kind: tag === "lu-table" ? "Table" : "DataTable",
+        id: tag,
+        title: "T",
+        binding: b,
+      });
+      const el = await mount(tag, { widget: w, value: v });
+      expect(bodyRows(el).length).toBeGreaterThan(0);
+      expect(el.shadowRoot?.querySelectorAll("[style]")).toHaveLength(0);
+    }
+  });
+
   it("a small table is rendered whole and plainly even with virtualize on", async () => {
     const small = { columns: ["id"], rows: rows.slice(0, 50).map((r) => [r[0]]) };
     const el = await mount("lu-table", { widget, value: small, virtualize: true });

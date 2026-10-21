@@ -3,6 +3,7 @@ import type { Widget } from "@loom/blueprint-runtime";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";
+import { cssomStyle } from "../cssomStyle";
 import { measure } from "../format";
 
 import { tPlural } from "../plural";
@@ -206,7 +207,7 @@ export class LuDataTable extends LuWidget {
             )}
           </tr>
         </thead>
-        <tbody class=${win !== undefined ? "virtual" : ""} style=${win !== undefined && virt ? `--lu-row-h:${virt.rowHeight}px` : ""}>
+        <tbody class=${win !== undefined ? "virtual" : ""} ${cssomStyle(win !== undefined && virt ? { "--lu-row-h": `${virt.rowHeight}px` } : {})}>
           ${win !== undefined ? padRow(win.padTop, columns.length) : nothing}
           ${windowed.map(
             (r, i) => html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>

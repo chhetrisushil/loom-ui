@@ -313,16 +313,6 @@ const ALLOWED: ReadonlyArray<Allowance> = [
     why: "the sandbox frame's HTML document, not renderer chrome",
   },
   {
-    file: "renderer-lit/src/widgets/lu-timeseries.ts",
-    textStart: '`<div style="color:${colorFor(i)}">',
-    why: "tooltip markup around DATA (series labels, formatted values), no fixed words",
-  },
-  {
-    file: "renderer-lit/src/widgets/lu-timeseries.ts",
-    textStart: '`<div style="margin-bottom:2px;',
-    why: "tooltip markup around DATA (the formatted time tick), no fixed words",
-  },
-  {
     file: "renderer-lit/src/widgets/lu-chat.ts",
     text: "File",
     why: "a media KIND token, translated where it is drawn (lu.media.kind.*)",

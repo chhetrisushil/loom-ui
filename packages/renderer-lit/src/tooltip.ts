@@ -42,13 +42,14 @@ export interface ShowTooltipOptions {
 
 /** Show the portal tooltip near (clientX, clientY) or above `opts.anchor`. */
 export function showTooltip(
-  content: string,
+  content: string | Node,
   clientX: number,
   clientY: number,
   opts: ShowTooltipOptions = {}
 ): void {
   const t = portal();
-  if (opts.html) t.innerHTML = content;
+  if (typeof content !== "string") t.replaceChildren(content);
+  else if (opts.html) t.innerHTML = content;
   else t.textContent = content;
   t.style.display = "block";
 
