@@ -506,7 +506,7 @@ are shown as the characters; images, autolinks, reference links and footnotes do
 is an address fetched on render, the classic exfiltration channel). A link is kept only for `http:`,
 `https:` and `mailto:` (no whitespace, controls or userinfo, at most 2048 characters); otherwise its label
 stays as text. The parser (`parseChatMarkdown`, hand-written, no dependency) is a pure, total, linear
-function of the cleaned text into a bounded tree (2000 nodes, block depth 6, inline depth 4, tables 12 x 100). Rendering is bounded too: `chatMarkdownLines` visits at most 10000 nodes and emits at most 400k characters (200 lines of 2000), the `lu-chat` drawer draws at most 4000 nodes, and a transcript caps a markdown part at 4 x `maxText` characters; a cut ends in `…`;
+function of the cleaned text into a bounded tree (2000 nodes, block depth 6, inline depth 4, tables 12 x 100). Rendering is bounded too: `chatMarkdownLines` visits at most 10000 nodes and emits at most 400k characters (200 lines of 2000), the `lu-chat` drawer draws at most 4000 nodes and 16 levels of nesting (`MAX_DEPTH`, block and inline levels combined; a parsed document is at most 6 + 4 deep, so it is always drawn in full), and a transcript caps a markdown part at 4 x `maxText` characters; a cut ends in `…`;
 the tree is NEVER part of a value, so every renderer parses the text itself and a source cannot forge a
 node. `resolveMdMarkers` applies the reference-marker rules (listed ids numbered, unlisted removed, all
 hidden while streaming); markers never act inside code or a link label. Streaming needs no special case:

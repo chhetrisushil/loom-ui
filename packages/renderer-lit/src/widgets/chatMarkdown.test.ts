@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { CHAT_REF_OPEN_ACTION, MD_MAX_NODES } from "@loom-ui/core/chat-ui";
+import {
+  CHAT_REF_OPEN_ACTION,
+  MD_MAX_DEPTH,
+  MD_MAX_INLINE_DEPTH,
+  MD_MAX_NODES,
+  parseChatMarkdown,
+} from "@loom-ui/core/chat-ui";
 import { customWidget$ } from "@loom/blueprint-runtime";
 import { nothing, render } from "lit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -451,6 +457,38 @@ describe("drawMarkdown re-checks what it draws (hand-built nodes, no parser)", (
     for (let k = 0; k < 5000; k++) node = { type: "quote", blocks: [node] };
     const host = draw({ blocks: [node], truncated: false });
     expect(host.querySelectorAll("blockquote").length).toBeLessThanOrEqual(16);
+  });
+  it("draws a maximum-depth PARSED document in full under the depth cap", () => {
+    const em = ["*", "**"];
+    let inner = "leaf";
+    for (let k = MD_MAX_INLINE_DEPTH; k >= 1; k--)
+      inner = `${em[k % 2]}${k} ${inner} ${k}${em[k % 2]}`;
+    const text = `${"> ".repeat(MD_MAX_DEPTH)}${inner}`;
+    const doc = parseChatMarkdown(text);
+    const depthOf = (n: unknown): number => {
+      const x = n as { blocks?: unknown[]; inlines?: unknown[]; children?: unknown[] };
+      const kids = x.blocks ?? x.inlines ?? x.children ?? [];
+      return 1 + Math.max(0, ...kids.map(depthOf));
+    };
+    const total = Math.max(...doc.blocks.map(depthOf)); // quotes, paragraph and inline levels, combined
+    expect(total).toBeGreaterThanOrEqual(MD_MAX_DEPTH + MD_MAX_INLINE_DEPTH);
+    const count = (n: unknown, tag: string): number => {
+      const x = n as {
+        type?: string;
+        blocks?: unknown[];
+        inlines?: unknown[];
+        children?: unknown[];
+      };
+      const kids = x.blocks ?? x.inlines ?? x.children ?? [];
+      return (x.type === tag ? 1 : 0) + kids.reduce<number>((a, k) => a + count(k, tag), 0);
+    };
+    const host = draw(doc);
+    expect(count(doc.blocks[0], "quote")).toBe(MD_MAX_DEPTH);
+    expect(host.querySelectorAll("blockquote")).toHaveLength(MD_MAX_DEPTH);
+    const marks = count(doc.blocks[0], "em") + count(doc.blocks[0], "strong");
+    expect(marks).toBeGreaterThanOrEqual(MD_MAX_INLINE_DEPTH - 1);
+    expect(host.querySelectorAll("em, strong")).toHaveLength(marks);
+    expect(host.textContent).toContain("leaf");
   });
   it("clamps or drops every other attribute value", () => {
     const host = draw({
