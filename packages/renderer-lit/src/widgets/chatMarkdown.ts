@@ -2,8 +2,9 @@ import {
   type MdBlock,
   type MdDoc,
   type MdInline,
+  mdDestination,
+  mdLabelIsSite,
   mdPlainText,
-  safeLinkHref,
 } from "@loom-ui/core/chat-ui";
 import { type TemplateResult, html, nothing } from "lit";
 import { say } from "../say";
@@ -14,7 +15,7 @@ import { say } from "../say";
 // those templates are text bindings (a node's text) and attribute bindings: a link's `href` and `title`, a heading's
 // `aria-level` and class, a list's `start`, a cell's `data-align`, a code block's `data-lang`, and the `aria-label`
 // of a table and of a code block (fixed words, a table's number). The parser already bounds each value; this file
-// does not trust it: `href` goes through `safeLinkHref` and a scheme test again, a heading level is clamped to 1..6, `lang`
+// does not trust it: `href` goes through `mdDestination` (core: `safeLinkHref`, a scheme test, one mailto address), a heading level is clamped to 1..6, `lang`
 // must be a short token, `align` one of three words, `start` a small integer, a text node a string, and a node of
 // a type it does not know (or a malformed one) is drawn as nothing. No `unsafeHTML`, no `innerHTML`,
 // no `insertAdjacentHTML`, no `style`, no event attribute: a test scans this file for them and walks the rendered
@@ -33,51 +34,6 @@ export interface MarkdownDraw {
 
 const arr = <T>(x: readonly T[] | undefined): readonly T[] => (Array.isArray(x) ? x : []);
 const str = (x: unknown): string => (typeof x === "string" ? x : "");
-
-/** `host` without a leading `www.`, lower case. */
-const site = (host: string): string => host.toLowerCase().replace(/^www\./, "");
-
-/** The host a label names, when the label is nothing but an address or a bare host name. */
-function labelHost(label: string): string | undefined {
-  const l = label.trim();
-  if (l === "" || /[\s\\@]/.test(l)) return undefined;
-  try {
-    if (/^https?:\/\//i.test(l)) return new URL(l).host;
-    if (/^[^/?#:]+\.[^/?#:]+$/.test(l)) return new URL(`http://${l}`).host;
-  } catch {
-    // not an address
-  }
-  return undefined;
-}
-
-type Dest = { readonly href: string; readonly host: string; readonly web: boolean };
-
-/** Where a link goes, or undefined when it is not a link this transcript may carry. */
-function destination(raw: unknown): Dest | undefined {
-  const href = typeof raw === "string" ? safeLinkHref(raw) : undefined; // the parser applied the same rule
-  if (href === undefined) return undefined;
-  try {
-    if (/^mailto:/i.test(href)) {
-      const addr = href.slice(7).split("?")[0] ?? "";
-      const at = addr.indexOf("@");
-      // one address: no list (`,` `;`), one `@`, something on both sides
-      if (at < 1 || at !== addr.lastIndexOf("@") || /[,;]/.test(addr)) return undefined;
-      const host = new URL(`http://${addr.slice(at + 1)}`).host;
-      return host === "" ? undefined : { href, host, web: false };
-    }
-    if (!/^https?:/i.test(href)) return undefined;
-    return { href, host: new URL(href).host, web: true };
-  } catch {
-    return undefined;
-  }
-}
-
-/** Does the label say the very site the link goes to? */
-function labelIsSite(label: string, d: Dest): boolean {
-  if (label.trim() === d.href) return true;
-  const named = labelHost(label);
-  return named !== undefined && site(named) === site(d.host);
-}
 
 const LANG = /^[A-Za-z0-9_+#.-]{1,24}$/;
 const ALIGN = new Set(["left", "center", "right"]);
@@ -104,10 +60,10 @@ function inline(n: MdInline, c: Ctx): unknown {
       return html`<strong>${inlines((n as { children?: readonly MdInline[] }).children, c)}</strong>`;
     case "link": {
       const l = n as { href?: unknown; children?: readonly MdInline[] };
-      const dest = destination(l.href);
+      const dest = mdDestination(l.href);
       if (dest === undefined) return inlines(l.children, c);
       const shown =
-        dest.host === "" || labelIsSite(mdPlainText(arr(l.children)), dest)
+        dest.host === "" || mdLabelIsSite(mdPlainText(arr(l.children)), dest)
           ? nothing
           : html`<span class="dest"> (${dest.host})</span>`;
       const tab = dest.web ? html`<span class="sr-only"> ${say("lu.chat.newTab")}</span>` : nothing;

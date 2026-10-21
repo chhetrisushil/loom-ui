@@ -33,8 +33,10 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "chatForm.js",
   "chatMarkdown.js",
   "chatMdBlock.js",
+  "chatMdDest.js",
   "chatMdInline.js",
   "chatMdScan.js",
+  "chatMdText.js",
   "chatMdTypes.js",
   "chatRefs.js",
   "chatText.js",
@@ -110,7 +112,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Chat markdown (176i): 94 -> 110 kB (measured 93_391 -> 107_720): core's bounded parser (chatMarkdown, chatMdBlock,
     // chatMdInline, chatMdScan, chatMdTypes, resolveMdMarkers) and `chatMarkdown.ts`, the DOM drawer. The test-only work
     // counter lives in `chatMdMeter.test-support.ts` and is not in the bundle.
-    ["chat.js", 110 * 1000],
+    // Markdown as plain lines (176j): 110 -> 114 kB (measured 109_457): `chatWords` now reaches core's `chatMdText` and the shared
+    // link check `chatMdDest` (the drawer uses the latter; the former rides in with the transcript words).
+    ["chat.js", 114 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);
