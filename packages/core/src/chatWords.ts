@@ -1,3 +1,5 @@
+import { parseChatMarkdown, resolveMdMarkers } from "./chatMarkdown";
+import { chatMarkdownLines } from "./chatMdText";
 import { oneLineChatText } from "./chatText";
 import { type ChatEntry, type ChatValue, sameChatActor } from "./chatValue";
 import { mediaFamily } from "./mediaRef";
@@ -96,6 +98,17 @@ export function chatReasoningLine(entry: ChatEntry, maxText = 2000, say: Say = s
   });
 }
 
+/** A markdown reply as plain lines (one string, newline-joined): markers numbered when listed, hidden while the reply streams. */
+function markdownBody(e: ChatEntry, text: string, value: ChatValue): string {
+  const markers = value.refMarkers === true;
+  const streaming = e.status === "streaming";
+  const doc = parseChatMarkdown(text, { markers, streaming });
+  const shown = markers
+    ? resolveMdMarkers(doc, new Set((e.refs ?? []).map((r) => r.id)), { hideAll: streaming })
+    : doc;
+  return chatMarkdownLines(shown).join("\n");
+}
+
 /**
  * A transcript as plain lines — what the terminal prints and what a screen reader's summary says.
  * Every text is cleaned and bounded; a restricted entry is a bare placeholder; a failure is the
@@ -124,7 +137,10 @@ export function chatTranscriptLines(
     const reasoning = chatReasoningLine(e, maxText, say);
     if (reasoning !== "") body.push(reasoning);
     for (const p of e.parts ?? []) {
-      if (p.type === "text") {
+      if (p.type === "text" && p.format === "markdown" && e.role === "assistant") {
+        const t = markdownBody(e, p.text, value);
+        if (t !== "") body.push(t);
+      } else if (p.type === "text") {
         const t = oneLineChatText(p.text, maxText);
         if (t !== "") body.push(t);
       } else body.push(`[${describeMedia(kindOfType(p.ref.mediaType), p.ref, say)}]`);
@@ -139,7 +155,9 @@ export function chatTranscriptLines(
           tools: e.tools.map((t) => `${oneLineChatText(t.name, 64)} ${t.status}`).join(", "),
         })
       );
-    lines.push(`${head}: ${body.join(" ")}`.trimEnd());
+    // A markdown reply is several lines: the rest are indented under the speaker's.
+    const [first = "", ...rest] = `${head}: ${body.join(" ")}`.trimEnd().split("\n");
+    lines.push(first, ...rest.map((l) => (l === "" ? "" : `  ${l}`)));
   }
   return lines;
 }

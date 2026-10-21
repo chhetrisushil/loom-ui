@@ -196,3 +196,39 @@ describe("terminal chat reasoning", () => {
     expect(t({ text: `a${ESC}[2Jb`, kind: "text", streaming: false })).not.toContain(ESC);
   });
 });
+
+describe("terminal chat transcript: markdown replies", () => {
+  const md = (t: string, over: Record<string, unknown> = {}) =>
+    e(1, "assistant", { parts: [{ type: "text" as const, text: t, format: "markdown" }], ...over });
+  it("prints a markdown reply as readable lines under its speaker: link targets shown, markers numbered, an unsafe link only its label", () => {
+    const out = draw("Chat", {
+      entries: [
+        md(
+          "# Terms\n\nDue **30 days** [[a1]] [docs](https://example.com/a) [bad](javascript:alert(1))\n\n- one",
+          { refs: [{ id: "a1" }] }
+        ),
+      ],
+      refMarkers: true,
+      state: "open",
+    });
+    expect(out.split("\n").map((l) => l.trimEnd())).toEqual([
+      "Support:",
+      "    Assistant: # Terms",
+      "",
+      "      Due **30 days** [1] docs (https://example.com/a) bad",
+      "",
+      "      - one",
+    ]);
+  });
+  it("lets no control sequence through a markdown reply, and leaves a part with no format as typed", () => {
+    const hostile = `ok ${ESC}]52;c;cGF5${String.fromCharCode(7)} \`a${ESC}[2J\``;
+    const out = draw("Chat", { entries: [md(hostile)], state: "open" });
+    expect(out).not.toContain(ESC);
+    expect(out).not.toContain(String.fromCharCode(7));
+    const plain = draw("Chat", {
+      entries: [e(1, "assistant", { parts: text("**x** [a](https://e.example)") })],
+      state: "open",
+    });
+    expect(plain).toContain("**x** [a](https://e.example)");
+  });
+});

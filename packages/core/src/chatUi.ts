@@ -25,6 +25,13 @@ export {
   type MdDoc,
   type MdInline,
 } from "./chatMarkdown";
+export * from "./chatMdText";
+export {
+  mdDestination,
+  mdDisplayAddress,
+  mdLabelIsSite,
+  type MdDestination,
+} from "./chatMdDest";
 export * from "./chatForm";
 export * from "./chatActions";
 export { MAX_CHAT_REFS, splitRefMarkers, type RefSegment } from "./chatRefs";

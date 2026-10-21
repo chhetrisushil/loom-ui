@@ -278,11 +278,13 @@ describe("lu-chat, a markdown part", () => {
     // several addresses: no link is made, the label stays as text
     const el = await mount({
       entries: [
-        reply("[m](mailto:a@evil.example,b@bank.example) [n](mailto:a@x.example;b@y.example)"),
+        reply(
+          "[m](mailto:a@evil.example,b@bank.example) [n](mailto:a@x.example;b@y.example) [o](mailto:a%2Cb@y.example) [p](mailto:a%3Bb@y.example) [q](mailto:a@x.example?CC=b@y.example) [r](mailto:a@x.example?bcc=b@y.example) [s](mailto:a@x.example?to=b@y.example)"
+        ),
       ],
     });
     expect(md(el).querySelector("a")).toBeNull();
-    expect(md(el).textContent).toContain("m n");
+    expect(md(el).textContent).toContain("m n o p q r s");
   });
   it("names each table, each code block, and announces cut-short text and new tabs", async () => {
     const el = await mount({
