@@ -8,6 +8,23 @@
 // page that only draws a transcript. The host and the folding live in `@loom-ui/core/chat`.
 export * from "./chatValue";
 export * from "./chatText";
+export {
+  MD_MAX_DEPTH,
+  MD_MAX_INLINE_DEPTH,
+  MD_MAX_NODES,
+  MD_MAX_TABLE_COLS,
+  MD_MAX_TABLE_ROWS,
+  MD_MAX_URL,
+  mdPlainText,
+  parseChatMarkdown,
+  resolveMdMarkers,
+  safeLinkHref,
+  type ChatMarkdownOptions,
+  type MdAlign,
+  type MdBlock,
+  type MdDoc,
+  type MdInline,
+} from "./chatMarkdown";
 export * from "./chatForm";
 export * from "./chatActions";
 export { MAX_CHAT_REFS, splitRefMarkers, type RefSegment } from "./chatRefs";

@@ -64,8 +64,14 @@ export interface ChatActor {
   readonly onBehalfOf?: string;
 }
 
+/**
+ * How a text part is read. `plain` (and an absent `format`) is drawn exactly as typed. `markdown` is parsed as the closed
+ * subset in `chatMarkdown.ts`; it is allowed on an assistant entry only (a person's own words are shown as they typed them).
+ */
+export type ChatTextFormat = "plain" | "markdown";
+
 export type ChatPart =
-  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "text"; readonly text: string; readonly format?: ChatTextFormat }
   | { readonly type: "media"; readonly ref: MediaRef };
 
 /** What a turn did, one line: a tool's name and how it ended. A summary, never arguments or results. */
@@ -273,7 +279,10 @@ function partIssues(part: unknown, path: (string | number)[], out: ChatIssue[]):
     if (typeof text !== "string") at("text is required", ["text"]);
     else if (text.length > MAX_CHAT_TEXT)
       at(`text is at most ${MAX_CHAT_TEXT} characters`, ["text"]);
-    if (extraKey(part, new Set(["type", "text"]))) at("unexpected field");
+    const format = own(part, "format");
+    if (format !== undefined && format !== "plain" && format !== "markdown")
+      at("format must be plain or markdown", ["format"]);
+    if (extraKey(part, new Set(["type", "text", "format"]))) at("unexpected field");
     return;
   }
   if (type === "media") {
@@ -344,6 +353,11 @@ function entryIssues(e: unknown, index: number, ids: Set<string>, out: ChatIssue
       let chars = 0;
       for (let i = 0; i < parts.length; i++) {
         partIssues(parts[i], [...path, "parts", i], out);
+        if (
+          role !== "assistant" &&
+          (parts[i] as { format?: unknown } | null)?.format === "markdown"
+        )
+          at("only an assistant entry's text can be markdown", ["parts", i, "format"]);
         const t = (parts[i] as { text?: unknown } | null)?.text;
         if (typeof t === "string") chars += t.length;
       }

@@ -311,6 +311,19 @@ describe("acceptChatSubmit", () => {
     expect(o.ledger.size).toBe(0);
   });
 
+  it("CHAT_REF_OPEN hands hasRef the principal and the widget id, not just the entry and ref", () => {
+    const seen: unknown[][] = [];
+    const o = opts({
+      hasRef: (...a: unknown[]) => {
+        seen.push(a);
+        return true;
+      },
+    });
+    const payload = { entryId: "t1.assistant", refId: "a1", n: 1 };
+    expect(acceptChatSubmit(act(CHAT_REF_OPEN_ACTION, "chat", payload), o).ok).toBe(true);
+    expect(seen).toEqual([["t1.assistant", "a1", "t/alice", { widgetId: "chat" }]]);
+  });
+
   it("CHAT_REF_OPEN is a read matched against what the host served: shape, a served ref, a fresh view, no key, nothing claimed, browser-side", async () => {
     const hasRef = (e: string, r: string) => e === "t1.assistant" && r === "a1";
     const o = opts({ hasRef });
