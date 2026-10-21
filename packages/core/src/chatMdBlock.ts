@@ -8,6 +8,7 @@ import {
   type MdInline,
   type MdState,
   take,
+  work,
 } from "./chatMdTypes";
 
 // ── Markdown blocks: fences, headings, rules, quotes, lists, tables, paragraphs (U8c) ─────────────────
@@ -136,6 +137,7 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
   const n = lines.length;
   let i = 0;
   while (i < n) {
+    work(st);
     const l = lines[i] as string;
     if (blank(l)) {
       i++;
@@ -146,6 +148,7 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
     if (fence) {
       const body: string[] = [];
       for (i++; i < n; i++) {
+        work(st);
         const c = lines[i] as string;
         const g = fenceOf(c);
         if (g && g.ch === fence.ch && g.len >= fence.len && g.info === "") {
@@ -175,8 +178,10 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
     }
     if (nest && quoteOf(l) !== undefined) {
       const inner: string[] = [];
-      for (; i < n && quoteOf(lines[i] as string) !== undefined; i++)
+      for (; i < n && quoteOf(lines[i] as string) !== undefined; i++) {
+        work(st);
         inner.push(quoteOf(lines[i] as string) as string);
+      }
       out.push({ type: "quote", blocks: parseBlocks(inner, depth + 1, st) });
       continue;
     }
@@ -185,19 +190,28 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
       const items: MdBlock[][] = [];
       while (i < n) {
         let next = i;
-        while (next < n && blank(lines[next] as string)) next++;
+        while (next < n && blank(lines[next] as string)) {
+          work(st);
+          next++;
+        }
         const m = next < n ? markerOf(lines[next] as string) : undefined;
         if (!m || m.ordered !== mk.ordered || m.ch !== mk.ch || isRule(lines[next] as string))
           break;
         i = next;
         const body: string[] = [m.rest];
         for (i++; i < n; i++) {
+          work(st);
           const c = lines[i] as string;
           if (blank(c)) {
             let j = i;
-            while (j < n && blank(lines[j] as string)) j++;
+            while (j < n && blank(lines[j] as string)) {
+              work(st);
+              j++;
+            }
             if (j < n && lead(lines[j] as string) >= 2) {
-              body.push("");
+              // the whole blank run is consumed here, once
+              for (; i < j; i++) body.push("");
+              i = j - 1;
               continue;
             }
             break;
@@ -226,20 +240,31 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
           ? tableAlign(lines[i + 1] as string, head.length)
           : undefined;
       if (align) {
+        // every cell, empty or padded, is charged to the node budget; when it runs out the table stops
+        const cell = (text: string): MdInline[] | undefined =>
+          take(st) ? parseInlines(text, st) : undefined;
+        const headCells = head.map(cell);
         const rows: MdInline[][][] = [];
+        let spent = headCells.some((c) => c === undefined);
         for (
           i += 2;
           i < n && !blank(lines[i] as string) && !startsBlock(lines[i] as string, nest);
           i++
         ) {
+          work(st);
+          if (spent) continue;
           if (rows.length >= MD_MAX_TABLE_ROWS) {
             st.truncated = true;
+            spent = true;
             continue;
           }
           const cells = splitRow(lines[i] as string);
-          rows.push(head.map((_, c) => parseInlines(cells[c] ?? "", st)));
+          const row = head.map((_, c) => cell(cells[c] ?? ""));
+          if (row.some((c) => c === undefined)) spent = true;
+          else rows.push(row as MdInline[][]);
         }
-        out.push({ type: "table", align, head: head.map((c) => parseInlines(c, st)), rows });
+        if (!headCells.some((c) => c === undefined))
+          out.push({ type: "table", align, head: headCells as MdInline[][], rows });
         continue;
       }
     }
