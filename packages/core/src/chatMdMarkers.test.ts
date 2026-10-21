@@ -48,4 +48,22 @@ describe("resolveMdMarkers", () => {
     expect(JSON.stringify(res("a [[a1]] [[zzz]]"))).not.toContain('"marker"');
     expect(JSON.stringify(res("a [[a1]]", true))).not.toContain('"ref"');
   });
+  it("drops emphasis, strong and link nodes a removed marker left empty", () => {
+    expect(first(res("a **[[zzz]]** b"))).toEqual([txt("a  b")]);
+    expect(first(res("a _[[zzz]]_"))).toEqual([txt("a ")]);
+    expect(first(res("**[[zzz]]**"))).toEqual([]);
+    expect(first(res("**_[[zzz]]_**"))).toEqual([]);
+    expect(first(res("x **[[a1]]**", true))).toEqual([txt("x ")]);
+  });
+  it("keeps emphasis whose first child was a removed marker but which still has content", () => {
+    expect(first(res("**[[zzz]]kept**"))).toEqual([{ type: "strong", children: [txt("kept")] }]);
+    expect(first(res("**[[a1]] x**"))).toEqual([
+      { type: "strong", children: [{ type: "ref", id: "a1", n: 1 }, txt(" x")] },
+    ]);
+  });
+  it("drops a hard break a removed trailing marker left at the end", () => {
+    expect(first(res("a [[a1]]  \n[[zzz]]"))).toEqual([txt("a "), { type: "ref", id: "a1", n: 1 }]);
+    expect(first(res("a  \n[[zzz]]"))).toEqual([txt("a")]);
+    expect(first(res("a  \n[[zzz]]b"))).toEqual([txt("a"), { type: "br" }, txt("b")]);
+  });
 });

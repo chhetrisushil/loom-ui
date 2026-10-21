@@ -107,7 +107,10 @@ describe("renderer-lit's browser entries carry no zod", () => {
     ["media.js", 71 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
-    ["chat.js", 94 * 1000],
+    // Chat markdown (176i): 94 -> 110 kB (measured 93_391 -> 107_720): core's bounded parser (chatMarkdown, chatMdBlock,
+    // chatMdInline, chatMdScan, chatMdTypes, resolveMdMarkers) and `chatMarkdown.ts`, the DOM drawer. The test-only work
+    // counter lives in `chatMdMeter.test-support.ts` and is not in the bundle.
+    ["chat.js", 110 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);
