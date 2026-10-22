@@ -44,7 +44,7 @@ interface RendererAdapter {
   kinds: readonly string[];      // the Blueprint kinds you DRAW; any other must be refused visibly
   capabilities?: {
     update?: boolean;            // update(next) is incremental
-    invoke?: boolean;            // invoke() drives approvals / selects / text inputs
+    invoke?: boolean;            // invoke() drives approvals / selects / multi-selects / text inputs
     i18n?: boolean;              // mount() honours the host's words and locale
     interpretsControlCharacters?: boolean; // your surface reads ESC sequences / markup (terminal, speech)
   };
@@ -80,7 +80,8 @@ settle first (await your scheduler) so the kit never sleeps.
 | `media-refs` | a media reference is described and its address (or any prefix) is never shown |
 | `chat` | complete turns in order; a restricted turn only as a placeholder; a field outside the `ChatValue` contract is not drawn |
 | `i18n` | the host's messages replace fixed words (`LU_MESSAGES` keys) and its locale formats numbers |
-| `actions` | controls emit the shared `WidgetAction` shapes (`APPROVE`/`REJECT` with `payload.approved`; `SELECT` / `SUBMIT_TEXT` with a well-formed idempotency `key`) |
+| `actions` | controls emit the shared `WidgetAction` shapes (`APPROVE`/`REJECT` with `payload.approved`; `SELECT` / `SELECT_MANY` (`payload.values`, in the order driven) / `SUBMIT_TEXT` with a well-formed idempotency `key`) |
+| `multi-select-current-value` | a bound `MultiSelectInput` reads differently for each chosen set and draws what is chosen |
 
 The kit tests itself: `src/speech.test.ts` breaks one clause at a time in a conforming renderer and
 requires the kit to name that clause.

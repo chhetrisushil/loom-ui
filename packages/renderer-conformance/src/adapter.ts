@@ -52,12 +52,14 @@ export type InvokeIntent =
   | { readonly kind: "approve" }
   | { readonly kind: "reject" }
   | { readonly kind: "select"; readonly value: string }
-  | { readonly kind: "text"; readonly text: string };
+  | { readonly kind: "text"; readonly text: string }
+  /** Choose exactly these values of a `MultiSelectInput`, in this order, starting from an empty selection. */
+  | { readonly kind: "select-many"; readonly values: readonly string[] };
 
 export interface AdapterCapabilities {
   /** `update(next)` is incremental and keeps the view live. */
   readonly update?: boolean;
-  /** `invoke` drives APPROVE / REJECT / SELECT / SUBMIT_TEXT controls. */
+  /** `invoke` drives APPROVE / REJECT / SELECT / SELECT_MANY / SUBMIT_TEXT controls. */
   readonly invoke?: boolean;
   /** `mount` honours `MountOptions.i18n` (the host's words and locale). */
   readonly i18n?: boolean;

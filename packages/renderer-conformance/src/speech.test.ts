@@ -182,6 +182,36 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
     }),
   ],
   [
+    "multi-select-current-value",
+    "ignores the chosen set of a MultiSelectInput",
+    faulty({
+      options: (o) => ({
+        ...o,
+        values: Object.fromEntries(
+          Object.entries(o.values).map(([h, e]) => [
+            h,
+            h === "h-msel" ? { ...e, value: { ...(e.value as object), selected: [] } } : e,
+          ])
+        ),
+      }),
+    }),
+  ],
+  [
+    "actions",
+    "drops the values from a SELECT_MANY payload",
+    faulty({
+      options: (o) => ({
+        ...o,
+        onAction: (a) =>
+          o.onAction(
+            a.type === "SELECT_MANY"
+              ? { ...a, payload: { key: (a.payload as { key: unknown }).key } }
+              : a
+          ),
+      }),
+    }),
+  ],
+  [
     "actions",
     "emits a different action shape",
     faulty({
