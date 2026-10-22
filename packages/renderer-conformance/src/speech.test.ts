@@ -197,6 +197,31 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
     }),
   ],
   [
+    "multi-select-current-value",
+    "marks the wrong option as chosen",
+    faulty({
+      options: (o) => ({
+        ...o,
+        values: Object.fromEntries(
+          Object.entries(o.values).map(([h, e]) => [
+            h,
+            h === "h-msel"
+              ? {
+                  ...e,
+                  value: {
+                    ...(e.value as { selected: string[] }),
+                    selected: (e.value as { selected: string[] }).selected.map((v) =>
+                      v === "alpha" ? "beta" : v === "beta" ? "alpha" : v
+                    ),
+                  },
+                }
+              : e,
+          ])
+        ),
+      }),
+    }),
+  ],
+  [
     "actions",
     "drops the values from a SELECT_MANY payload",
     faulty({
