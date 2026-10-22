@@ -9,8 +9,12 @@ import {
 } from "@loom-ui/core";
 import type { ActionOutcome } from "@loom-ui/core/browser";
 import {
+  MAX_MULTI_SELECTED,
+  type MultiSelectValue,
   SELECT_ACTION,
+  SELECT_MANY_ACTION,
   SUBMIT_TEXT_ACTION,
+  multiSelectValueIssues,
   newSubmitKey,
   stripUnsafeChars,
   validateSelectValue,
@@ -341,7 +345,7 @@ export interface PaintStats {
   readonly totalLines: number;
 }
 
-export type ControlKind = "approval" | "select" | "text";
+export type ControlKind = "approval" | "select" | "multi" | "text";
 export interface Control {
   readonly id: string;
   readonly kind: ControlKind;
@@ -367,7 +371,8 @@ export interface InteractiveTerminal {
 type Mode =
   | { readonly kind: "nav" }
   | { readonly kind: "text"; readonly draft: string }
-  | { readonly kind: "pick"; readonly index: number };
+  | { readonly kind: "pick"; readonly index: number }
+  | { readonly kind: "multi"; readonly index: number; readonly picks: readonly string[] };
 
 /** Every widget under `layout`, in document order (a grid child is a `GridCell` holding its node). */
 function widgetsOf(layout: Layout): Widget[] {
@@ -479,6 +484,9 @@ export function interactiveTerminal(
       } else if (w.kind === "SelectInput") {
         if (optionsProblem(w.props.options) === undefined)
           out.push({ id: w.id, kind: "select", label: label || say("lu.input.choose"), widget: w });
+      } else if (w.kind === "MultiSelectInput") {
+        if (multiSelectValueIssues(boundValue(w)).length === 0)
+          out.push({ id: w.id, kind: "multi", label: label || say("lu.input.choose"), widget: w });
       } else if (w.kind === "TextInput") {
         out.push({ id: w.id, kind: "text", label: label || say("lu.input.message"), widget: w });
       }
@@ -490,6 +498,17 @@ export function interactiveTerminal(
     optionsProblem(w.props.options) === undefined
       ? (w.props.options as ReadonlyArray<{ value: string; label: string }>)
       : [];
+
+  const multiOf = (w: Widget): MultiSelectValue | undefined => {
+    const v = boundValue(w);
+    return multiSelectValueIssues(v).length === 0 ? (v as MultiSelectValue) : undefined;
+  };
+  const maxOf = (w: Widget): number => {
+    const m = w.props.maxSelected;
+    return typeof m === "number" && Number.isInteger(m) && m >= 1 && m <= MAX_MULTI_SELECTED
+      ? m
+      : MAX_MULTI_SELECTED;
+  };
 
   function build(): string {
     const body = renderExperience(blueprint, store, renderOpts);
@@ -512,6 +531,20 @@ export function interactiveTerminal(
         lines.push(
           `${mark} ${c.label}: ${editing ? `${(mode as { draft: string }).draft}▏` : "…"}`
         );
+      } else if (c.kind === "multi") {
+        lines.push(`${mark} ${c.label}`);
+        const m = multiOf(c.widget);
+        if (focused && mode.kind === "multi" && m !== undefined) {
+          const at = mode.index;
+          const from = Math.max(0, Math.min(at - 4, m.options.length - 10));
+          const picks = new Set(mode.picks);
+          m.options.slice(from, from + 10).forEach((o, k) => {
+            const i = from + k;
+            lines.push(
+              `   ${i === at ? "›" : " "} [${picks.has(o.value) ? "x" : " "}] ${oneLineChatText(o.label, 60)}`
+            );
+          });
+        }
       } else {
         lines.push(`${mark} ${c.label}`);
         const w = controls.find((x) => x.id === c.id)?.widget;
@@ -670,6 +703,40 @@ export function interactiveTerminal(
       }
       return undefined;
     }
+    if (mode.kind === "multi") {
+      const m = multiOf(c.widget);
+      if (m === undefined) {
+        mode = { kind: "nav" };
+        return undefined;
+      }
+      const last = m.options.length - 1;
+      if (key.name === "escape") mode = { kind: "nav" };
+      else if (key.name === "up") mode = { ...mode, index: Math.max(0, mode.index - 1) };
+      else if (key.name === "down") mode = { ...mode, index: Math.min(last, mode.index + 1) };
+      else if (key.name === "char" && key.char === " ") {
+        const o = m.options[mode.index];
+        if (o !== undefined) {
+          const has = mode.picks.includes(o.value);
+          if (has) mode = { ...mode, picks: mode.picks.filter((p) => p !== o.value) };
+          else if (mode.picks.length < maxOf(c.widget))
+            mode = { ...mode, picks: [...mode.picks, o.value] };
+        }
+      } else if (key.name === "enter") {
+        if (!consent(sole, snap)) return "stop";
+        const ok = await dispatch(
+          {
+            type: SELECT_MANY_ACTION,
+            widgetId: c.id,
+            payload: { values: [...mode.picks], key: newSubmitKey() },
+          },
+          c.widget,
+          snap
+        );
+        if (ok) mode = { kind: "nav" };
+        return "stop";
+      }
+      return undefined;
+    }
     // Navigation. A paste is text: with no draft open it is nothing.
     if (key.name === "paste") return undefined;
     note = "";
@@ -707,6 +774,8 @@ export function interactiveTerminal(
     } else if (key.name === "enter") {
       if (c.kind === "text") mode = { kind: "text", draft: "" };
       else if (c.kind === "select") mode = { kind: "pick", index: 0 };
+      else if (c.kind === "multi")
+        mode = { kind: "multi", index: 0, picks: [...(multiOf(c.widget)?.selected ?? [])] };
     }
     return undefined;
   }
