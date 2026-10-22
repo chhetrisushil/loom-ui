@@ -4,8 +4,10 @@ import {
   MAX_CHAT_ENTRIES,
   MAX_CHAT_PARTS,
   MAX_CHAT_TEXT,
+  MAX_MULTI_OPTIONS,
   chatValueIssues,
   isChatValue,
+  multiSelectValueIssues,
 } from "./chatValue";
 import { checkKindValue as liteCheck } from "./kindValues";
 import { checkKindValue as zodCheck } from "./values";
@@ -60,13 +62,28 @@ describe("the ChatValue contract", () => {
       expect(a.ok).toBe(false);
       expect(b).toEqual(a);
     }
-    expect(CHAT_KINDS).toEqual(["Chat", "TextInput", "FormInput", "SelectInput"]);
+    expect(CHAT_KINDS).toEqual([
+      "Chat",
+      "TextInput",
+      "FormInput",
+      "SelectInput",
+      "MultiSelectInput",
+    ]);
     // A SelectInput may be bound to its CURRENT value (a string); the other inputs stay static.
     expect(liteCheck("SelectInput", "b")).toEqual({ ok: true });
     expect(zodCheck("SelectInput", "b")).toEqual({ ok: true });
     for (const bad of [1, {}, ["a"], null]) {
       expect(liteCheck("SelectInput", bad).ok).toBe(false);
       expect(zodCheck("SelectInput", bad).ok).toBe(false);
+    }
+    // A MultiSelectInput MUST bind its options and choice; both checkers agree.
+    const multi = { options: [{ value: "a", label: "A" }], selected: ["a"] };
+    expect(liteCheck("MultiSelectInput", multi)).toEqual({ ok: true });
+    expect(zodCheck("MultiSelectInput", multi)).toEqual({ ok: true });
+    for (const bad of ["a", { options: [], selected: ["z"] }]) {
+      const a = zodCheck("MultiSelectInput", bad);
+      expect(a.ok).toBe(false);
+      expect(liteCheck("MultiSelectInput", bad)).toEqual(a);
     }
     for (const k of ["TextInput", "FormInput", "SelectInput"]) {
       expect(liteCheck(k, undefined)).toEqual({ ok: true });
@@ -169,5 +186,84 @@ describe("the ChatValue contract", () => {
     expect(
       chatValueIssues({ entries: Array.from({ length: 500 }, () => null) }).length
     ).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("multiSelectValueIssues", () => {
+  const ok = {
+    options: [
+      { value: "a", label: "Alpha" },
+      { value: "b", label: "Beta", hint: "processing" },
+    ],
+    selected: ["b"],
+  };
+  it("accepts a value whose selection is among its options", () => {
+    expect(multiSelectValueIssues(ok)).toEqual([]);
+    expect(multiSelectValueIssues({ ...ok, selected: [], note: "Showing some" })).toEqual([]);
+  });
+  it("refuses a non-object, a stray field, and missing lists", () => {
+    expect(multiSelectValueIssues("a")).toEqual([
+      { path: [], message: "Expected a multi-select value" },
+    ]);
+    expect(multiSelectValueIssues({ ...ok, html: "<b>" })).toContainEqual({
+      path: [],
+      message: "unexpected field",
+    });
+    expect(multiSelectValueIssues({ selected: [] })).toContainEqual({
+      path: ["options"],
+      message: "options is required",
+    });
+    expect(multiSelectValueIssues({ options: [] })).toContainEqual({
+      path: ["selected"],
+      message: "selected is required",
+    });
+  });
+  it("refuses bad options: duplicates, control characters, empty or long labels, long hints, extra fields", () => {
+    const bad = (o: unknown) => multiSelectValueIssues({ options: [o], selected: [] });
+    expect(
+      multiSelectValueIssues({ options: [ok.options[0], ok.options[0]], selected: [] })
+    ).toContainEqual({ path: ["options", 1, "value"], message: "option values are unique" });
+    expect(bad({ value: "a\u0007", label: "x" })).toContainEqual({
+      path: ["options", 0, "value"],
+      message: "an option value is short text without control characters",
+    });
+    expect(bad({ value: "a", label: "" })).toContainEqual({
+      path: ["options", 0, "label"],
+      message: "an option label is short text",
+    });
+    expect(bad({ value: "a", label: "x", hint: "h".repeat(41) })).toContainEqual({
+      path: ["options", 0, "hint"],
+      message: "a hint is short text",
+    });
+    expect(bad({ value: "a", label: "x", href: "y" })).toContainEqual({
+      path: ["options", 0],
+      message: "unexpected field",
+    });
+  });
+  it("refuses a selection outside the options, a repeat, and more than the limits", () => {
+    expect(multiSelectValueIssues({ ...ok, selected: ["z"] })).toContainEqual({
+      path: ["selected", 0],
+      message: "a selected value is one of the options",
+    });
+    expect(multiSelectValueIssues({ ...ok, selected: ["a", "a"] })).toContainEqual({
+      path: ["selected", 1],
+      message: "selected values are unique",
+    });
+    const many = Array.from({ length: MAX_MULTI_OPTIONS + 1 }, (_, i) => ({
+      value: `v${i}`,
+      label: "x",
+    }));
+    expect(multiSelectValueIssues({ options: many, selected: [] })).toContainEqual({
+      path: ["options"],
+      message: "at most 500 options",
+    });
+    const hundred = many.slice(0, 101);
+    expect(
+      multiSelectValueIssues({ options: hundred, selected: hundred.map((o) => o.value) })
+    ).toContainEqual({ path: ["selected"], message: "at most 100 selected" });
+    expect(multiSelectValueIssues({ ...ok, note: "" })).toContainEqual({
+      path: ["note"],
+      message: "note is short text",
+    });
   });
 });

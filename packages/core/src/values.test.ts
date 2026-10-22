@@ -28,6 +28,7 @@ describe("kindValueContracts", () => {
         "TextInput",
         "FormInput",
         "SelectInput",
+        "MultiSelectInput",
         "MetricCard",
         "Note",
         "ProgressBar",
@@ -59,6 +60,7 @@ describe("kindValueContracts", () => {
       "TextInput",
       "FormInput",
       "SelectInput",
+      "MultiSelectInput",
     ]);
     expect(kindValueContract("Nope")).toBeUndefined();
   });

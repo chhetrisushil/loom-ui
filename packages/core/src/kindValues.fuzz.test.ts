@@ -261,6 +261,14 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   TextInput: () => undefined,
   FormInput: () => undefined,
   SelectInput: (r) => pick(r, ["a", "b", undefined]),
+  MultiSelectInput: (r) => {
+    const o: Record<string, unknown> = {
+      options: arr(r, () => ({ value: pick(r, ["a", "b", "c", ""]), label: pick(r, strs) }), 3),
+      selected: arr(r, () => pick(r, ["a", "b", "z"]), 2),
+    };
+    withOptional(r, o, "note", () => pick(r, strs));
+    return o;
+  },
 };
 
 // ── Deep junk: a fresh value each call (the checkers must not mutate it, but never share) ────

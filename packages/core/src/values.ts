@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chatValueIssues } from "./chatValue";
+import { chatValueIssues, multiSelectValueIssues } from "./chatValue";
 import type { Finding } from "./experience";
 import {
   type ContractRegistry,
@@ -204,6 +204,11 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   FormInput: z.undefined(),
   // The CURRENT choice, when the host binds one (display only; the user still submits). Optional.
   SelectInput: z.string().optional(),
+  // The options and the current choice, both data (the shared checker, like the transcript).
+  MultiSelectInput: z.unknown().superRefine((v, ctx) => {
+    for (const i of multiSelectValueIssues(v))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...i.path], message: i.message });
+  }),
 };
 
 export function kindValueContract(
