@@ -488,7 +488,9 @@ const multiPrompt =
     const rows =
       chosen.length === 0
         ? [`${hang(host)}  ${propText(w.props.emptyLabel) || x.say("lu.input.none")}`]
-        : chosen.map((o, i) => `${hang(host)}  ${i + 1}) ${text(o)} ${x.say("lu.terminal.current")}`);
+        : chosen.map(
+            (o, i) => `${hang(host)}  ${i + 1}) ${text(o)} ${x.say("lu.terminal.current")}`
+          );
     const rest = (m?.options.length ?? 0) - chosen.length;
     if (rest > 0) rows.push(`${hang(host)}  + ${rest} ${x.say("lu.terminal.moreOptions")}`);
     if (m?.note !== undefined) rows.push(`${hang(host)}  ${oneLineChatText(m.note, 200)}`);

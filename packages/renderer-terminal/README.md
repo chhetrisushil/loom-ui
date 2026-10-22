@@ -269,9 +269,10 @@ term.stop();
   change diffs the new frame against the last (`diffFrames`) and writes only the changed lines as
   cursor-addressed rewrites (`paintPatches`). `onPaint` reports `{ mode: "full" | "patch" | "none",
   changedLines, totalLines }`. A change that leaves the frame as it was writes nothing.
-- **Controls.** `ApprovalCard` (only while an approval is pending, like the web), `SelectInput` and
-  `TextInput`. Tab / Shift-Tab (or the arrows) move focus. Approvals take `y` / `n` only: Enter is
+- **Controls.** `ApprovalCard` (only while an approval is pending, like the web), `SelectInput`, `MultiSelectInput`
+  and `TextInput`. Tab / Shift-Tab (or the arrows) move focus. Approvals take `y` / `n` only: Enter is
   never consent. A select opens a list (Enter), picks by digit or arrows + Enter, Escape backs out. The list starts on the first option: it does not preselect a bound current choice (the non-interactive prompt does mark it, `(current)`), and the terminal ignores a SelectInput's `size`.
+  `MultiSelectInput` opens a checklist (Enter): arrows move, Space ticks or unticks (never past `maxSelected`), Enter sends the whole set, Escape backs out. It starts with the bound choice ticked and shows 10 options around the cursor.
   A text input starts on Enter, edits with Backspace, sends on Enter, Escape cancels.
 - **Consent is deliberate.** `y` / `n` and every submit act only when they are the SOLE key of their
   input chunk, on the frame they were pressed on: a key that changes mode or submits ends the chunk

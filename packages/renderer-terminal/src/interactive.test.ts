@@ -343,3 +343,74 @@ describe("injected streams", () => {
     expect(actions.map((a) => a.type)).toEqual([SELECT_ACTION, SUBMIT_TEXT_ACTION]);
   });
 });
+
+describe("a MultiSelectInput checklist", () => {
+  const v = {
+    options: [
+      { value: "a", label: "Q3 report" },
+      { value: "b", label: "Contract v2" },
+      { value: "c", label: "Invoice" },
+    ],
+    selected: ["b"],
+  };
+  const terminalWith = (
+    kind: string,
+    props: Record<string, unknown>,
+    value: unknown,
+    onAction: (a: unknown) => void
+  ) => {
+    const w = customWidget$({ kind, id: "scope", title: "Scope", binding: bind("h-scope"), props });
+    const { store, term } = rig(view(w), onAction);
+    store.setValue("h-scope", value, { state: "ready" });
+    return term;
+  };
+  it("Enter opens it with the bound choice ticked; Space toggles; Enter sends the whole set once", async () => {
+    const acts: unknown[] = [];
+    const t = terminalWith(
+      "MultiSelectInput",
+      { label: "Search in", maxSelected: 100 },
+      v,
+      (a) => void acts.push(a)
+    );
+    expect(t.controls()).toEqual([{ id: "scope", kind: "multi", label: "Search in" }]);
+    await t.press({ name: "enter" });
+    expect(t.frame()).toContain("› [ ] Q3 report");
+    expect(t.frame()).toContain("  [x] Contract v2");
+    await t.press({ name: "char", char: " " });
+    await t.press({ name: "enter" });
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({
+      type: "SELECT_MANY",
+      widgetId: "scope",
+      payload: { values: ["b", "a"] },
+    });
+  });
+  it("Escape backs out without sending; Space at maxSelected does not tick another", async () => {
+    const acts: unknown[] = [];
+    const t = terminalWith(
+      "MultiSelectInput",
+      { label: "Search in", maxSelected: 1 },
+      v,
+      (a) => void acts.push(a)
+    );
+    await t.press({ name: "enter" });
+    await t.press({ name: "char", char: " " });
+    expect(t.frame()).toContain("› [ ] Q3 report");
+    await t.press({ name: "escape" });
+    expect(acts).toHaveLength(0);
+  });
+  it("shows at most 10 options around the cursor", async () => {
+    const many = {
+      options: Array.from({ length: 30 }, (_, i) => ({ value: `v${i}`, label: `Doc ${i}` })),
+      selected: [],
+    };
+    const t = terminalWith("MultiSelectInput", { label: "Search in" }, many, () => {});
+    await t.press({ name: "enter" });
+    expect(
+      t
+        .frame()
+        .split("\n")
+        .filter((l) => /\[[ x]\] Doc/.test(l))
+    ).toHaveLength(10);
+  });
+});
