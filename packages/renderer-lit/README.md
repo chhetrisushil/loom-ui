@@ -543,6 +543,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
     the first bad field. A failed send keeps the draft and the idempotency key. `onAction` handlers
     may return `{ ok, reason? }` (or a promise): the widget waits for it (`renderBlueprintDom`
     passes the return value through).
+  `SelectInput` may be bound to its current choice (a string; shown only if it is a declared option, never echoed) and takes `size: "compact"` (host attribute `compact`, `::part(select)`) to fit its content inline.
 - **Media is an opt-in entry (U9): `@loom-ui/renderer-lit/media`.** `createMediaLitRegistry({ media
   })` is the default registry plus `Image`, `Audio`, `Video`, `File` and `MediaInput`
   (`registerMediaWidgets(registry, opts)` adds them to one you built; `mediaKindContracts` is what a

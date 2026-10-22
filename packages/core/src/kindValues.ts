@@ -476,7 +476,7 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   Chat: chatContract,
   TextInput: (v, p, out) => type("undefined", v, p, out),
   FormInput: (v, p, out) => type("undefined", v, p, out),
-  SelectInput: (v, p, out) => type("undefined", v, p, out),
+  SelectInput: optionalString,
 };
 
 /**

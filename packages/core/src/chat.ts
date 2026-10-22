@@ -25,7 +25,7 @@ export const CHAT_ALLOWED_PROPS: Readonly<Record<string, readonly string[]>> = O
   [CHAT_KIND]: ["emptyText", "editable"],
   [TEXT_INPUT_KIND]: ["label", "placeholder", "multiline", "maxChars", "submitLabel"],
   [FORM_INPUT_KIND]: ["label", "fields", "submitLabel"],
-  [SELECT_INPUT_KIND]: ["label", "options", "placeholder"],
+  [SELECT_INPUT_KIND]: ["label", "options", "placeholder", "size"],
 });
 
 /** The text-valued props (a `LocalizedText` is allowed there; resolved at compile). */
@@ -38,6 +38,9 @@ export const CHAT_TEXT_PROPS: Readonly<Record<string, readonly string[]>> = Obje
 
 /** The version the chat entries declare; bump with a kind's props or value contract. */
 export const CHAT_TYPE_VERSION = "1.0.0";
+
+/** How a SelectInput is sized: `default` fills its row; `compact` fits its content so it can sit beside other controls. */
+export const SELECT_SIZES: readonly string[] = ["default", "compact"];
 
 const textOf = (raw: unknown): unknown =>
   typeof raw === "object" &&
@@ -80,7 +83,10 @@ export function chatPropFindings(
         err("chat-prop-shape", `"${nodeId}": ${key} is short text`);
       continue;
     }
-    if (key === "editable" || key === "multiline") {
+    if (key === "size") {
+      if (!SELECT_SIZES.includes(value as string))
+        err("chat-prop-shape", `"${nodeId}": size is one of ${SELECT_SIZES.join(", ")}`);
+    } else if (key === "editable" || key === "multiline") {
       if (typeof value !== "boolean")
         err("chat-prop-shape", `"${nodeId}": ${key} is true or false`);
     } else if (key === "maxChars") {
@@ -113,7 +119,7 @@ export function chatCatalogEntries(
   options: { readonly surfaces?: readonly string[] } = {}
 ): SemanticEntry[] {
   const surfaces = options.surfaces ?? ["web", "terminal"];
-  const entry = (kind: string, binding: "required" | "none"): SemanticEntry => {
+  const entry = (kind: string, binding: "required" | "optional" | "none"): SemanticEntry => {
     const props = CHAT_ALLOWED_PROPS[kind] as readonly string[];
     const resolution: SurfaceResolution = { kind, props: [...props], binding };
     return {
@@ -125,7 +131,10 @@ export function chatCatalogEntries(
       surfaces: Object.fromEntries(surfaces.map((s) => [s, resolution])),
     };
   };
-  return [entry(CHAT_KIND, "required"), ...CHAT_INPUT_KINDS.map((k) => entry(k, "none"))];
+  return [
+    entry(CHAT_KIND, "required"),
+    ...CHAT_INPUT_KINDS.map((k) => entry(k, k === SELECT_INPUT_KIND ? "optional" : "none")),
+  ];
 }
 
 export const isChatFamilyKind = (kind: string): boolean =>

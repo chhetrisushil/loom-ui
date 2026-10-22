@@ -84,7 +84,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `Image` · `Audio` · `Video` · `File` | `MediaRef` — an ADDRESS, never bytes | host supplies a `MediaResolver` |
 | `MediaInput` | static upload control | |
 | `Chat` | `ChatValue` | text is UNTRUSTED, drawn as text only; a reply's model reasoning is OFF unless `ChatFeed({ reasoning })` (a collapsed "Reasoning" disclosure; a `summary` is labelled a summary) |
-| `TextInput` · `FormInput` · `SelectInput` | static | emit `SUBMIT_TEXT` / `SUBMIT_FORM` / `SELECT` |
+| `TextInput` · `FormInput` · `SelectInput` | static (a `SelectInput` may bind its current choice) | emit `SUBMIT_TEXT` / `SUBMIT_FORM` / `SELECT` |
 
 | Export | What |
 |---|---|

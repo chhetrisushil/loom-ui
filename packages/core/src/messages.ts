@@ -207,6 +207,7 @@ export const LU_MESSAGES = {
   "lu.terminal.multiline": " (multi-line)",
   "lu.terminal.textInput": "[text input — answer on an interactive surface]",
   "lu.terminal.formInput": "[form — answer on an interactive surface]",
+  "lu.terminal.current": "(current)",
   "lu.terminal.selectInput": "[choice — answer on an interactive surface]",
 } as const;
 

@@ -61,8 +61,16 @@ describe("the ChatValue contract", () => {
       expect(b).toEqual(a);
     }
     expect(CHAT_KINDS).toEqual(["Chat", "TextInput", "FormInput", "SelectInput"]);
+    // A SelectInput may be bound to its CURRENT value (a string); the other inputs stay static.
+    expect(liteCheck("SelectInput", "b")).toEqual({ ok: true });
+    expect(zodCheck("SelectInput", "b")).toEqual({ ok: true });
+    for (const bad of [1, {}, ["a"], null]) {
+      expect(liteCheck("SelectInput", bad).ok).toBe(false);
+      expect(zodCheck("SelectInput", bad).ok).toBe(false);
+    }
     for (const k of ["TextInput", "FormInput", "SelectInput"]) {
       expect(liteCheck(k, undefined)).toEqual({ ok: true });
+      if (k === "SelectInput") continue;
       expect(liteCheck(k, "typed text").ok).toBe(false); // an input is static: a value reaching it is a defect
     }
   });

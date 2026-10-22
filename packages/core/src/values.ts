@@ -202,7 +202,8 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   }),
   TextInput: z.undefined(),
   FormInput: z.undefined(),
-  SelectInput: z.undefined(),
+  // The CURRENT choice, when the host binds one (display only; the user still submits). Optional.
+  SelectInput: z.string().optional(),
 };
 
 export function kindValueContract(

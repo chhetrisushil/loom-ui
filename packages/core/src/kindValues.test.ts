@@ -91,7 +91,7 @@ const VALID: Readonly<Record<string, unknown>> = {
   },
   TextInput: undefined,
   FormInput: undefined,
-  SelectInput: undefined,
+  SelectInput: "b",
 };
 
 const JUNK: readonly unknown[] = [

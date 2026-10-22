@@ -11,7 +11,11 @@ import "../elements/lu-inputs";
 // U8: the input widgets. One action per submit, stamped by the renderer and re-validated by the
 // host; the draft survives a failed send and the retry carries the same idempotency key.
 
-type Mounted = HTMLElement & { updateComplete: Promise<unknown>; value: unknown };
+type Mounted = HTMLElement & {
+  updateComplete: Promise<unknown>;
+  value: unknown;
+  widget: unknown;
+};
 const settle = async (el: Mounted) => {
   for (let i = 0; i < 5; i++) {
     await Promise.resolve();
@@ -377,6 +381,96 @@ describe("lu-select-input", () => {
     await settle(el);
     expect(sel.value).toBe("");
     expect(q(el, "#status")?.textContent).toBe("Not sent. Try again.");
+  });
+});
+
+describe("lu-select-input: a bound current value and a compact size", () => {
+  const options = [
+    { value: "a", label: "Alpha" },
+    { value: "b", label: "Beta" },
+  ];
+  const sel = (el: HTMLElement) => q<HTMLSelectElement>(el, "select") as HTMLSelectElement;
+  const withValue = async (el: Mounted, value: unknown) => {
+    el.value = value;
+    await settle(el);
+  };
+
+  it("shows the bound value when it is a declared option; anything else is the placeholder, never echoed", async () => {
+    const el = await mount("lu-select-input", "SelectInput", { options }, undefined, {
+      value: "b",
+    });
+    expect(sel(el).value).toBe("b");
+    await withValue(el, "zzz");
+    expect(sel(el).value).toBe("");
+    expect(root(el).textContent).not.toContain("zzz");
+    await withValue(el, { x: 1 });
+    expect(sel(el).value).toBe("");
+    await withValue(el, "a");
+    expect(sel(el).value).toBe("a");
+  });
+
+  it("follows a changed bound value; undefined (not loaded) keeps what is shown", async () => {
+    const el = await mount("lu-select-input", "SelectInput", { options }, undefined, {
+      value: "a",
+    });
+    await withValue(el, "b");
+    expect(sel(el).value).toBe("b");
+    await withValue(el, undefined);
+    expect(sel(el).value).toBe("b");
+  });
+
+  it("a user change still emits SELECT unchanged, and a re-render with the same or an older bound value does not clobber the in-flight choice", async () => {
+    const seen: Act[] = [];
+    let release: (v: unknown) => void = () => undefined;
+    const el = await mount(
+      "lu-select-input",
+      "SelectInput",
+      { options },
+      (a) => {
+        seen.push(a);
+        return new Promise((r) => {
+          release = r;
+        });
+      },
+      { value: "a" }
+    );
+    sel(el).value = "b";
+    sel(el).dispatchEvent(new Event("change"));
+    await settle(el);
+    expect(seen.map((s) => [s.type, s.payload.value])).toEqual([[SELECT_ACTION, "b"]]);
+    await withValue(el, "a"); // the server has not caught up yet
+    el.widget = { ...(el.widget as object) }; // a recompile hands a fresh widget object
+    await settle(el);
+    expect(sel(el).value).toBe("b");
+    release({ ok: true });
+    await settle(el);
+    expect(sel(el).value).toBe("b");
+    await withValue(el, "b");
+    expect(sel(el).value).toBe("b");
+  });
+
+  it("a failed choice goes back to the bound value", async () => {
+    const el = await mount(
+      "lu-select-input",
+      "SelectInput",
+      { options },
+      async () => ({ ok: false, reason: "failed" }),
+      { value: "a" }
+    );
+    sel(el).value = "b";
+    sel(el).dispatchEvent(new Event("change"));
+    await settle(el);
+    expect(sel(el).value).toBe("a");
+  });
+
+  it("size compact sits inline (host attribute + part); default is unchanged", async () => {
+    const d = await mount("lu-select-input", "SelectInput", { options });
+    expect(d.hasAttribute("compact")).toBe(false);
+    const c = await mount("lu-select-input", "SelectInput", { options, size: "compact" });
+    expect(c.hasAttribute("compact")).toBe(true);
+    expect(sel(c).getAttribute("part")).toBe("select");
+    const bad = await mount("lu-select-input", "SelectInput", { options, size: "huge" });
+    expect(bad.hasAttribute("compact")).toBe(false);
   });
 });
 
