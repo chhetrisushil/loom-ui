@@ -5,6 +5,7 @@ import {
   LOAD_OLDER_ACTION,
   LOAD_REASONING_ACTION,
   SELECT_ACTION,
+  SELECT_MANY_ACTION,
   SUBMIT_FORM_ACTION,
   SUBMIT_TEXT_ACTION,
   isSubmitKey,
@@ -624,5 +625,87 @@ describe("fix round 1: host-side guards", () => {
       })
     );
     expect(r.ok && r.submission.kind === "form" && r.submission.values.title).toBe("a b c d e");
+  });
+});
+
+describe("SELECT_MANY", () => {
+  const published = new Set(["a", "b", "c"]);
+  const accept = (payload: unknown, over: Record<string, unknown> = {}) =>
+    acceptChatSubmit(
+      act(SELECT_MANY_ACTION, "scope", payload),
+      opts({
+        specOf: (id: string): InputSpec | undefined =>
+          id === "scope" ? { kind: "MultiSelectInput", maxSelected: 2 } : undefined,
+        optionsOf: (id: string) => (id === "scope" ? published : undefined),
+        ...over,
+      })
+    );
+
+  it("accepts a set of published values, and the empty set", () => {
+    const r = accept({ values: ["b", "a"], key: KEY });
+    expect(r.ok && r.submission).toEqual({
+      kind: "select-many",
+      widgetId: "scope",
+      key: KEY,
+      values: ["b", "a"],
+    });
+    expect(accept({ values: [], key: KEY }).ok).toBe(true);
+  });
+
+  it("refuses a value the host did not publish, a repeat, too many, and a non-list", () => {
+    const invalid = (values: "option" | "range" | "type") => ({
+      ok: false,
+      reason: "invalid",
+      errors: { values },
+    });
+    expect(accept({ values: ["z"], key: KEY })).toEqual(invalid("option"));
+    expect(accept({ values: ["a", "a"], key: KEY })).toEqual(invalid("option"));
+    expect(accept({ values: ["a", "b", "c"], key: KEY })).toEqual(invalid("range"));
+    expect(accept({ values: "a", key: KEY })).toEqual(invalid("type"));
+    expect(accept({ values: [1], key: KEY })).toEqual(invalid("type"));
+  });
+
+  it("refuses everything when the host serves no options (absent, undefined, or throwing)", () => {
+    expect(accept({ values: [], key: KEY }, { optionsOf: undefined }).ok).toBe(false);
+    expect(accept({ values: [], key: KEY }, { optionsOf: () => undefined }).ok).toBe(false);
+    expect(
+      accept(
+        { values: [], key: KEY },
+        {
+          optionsOf: () => {
+            throw new Error("x");
+          },
+        }
+      ).ok
+    ).toBe(false);
+  });
+
+  it("refuses a bad key, the wrong kind, a stale view, and never burns a key on a refusal", () => {
+    expect(accept({ values: ["a"], key: "short" })).toEqual({ ok: false, reason: "bad-key" });
+    expect(accept({ values: ["a"], key: KEY }, { specOf: () => SPECS.pick })).toEqual({
+      ok: false,
+      reason: "wrong-input",
+    });
+    const stale = act(
+      SELECT_MANY_ACTION,
+      "scope",
+      { values: ["a"], key: KEY },
+      { viewedVersion: stamp({ versionHash: "sha256:v1", blueprintId: "e@sha256:v1" }) }
+    );
+    const ledger = new SubmitLedger();
+    const o = opts({
+      specOf: () => ({ kind: "MultiSelectInput", maxSelected: 2 }),
+      optionsOf: () => published,
+      ledger,
+    });
+    expect(acceptChatSubmit(stale, o)).toEqual({ ok: false, reason: "stale" });
+    expect(accept({ values: ["z"], key: KEY }, { ledger }).ok).toBe(false);
+    expect(accept({ values: ["a"], key: KEY }, { ledger }).ok).toBe(true);
+  });
+
+  it("resumeTarget hands a gate { values }", async () => {
+    const resume = vi.fn();
+    await resumeTarget(resume)({ kind: "select-many", widgetId: "w", key: KEY, values: ["a"] });
+    expect(resume).toHaveBeenCalledWith({ values: ["a"] }, { idempotencyKey: KEY });
   });
 });

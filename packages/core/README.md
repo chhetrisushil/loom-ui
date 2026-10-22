@@ -445,7 +445,18 @@ carry a binding whose value is the CURRENT choice (a string; the host already ho
 shows it only if it is one of the declared `options` (anything else shows the placeholder and is never
 echoed), follows it when it changes, and keeps a choice being submitted over a stale re-read. It is
 display only: the user's change still emits `SELECT` and the host still re-validates. Which handles a composer may bind is the host's authorization job, as for any bound widget. File upload in a conversation is the existing
-`MediaInput`. Core names no loom type: the transcript contract below is what loom's conversation
+`MediaInput`.
+
+**`MultiSelectInput`** is the one input whose options are DATA, not props (a list that changes as the user
+adds to it), so it is bound to `{ options, selected, note? }`: `options` are `{ value, label, hint? }` (at most
+500; value 128 chars, label 200, hint 40), `selected` the current choice (at most 100, each one of the
+options). Props: `label`, `placeholder`, `emptyLabel` (shown when nothing is chosen) and `maxSelected` (1 to
+100, default 100). The user's change emits `SELECT_MANY` with the WHOLE new choice. Because the options are
+data, `acceptChatSubmit` matches `values` against `optionsOf(widgetId, principal)`, the set you PUBLISHED (per
+viewer, like `hasRef`); without it, or when it answers `undefined` or throws, every choice is refused. Values
+must be distinct, at most `maxSelected`; the empty set is a valid choice.
+
+Core names no loom type: the transcript contract below is what loom's conversation
 layer (`@loom/conversation`, ADR 0122) emits once a client has folded it, but any source that can
 say this much can feed the widget. `chatCatalogEntries()` returns the four semantic entries
 (`@1.1.0`) to splice into a catalogue; a catalogue without them cannot compose a chat node, so a
@@ -571,6 +582,7 @@ with `viewedVersion` (U5):
 | TextInput | `SUBMIT_TEXT` | `{ text, key }` |
 | FormInput | `SUBMIT_FORM` | `{ values, key }` |
 | SelectInput | `SELECT` | `{ value, key }` |
+| MultiSelectInput | `SELECT_MANY` | `{ values, key }` (the whole new choice, not a toggle). Untrusted: `acceptChatSubmit` matches `values` against `optionsOf(widgetId, principal)`, your record of what you published; without `optionsOf` it refuses (`invalid`, `values: "option"`) |
 | Chat (edit a turn) | `EDIT_TURN` | `{ turn, text, key }` |
 | Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
 | Chat (open a reference) | `CHAT_REF_OPEN` | `{ entryId, refId, n }` (a read: no key). Untrusted: `acceptChatSubmit` matches `entryId`/`refId` against `hasRef(entryId, refId, principal, { widgetId })`, your record of what you served (per viewer, like `canEdit`); without `hasRef` it refuses (`ref-not-allowed`) |
@@ -666,7 +678,7 @@ such field today (see the PR's loom-impact note).
 **What a planner can do.** Node props are allow-listed by the FRAMEWORK, whatever the catalogue
 declares: `Chat` `emptyText`, `editable`; `TextInput` `label`, `placeholder`, `multiline`,
 `maxChars`, `submitLabel`; `FormInput` `label`, `fields`, `submitLabel`; `SelectInput` `label`,
-`options`, `placeholder`, `size` (`default` or `compact`: fit the content so it can sit beside other controls; also the `select` `::part`). Anything else (`entries`, `messages`, `text`, `value`, `defaultValue`, a
+`options`, `placeholder`, `size` (`default` or `compact`: fit the content so it can sit beside other controls; also the `select` `::part`); `MultiSelectInput` `label`, `emptyLabel`, `placeholder`, `maxSelected`. Anything else (`entries`, `messages`, `text`, `value`, `defaultValue`, a
 prefill) is `chat-prop-forbidden`; a field spec is closed (name, label, type
 `text|textarea|number|boolean|select`, `required`, `maxLength`, `min`, `max`, `options`; no regular
 expressions, no defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` is `chat-unbound`. A

@@ -6,6 +6,7 @@
 //   SUBMIT_TEXT   { text, key }            a TextInput (a chat composer, a one-line answer)
 //   SUBMIT_FORM   { values, key }          a FormInput
 //   SELECT        { value, key }           a SelectInput
+//   SELECT_MANY   { values, key }          a MultiSelectInput: the whole new choice, not a toggle
 //   EDIT_TURN     { turn, text, key }      a Chat: the user revised an earlier turn of their own
 //   LOAD_OLDER    { cursor }               a Chat: show earlier turns (a read; carries no key)
 //   LOAD_REASONING { cursor }              a Chat: fetch one reply's durable reasoning (a read; carries no key)
@@ -15,6 +16,7 @@
 export const SUBMIT_TEXT_ACTION = "SUBMIT_TEXT";
 export const SUBMIT_FORM_ACTION = "SUBMIT_FORM";
 export const SELECT_ACTION = "SELECT";
+export const SELECT_MANY_ACTION = "SELECT_MANY";
 export const EDIT_TURN_ACTION = "EDIT_TURN";
 export const LOAD_OLDER_ACTION = "LOAD_OLDER";
 export const LOAD_REASONING_ACTION = "LOAD_REASONING";
