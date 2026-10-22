@@ -214,6 +214,8 @@ export const LU_MESSAGES = {
   "lu.terminal.formInput": "[form — answer on an interactive surface]",
   "lu.terminal.current": "(current)",
   "lu.terminal.selectInput": "[choice — answer on an interactive surface]",
+  "lu.terminal.multiSelectInput": "[choices — answer on an interactive surface]",
+  "lu.terminal.moreOptions": "more options",
 } as const;
 
 /** A key a host may translate. */

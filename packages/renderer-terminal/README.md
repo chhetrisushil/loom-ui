@@ -242,6 +242,8 @@ The keys the terminal asks for (including the shared chat and media words from `
 | `lu.terminal.formInput` | `[form — answer on an interactive surface]` |
 | `lu.terminal.current` | `(current)` |
 | `lu.terminal.selectInput` | `[choice — answer on an interactive surface]` |
+| `lu.terminal.multiSelectInput` | `[choices — answer on an interactive surface]` |
+| `lu.terminal.moreOptions` | `more options` |
 
 ## Interactive terminal and incremental render
 
