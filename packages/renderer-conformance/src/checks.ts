@@ -915,7 +915,7 @@ check("actions", "controls emit the WidgetAction shapes every renderer shares", 
 // ── a bound current value ───────────────────────────────────────────────────────────────────────
 check(
   "select-current-value",
-  "a SelectInput may be bound to its current value: a declared one is accepted, an undeclared one is never echoed",
+  "a SelectInput bound to its current value shows that option as chosen; an undeclared value chooses nothing and is never echoed",
   (adapter) =>
     withSession(adapter, async (s) => {
       if (!adapter.kinds.includes("SelectInput"))
@@ -930,11 +930,22 @@ check(
       });
       const at = async (value: unknown): Promise<string> =>
         (await s.mount(viewOf([w]), { "h-sel": { value, state: "ready" } })).text();
-      const good = await at("beta");
-      must(has(good, "Beta"), `a declared current value: the control is not drawn: ${show(good)}`);
+      const alpha = await at("alpha");
+      const beta = await at("beta");
+      // The binding must change what a viewer READS (the selected option), not merely be tolerated:
+      // a renderer that ignores it reads the same for every value.
+      must(
+        flat(alpha) !== flat(beta),
+        `the current value is ignored: "alpha" and "beta" read the same: ${show(beta)}`
+      );
+      must(has(beta, "Beta") && has(beta, "Alpha"), `the options are not all drawn: ${show(beta)}`);
       const bad = await at(UNDECLARED);
       must(has(bad, "Alpha"), `an undeclared value: the control is not drawn: ${show(bad)}`);
       must(!has(bad, UNDECLARED), `an undeclared value was echoed: ${show(bad)}`);
+      must(
+        flat(bad) !== flat(alpha) && flat(bad) !== flat(beta),
+        `an undeclared value reads as a chosen option: ${show(bad)}`
+      );
     })
 );
 

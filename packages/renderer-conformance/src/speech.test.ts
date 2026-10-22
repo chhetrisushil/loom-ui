@@ -167,6 +167,21 @@ const FAULTS: Array<[string, string, RendererAdapter]> = [
     faulty({ options: (o) => ({ ...o, i18n: undefined as never }) }),
   ],
   [
+    "select-current-value",
+    "ignores the bound current value",
+    faulty({
+      options: (o) => ({
+        ...o,
+        values: Object.fromEntries(
+          Object.entries(o.values).map(([h, e]) => [
+            h,
+            h === "h-sel" ? { ...e, value: undefined } : e,
+          ])
+        ),
+      }),
+    }),
+  ],
+  [
     "actions",
     "emits a different action shape",
     faulty({

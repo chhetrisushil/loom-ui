@@ -45,7 +45,7 @@ describe("the opt-in chat entry", () => {
       order: String.fromCharCode(65 + i),
       kind: "semantic",
       type: e.name,
-      typeVersion: "1.0.0",
+      typeVersion: "1.1.0",
       span: 6,
       props: props[e.name] ?? {},
       ...(e.name === "Chat" && { binding: { handle: "h", priority: "P1" as const } }),

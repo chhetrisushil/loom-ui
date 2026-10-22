@@ -43,7 +43,7 @@ const exp = (spec: ProviderSpec): Experience => {
     order: "a",
     kind: "semantic",
     type: "Chat",
-    typeVersion: "1.0.0",
+    typeVersion: "1.1.0",
     span: 12,
     props: {},
     binding: { handle: "h", priority: "P0" },

@@ -44,7 +44,7 @@ const node = (
   order,
   kind: "semantic",
   type,
-  typeVersion: "1.0.0",
+  typeVersion: "1.1.0",
   span: 12,
   props,
   ...(handle !== undefined && { binding: { handle, priority: "P1" as const } }),
@@ -57,23 +57,34 @@ const mkExp = (versionHash: string): Experience => ({
     children: [
       node("chat", "A", "Chat", { editable: true }, "h_chat"),
       node("composer", "B", "TextInput", { label: "Message" }),
-      node("pick", "C", "SelectInput", {
-        label: "Mode",
-        options: [
-          { value: "fast", label: "Fast" },
-          { value: "deep", label: "Deep" },
-        ],
-      }),
+      node(
+        "pick",
+        "C",
+        "SelectInput",
+        {
+          label: "Mode",
+          options: [
+            { value: "fast", label: "Fast" },
+            { value: "deep", label: "Deep" },
+          ],
+        },
+        "h_pick"
+      ),
     ],
   },
   providers: {
-    h_chat: {
-      handle: "h_chat",
-      executionGraph: [],
-      reshaping: { engine: "JSONPath" as const, scriptRef: "sha256:s" },
-      outputShapeHash: "sha256:o",
-      cachePolicy: { ttlSeconds: 60, scope: "global" as const },
-    },
+    ...Object.fromEntries(
+      ["h_chat", "h_pick"].map((handle) => [
+        handle,
+        {
+          handle,
+          executionGraph: [],
+          reshaping: { engine: "JSONPath" as const, scriptRef: "sha256:s" },
+          outputShapeHash: "sha256:o",
+          cachePolicy: { ttlSeconds: 60, scope: "global" as const },
+        },
+      ])
+    ),
   },
 });
 const wire = (turn: number, role: "user" | "assistant", over: Record<string, unknown> = {}) => ({
@@ -119,7 +130,10 @@ function rig(
   controller.load({
     experienceId: "u8",
     versionHash: headHash,
-    handles: [{ handle: "h_chat", priority: "P2", params: [], revision: "r1" }],
+    handles: [
+      { handle: "h_chat", priority: "P2", params: [], revision: "r1" },
+      { handle: "h_pick", priority: "P2", params: [], revision: "r1" },
+    ],
   });
   const publish = publishChat(controller, "h_chat");
   const sendTurn = vi.fn(async (_text: string, _o: { messageId: string }) => undefined);
@@ -190,6 +204,22 @@ describe("U8: chat through compile, hydration and the DOM", () => {
     await tick();
     expect(root.querySelector(".log")?.getAttribute("aria-busy")).toBe("false");
     expect(root.textContent).toContain("Thinking done");
+    t.handle.dispose();
+  });
+
+  it("a SelectInput bound to a handle goes through validate, compile, hydrate and render: the bound value shows as selected", async () => {
+    const t = rig("sha256:v1");
+    const r = t.controller.publishValue("h_pick", "deep", { state: "ready", kind: "SelectInput" });
+    expect(r.ok).toBe(true);
+    await tick();
+    const sel = shadow(t.host, "pick").querySelector("select") as HTMLSelectElement;
+    expect(sel.value).toBe("deep");
+    t.controller.publishValue("h_pick", "fast", { state: "ready", kind: "SelectInput" });
+    await tick();
+    expect(sel.value).toBe("fast");
+    t.controller.publishValue("h_pick", "nope", { state: "ready", kind: "SelectInput" });
+    await tick();
+    expect(sel.value).toBe("");
     t.handle.dispose();
   });
 

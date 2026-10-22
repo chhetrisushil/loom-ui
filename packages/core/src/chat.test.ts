@@ -132,7 +132,7 @@ const tree = (nodes: Record<string, unknown>[]) =>
       children: nodes.map((n, i) => ({
         order: `a${i}`,
         kind: "semantic",
-        typeVersion: "1.0.0",
+        typeVersion: "1.1.0",
         span: 6,
         props: {},
         ...n,

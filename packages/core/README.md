@@ -288,7 +288,7 @@ Media is never bytes in an Experience, a Blueprint, a seen log or a change feed.
 The contract is strict (a field outside the list — inline bytes, a `url` — is refused), checked by
 `checkKindValue` like every other kind, and its messages never echo the value. `MediaInput` is the
 static upload control (props `accept`, `maxBytes`, `label`; a value reaching it is a defect).
-`mediaCatalogEntries()` returns the five semantic entries (`@1.0.0`) to splice into a catalogue; a
+`mediaCatalogEntries()` returns the five semantic entries (`@1.1.0`) to splice into a catalogue; a
 catalogue without them cannot compose a media node, so a planner is offered media only if the host
 chose to. Node props are text only (`alt`, `caption`, `label`) plus the upload control's `accept` /
 `maxBytes`.
@@ -444,11 +444,11 @@ defect, as for a `Note`). **`SelectInput`** is static too, with one optional exc
 carry a binding whose value is the CURRENT choice (a string; the host already holds it). The widget
 shows it only if it is one of the declared `options` (anything else shows the placeholder and is never
 echoed), follows it when it changes, and keeps a choice being submitted over a stale re-read. It is
-display only: the user's change still emits `SELECT` and the host still re-validates. File upload in a conversation is the existing
+display only: the user's change still emits `SELECT` and the host still re-validates. Which handles a composer may bind is the host's authorization job, as for any bound widget. File upload in a conversation is the existing
 `MediaInput`. Core names no loom type: the transcript contract below is what loom's conversation
 layer (`@loom/conversation`, ADR 0122) emits once a client has folded it, but any source that can
 say this much can feed the widget. `chatCatalogEntries()` returns the four semantic entries
-(`@1.0.0`) to splice into a catalogue; a catalogue without them cannot compose a chat node, so a
+(`@1.1.0`) to splice into a catalogue; a catalogue without them cannot compose a chat node, so a
 planner is offered chat only if the host chose to.
 
 **The transcript value (`ChatValue`).** Strict, bounded, and checked by `checkKindValue` like every

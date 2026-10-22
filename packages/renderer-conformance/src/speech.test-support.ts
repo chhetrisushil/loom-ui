@@ -106,7 +106,8 @@ export const speechAdapter: RendererAdapter = {
         case "TextInput":
           return `${title}: ${clean(w.props.label)}`;
         case "SelectInput":
-          return `${title}: ${((w.props.options as { label: string }[]) ?? []).map((x) => clean(x.label)).join(", ")}`;
+          // The bound current choice is spoken as "(current)"; a value that is not a declared option marks none.
+          return `${title}: ${((w.props.options as { value: string; label: string }[]) ?? []).map((x) => `${clean(x.label)}${x.value === v ? " (current)" : ""}`).join(", ")}`;
         default:
           return `${title}: [${w.kind}]`; // not spoken here: refuse visibly, never drop
       }
