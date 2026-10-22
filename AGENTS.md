@@ -243,7 +243,7 @@ loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirec
   untrusted active types (`isActiveMediaType`) and untrusted same-origin/`blob:` URLs are blocked; the host must run
   `acceptMediaAttach` on every `MEDIA_ATTACH`; the default lit registry draws a fixed "not loaded" placeholder for media kinds.
 - Chat and inputs (U8): `Chat` is bound to a `ChatValue` (bounded entries, a bare `restricted` placeholder, a fixed `reason`
-  token + `errorId`, `editOf`), `TextInput`/`FormInput` are static and `SelectInput` may bind its current choice (display only, a declared option, never echoed; file upload is `MediaInput`). Chat text is
+  token + `errorId`, `editOf`), `TextInput`/`FormInput` are static and `SelectInput` may bind its current choice (display only, a declared option, never echoed; file upload is `MediaInput`). `MultiSelectInput` MUST bind `{ options, selected, note? }`; its change emits `SELECT_MANY { values, key }`, and `acceptChatSubmit` checks `values` against the host hook `optionsOf(widgetId, principal)` (must return a real `Set`; anything else refuses), beside `hasRef`. Chat text is
   UNTRUSTED and drawn as text (`sanitizeChatText`); markdown ONLY when the source opts in per assistant text part
   (`format: "markdown"`, `ChatFeed({ markdown: true })`), as a closed, bounded tree (`parseChatMarkdown`: hand-written,
   no dependency, never part of a value), drawn as DOM, links http/https/mailto only, no images, never HTML. `ChatFeed` (pure) folds loom's conversation
