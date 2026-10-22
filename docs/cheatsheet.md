@@ -85,6 +85,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `MediaInput` | static upload control | |
 | `Chat` | `ChatValue` | text is UNTRUSTED, drawn as text only; a reply's model reasoning is OFF unless `ChatFeed({ reasoning })` (a collapsed "Reasoning" disclosure; a `summary` is labelled a summary) |
 | `TextInput` · `FormInput` · `SelectInput` | static (a `SelectInput` may bind its current choice) | emit `SUBMIT_TEXT` / `SUBMIT_FORM` / `SELECT` |
+| `MultiSelectInput` | `MultiSelectValue` (`{ options, selected, note? }`) | emits `SELECT_MANY` with the whole new choice |
 
 | Export | What |
 |---|---|

@@ -27,6 +27,7 @@ const MEDIA = new Set<string>([
   "TextInput",
   "FormInput",
   "SelectInput",
+  "MultiSelectInput",
 ]);
 
 describe("litRegistry parity", () => {
