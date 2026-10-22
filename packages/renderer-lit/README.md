@@ -154,8 +154,11 @@ the actor.
 document order is marked and scrolled to. Every item of a list that declares `selected` reserves
 the bar's space, so selecting never shifts content. The view scrolls the selected item into view when
 the selection changes, not on unrelated re-renders, moving only its nearest scrollable ancestor
-vertically and only if the item is out of view (never the page, never horizontally; instant under
-`prefers-reduced-motion`; if the item is not laid out yet it retries on the next update). What counts
+vertically and only if the item is out of view within that ancestor's scrollport (never the page:
+`<html>`/`<body>` are not containers; never horizontally; instant under `prefers-reduced-motion`; if
+the item is not laid out yet it retries on the next update). The scroll is attempted once per
+selection: a container that only becomes scrollable later (or a view revealed later, e.g. in a hidden
+tab) is not scrolled until the selection changes again. What counts
 as "the selection changed": by default the item's position in the tree, so inserting or removing items
 before it counts as a change (A2UI Lists have no key). Add an optional `selectedKey` (a string or
 number, typically bound relative to the item, e.g. `{ "path": "/id" }`) for a stable identity: then

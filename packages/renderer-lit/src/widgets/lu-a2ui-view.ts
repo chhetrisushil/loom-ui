@@ -182,10 +182,11 @@ function scrollParent(el: HTMLElement): HTMLElement | null {
       ((n as ShadowRoot).host as Node | undefined) ??
       null;
     n = next;
+    // <html>/<body> scroll the viewport: the page is never moved, so the walk stops there.
+    if (n === document.documentElement || n === document.body) return null;
     if (n instanceof HTMLElement) {
       const oy = getComputedStyle(n).overflowY;
-      if ((oy === "auto" || oy === "scroll" || oy === "overlay") && n.scrollHeight > n.clientHeight)
-        return n;
+      if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight) return n;
     }
   }
   return null;
@@ -197,15 +198,14 @@ function scrollWithinContainer(el: HTMLElement): void {
   const box = scrollParent(el);
   if (!box) return;
   const e = el.getBoundingClientRect();
-  const c = box.getBoundingClientRect();
+  // The scrollport, not the border box: a border or a horizontal scrollbar must not hide the item.
+  const top = box.getBoundingClientRect().top + box.clientTop;
+  const bottom = top + box.clientHeight;
   let delta = 0;
-  if (e.top < c.top || e.height > c.height) delta = e.top - c.top;
-  else if (e.bottom > c.bottom) delta = e.bottom - c.bottom;
+  if (e.top < top || e.height > box.clientHeight) delta = e.top - top;
+  else if (e.bottom > bottom) delta = e.bottom - bottom;
   if (delta === 0) return;
   const reduce =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const top = box.scrollTop + delta;
-  if (typeof box.scrollTo === "function")
-    box.scrollTo({ top, behavior: reduce ? "auto" : "smooth" });
-  else box.scrollTop = top;
+  box.scrollTo({ top: box.scrollTop + delta, behavior: reduce ? "auto" : "smooth" });
 }
