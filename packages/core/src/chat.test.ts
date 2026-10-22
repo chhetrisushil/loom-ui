@@ -64,6 +64,25 @@ describe("chat prop guard", () => {
         expect(codes(k, { [p]: "x" }), `${k} ${p}`).toEqual(["chat-prop-forbidden"]);
   });
 
+  it("a SelectInput takes a presentation size (default | compact) and nothing that authors its value", () => {
+    expect(codes("SelectInput", { size: "compact" })).toEqual([]);
+    expect(codes("SelectInput", { size: "default" })).toEqual([]);
+    expect(codes("SelectInput", { size: "huge" })).toEqual(["chat-prop-shape"]);
+    expect(codes("TextInput", { size: "compact" })).toEqual(["chat-prop-forbidden"]);
+  });
+
+  it("a SelectInput may be bound (its current value); the other inputs still may not", () => {
+    const found = (type: string) =>
+      validateExperience(
+        tree([{ id: "n", type, binding: { handle: "h", priority: "P1" } }]),
+        cat,
+        "web"
+      ).findings.map((f) => f.code);
+    expect(found("SelectInput")).not.toContain("unexpected-binding");
+    expect(found("FormInput")).toContain("unexpected-binding");
+    expect(chatCatalogEntries().find((e) => e.name === "SelectInput")?.binding).toBe("optional");
+  });
+
   it("validates shapes: short text, booleans, bounds, fields and options (no regex patterns)", () => {
     expect(codes("TextInput", { label: "" })).toEqual(["chat-prop-shape"]);
     expect(codes("TextInput", { label: "x".repeat(201) })).toEqual(["chat-prop-shape"]);

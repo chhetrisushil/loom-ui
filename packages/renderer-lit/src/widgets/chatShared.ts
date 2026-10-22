@@ -47,6 +47,15 @@ export const inputStyles = css`
     box-sizing: border-box;
     color: var(--lu-text, inherit);
   }
+  /* A SelectInput with size "compact": fits its content, so it can sit beside other controls. */
+  :host([compact]) {
+    display: inline-block;
+    vertical-align: middle;
+  }
+  :host([compact]) select {
+    width: auto;
+    max-width: 100%;
+  }
   label,
   .label {
     display: block;

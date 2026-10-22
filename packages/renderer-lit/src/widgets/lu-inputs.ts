@@ -36,7 +36,11 @@ import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatS
 // drop keyboard focus), and a second submit is ignored.
 //
 // WHAT AN AUTHOR CANNOT DO: there is no `value` / `default` prop (see `chatPropFindings`), so no
-// input can arrive pre-filled or pre-submitted by whoever composed the page.
+// input can arrive pre-filled or pre-submitted by whoever composed the page. The ONE exception is
+// a SelectInput's CURRENT choice, and it is not a prop: the host binds the node to a handle (the
+// same seam as every data widget) whose hydrated value is the choice it already holds. It is
+// display only (the user still submits, and the host still re-validates), it must be a declared
+// option or the placeholder shows, and it is never echoed.
 
 const label = (w: LuWidget["widget"], fallback: string): string =>
   titleText((w.props as { label?: unknown }).label) ?? titleText(w.title) ?? fallback;
@@ -329,6 +333,38 @@ export class LuSelectInput extends LuInput {
   @state() private picked = "";
   @state() private phase: Phase = "idle";
 
+  /** A bound value is shown only if it is a declared option (else "": the placeholder). */
+  private get bound(): string {
+    const v = this.value;
+    return typeof v === "string" && this.options?.some((o) => o.value === v) === true ? v : "";
+  }
+
+  /** Not LuInput's matrix: a bound value is optional and only ever displayed. */
+  override render(): TemplateResult | typeof nothing {
+    return this.widget ? this.renderReady() : nothing;
+  }
+
+  protected override willUpdate(changed: PropertyValues): void {
+    this.toggleAttribute(
+      "compact",
+      (this.widget?.props as { size?: unknown } | undefined)?.size === "compact"
+    );
+    // The host's value moved: follow it, unless a choice is in flight (that choice is newer than
+    // whatever the host last read). An unloaded value (undefined) changes nothing.
+    if (
+      (changed.has("value") || changed.has("widget")) &&
+      this.value !== undefined &&
+      this.phase !== "sending"
+    )
+      this.picked = this.bound;
+  }
+
+  protected override updated(): void {
+    // The options render after `.value` is set on first paint, so a pre-chosen option needs this.
+    const el = this.shadowRoot?.querySelector<HTMLSelectElement>("select");
+    if (el && el.value !== this.picked) el.value = this.picked;
+  }
+
   private get options() {
     const o = (this.widget.props as { options?: unknown }).options;
     return optionsProblem(o) === undefined
@@ -356,7 +392,7 @@ export class LuSelectInput extends LuInput {
     });
     if (result === "ok") this.phase = "sent";
     else {
-      this.picked = previous;
+      this.picked = this.value !== undefined ? this.bound : previous;
       this.phase = result;
     }
   };
@@ -379,7 +415,7 @@ export class LuSelectInput extends LuInput {
             : "";
     return html`<div data-select-input data-phase=${this.phase}>
       <label for="pick">${name}</label>
-      <select id="pick" aria-describedby="status" .value=${this.picked} ?aria-busy=${this.phase === "sending"} @change=${this.onChange}>
+      <select id="pick" part="select" aria-describedby="status" .value=${this.picked} ?aria-busy=${this.phase === "sending"} @change=${this.onChange}>
         <option value="" disabled ?selected=${this.picked === ""}>${placeholder}</option>
         ${options.map((o) => html`<option value=${o.value} ?selected=${this.picked === o.value}>${oneLineChatText(o.label, 200)}</option>`)}
       </select>

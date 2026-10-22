@@ -260,7 +260,7 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   },
   TextInput: () => undefined,
   FormInput: () => undefined,
-  SelectInput: () => undefined,
+  SelectInput: (r) => pick(r, ["a", "b", undefined]),
 };
 
 // ── Deep junk: a fresh value each call (the checkers must not mutate it, but never share) ────

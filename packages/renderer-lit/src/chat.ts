@@ -34,7 +34,11 @@ export const chatKindContracts: readonly CatalogEntry[] = [
     binding: "none",
   },
   { kind: "FormInput", props: ["label", "fields", "submitLabel"], binding: "none" },
-  { kind: "SelectInput", props: ["label", "options", "placeholder"], binding: "none" },
+  {
+    kind: "SelectInput",
+    props: ["label", "options", "placeholder", "size"],
+    binding: "optional",
+  },
 ];
 
 const TAGS: Readonly<Record<string, string>> = {

@@ -460,13 +460,17 @@ const formPrompt =
 
 const selectPrompt =
   (host: boolean, x: Env): TerminalWidgetRenderer =>
-  (w) => {
+  (w, v) => {
     const label = propText(w.props.label) || x.say("lu.input.choose");
     const options =
       optionsProblem(w.props.options) === undefined
-        ? (w.props.options as ReadonlyArray<{ label: string }>)
+        ? (w.props.options as ReadonlyArray<{ value: string; label: string }>)
         : [];
-    const rows = options.map((o, i) => `${hang(host)}  ${i + 1}) ${oneLineChatText(o.label, 60)}`);
+    // The bound current choice marks its option; a value that is not declared marks none and is never printed.
+    const rows = options.map(
+      (o, i) =>
+        `${hang(host)}  ${i + 1}) ${oneLineChatText(o.label, 60)}${o.value === v ? ` ${x.say("lu.terminal.current")}` : ""}`
+    );
     const head = `> ${label} ${x.say("lu.terminal.selectInput")}`;
     return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
   };

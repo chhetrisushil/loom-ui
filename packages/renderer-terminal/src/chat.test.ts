@@ -163,6 +163,23 @@ describe("terminal inputs are prompts", () => {
     );
   });
 
+  it("a SelectInput bound to a current value marks that option; an undeclared value marks none and is not echoed", () => {
+    const props = {
+      label: "Mode",
+      options: [
+        { value: "a", label: "Fast" },
+        { value: "b", label: "Deep" },
+      ],
+    };
+    expect(draw("SelectInput", "b", props)).toBe(
+      "Support: > Mode [choice — answer on an interactive surface]\n      1) Fast\n      2) Deep (current)"
+    );
+    const bad = draw("SelectInput", "zzz", props);
+    expect(bad).not.toContain("zzz");
+    expect(bad).not.toContain("(current)");
+    expect(draw("SelectInput", 42, props)).not.toContain("(current)");
+  });
+
   it("props are cleaned to one line; an invalid spec prints no fields", () => {
     expect(draw("TextInput", undefined, { label: `A${ESC}[2J\nB` }, "host")).toBe(
       "> A[2J B [text input — answer on an interactive surface]"

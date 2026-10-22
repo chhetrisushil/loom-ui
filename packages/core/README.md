@@ -439,8 +439,12 @@ separators); `formatBytes` / `describeMedia` are the one description both surfac
 ### Chat and inputs (U8, `@loom-ui/core/chat`)
 
 A conversation is four kinds. **`Chat`** is a transcript, bound like any data widget;
-**`TextInput`**, **`FormInput`** and **`SelectInput`** collect input and are static (props only; a
-value reaching one is a defect, as for a `Note`). File upload in a conversation is the existing
+**`TextInput`** and **`FormInput`** collect input and are static (props only; a value reaching one is a
+defect, as for a `Note`). **`SelectInput`** is static too, with one optional exception: its node may
+carry a binding whose value is the CURRENT choice (a string; the host already holds it). The widget
+shows it only if it is one of the declared `options` (anything else shows the placeholder and is never
+echoed), follows it when it changes, and keeps a choice being submitted over a stale re-read. It is
+display only: the user's change still emits `SELECT` and the host still re-validates. File upload in a conversation is the existing
 `MediaInput`. Core names no loom type: the transcript contract below is what loom's conversation
 layer (`@loom/conversation`, ADR 0122) emits once a client has folded it, but any source that can
 say this much can feed the widget. `chatCatalogEntries()` returns the four semantic entries
@@ -662,7 +666,7 @@ such field today (see the PR's loom-impact note).
 **What a planner can do.** Node props are allow-listed by the FRAMEWORK, whatever the catalogue
 declares: `Chat` `emptyText`, `editable`; `TextInput` `label`, `placeholder`, `multiline`,
 `maxChars`, `submitLabel`; `FormInput` `label`, `fields`, `submitLabel`; `SelectInput` `label`,
-`options`, `placeholder`. Anything else (`entries`, `messages`, `text`, `value`, `defaultValue`, a
+`options`, `placeholder`, `size` (`default` or `compact`: fit the content so it can sit beside other controls; also the `select` `::part`). Anything else (`entries`, `messages`, `text`, `value`, `defaultValue`, a
 prefill) is `chat-prop-forbidden`; a field spec is closed (name, label, type
 `text|textarea|number|boolean|select`, `required`, `maxLength`, `min`, `max`, `options`; no regular
 expressions, no defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` is `chat-unbound`. A
