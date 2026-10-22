@@ -1,3 +1,4 @@
+import { hasKindContract } from "@loom-ui/core/browser";
 import {
   type FieldError,
   type FormField,
@@ -353,8 +354,31 @@ export class LuSelectInput extends LuInput {
    */
   override render(): TemplateResult | typeof nothing {
     if (!this.widget) return nothing;
-    if (this.state().state === "loading") return this.renderReady();
-    return super.render();
+    const s = this.state();
+    // Structurally stable: the control sits at the SAME place in the SAME template whether or not a
+    // value is bound yet, so a bound value arriving (or a stale / pending marker) re-uses the
+    // <select> and a focused one keeps focus. Unbound, the wrapper carries no role or label, so the
+    // default render is the bare control as before. Error / empty draw the contract's state.
+    if (this.value !== undefined && (s.state === "error" || s.state === "empty"))
+      return super.render();
+    const bound = this.value !== undefined;
+    const marker = !bound
+      ? undefined
+      : s.state === "stale"
+        ? "~"
+        : s.state === "pending"
+          ? "⋯"
+          : undefined;
+    return html`<div
+      role=${bound ? "group" : nothing}
+      aria-label=${bound ? this.label() : nothing}
+      data-state=${bound ? s.state : nothing}
+      ?data-unchecked=${bound && !hasKindContract(this.kind, this.contracts)}
+    >${
+      marker !== undefined
+        ? html`<span class="${s.state}-marker" title=${s.finding ?? ""}>${marker}</span>`
+        : nothing
+    }${this.renderReady()}</div>`;
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -410,8 +434,10 @@ export class LuSelectInput extends LuInput {
     if (result === "ok") {
       this.phase = "sent";
       // The host's value moved while the choice was in flight: it is newer than what was sent from.
-      if (moved) this.picked = this.bound;
-      else this.awaiting = true;
+      if (moved) {
+        this.picked = this.bound;
+        this.awaiting = false;
+      } else this.awaiting = true;
     } else {
       this.picked = this.value !== undefined ? this.bound : previous;
       this.phase = result;

@@ -26,7 +26,7 @@ import { type MediaRef, mediaValueIssues } from "./mediaRef";
 
 /** The kind that DISPLAYS a transcript: bound to a {@link ChatValue}. */
 export const CHAT_KIND = "Chat";
-/** The kinds that COLLECT input: static (props only), never bound. File upload is the existing `MediaInput`. */
+/** The kinds that COLLECT input: static (props only), except that `SelectInput` may bind its current choice. File upload is the existing `MediaInput`. */
 export const TEXT_INPUT_KIND = "TextInput";
 export const FORM_INPUT_KIND = "FormInput";
 export const SELECT_INPUT_KIND = "SelectInput";
