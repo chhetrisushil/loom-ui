@@ -42,6 +42,11 @@ export class LuA2UIView extends LitElement {
     :host { display: block; height: 100%; box-sizing: border-box; }
     .col { display: flex; flex-direction: column; gap: 8px; }
     .row { display: flex; flex-direction: row; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .sel {
+      border-inline-start: 4px solid var(--lu-accent, #2563eb); padding-inline-start: 8px;
+      background: color-mix(in srgb, var(--lu-accent, #2563eb) 14%, transparent);
+      border-radius: var(--lu-radius, 6px);
+    }
     .list { display: flex; flex-direction: column; gap: 6px; }
     .text { color: var(--lu-text, #e6edf3); font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
     .badge {
@@ -61,23 +66,57 @@ export class LuA2UIView extends LitElement {
     .unknown { color: var(--lu-text-dim, #8b949e); font-size: 12px; font-style: italic; }
   `;
 
+  /** Tree path of the selected item last scrolled to; scroll only when it changes. */
+  private scrolledTo: string | null = null;
+  /** Tree path of the selected item in the current render (first one wins). */
+  private selectedPath: string | null = null;
+
   render() {
     if (!this.view) return html`<div class="unknown">${say("lu.state.emptyView")}</div>`;
-    return this.paint(planView(this.view, this.data));
+    this.selectedPath = null;
+    return this.paint(planView(this.view, this.data), "0");
   }
 
-  private paint(node: A2UIRender): TemplateResult | typeof nothing {
+  protected updated(): void {
+    const key = this.selectedPath;
+    if (key === this.scrolledTo) return;
+    this.scrolledTo = key;
+    if (key === null) return;
+    const el = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-a2ui-path]")).find(
+      (e) => e.dataset.a2uiPath === key
+    );
+    const reduce =
+      typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el?.scrollIntoView?.({
+      block: "nearest",
+      inline: "nearest",
+      behavior: reduce ? "auto" : "smooth",
+    });
+  }
+
+  /** The attributes marking a selected container: `aria-current` (not colour-only) plus the highlight. */
+  private selAttrs(node: { selected?: true }, path: string) {
+    if (!node.selected) return { cls: "", cur: nothing, p: nothing };
+    this.selectedPath ??= path;
+    return { cls: " sel", cur: "true", p: path };
+  }
+
+  private paint(node: A2UIRender, path: string): TemplateResult | typeof nothing {
     switch (node.kind) {
       case "text":
         return html`<span class="text">${node.text}</span>`;
       case "badge":
         return html`<span class="badge ${node.tone}">${node.label}</span>`;
-      case "column":
-        return html`<div class="col">${node.children.map((c) => this.paint(c))}</div>`;
-      case "row":
-        return html`<div class="row">${node.children.map((c) => this.paint(c))}</div>`;
+      case "column": {
+        const s = this.selAttrs(node, path);
+        return html`<div class="col${s.cls}" aria-current=${s.cur} data-a2ui-path=${s.p}>${node.children.map((c, i) => this.paint(c, `${path}.${i}`))}</div>`;
+      }
+      case "row": {
+        const s = this.selAttrs(node, path);
+        return html`<div class="row${s.cls}" aria-current=${s.cur} data-a2ui-path=${s.p}>${node.children.map((c, i) => this.paint(c, `${path}.${i}`))}</div>`;
+      }
       case "list":
-        return html`<div class="list">${node.children.map((c) => this.paint(c))}</div>`;
+        return html`<div class="list">${node.children.map((c, i) => this.paint(c, `${path}.${i}`))}</div>`;
       case "button":
         return html`<button
           class="a2ui"

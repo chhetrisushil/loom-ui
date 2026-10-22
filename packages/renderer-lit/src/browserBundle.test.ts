@@ -94,7 +94,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // index 120_260 -> 133 kB, dom/index 30_450 -> 34 kB, containers 10_643 -> 12 kB, media 64_476 -> 71 kB,
     // chat 82_652 -> 91 kB, signals 2_074 -> 2.5 kB.
     // Turn-failure reasons (rate-limited, quota, tool-error): 133 -> 134 kB (measured 133_178, 178 over): three more fixed sentences in the catalogue.
-    ["index.js", 134 * 1000],
+    // A2UI selected item (Column/Row `selected`, aria-current, scroll into view): 134 -> 135 kB (measured 134_490, 490 over).
+    ["index.js", 135 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.

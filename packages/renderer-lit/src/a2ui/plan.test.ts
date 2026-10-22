@@ -215,3 +215,34 @@ describe("planView", () => {
     });
   });
 });
+
+describe("selected item", () => {
+  const view: A2UIView = {
+    nodes: [
+      { id: "root", component: "List", children: { path: "/items", componentId: "item" } },
+      { id: "item", component: "Column", selected: { path: "/on" }, children: ["t"] },
+      { id: "t", component: "Text", text: { path: "/name" } },
+    ],
+  };
+  it("marks only the items whose bound selected is true, keeping order", () => {
+    const plan = planView(view, {
+      items: [{ name: "a", on: false }, { name: "b", on: true }, { name: "c" }],
+    });
+    expect(
+      plan.kind === "list" && plan.children.map((c) => c.kind === "column" && c.selected === true)
+    ).toEqual([false, true, false]);
+    expect(
+      plan.kind === "list" && plan.children.map((c) => c.kind === "column" && c.children[0])
+    ).toEqual([
+      { kind: "text", text: "a" },
+      { kind: "text", text: "b" },
+      { kind: "text", text: "c" },
+    ]);
+  });
+  it("accepts a literal true and ignores non-boolean values", () => {
+    const col = (selected: unknown) =>
+      planView({ nodes: [{ id: "root", component: "Row", selected, children: [] }] }, {});
+    expect(col(true)).toMatchObject({ kind: "row", selected: true });
+    expect(col("yes")).not.toHaveProperty("selected");
+  });
+});

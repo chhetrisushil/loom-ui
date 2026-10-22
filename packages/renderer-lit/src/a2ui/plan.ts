@@ -135,8 +135,8 @@ export function resolveNodeProps(
 export type A2UIRender =
   | { kind: "text"; text: string }
   | { kind: "badge"; label: string; tone: string }
-  | { kind: "row"; children: A2UIRender[] }
-  | { kind: "column"; children: A2UIRender[] }
+  | { kind: "row"; children: A2UIRender[]; selected?: true }
+  | { kind: "column"; children: A2UIRender[]; selected?: true }
   | { kind: "list"; children: A2UIRender[] }
   | { kind: "button"; label: string; action: string; context: unknown }
   | { kind: "unknown"; component: string }
@@ -153,6 +153,13 @@ export function formatValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+/** A Column/Row's optional `selected` prop (literal or bound, typically relative to a List
+ * element): exactly `true` marks it the selected item. Anything else (absent, false,
+ * non-boolean) leaves the key off, so unselected plans are unchanged. */
+function selectedFlag(props: Record<string, unknown>): { selected?: true } {
+  return props.selected === true ? { selected: true } : {};
 }
 
 /** Walk one node into a render plan. `scope` is the current List element (relative
@@ -188,9 +195,9 @@ export function planNode(
         tone: typeof props.tone === "string" ? props.tone : "",
       };
     case "Column":
-      return { kind: "column", children: idChildren() };
+      return { kind: "column", children: idChildren(), ...selectedFlag(props) };
     case "Row":
-      return { kind: "row", children: idChildren() };
+      return { kind: "row", children: idChildren(), ...selectedFlag(props) };
     case "List": {
       if (!isListChildren(node.children)) return { kind: "list", children: [] };
       const { path, componentId } = node.children;
