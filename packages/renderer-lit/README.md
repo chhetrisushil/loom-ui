@@ -525,9 +525,9 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   (`registerChatWidgets(registry, opts)` adds them to one you built; `chatKindContracts` is what a
   catalogue's `surfaces.web` carries). The default registry draws one fixed "Chat renderer not
   loaded" placeholder for these kinds (no value, title or prop; one console warning). The contract
-  rides every bundle (~7 kB, `index`/`dom` budgets 164 -> 172 kB, hydration `client` 64 -> 72 KiB:
+  rides every bundle (~7 kB, `index`/`dom` budgets 164 -> 172 kB, now `index` 138 kB / `dom/index` 34 kB after the MultiSelectInput contract, hydration `client` 64 -> 72 KiB:
   treat those as the CEILING for any future framework kind, not a baseline to spend again); the
-  widgets are this entry (budget 196 kB; it must not pull in `ChatFeed` or the host-side code,
+  widgets are this entry (budget 121 kB; it must not pull in `ChatFeed` or the host-side code,
   `browserBundle.test.ts` fails if it does).
   - **`lu-chat`** is a focusable `role="log"` region (`aria-live="polite"`, `aria-busy` while a
     reply streams, so a screen reader hears the settled reply once). Every entry is an `<article>`

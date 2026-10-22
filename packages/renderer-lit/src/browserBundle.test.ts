@@ -96,8 +96,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Turn-failure reasons (rate-limited, quota, tool-error): 133 -> 134 kB (measured 133_178, 178 over): three more fixed sentences in the catalogue.
     // A2UI selected item (Column/Row `selected`, aria-current, scroll into view): 134 -> 135 kB (measured 134_490, 490 over).
     // Fix round (single selection, selectedKey identity, nearest-container scroll, reserved bar): 135 -> 136 kB (measured 135_669, 669 over: the selection logic plus a container-only scroll helper in place of scrollIntoView, which can move the page).
-    // MultiSelectInput web slice: 136 -> 138 kB (measured 137_860). The local build already measured 137_810 on the branch base (the core
-    // SELECT_MANY / MultiSelectValue contract in `checkKindValue`); the widget itself adds ~50 bytes (its kind contract).
+    // MultiSelectInput web slice: 136 -> 138 kB (measured 137_860). Cause: the MultiSelectInput value contract (core, PR #107), which rides in `checkKindValue` for every page (137_810 before this slice).
     ["index.js", 138 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
@@ -108,11 +107,11 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Slice 7 (audience): 91 -> 92 kB (measured 91_238, 238 over): the redacted-widget draw (`drawRedacted`, loom's
     // constant marker) and `describeWidgetStatus` ride in the shared tree every entry carries.
     // Slice 7 re-review: 92 -> 93 kB (measured 92_201, 201 over): `isBroadcast` is now core's one copy, so `viewer.js` (zod-free) joins the graph.
-    // MultiSelectInput web slice: 12 -> 13 kB (measured 12_246, already over on the branch base from the core contract growth).
+    // MultiSelectInput web slice: 12 -> 13 kB (measured 12_246). Cause: the MultiSelectInput value contract (core, PR #107).
     ["dom/containers.js", 13 * 1000],
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
-    // MultiSelectInput web slice: 71 -> 72 kB (measured 71_895; 71_845 on the branch base).
+    // MultiSelectInput web slice: 71 -> 72 kB (measured 71_895). Cause: the MultiSelectInput value contract (core, PR #107).
     ["media.js", 72 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
@@ -122,8 +121,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Markdown as plain lines (176j): 110 -> 114 kB (measured 109_457): `chatWords` now reaches core's `chatMdText` and the shared
     // link check `chatMdDest` (the drawer uses the latter; the former rides in with the transcript words).
     // Follow-ups (176k): 114 -> 112 kB: the first number was looser than needed; 112 keeps about 2.5 kB over the measurement.
-    // MultiSelectInput web slice: 112 -> 121 kB (measured 119_014; 113_675 on the branch base, already over): the multi-select widget
-    // (~5.3 kB) plus the core value contract it checks.
+    // MultiSelectInput web slice: 112 -> 121 kB (measured 119_014; 113_675 before): lu-multi-select-input.
     ["chat.js", 121 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {

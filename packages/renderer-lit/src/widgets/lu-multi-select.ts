@@ -47,6 +47,7 @@ export class LuMultiSelectInput extends LuWidget {
   @state() private open = false;
   @state() private query = "";
   @state() private active = 0;
+  private refocus: { removed: string; next: string | undefined } | undefined;
 
   private get model(): MultiSelectValue | undefined {
     return multiSelectValueIssues(this.value).length === 0
@@ -97,6 +98,37 @@ export class LuMultiSelectInput extends LuWidget {
   private removeChoice(value: string): void {
     const m = this.model;
     if (m !== undefined) void this.send(m.selected.filter((v) => v !== value));
+  }
+  /**
+   * A chip's own remove button: ignored while a send is in flight, and the chip is about to leave the
+   * DOM, so remember where focus should land (the next chip's button, else Add). It is applied in
+   * `updated()` once the BOUND value no longer holds the chip and the send has settled (Add is disabled while busy), so it works whether the host answers
+   * before or after it republishes the value; a refusal clears it (the chip stays, so does focus).
+   */
+  private removeByButton(value: string): void {
+    const m = this.model;
+    if (m === undefined || this.phase === "sending") return;
+    this.refocus = { removed: value, next: m.selected[m.selected.indexOf(value) + 1] };
+    void this.send(m.selected.filter((v) => v !== value)).then(() => {
+      if (this.phase !== "sent") this.refocus = undefined;
+    });
+  }
+  protected override updated(): void {
+    const r = this.refocus;
+    if (
+      r === undefined ||
+      this.phase === "sending" ||
+      this.model === undefined ||
+      this.model.selected.includes(r.removed)
+    )
+      return;
+    this.refocus = undefined;
+    const root = this.shadowRoot;
+    const next =
+      r.next === undefined
+        ? null
+        : root?.querySelector<HTMLElement>(`[data-chip="${CSS.escape(r.next)}"] button`);
+    (next ?? root?.querySelector<HTMLElement>("[data-add]"))?.focus();
   }
   private toggle = async (): Promise<void> => {
     this.open = !this.open;
@@ -149,7 +181,7 @@ export class LuMultiSelectInput extends LuWidget {
             ? html`<li data-empty>${this.text("emptyLabel", say("lu.input.none"))}</li>`
             : m.selected.map((v) => {
                 const t = LuMultiSelectInput.optionText(byValue.get(v) as MultiSelectOption);
-                return html`<li data-chip=${v}><span>${t}</span><button type="button" aria-label=${`${say("lu.input.remove")} ${t}`} ?disabled=${busy} @click=${() => this.removeChoice(v)}>×</button></li>`;
+                return html`<li data-chip=${v}><span>${t}</span><button type="button" aria-label=${`${say("lu.input.remove")} ${t}`} aria-disabled=${busy ? "true" : nothing} @click=${() => this.removeByButton(v)}>×</button></li>`;
               })
         }
         <li><button type="button" data-add aria-expanded=${String(this.open)} ?disabled=${busy || m.selected.length >= this.max} @click=${this.toggle}>${say("lu.input.add")}</button></li>

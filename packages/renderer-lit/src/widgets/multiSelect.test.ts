@@ -142,9 +142,68 @@ describe("lu-multi-select-input", () => {
   });
   it("a malformed bound value draws the contract's error state, never chips; no value yet draws loading", async () => {
     const bad = await mount({ options: [], selected: ["x"] });
+    expect(q(bad, "[data-state='error']")).not.toBeNull();
     expect(qa(bad, "[data-chip]")).toHaveLength(0);
+    expect(q(bad, "[data-multi-select]")).toBeNull();
     const loading = await mount(undefined);
-    expect(qa(loading, "[data-chip]")).toHaveLength(0);
+    expect(q(loading, "[data-state='loading']")).not.toBeNull();
+    expect(q(loading, "[data-multi-select]")).toBeNull();
+  });
+  it("focus and keyboard: opening focuses the search, arrows move the active option, mousedown keeps focus, Escape returns to Add", async () => {
+    const el = await mount(value([]), () => new Promise(() => {}));
+    const add = q<HTMLButtonElement>(el, "[data-add]") as HTMLButtonElement;
+    add.click();
+    await settle(el);
+    const search = q<HTMLInputElement>(el, "input[data-search]") as HTMLInputElement;
+    expect(el.shadowRoot?.activeElement).toBe(search);
+    const sel = () => qa(el, "[role=option]").map((o) => o.getAttribute("aria-selected"));
+    expect(sel()).toEqual(["true", "false", "false"]);
+    expect(search.getAttribute("aria-activedescendant")).toBe("opt-0");
+    key(search, "ArrowDown");
+    await settle(el);
+    expect(sel()).toEqual(["false", "true", "false"]);
+    expect(search.getAttribute("aria-activedescendant")).toBe("opt-1");
+    key(search, "ArrowUp");
+    await settle(el);
+    expect(sel()).toEqual(["true", "false", "false"]);
+    expect(search.getAttribute("aria-activedescendant")).toBe("opt-0");
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    q(el, '[data-option="a"]')?.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    key(search, "Escape");
+    await settle(el);
+    expect(el.shadowRoot?.activeElement).toBe(q(el, "[data-add]"));
+  });
+  it("removing a chip with the keyboard never drops focus to body: it lands on the next chip's button, else Add; busy buttons are aria-disabled and inert", async () => {
+    const acts: Act[] = [];
+    let release: (v: unknown) => void = () => {};
+    const el = await mount(value(["a", "b"]), (a) => {
+      acts.push(a);
+      return new Promise((r) => {
+        release = r;
+      });
+    });
+    const btn = (v: string) => q<HTMLButtonElement>(el, `[data-chip="${v}"] button`);
+    btn("a")?.focus();
+    btn("a")?.click();
+    await settle(el);
+    expect(btn("a")?.getAttribute("aria-disabled")).toBe("true");
+    expect(btn("a")?.disabled).toBe(false);
+    btn("b")?.click(); // ignored: one send at a time
+    await settle(el);
+    expect(acts).toHaveLength(1);
+    release({ ok: true });
+    el.value = value(["b"]);
+    await settle(el);
+    expect(el.shadowRoot?.activeElement).toBe(btn("b"));
+    // the last chip: focus falls back to Add
+    btn("b")?.focus();
+    btn("b")?.click();
+    await settle(el);
+    el.value = value([]);
+    release({ ok: true });
+    await settle(el);
+    expect(el.shadowRoot?.activeElement).toBe(q(el, "[data-add]"));
   });
   it("no handler: Add still opens, a choice says chat is unavailable instead of pretending", async () => {
     const el = await mount(value([]));
