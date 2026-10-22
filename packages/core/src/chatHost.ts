@@ -15,6 +15,7 @@
 //   SUBMIT_TEXT   { text, key }            a TextInput (a chat composer, a one-line answer)
 //   SUBMIT_FORM   { values, key }          a FormInput
 //   SELECT        { value, key }           a SelectInput
+//   SELECT_MANY   { values, key }          a MultiSelectInput: the whole new choice, not a toggle
 //   EDIT_TURN     { turn, text, key }      a Chat: the user revised an earlier turn of their own
 //   LOAD_OLDER    { cursor }               a Chat: show earlier turns (a read; carries no key)
 //   LOAD_REASONING { cursor }              a Chat: fetch one reply's durable reasoning (a read; carries no key)
@@ -33,6 +34,7 @@ import {
   LOAD_OLDER_ACTION,
   LOAD_REASONING_ACTION,
   SELECT_ACTION,
+  SELECT_MANY_ACTION,
   SUBMIT_FORM_ACTION,
   SUBMIT_TEXT_ACTION,
   isSubmitKey,
@@ -44,6 +46,7 @@ import {
   type InputOption,
   MAX_INPUT_CHARS,
   validateFormValues,
+  validateSelectManyValues,
   validateSelectValue,
   validateTextValue,
 } from "./chatForm";
@@ -76,6 +79,12 @@ export type Submission =
       readonly widgetId: string;
       readonly key: string;
       readonly value: string;
+    }
+  | {
+      readonly kind: "select-many";
+      readonly widgetId: string;
+      readonly key: string;
+      readonly values: readonly string[];
     }
   | {
       readonly kind: "edit";
@@ -217,6 +226,12 @@ export interface AcceptChatOptions {
     principal: string,
     context: { readonly widgetId: string }
   ) => boolean;
+  /**
+   * The values the host PUBLISHED as this MultiSelectInput's options (for this principal). Required for
+   * `SELECT_MANY`: absent, or answering undefined, every choice is refused. A MultiSelectInput's options are
+   * data, not props, so they are matched against what the host served, never against the action.
+   */
+  readonly optionsOf?: (widgetId: string, principal: string) => ReadonlySet<string> | undefined;
   /** Longest accepted text (default and ceiling {@link MAX_INPUT_CHARS}); a TextInput's own `maxChars` also applies. */
   readonly maxTextChars?: number;
 }
@@ -229,6 +244,7 @@ const TYPE_TO_KIND: Readonly<Record<string, InputSpec["kind"]>> = {
   [SUBMIT_TEXT_ACTION]: "TextInput",
   [SUBMIT_FORM_ACTION]: "FormInput",
   [SELECT_ACTION]: "SelectInput",
+  [SELECT_MANY_ACTION]: "MultiSelectInput",
   [EDIT_TURN_ACTION]: "Chat",
   [LOAD_OLDER_ACTION]: "Chat",
   [LOAD_REASONING_ACTION]: "Chat",
@@ -243,7 +259,7 @@ const TYPE_TO_KIND: Readonly<Record<string, InputSpec["kind"]>> = {
  *  3. the action is `fresh` against `current` (U5);
  *  4. the value re-validates against the host's OWN spec (the client's checks are discarded): text
  *     is sanitised and bounded, form values are rebuilt from declared fields only, a select value
- *     must be one of the declared options, an edit must be allowed by `canEdit`;
+ *     must be one of the declared options, a multi-select value one of the published ones, an edit must be allowed by `canEdit`;
  *  5. the idempotency key is claimed on the ledger (last, so a refusal never burns a key).
  *
  * Returns the {@link Submission} to act on, or a typed refusal. Total: never throws. The `text` it
@@ -339,9 +355,19 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
         submission = { kind: "select", widgetId, key, value: v.value };
         break;
       }
-      case "MultiSelectInput":
-        // Not yet submittable: refused until its SELECT_MANY action is accepted here (fail closed).
-        return refuse("not-an-input");
+      case "MultiSelectInput": {
+        let allowed: ReadonlySet<string> | undefined;
+        try {
+          allowed = options.optionsOf?.(widgetId, options.principal);
+        } catch {
+          allowed = undefined;
+        }
+        if (!(allowed instanceof Set)) return refuse("invalid", { values: "option" });
+        const v = validateSelectManyValues(allowed, own(payload, "values"), spec.maxSelected);
+        if (!v.ok) return refuse("invalid", { values: v.error });
+        submission = { kind: "select-many", widgetId, key, values: v.values };
+        break;
+      }
       case "Chat": {
         if (!spec.editable || options.canEdit === undefined) return refuse("edit-not-allowed");
         const turn = own(payload, "turn");
@@ -477,7 +503,7 @@ export function conversationTarget(
 /**
  * A flow's resume gate: the host's `resume` is the authenticated runtime call (typed gates, ADR
  * 0077, parse the payload again with the gate's own schema, which remains the authority).
- * form → `values`, select → `{ value }`, text → `{ text }`.
+ * form → `values`, select → `{ value }`, select-many → `{ values }`, text → `{ text }`.
  */
 export function resumeTarget(
   resume: (payload: unknown, options: { readonly idempotencyKey: string }) => unknown
@@ -488,10 +514,12 @@ export function resumeTarget(
         return resume(s.values, { idempotencyKey: s.key });
       case "select":
         return resume({ value: s.value }, { idempotencyKey: s.key });
+      case "select-many":
+        return resume({ values: s.values }, { idempotencyKey: s.key });
       case "text":
         return resume({ text: s.text }, { idempotencyKey: s.key });
       default:
-        throw new TypeError("a resume target takes a form, a selection or text");
+        throw new TypeError("a resume target takes a form, a selection, a set of choices or text");
     }
   };
 }

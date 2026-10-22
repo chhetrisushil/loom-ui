@@ -241,6 +241,27 @@ export function validateSelectValue(
     : { ok: false, error: "option" };
 }
 
+export type SelectManyValidation =
+  | { readonly ok: true; readonly values: readonly string[] }
+  | { readonly ok: false; readonly error: "type" | "option" | "range" };
+
+/** A whole new choice for a MultiSelectInput: a list of distinct values the HOST published, at most `max`. */
+export function validateSelectManyValues(
+  allowed: ReadonlySet<string>,
+  raw: unknown,
+  max: number
+): SelectManyValidation {
+  if (!Array.isArray(raw)) return { ok: false, error: "type" };
+  if (raw.length > max) return { ok: false, error: "range" };
+  const seen = new Set<string>();
+  for (const v of raw as readonly unknown[]) {
+    if (typeof v !== "string") return { ok: false, error: "type" };
+    if (!allowed.has(v) || seen.has(v)) return { ok: false, error: "option" };
+    seen.add(v);
+  }
+  return { ok: true, values: [...seen] };
+}
+
 export type TextValidation =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly error: "type" | "required" | "too-long" };
