@@ -205,6 +205,57 @@ describe("lu-multi-select-input", () => {
     await settle(el);
     expect(el.shadowRoot?.activeElement).toBe(q(el, "[data-add]"));
   });
+  describe("the pending refocus is one-shot", () => {
+    const setup = async () => {
+      let release: (v: unknown) => void = () => {};
+      const el = await mount(
+        value(["a", "b"]),
+        () =>
+          new Promise((r) => {
+            release = r;
+          })
+      );
+      const btn = (v: string) => q<HTMLButtonElement>(el, `[data-chip="${v}"] button`);
+      btn("a")?.focus();
+      btn("a")?.click();
+      await settle(el);
+      return { el, btn, release: (v: unknown) => release(v) };
+    };
+    it("the host answers ok but does not republish: a later value change that drops the chip moves no focus", async () => {
+      const { el, btn, release } = await setup();
+      release({ ok: true });
+      await settle(el);
+      const other = document.createElement("button");
+      document.body.appendChild(other);
+      other.focus();
+      el.value = value(["b"]);
+      await settle(el);
+      expect(el.shadowRoot?.activeElement ?? null).toBeNull();
+      expect(document.activeElement).toBe(other);
+      expect(btn("b")).not.toBeNull();
+    });
+    it("a refusal keeps focus on the clicked chip's button and no later refocus happens", async () => {
+      const { el, btn, release } = await setup();
+      release({ ok: false, reason: "refused" });
+      await settle(el);
+      expect(el.shadowRoot?.activeElement).toBe(btn("a"));
+      el.value = value(["b"]);
+      await settle(el);
+      expect(el.shadowRoot?.activeElement ?? null).toBeNull();
+    });
+    it("focus moved outside the widget before the send settles is not pulled back", async () => {
+      const { el, release } = await setup();
+      const other = document.createElement("button");
+      document.body.appendChild(other);
+      other.focus();
+      await settle(el);
+      release({ ok: true });
+      el.value = value(["b"]);
+      await settle(el);
+      expect(document.activeElement).toBe(other);
+      expect(el.shadowRoot?.activeElement ?? null).toBeNull();
+    });
+  });
   it("no handler: Add still opens, a choice says chat is unavailable instead of pretending", async () => {
     const el = await mount(value([]));
     q<HTMLButtonElement>(el, "[data-add]")?.click();

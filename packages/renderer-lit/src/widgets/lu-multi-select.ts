@@ -9,6 +9,7 @@ import {
 } from "@loom-ui/core/chat-ui";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 
 import { say } from "../say";
 import { titleText } from "../title";
@@ -47,7 +48,10 @@ export class LuMultiSelectInput extends LuWidget {
   @state() private open = false;
   @state() private query = "";
   @state() private active = 0;
-  private refocus: { removed: string; next: string | undefined } | undefined;
+  /** One-shot: where focus lands after a chip button removed its chip. Never outlives that removal. */
+  private refocus:
+    | { removed: string; next: string | undefined; settled: boolean; away: boolean }
+    | undefined;
 
   private get model(): MultiSelectValue | undefined {
     return multiSelectValueIssues(this.value).length === 0
@@ -101,28 +105,47 @@ export class LuMultiSelectInput extends LuWidget {
   }
   /**
    * A chip's own remove button: ignored while a send is in flight, and the chip is about to leave the
-   * DOM, so remember where focus should land (the next chip's button, else Add). It is applied in
-   * `updated()` once the BOUND value no longer holds the chip and the send has settled (Add is disabled while busy), so it works whether the host answers
-   * before or after it republishes the value; a refusal clears it (the chip stays, so does focus).
+   * DOM, so remember where focus should land (the next chip's button, else Add). The memory is
+   * ONE-SHOT: `updated()` applies it at the first update after the send settled, and only if the BOUND
+   * value no longer holds the chip by then and focus never left the widget (`onFocusOut`); either way
+   * it is cleared there, so a late, unrelated republish cannot pull focus. A refusal and a disconnect
+   * clear it too.
    */
   private removeByButton(value: string): void {
     const m = this.model;
     if (m === undefined || this.phase === "sending") return;
-    this.refocus = { removed: value, next: m.selected[m.selected.indexOf(value) + 1] };
+    const r = {
+      removed: value,
+      next: m.selected[m.selected.indexOf(value) + 1],
+      settled: false,
+      away: false,
+    };
+    this.refocus = r;
     void this.send(m.selected.filter((v) => v !== value)).then(() => {
+      if (this.refocus !== r) return;
       if (this.phase !== "sent") this.refocus = undefined;
+      else {
+        r.settled = true;
+        this.requestUpdate(); // an update after settling, so the memory is always consumed
+      }
     });
+  }
+  /** Focus leaving the widget (to an element outside it) cancels the pending refocus. A removed chip fires no focusout. */
+  private onFocusOut = (e: FocusEvent): void => {
+    const r = this.refocus;
+    if (r === undefined || !(e.target as Node).isConnected) return;
+    const to = e.relatedTarget as Node | null;
+    if (to === null || !this.shadowRoot?.contains(to)) r.away = true;
+  };
+  override disconnectedCallback(): void {
+    this.refocus = undefined;
+    super.disconnectedCallback();
   }
   protected override updated(): void {
     const r = this.refocus;
-    if (
-      r === undefined ||
-      this.phase === "sending" ||
-      this.model === undefined ||
-      this.model.selected.includes(r.removed)
-    )
-      return;
+    if (r === undefined || r.settled === false || this.phase === "sending") return;
     this.refocus = undefined;
+    if (r.away || this.model === undefined || this.model.selected.includes(r.removed)) return;
     const root = this.shadowRoot;
     const next =
       r.next === undefined
@@ -173,16 +196,20 @@ export class LuMultiSelectInput extends LuWidget {
         ? failureText(this.phase as DispatchResult)
         : "";
     const activeId = list[this.active] === undefined ? nothing : `opt-${this.active}`;
-    return html`<div data-multi-select data-phase=${this.phase} role="group" aria-labelledby="name" aria-describedby="status">
+    return html`<div data-multi-select data-phase=${this.phase} @focusout=${this.onFocusOut} role="group" aria-labelledby="name" aria-describedby="status">
       <span id="name">${this.text("label", say("lu.input.choose"))}</span>
       <ul class="chips" part="chips">
         ${
           m.selected.length === 0
             ? html`<li data-empty>${this.text("emptyLabel", say("lu.input.none"))}</li>`
-            : m.selected.map((v) => {
-                const t = LuMultiSelectInput.optionText(byValue.get(v) as MultiSelectOption);
-                return html`<li data-chip=${v}><span>${t}</span><button type="button" aria-label=${`${say("lu.input.remove")} ${t}`} aria-disabled=${busy ? "true" : nothing} @click=${() => this.removeByButton(v)}>×</button></li>`;
-              })
+            : repeat(
+                m.selected,
+                (v) => v,
+                (v) => {
+                  const t = LuMultiSelectInput.optionText(byValue.get(v) as MultiSelectOption);
+                  return html`<li data-chip=${v}><span>${t}</span><button type="button" aria-label=${`${say("lu.input.remove")} ${t}`} aria-disabled=${busy ? "true" : nothing} @click=${() => this.removeByButton(v)}>×</button></li>`;
+                }
+              )
         }
         <li><button type="button" data-add aria-expanded=${String(this.open)} ?disabled=${busy || m.selected.length >= this.max} @click=${this.toggle}>${say("lu.input.add")}</button></li>
       </ul>
