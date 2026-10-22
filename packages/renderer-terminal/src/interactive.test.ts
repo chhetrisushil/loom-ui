@@ -362,7 +362,9 @@ describe("a MultiSelectInput checklist", () => {
     const w = customWidget$({ kind, id: "scope", title: "Scope", binding: bind("h-scope"), props });
     const { store, term } = rig(view(w), onAction);
     store.setValue("h-scope", value, { state: "ready" });
-    return term;
+    return Object.assign(term, {
+      set: (nv: unknown) => store.setValue("h-scope", nv, { state: "ready" }),
+    });
   };
   it("Enter opens it with the bound choice ticked; Space toggles; Enter sends the whole set once", async () => {
     const acts: unknown[] = [];
@@ -412,5 +414,62 @@ describe("a MultiSelectInput checklist", () => {
         .split("\n")
         .filter((l) => /\[[ x]\] Doc/.test(l))
     ).toHaveLength(10);
+  });
+  it("a value replaced while open: a send carries only current options", async () => {
+    const acts: Array<{ payload: { values: string[] } }> = [];
+    const t = terminalWith(
+      "MultiSelectInput",
+      { label: "Search in" },
+      v,
+      (a) => void acts.push(a as never)
+    );
+    await t.press({ name: "enter" });
+    await t.press({ name: "char", char: " " }); // ticks "a"
+    t.set({
+      options: [
+        { value: "b", label: "Contract v2" },
+        { value: "c", label: "Invoice" },
+      ],
+      selected: ["b"],
+    });
+    await t.press({ name: "enter" });
+    expect(acts).toHaveLength(1);
+    expect(acts[0]?.payload.values).toEqual(["b"]);
+  });
+  it("options shrinking below the cursor clamp it; a row is highlighted and Space toggles it", async () => {
+    const acts: Array<{ payload: { values: string[] } }> = [];
+    const t = terminalWith(
+      "MultiSelectInput",
+      { label: "Search in" },
+      v,
+      (a) => void acts.push(a as never)
+    );
+    await t.press({ name: "enter" });
+    await t.press({ name: "down" }, { name: "down" });
+    t.set({
+      options: [
+        { value: "a", label: "Q3 report" },
+        { value: "b", label: "Contract v2" },
+      ],
+      selected: [],
+    });
+    expect(t.frame()).toContain("› [x] Contract v2"); // cursor clamped onto the last row
+    await t.press({ name: "char", char: " " });
+    expect(t.frame()).toContain("› [ ] Contract v2"); // Space toggled it
+    await t.press({ name: "enter" });
+    expect(acts[0]?.payload.values).toEqual([]);
+  });
+  it("a bound selection over maxSelected is capped on open and on send", async () => {
+    const acts: Array<{ payload: { values: string[] } }> = [];
+    const t = terminalWith(
+      "MultiSelectInput",
+      { label: "Search in", maxSelected: 2 },
+      { ...v, selected: ["a", "b", "c"] },
+      (a) => void acts.push(a as never)
+    );
+    await t.press({ name: "enter" });
+    expect(t.frame()).not.toContain("[x] Invoice");
+    await t.press({ name: "enter" });
+    expect(acts[0]?.payload.values).toEqual(["a", "b"]);
   });
 });
