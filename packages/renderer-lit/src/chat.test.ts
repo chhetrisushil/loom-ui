@@ -15,12 +15,13 @@ import "./register";
 describe("the opt-in chat entry", () => {
   it("registers exactly the chat kinds on top of the default registry, and keeps loom's built-ins covered", () => {
     const reg = createChatLitRegistry();
-    for (const k of ["Chat", "TextInput", "FormInput", "SelectInput"])
+    for (const k of ["Chat", "TextInput", "FormInput", "SelectInput", "MultiSelectInput"])
       expect(reg.has(k)).toBe(true);
     expect(catalogCoverage(builtinCatalog, reg).missing).toEqual([]);
     expect(chatKindContracts.map((c) => c.kind).sort()).toEqual([
       "Chat",
       "FormInput",
+      "MultiSelectInput",
       "SelectInput",
       "TextInput",
     ]);
@@ -39,6 +40,7 @@ describe("the opt-in chat entry", () => {
       TextInput: {},
       FormInput: { fields: [{ name: "a", label: "A", type: "text" }] },
       SelectInput: { options: [{ value: "a", label: "A" }] },
+      MultiSelectInput: {},
     };
     const children: SemanticNode[] = catalog.entries.map((e, i) => ({
       id: `n${i}`,
@@ -48,7 +50,9 @@ describe("the opt-in chat entry", () => {
       typeVersion: "1.1.0",
       span: 6,
       props: props[e.name] ?? {},
-      ...(e.name === "Chat" && { binding: { handle: "h", priority: "P1" as const } }),
+      ...(["Chat", "MultiSelectInput"].includes(e.name) && {
+        binding: { handle: "h", priority: "P1" as const },
+      }),
     }));
     const providers = {
       h: {

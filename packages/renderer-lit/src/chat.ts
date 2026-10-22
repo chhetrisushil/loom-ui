@@ -1,6 +1,6 @@
 // `@loom-ui/renderer-lit/chat` — the chat and input widgets (U8), opt-in.
 //
-// Creating a registry here (or `registerChatWidgets`) defines the `lu-chat`, `lu-text-input`, `lu-form-input` and `lu-select-input`
+// Creating a registry here (or `registerChatWidgets`) defines the `lu-chat`, `lu-text-input`, `lu-form-input`, `lu-select-input` and `lu-multi-select-input`
 // elements. It is its own entry, like the media widgets, so a page that draws no conversation does
 // not pay for them. The kinds themselves (and the `ChatValue` contract) are universal and live in
 // `@loom-ui/core`; this entry is only how the web surface DRAWS them. File upload in a conversation
@@ -24,6 +24,7 @@ import type { DomRegistry } from "./dom/registry";
 
 export { LuChat } from "./widgets/lu-chat";
 export { LuFormInput, LuSelectInput, LuTextInput } from "./widgets/lu-inputs";
+export { LuMultiSelectInput } from "./widgets/lu-multi-select";
 
 /** The loom contracts the chat kinds declare (what a catalogue's `surfaces.web` carries for them). */
 export const chatKindContracts: readonly CatalogEntry[] = [
@@ -39,6 +40,11 @@ export const chatKindContracts: readonly CatalogEntry[] = [
     props: ["label", "options", "placeholder", "size"],
     binding: "optional",
   },
+  {
+    kind: "MultiSelectInput",
+    props: ["label", "emptyLabel", "placeholder", "maxSelected"],
+    binding: "required",
+  },
 ];
 
 const TAGS: Readonly<Record<string, string>> = {
@@ -46,6 +52,7 @@ const TAGS: Readonly<Record<string, string>> = {
   TextInput: "lu-text-input",
   FormInput: "lu-form-input",
   SelectInput: "lu-select-input",
+  MultiSelectInput: "lu-multi-select-input",
 };
 
 /** Register the chat kinds on `registry` (returned, for chaining). `opts.media` carries the host seams for media parts. */

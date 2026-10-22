@@ -179,6 +179,7 @@ export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
       .register("TextInput", el("lu-chat-missing"))
       .register("FormInput", el("lu-chat-missing"))
       .register("SelectInput", el("lu-chat-missing"))
+      .register("MultiSelectInput", el("lu-chat-missing"))
       .register("ProgressBar", el("lu-progress"))
       .register("AlertCard", el("lu-alert"))
       .register("StreamingText", el("lu-text"))

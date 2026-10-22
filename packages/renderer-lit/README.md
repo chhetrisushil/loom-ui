@@ -457,6 +457,11 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.input.submit` | `Submit` |
 | `lu.input.choose` | `Choose` |
 | `lu.input.chooseEllipsis` | `Choose…` |
+| `lu.input.none` | `None` |
+| `lu.input.add` | `Add…` |
+| `lu.input.remove` | `Remove` |
+| `lu.input.noMatches` | `No matches` |
+| `lu.input.search` | `Search` |
 | `lu.input.fixFields` | `Fix the marked fields.` |
 | `lu.input.formUnavailable` | `This form is not available.` |
 | `lu.input.choiceUnavailable` | `This choice is not available.` |
@@ -516,7 +521,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 ## Notable behaviours and guarantees
 
 - **Chat is an opt-in entry (U8): `@loom-ui/renderer-lit/chat`.** `createChatLitRegistry({ media })`
-  is the default registry plus `Chat`, `TextInput`, `FormInput` and `SelectInput`
+  is the default registry plus `Chat`, `TextInput`, `FormInput`, `SelectInput` and `MultiSelectInput`
   (`registerChatWidgets(registry, opts)` adds them to one you built; `chatKindContracts` is what a
   catalogue's `surfaces.web` carries). The default registry draws one fixed "Chat renderer not
   loaded" placeholder for these kinds (no value, title or prop; one console warning). The contract
@@ -562,6 +567,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
     may return `{ ok, reason? }` (or a promise): the widget waits for it (`renderBlueprintDom`
     passes the return value through).
   `SelectInput` may be bound to its current choice (a string; shown only if it is a declared option, never echoed) and takes `size: "compact"` (host attribute `compact`, `::part(select)`) to fit its content inline.
+  `MultiSelectInput` is bound to `{ options, selected, note? }`: the chosen options draw as chips (each with a labelled remove button) plus an Add button that opens a search over the unchosen ones. Every change sends ONE `SELECT_MANY { values, key }` with the whole new choice; the control is busy until the host answers and the chips are always the bound value. Labels, hints and the note are untrusted one-line text. DOM hooks: `[data-multi-select][data-phase]`, `[data-chip="<value>"]` with a `button`, `[data-empty]`, `[data-add]`, `input[data-search]`, `[data-option="<value>"]`, `[data-note]`, `#status`.
 - **Media is an opt-in entry (U9): `@loom-ui/renderer-lit/media`.** `createMediaLitRegistry({ media
   })` is the default registry plus `Image`, `Audio`, `Video`, `File` and `MediaInput`
   (`registerMediaWidgets(registry, opts)` adds them to one you built; `mediaKindContracts` is what a
