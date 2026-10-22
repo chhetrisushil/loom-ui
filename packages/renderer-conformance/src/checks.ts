@@ -1020,14 +1020,43 @@ check(
       const none = await at([]);
       const beta = await at(["beta"]);
       const alpha = await at(["alpha"]);
-      // Compared on what each renderer READS: a prompt may list only the chosen options and count the
-      // rest, so an unchosen label need not be drawn, but a chosen one always is.
-      must(has(beta, "Beta"), `the chosen option is not drawn: ${show(beta)}`);
-      must(has(alpha, "Alpha"), `the chosen option is not drawn: ${show(alpha)}`);
-      must(
-        flat(none) !== flat(beta) && flat(none) !== flat(alpha) && flat(alpha) !== flat(beta),
-        `the chosen set is ignored: none, ["beta"] and ["alpha"] do not all read differently: ${show(beta)}`
-      );
+      // Compared on what each renderer READS, and on WHICH option the change lands on. The reading for a
+      // chosen set is diffed against the empty one (common prefix and suffix cut away); the changed span is
+      // what the chosen set ADDED (a chip, a "(current)" mark, a "1) Beta (current)" row). The chosen label
+      // must sit strictly nearer that span than the unchosen one. This certifies the shared clause on every
+      // layout: web chips and the terminal prompt (chosen rows only, the rest counted) put the label inside
+      // the span; the speech sentence lists every option and puts the mark right beside the chosen one.
+      // It refuses a renderer that marks the wrong option (nearest is the other), marks every option or
+      // shows only a count (a tie), or ignores the set (no span).
+      const nearest = (base: string, text: string, labels: readonly string[]): string[] => {
+        const x = flat(base);
+        const y = flat(text);
+        let p = 0;
+        while (p < x.length && p < y.length && x[p] === y[p]) p++;
+        let q = 0;
+        while (q < x.length - p && q < y.length - p && x.at(-1 - q) === y.at(-1 - q)) q++;
+        const span: [number, number] = [p, y.length - q];
+        if (span[0] >= span[1]) return [];
+        const gap = (label: string): number => {
+          let best = Number.POSITIVE_INFINITY;
+          for (let i = y.indexOf(label); i >= 0; i = y.indexOf(label, i + 1))
+            best = Math.min(best, Math.max(0, span[0] - (i + label.length), i - span[1]));
+          return best;
+        };
+        const d = labels.map(gap);
+        const min = Math.min(...d);
+        return min === Number.POSITIVE_INFINITY ? [] : labels.filter((_, i) => d[i] === min);
+      };
+      for (const [chosen, text, label, other] of [
+        ["beta", beta, "Beta", "Alpha"],
+        ["alpha", alpha, "Alpha", "Beta"],
+      ] as const) {
+        const hit = nearest(none, text, [label, other]);
+        must(
+          hit.length === 1 && hit[0] === label,
+          `choosing ["${chosen}"] does not show ${label} as the chosen option (what it changed lands on: ${JSON.stringify(hit)}): ${show(text)}`
+        );
+      }
     })
 );
 
