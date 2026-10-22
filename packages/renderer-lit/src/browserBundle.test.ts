@@ -93,7 +93,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Re-baselined 2026-10-14 after the ESM build (loom-ui #82) at measured size + ~10%, rounded up:
     // index 120_260 -> 133 kB, dom/index 30_450 -> 34 kB, containers 10_643 -> 12 kB, media 64_476 -> 71 kB,
     // chat 82_652 -> 91 kB, signals 2_074 -> 2.5 kB.
-    ["index.js", 133 * 1000],
+    // Turn-failure reasons (rate-limited, quota, tool-error): 133 -> 134 kB (measured 133_178, 178 over): three more fixed sentences in the catalogue.
+    ["index.js", 134 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.

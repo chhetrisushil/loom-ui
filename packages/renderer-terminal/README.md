@@ -209,6 +209,9 @@ The keys the terminal asks for (including the shared chat and media words from `
 | `lu.chat.line.reasoningRedacted` | `[reasoning redacted]` |
 | `lu.chat.line.reasoningErased` | `[reasoning removed]` |
 | `lu.chat.reason.model-error` | `The assistant ran into a problem.` |
+| `lu.chat.reason.rate-limited` | `The assistant is busy right now. Try again in a moment.` |
+| `lu.chat.reason.quota` | `The assistant's usage limit has been reached.` |
+| `lu.chat.reason.tool-error` | `A tool the assistant used failed.` |
 | `lu.chat.reason.denied` | `That was not permitted.` |
 | `lu.chat.reason.turn-failed` | `The turn could not be completed.` |
 | `lu.chat.reason.cancelled` | `The turn was cancelled.` |

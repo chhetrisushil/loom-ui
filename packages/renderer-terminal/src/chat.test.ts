@@ -75,6 +75,21 @@ describe("terminal chat transcript", () => {
     for (const line of chatTranscriptLines(value as never)) expect(out).toContain(line);
   });
 
+  it("prints the fixed sentence for each Loom turn-failure reason", () => {
+    const out = draw("Chat", {
+      entries: [
+        e(1, "assistant", { status: "failed", parts: undefined, reason: "rate-limited" }),
+        e(2, "assistant", { status: "failed", parts: undefined, reason: "quota" }),
+        e(3, "assistant", { status: "failed", parts: undefined, reason: "tool-error" }),
+      ],
+    });
+    expect(out).toContain(
+      "Assistant (failed): The assistant is busy right now. Try again in a moment."
+    );
+    expect(out).toContain("Assistant (failed): The assistant's usage limit has been reached.");
+    expect(out).toContain("Assistant (failed): A tool the assistant used failed.");
+  });
+
   it("untrusted text cannot reach the screen as an escape, a bidi override or an extra line", () => {
     const out = draw("Chat", {
       entries: [

@@ -11,6 +11,9 @@ import { type LuMessageKey, type Say, sayEnglish } from "./messages";
 /** The reason tokens with a fixed sentence (`lu.chat.reason.<token>`); any other token gets the generic one. */
 const REASONS = new Set([
   "model-error",
+  "rate-limited",
+  "quota",
+  "tool-error",
   "denied",
   "turn-failed",
   "cancelled",

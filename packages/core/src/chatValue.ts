@@ -128,7 +128,7 @@ export interface ChatEntry {
   readonly cursor?: string;
   /** Epoch ms the source recorded it. */
   readonly at?: number;
-  /** A fixed token (`model-error`, `denied`, `cancelled`, `too-long`...). The renderer owns the words. */
+  /** A fixed token (`model-error`, `rate-limited`, `quota`, `tool-error`, `denied`, `cancelled`, `too-long`...). The renderer owns the words. */
   readonly reason?: string;
   /** Correlation id for the host's log of the real error. Shown as a reference, never as an explanation. */
   readonly errorId?: string;
