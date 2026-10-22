@@ -5,6 +5,8 @@ import {
   CHAT_KIND,
   CHAT_KINDS,
   FORM_INPUT_KIND,
+  MAX_MULTI_SELECTED,
+  MULTI_SELECT_INPUT_KIND,
   SELECT_INPUT_KIND,
   TEXT_INPUT_KIND,
 } from "./chatValue";
@@ -26,6 +28,7 @@ export const CHAT_ALLOWED_PROPS: Readonly<Record<string, readonly string[]>> = O
   [TEXT_INPUT_KIND]: ["label", "placeholder", "multiline", "maxChars", "submitLabel"],
   [FORM_INPUT_KIND]: ["label", "fields", "submitLabel"],
   [SELECT_INPUT_KIND]: ["label", "options", "placeholder", "size"],
+  [MULTI_SELECT_INPUT_KIND]: ["label", "emptyLabel", "placeholder", "maxSelected"],
 });
 
 /** The text-valued props (a `LocalizedText` is allowed there; resolved at compile). */
@@ -34,6 +37,7 @@ export const CHAT_TEXT_PROPS: Readonly<Record<string, readonly string[]>> = Obje
   [TEXT_INPUT_KIND]: ["label", "placeholder", "submitLabel"],
   [FORM_INPUT_KIND]: ["label", "submitLabel"],
   [SELECT_INPUT_KIND]: ["label", "placeholder"],
+  [MULTI_SELECT_INPUT_KIND]: ["label", "emptyLabel", "placeholder"],
 });
 
 /** The version the chat entries declare; bump with a kind's props or value contract. */
@@ -97,6 +101,17 @@ export function chatPropFindings(
         value > MAX_INPUT_CHARS
       )
         err("chat-prop-shape", `"${nodeId}": maxChars is an integer from 1 to ${MAX_INPUT_CHARS}`);
+    } else if (key === "maxSelected") {
+      if (
+        typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < 1 ||
+        value > MAX_MULTI_SELECTED
+      )
+        err(
+          "chat-prop-shape",
+          `"${nodeId}": maxSelected is an integer from 1 to ${MAX_MULTI_SELECTED}`
+        );
     } else if (key === "fields") {
       const p = fieldsProblem(value);
       if (p !== undefined) err("chat-prop-shape", `"${nodeId}": ${p}`);
@@ -110,8 +125,8 @@ export function chatPropFindings(
 
 /**
  * The semantic entries for the chat kinds, ready to splice into a catalogue's `entries` (`Chat`,
- * `TextInput`, `FormInput`, `SelectInput`, each `@1.1.0`). A planner is offered chat and inputs ONLY
- * by including these. `Chat` requires a binding (its transcript); `SelectInput` alone may take an optional binding (its current choice); the other inputs take none. `surfaces`
+ * `TextInput`, `FormInput`, `SelectInput`, `MultiSelectInput`, each `@1.1.0`). A planner is offered chat and inputs ONLY
+ * by including these. `Chat` requires a binding (its transcript); `SelectInput` may take an optional binding (its current choice); `MultiSelectInput` requires one (its options and choice); the other inputs take none. `surfaces`
  * names the surfaces to resolve (default `web` and `terminal`); every one resolves to the
  * framework kind. File upload is the existing `mediaCatalogEntries()` `MediaInput`.
  */
@@ -133,7 +148,12 @@ export function chatCatalogEntries(
   };
   return [
     entry(CHAT_KIND, "required"),
-    ...CHAT_INPUT_KINDS.map((k) => entry(k, k === SELECT_INPUT_KIND ? "optional" : "none")),
+    ...CHAT_INPUT_KINDS.map((k) =>
+      entry(
+        k,
+        k === SELECT_INPUT_KIND ? "optional" : k === MULTI_SELECT_INPUT_KIND ? "required" : "none"
+      )
+    ),
   ];
 }
 

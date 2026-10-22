@@ -11,12 +11,7 @@
 // AND the same finding message, which is the message a reader sees in an error state. Change a
 // contract in `values.ts` and that test fails until this file follows.
 
-import {
-  CHAT_INPUT_KINDS,
-  CHAT_KIND,
-  chatValueIssues,
-  multiSelectValueIssues,
-} from "./chatValue";
+import { CHAT_INPUT_KINDS, CHAT_KIND, chatValueIssues, multiSelectValueIssues } from "./chatValue";
 import type { Finding } from "./experience";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import { tableRowProblems } from "./tableRows";

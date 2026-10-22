@@ -7,12 +7,19 @@
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
 import { MAX_INPUT_CHARS, asFields, fieldsProblem, optionsProblem } from "./chatForm";
 import type { InputSpec } from "./chatHost";
-import { CHAT_KIND, FORM_INPUT_KIND, SELECT_INPUT_KIND, TEXT_INPUT_KIND } from "./chatValue";
+import {
+  CHAT_KIND,
+  FORM_INPUT_KIND,
+  MAX_MULTI_SELECTED,
+  MULTI_SELECT_INPUT_KIND,
+  SELECT_INPUT_KIND,
+  TEXT_INPUT_KIND,
+} from "./chatValue";
 import type { Experience } from "./experience";
 import { walk } from "./node";
 
 /**
- * widget id → {@link InputSpec}, for every Chat / TextInput / FormInput / SelectInput node of `exp`
+ * widget id → {@link InputSpec}, for every Chat / TextInput / FormInput / SelectInput / MultiSelectInput node of `exp`
  * on `surface`. A node whose props do not form a valid spec is OMITTED, so its actions are refused
  * (`not-an-input`) rather than judged against a guess. A node's widget id is its node id.
  */
@@ -59,6 +66,16 @@ export function inputSpecFromProps(
             options: props.options as readonly { value: string; label: string }[],
           }
         : undefined;
+    case MULTI_SELECT_INPUT_KIND: {
+      const m = props.maxSelected;
+      return {
+        kind: MULTI_SELECT_INPUT_KIND,
+        maxSelected:
+          typeof m === "number" && Number.isInteger(m) && m >= 1 && m <= MAX_MULTI_SELECTED
+            ? m
+            : MAX_MULTI_SELECTED,
+      };
+    }
     case CHAT_KIND:
       return { kind: CHAT_KIND, editable: props.editable === true };
     default:
