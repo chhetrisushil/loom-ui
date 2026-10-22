@@ -147,6 +147,13 @@ overwritten, so no widget, A2UI tree or sandbox code can spoof provenance — th
 `action`/`context` live nested under `payload`. The stamp is a staleness aid, not authentication of
 the actor.
 
+**Selected item (A2UI).** A `Column` or `Row` (typically a List item template) may carry
+`selected`, a literal or a binding (relative to the List element, e.g. `{ "path": "/selected" }`). Exactly
+`true` draws it highlighted (a thick leading bar plus tint, so not colour-only) with
+`aria-current="true"`, and the view scrolls it into view (`block: "nearest"`; instant under
+`prefers-reduced-motion`) when the selected item changes, not on unrelated re-renders. Order is the
+data's order; the view never reorders. The terminal renderer has no A2UI interpreter (it says so).
+
 **`A2UI_ACTION` and `SANDBOX_ACTION` are untrusted intent.** A Button's label AND action name are
 authored by a model/A2UI producer; a sandbox frame can post `{ type: "action" }` with no user
 gesture at all (the iframe's own input is invisible to the parent, so a gesture gate cannot be
