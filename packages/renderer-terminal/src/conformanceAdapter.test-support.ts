@@ -22,6 +22,7 @@ export const terminalAdapter: RendererAdapter = {
     "Chat",
     "TextInput",
     "SelectInput",
+    "MultiSelectInput",
   ],
   capabilities: {
     update: true,
@@ -32,7 +33,9 @@ export const terminalAdapter: RendererAdapter = {
   },
   mount(blueprint, { values, onAction, i18n }) {
     const store = new HydrationStore(new InMemoryProjectionRuntime(), { experienceId: "kit" });
+    const latest = new Map<string, HandleEntry>(Object.entries(values));
     const put = (handle: string, e: HandleEntry): void => {
+      latest.set(handle, e);
       const finding =
         e.message === undefined
           ? undefined
@@ -67,6 +70,23 @@ export const terminalAdapter: RendererAdapter = {
           await term.send("\r");
           await term.send(`\x1b[200~${intent.text}\x1b[201~`);
           await term.send("\r");
+        } else if (intent.kind === "select-many") {
+          // The options are the BOUND value's; the checklist opens on Enter with the cursor on the first.
+          const handle = /^values\.(.+)$/.exec(widgetOf(blueprint, id)?.binding?.path ?? "")?.[1];
+          const bound = (handle === undefined ? undefined : latest.get(handle)?.value) as
+            | { options: Array<{ value: string }> }
+            | undefined;
+          const options = (bound?.options ?? []).map((o) => o.value);
+          await term.send("\r");
+          let at = 0;
+          for (const value of intent.values) {
+            const to = options.indexOf(value);
+            if (to < 0) throw new Error(`no option "${value}"`);
+            for (; at < to; at++) await term.send("\x1b[B");
+            for (; at > to; at--) await term.send("\x1b[A");
+            await term.send(" ");
+          }
+          await term.send("\r");
         } else {
           await term.send("\r");
           const options = (optionsOf(blueprint, id) as Array<{ value: string }>).map(
@@ -82,6 +102,10 @@ export const terminalAdapter: RendererAdapter = {
 };
 
 function optionsOf(bp: Blueprint, id: string): unknown {
+  return widgetOf(bp, id)?.props.options;
+}
+
+function widgetOf(bp: Blueprint, id: string): Widget | undefined {
   const find = (n: Widget | Layout): Widget | undefined => {
     if ("_tag" in n) return n.id === id ? n : undefined;
     for (const c of n.children) {
@@ -90,5 +114,5 @@ function optionsOf(bp: Blueprint, id: string): unknown {
     }
     return undefined;
   };
-  return find(bp.layout)?.props.options;
+  return find(bp.layout);
 }

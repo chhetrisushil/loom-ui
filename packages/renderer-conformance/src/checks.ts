@@ -5,7 +5,7 @@ import {
   defineSemanticCatalog,
   genesis,
 } from "@loom-ui/core";
-import { SELECT_ACTION, SUBMIT_TEXT_ACTION } from "@loom-ui/core/chat-ui";
+import { SELECT_ACTION, SELECT_MANY_ACTION, SUBMIT_TEXT_ACTION } from "@loom-ui/core/chat-ui";
 import { HYDRATION_PROJECTION_ID } from "@loom-ui/hydration/client";
 import type { Blueprint, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import type { HandleEntry, InvokeIntent, MountedRenderer, RendererAdapter } from "./adapter";
@@ -560,6 +560,23 @@ check(
           }),
         ])
       );
+      // The bound value's label, option label, hint and note are all untrusted text (the option
+      // VALUE is a machine word the contract keeps clean, so it is a plain one here). A hint is capped
+      // at 40 characters by the value contract, so it gets a short hostile text of its own.
+      const HINT = `Q<b>m</b>${ESC}[2J${BEL}${BIDI}`;
+      await probe(
+        "multi-select label, option label, hint and note",
+        ["MultiSelectInput"],
+        () => viewOf([bound("MultiSelectInput", "msel", "Probe", "h-msel", { label: HOSTILE })]),
+        ready("h-msel", {
+          options: [
+            { value: "a", label: HOSTILE, hint: HINT },
+            { value: "b", label: "Beta" },
+          ],
+          selected: ["a"],
+          note: HOSTILE,
+        })
+      );
       await probe(
         "chat turn",
         ["Chat"],
@@ -577,7 +594,7 @@ check(
       // select and a text input with no label of their own, so the fixed words stand in).
       if (adapter.capabilities?.i18n === true) {
         const messages = Object.fromEntries(MESSAGE_KEYS.map((k) => [k, HOSTILE]));
-        const kinds = ["ApprovalCard", "SelectInput", "TextInput"].filter((k) =>
+        const kinds = ["ApprovalCard", "SelectInput", "TextInput", "MultiSelectInput"].filter((k) =>
           adapter.kinds.includes(k)
         );
         if (kinds.length > 0)
@@ -597,8 +614,14 @@ check(
                       ]
                     : []),
                   ...(kinds.includes("TextInput") ? [unbound("TextInput", "ti", undefined)] : []),
+                  ...(kinds.includes("MultiSelectInput")
+                    ? [bound("MultiSelectInput", "msel", "Pick", "h-msel")]
+                    : []),
                 ]),
-                ready("h-appr", { pending: true }),
+                {
+                  ...ready("h-appr", { pending: true }),
+                  ...ready("h-msel", { options: [{ value: "a", label: "Alpha" }], selected: [] }),
+                },
                 { messages }
               )
             ).text()
@@ -896,6 +919,33 @@ check("actions", "controls emit the WidgetAction shapes every renderer shares", 
         `select: unexpected action ${JSON.stringify(a)}`
       );
     }
+    if (adapter.kinds.includes("MultiSelectInput")) {
+      const w = bound("MultiSelectInput", "msel", "Pick", "h-msel", { label: "Pick some" });
+      const m = await s.mount(viewOf([w]), {
+        "h-msel": {
+          value: {
+            options: [
+              { value: "alpha", label: "Alpha" },
+              { value: "beta", label: "Beta" },
+            ],
+            selected: [],
+          },
+          state: "ready",
+        },
+      });
+      // From an empty selection, in this order. Every shipped renderer can honour the order (the web
+      // control adds in the order driven, the terminal ticks in the order driven), so it is exact.
+      const a = await drive(m, "msel", { kind: "select-many", values: ["beta", "alpha"] });
+      const p = a.payload as { values?: unknown; key?: unknown } | undefined;
+      must(
+        a.type === SELECT_MANY_ACTION &&
+          a.widgetId === "msel" &&
+          Array.isArray(p?.values) &&
+          JSON.stringify(p?.values) === JSON.stringify(["beta", "alpha"]) &&
+          keyOk(p?.key),
+        `select-many: unexpected action ${JSON.stringify(a)}`
+      );
+    }
     if (adapter.kinds.includes("TextInput")) {
       const w = unbound("TextInput", "txt", "Ask", { label: "Message" });
       const m = await s.mount(viewOf([w]));
@@ -945,6 +995,38 @@ check(
       must(
         flat(bad) !== flat(alpha) && flat(bad) !== flat(beta),
         `an undeclared value reads as a chosen option: ${show(bad)}`
+      );
+    })
+);
+
+check(
+  "multi-select-current-value",
+  "a MultiSelectInput bound to its chosen set reads differently for each set, and shows what is chosen",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      if (!adapter.kinds.includes("MultiSelectInput"))
+        throw new ConformanceSkip("adapter does not draw MultiSelectInput");
+      const w = bound("MultiSelectInput", "msel", "Pick", "h-msel", { label: "Pick some" });
+      const options = [
+        { value: "alpha", label: "Alpha" },
+        { value: "beta", label: "Beta" },
+      ];
+      const at = async (selected: string[]): Promise<string> =>
+        (
+          await s.mount(viewOf([w]), {
+            "h-msel": { value: { options, selected }, state: "ready" },
+          })
+        ).text();
+      const none = await at([]);
+      const beta = await at(["beta"]);
+      const alpha = await at(["alpha"]);
+      // Compared on what each renderer READS: a prompt may list only the chosen options and count the
+      // rest, so an unchosen label need not be drawn, but a chosen one always is.
+      must(has(beta, "Beta"), `the chosen option is not drawn: ${show(beta)}`);
+      must(has(alpha, "Alpha"), `the chosen option is not drawn: ${show(alpha)}`);
+      must(
+        flat(none) !== flat(beta) && flat(none) !== flat(alpha) && flat(alpha) !== flat(beta),
+        `the chosen set is ignored: none, ["beta"] and ["alpha"] do not all read differently: ${show(beta)}`
       );
     })
 );

@@ -7,6 +7,7 @@ import {
 } from "@loom-ui/core";
 import {
   SELECT_ACTION,
+  SELECT_MANY_ACTION,
   SUBMIT_TEXT_ACTION,
   newSubmitKey,
   stripUnsafeChars,
@@ -38,6 +39,7 @@ const SPOKEN = [
   "Chat",
   "TextInput",
   "SelectInput",
+  "MultiSelectInput",
 ];
 
 export const speechAdapter: RendererAdapter = {
@@ -108,6 +110,19 @@ export const speechAdapter: RendererAdapter = {
         case "SelectInput":
           // The bound current choice is spoken as "(current)"; a value that is not a declared option marks none.
           return `${title}: ${((w.props.options as { value: string; label: string }[]) ?? []).map((x) => `${clean(x.label)}${x.value === v ? " (current)" : ""}`).join(", ")}`;
+        case "MultiSelectInput": {
+          // Every option is spoken, the chosen ones marked "(current)"; then the note.
+          const m = v as {
+            options: { value: string; label: string; hint?: string }[];
+            selected: string[];
+            note?: string;
+          };
+          const opts = m.options.map(
+            (x) =>
+              `${clean(x.label)}${x.hint === undefined ? "" : ` (${clean(x.hint)})`}${m.selected.includes(x.value) ? " (current)" : ""}`
+          );
+          return `${title}: ${clean(w.props.label) || say("lu.input.choose")}: ${opts.join(", ")}${m.note === undefined ? "" : `. ${clean(m.note)}`}`;
+        }
         default:
           return `${title}: [${w.kind}]`; // not spoken here: refuse visibly, never drop
       }
@@ -139,6 +154,15 @@ export const speechAdapter: RendererAdapter = {
         else if (w?.kind === "SelectInput" && intent.kind === "select") {
           const v = validateSelectValue(w.props.options as never, intent.value);
           if (v.ok) emit(SELECT_ACTION, { value: v.value, key: newSubmitKey() });
+        } else if (w?.kind === "MultiSelectInput" && intent.kind === "select-many") {
+          const handle = BINDING.exec(w.binding?.path ?? "")?.[1];
+          const m = (handle === undefined ? undefined : data.get(handle))?.value as
+            | { options: { value: string }[] }
+            | undefined;
+          const known = new Set((m?.options ?? []).map((o) => o.value));
+          const values = [...new Set(intent.values)];
+          if (values.length > 0 && values.every((x) => known.has(x)))
+            emit(SELECT_MANY_ACTION, { values, key: newSubmitKey() });
         } else if (w?.kind === "TextInput" && intent.kind === "text") {
           const v = validateTextValue(intent.text);
           if (v.ok) emit(SUBMIT_TEXT_ACTION, { text: v.text, key: newSubmitKey() });

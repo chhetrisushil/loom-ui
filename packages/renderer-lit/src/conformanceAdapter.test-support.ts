@@ -1,6 +1,6 @@
 import { HydrationStore } from "@loom-ui/hydration";
 import type { HandleEntry, InvokeIntent, RendererAdapter } from "@loom-ui/renderer-conformance";
-import type { Blueprint } from "@loom/blueprint-runtime";
+import type { Blueprint, Layout, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { vi } from "vitest";
 import "./register";
@@ -78,6 +78,18 @@ const inner = (el: Element, sel: string): HTMLElement | null => {
   return null;
 };
 
+function blueprintWidget(bp: Blueprint, id: string): Widget | undefined {
+  const find = (n: Widget | Layout): Widget | undefined => {
+    if ("_tag" in n) return n.id === id ? n : undefined;
+    for (const c of n.children) {
+      const hit = find("node" in c ? c.node : c);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  };
+  return find(bp.layout);
+}
+
 /** The Lit web renderer, with the chat and media entries registered, as the conformance kit sees it. */
 export const litAdapter: RendererAdapter = {
   name: "@loom-ui/renderer-lit",
@@ -96,6 +108,7 @@ export const litAdapter: RendererAdapter = {
     "Chat",
     "TextInput",
     "SelectInput",
+    "MultiSelectInput",
   ],
   capabilities: { update: true, invoke: true, i18n: true, chatMarkdown: true },
   mount(blueprint, { values, onAction, i18n }) {
@@ -106,7 +119,18 @@ export const litAdapter: RendererAdapter = {
     }
     const runtime = new InMemoryProjectionRuntime();
     const store = new HydrationStore(runtime, { experienceId: "kit" });
+    // The latest entry per handle, so a multi-select drive can republish the chosen set as a host would.
+    const latest = new Map<string, HandleEntry>(Object.entries(values));
+    // While a `select-many` drive is running, the control's sends are held here (it sends the whole
+    // set on each add); only the last reaches the kit, which counts one action per drive.
+    let held: WidgetAction[] | undefined;
+    const forward: typeof onAction = (a) => {
+      if (held === undefined) return onAction(a);
+      held.push(a);
+      return { ok: true };
+    };
     const put = (handle: string, e: HandleEntry): void => {
+      latest.set(handle, e);
       const finding =
         e.message === undefined
           ? undefined
@@ -124,7 +148,7 @@ export const litAdapter: RendererAdapter = {
       projectionRuntime: runtime,
       executionId: store.executionId,
       registry,
-      onAction,
+      onAction: forward,
     });
     let live = true;
     return {
@@ -150,6 +174,41 @@ export const litAdapter: RendererAdapter = {
           const button = buttons[intent.kind === "approve" ? 0 : 1] as HTMLElement | undefined;
           if (!button) throw new Error("no approval buttons");
           button.click();
+        } else if (intent.kind === "select-many") {
+          const handle = /^values\.(.+)$/.exec(
+            blueprintWidget(blueprint, id)?.binding?.path ?? ""
+          )?.[1];
+          const entry = handle === undefined ? undefined : latest.get(handle);
+          if (handle === undefined || entry === undefined) throw new Error("no bound multi-select");
+          held = [];
+          try {
+            // Add each value in the order driven; between adds the host republishes the new set (the
+            // control shows only the BOUND value and is busy until its send settles).
+            for (const value of intent.values) {
+              // Add opens the search; it stays open after an add, so click it only when closed.
+              if (!inner(w, "input[data-search]")) {
+                const add = inner(w, "[data-add]") as HTMLElement | null;
+                if (!add) throw new Error("no Add button");
+                add.click();
+                await settle(host);
+              }
+              const option = inner(w, `[data-option="${CSS.escape(value)}"]`);
+              if (!option) throw new Error(`no option "${value}"`);
+              option.dispatchEvent(
+                new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+              );
+              await settle(host);
+              const sent = held.at(-1)?.payload as { values: string[] } | undefined;
+              if (sent === undefined) throw new Error("the control sent nothing");
+              const cur = latest.get(handle)?.value as Record<string, unknown>;
+              put(handle, { ...entry, value: { ...cur, selected: sent.values } });
+              await settle(host);
+            }
+          } finally {
+            const last = held.at(-1);
+            held = undefined;
+            if (last !== undefined) await onAction(last);
+          }
         } else if (intent.kind === "select") {
           const sel = inner(w, "select") as HTMLSelectElement | null;
           if (!sel) throw new Error("no select");
