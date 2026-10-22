@@ -237,6 +237,14 @@ describe("the words both renderers share", () => {
     expect(chatReasonText(undefined)).toBe("The message was not processed.");
   });
 
+  it("the turn-failure reasons Loom emits (rate-limited, quota, tool-error) have first-class fixed sentences", () => {
+    expect(chatReasonText("rate-limited")).toBe(
+      "The assistant is busy right now. Try again in a moment."
+    );
+    expect(chatReasonText("quota")).toBe("The assistant's usage limit has been reached.");
+    expect(chatReasonText("tool-error")).toBe("A tool the assistant used failed.");
+  });
+
   it("a transcript prints as lines: speakers, notes, fixed failure text, media described without an address", () => {
     const lines = chatTranscriptLines(
       v(
