@@ -665,6 +665,23 @@ describe("SELECT_MANY", () => {
     expect(accept({ values: [1], key: KEY })).toEqual(invalid("type"));
   });
 
+  it("reads the list by index: an own Symbol.iterator cannot smuggle in more than maxSelected", () => {
+    const sneaky: string[] = [];
+    Object.defineProperty(sneaky, Symbol.iterator, {
+      value: function* () {
+        yield* ["a", "b", "c"];
+      },
+    });
+    const r = accept({ values: sneaky, key: KEY });
+    // length is 0, so the index loop sees nothing: an empty choice, never the three yielded values
+    expect(r.ok && r.submission).toEqual({
+      kind: "select-many",
+      widgetId: "scope",
+      key: KEY,
+      values: [],
+    });
+  });
+
   it("refuses everything when the host serves no options (absent, undefined, or throwing)", () => {
     expect(accept({ values: [], key: KEY }, { optionsOf: undefined }).ok).toBe(false);
     expect(accept({ values: [], key: KEY }, { optionsOf: () => undefined }).ok).toBe(false);
