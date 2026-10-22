@@ -510,6 +510,19 @@ export function interactiveTerminal(
       : MAX_MULTI_SELECTED;
   };
 
+  /** The checklist's cursor and ticks, held to the CURRENT options and cap: what is drawn is what a send uses. */
+  const reconcile = (
+    w: Widget,
+    index: number,
+    picks: readonly string[]
+  ): { index: number; picks: string[] } => {
+    const m = multiOf(w);
+    const have = new Set((m?.options ?? []).map((o) => o.value));
+    const kept = [...new Set(picks)].filter((p) => have.has(p)).slice(0, maxOf(w));
+    const last = Math.max(0, (m?.options.length ?? 1) - 1);
+    return { index: Math.min(Math.max(0, index), last), picks: kept };
+  };
+
   function build(): string {
     const body = renderExperience(blueprint, store, renderOpts);
     const controls = controlsNow();
@@ -535,9 +548,10 @@ export function interactiveTerminal(
         lines.push(`${mark} ${c.label}`);
         const m = multiOf(c.widget);
         if (focused && mode.kind === "multi" && m !== undefined) {
-          const at = mode.index;
+          const rec = reconcile(c.widget, mode.index, mode.picks);
+          const at = rec.index;
           const from = Math.max(0, Math.min(at - 4, m.options.length - 10));
-          const picks = new Set(mode.picks);
+          const picks = new Set(rec.picks);
           m.options.slice(from, from + 10).forEach((o, k) => {
             const i = from + k;
             lines.push(
@@ -709,6 +723,7 @@ export function interactiveTerminal(
         mode = { kind: "nav" };
         return undefined;
       }
+      mode = { kind: "multi", ...reconcile(c.widget, mode.index, mode.picks) };
       const last = m.options.length - 1;
       if (key.name === "escape") mode = { kind: "nav" };
       else if (key.name === "up") mode = { ...mode, index: Math.max(0, mode.index - 1) };
@@ -775,7 +790,7 @@ export function interactiveTerminal(
       if (c.kind === "text") mode = { kind: "text", draft: "" };
       else if (c.kind === "select") mode = { kind: "pick", index: 0 };
       else if (c.kind === "multi")
-        mode = { kind: "multi", index: 0, picks: [...(multiOf(c.widget)?.selected ?? [])] };
+        mode = { kind: "multi", ...reconcile(c.widget, 0, multiOf(c.widget)?.selected ?? []) };
     }
     return undefined;
   }
