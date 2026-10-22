@@ -252,9 +252,12 @@ export function validateSelectManyValues(
   max: number
 ): SelectManyValidation {
   if (!Array.isArray(raw)) return { ok: false, error: "type" };
-  if (raw.length > max) return { ok: false, error: "range" };
+  const n = raw.length;
+  if (n > max) return { ok: false, error: "range" };
   const seen = new Set<string>();
-  for (const v of raw as readonly unknown[]) {
+  // By index, not the iterator: an array may carry its own `Symbol.iterator` that yields more than `n`.
+  for (let i = 0; i < n; i++) {
+    const v: unknown = raw[i];
     if (typeof v !== "string") return { ok: false, error: "type" };
     if (!allowed.has(v) || seen.has(v)) return { ok: false, error: "option" };
     seen.add(v);
