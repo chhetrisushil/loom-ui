@@ -438,7 +438,7 @@ separators); `formatBytes` / `describeMedia` are the one description both surfac
 
 ### Chat and inputs (U8, `@loom-ui/core/chat`)
 
-A conversation is four kinds. **`Chat`** is a transcript, bound like any data widget;
+A conversation is five kinds. **`Chat`** is a transcript, bound like any data widget;
 **`TextInput`** and **`FormInput`** collect input and are static (props only; a value reaching one is a
 defect, as for a `Note`). **`SelectInput`** is static too, with one optional exception: its node may
 carry a binding whose value is the CURRENT choice (a string; the host already holds it). The widget
@@ -453,12 +453,13 @@ adds to it), so it is bound to `{ options, selected, note? }`: `options` are `{ 
 options). Props: `label`, `placeholder`, `emptyLabel` (shown when nothing is chosen) and `maxSelected` (1 to
 100, default 100). The user's change emits `SELECT_MANY` with the WHOLE new choice. Because the options are
 data, `acceptChatSubmit` matches `values` against `optionsOf(widgetId, principal)`, the set you PUBLISHED (per
-viewer, like `hasRef`); without it, or when it answers `undefined` or throws, every choice is refused. Values
+viewer, like `hasRef`). It must return a real `Set`: without the hook, or when it answers `undefined`, throws,
+or returns anything else (a custom `ReadonlySet` is refused), every choice is refused. Values
 must be distinct, at most `maxSelected`; the empty set is a valid choice.
 
 Core names no loom type: the transcript contract below is what loom's conversation
 layer (`@loom/conversation`, ADR 0122) emits once a client has folded it, but any source that can
-say this much can feed the widget. `chatCatalogEntries()` returns the four semantic entries
+say this much can feed the widget. `chatCatalogEntries()` returns the five semantic entries
 (`@1.1.0`) to splice into a catalogue; a catalogue without them cannot compose a chat node, so a
 planner is offered chat only if the host chose to.
 

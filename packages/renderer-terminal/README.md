@@ -105,8 +105,8 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
   turn]`, media described without an address, then `(the assistant is replying...)` / `(conversation
   closed)` / `... earlier messages are available`. Each turn is one bounded line of cleaned text: an
   escape sequence, a bidi override or a newline in a turn cannot reach the screen or forge a
-  `Assistant:` line. `TextInput` / `FormInput` / `SelectInput` print a prompt that says what they
-  ask (fields, numbered options) and that the answer goes through an interactive surface (the
+  `Assistant:` line. `TextInput` / `FormInput` / `SelectInput` / `MultiSelectInput` print a prompt that says what they
+  ask (fields, numbered options, the current choice listed with `(current)`, and a count of the other options) and that the answer goes through an interactive surface (the
   registry draws, it does not read a line): a terminal host that collects answers sends them through
   the same `createWriteBack` as the web.
 - **Media prints a line, never loads (U9).** `Image`/`Audio`/`Video`/`File` print the same one-line

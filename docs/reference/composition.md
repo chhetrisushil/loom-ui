@@ -128,10 +128,11 @@ whose contracts loom's React renderers depend on and which are never widened.
 | `A2UIView`, `SandboxView` | Mount `lu-a2ui-view` / `lu-sandbox` with the declared `view` / `code` prop and the bound value as data. |
 
 The media and conversation kinds (`Image`, `Audio`, `Video`, `File`, `MediaInput`, `Chat`,
-`TextInput`, `FormInput`, `SelectInput`) are also in `FRAMEWORK_KINDS`; their value contracts are
+`TextInput`, `FormInput`, `SelectInput`, `MultiSelectInput`) are also in `FRAMEWORK_KINDS`; their value contracts are
 described in the [`@loom-ui/core` README](../../packages/core/README.md) under "Media" and "Chat and
-inputs". `SelectInput` is the one input that may bind (optionally): the bound value is its current
-choice, shown only when it is a declared option.
+inputs". `SelectInput` may bind (optionally): the bound value is its current choice, shown only when it is a
+declared option. `MultiSelectInput` must bind its options and choice (`{ options, selected, note? }`); its
+change emits `SELECT_MANY`, checked against the host's `optionsOf`.
 
 An app declares a framework kind on a semantic entry's `surfaces.web` by copying its contract from
 `frameworkKindContracts`.
