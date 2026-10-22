@@ -1,7 +1,7 @@
 import type { WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type TemplateResult, css, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
-import { type A2UIRender, type A2UIView, planView } from "../a2ui/plan";
+import { type A2UIRender, type A2UIView, type SelectMeta, planView } from "../a2ui/plan";
 import { localized } from "../i18n";
 import { say } from "../say";
 
@@ -42,11 +42,16 @@ export class LuA2UIView extends LitElement {
     :host { display: block; height: 100%; box-sizing: border-box; }
     .col { display: flex; flex-direction: column; gap: 8px; }
     .row { display: flex; flex-direction: row; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .sel {
-      border-inline-start: 4px solid var(--lu-accent, #2563eb); padding-inline-start: 8px;
-      background: color-mix(in srgb, var(--lu-accent, #2563eb) 14%, transparent);
+    /* Every item of a list using \`selected\` reserves the bar, so selecting shifts nothing. */
+    .selectable {
+      border-inline-start: 4px solid transparent; padding-inline-start: 8px;
       border-radius: var(--lu-radius, 6px);
     }
+    .sel {
+      border-inline-start-color: var(--lu-accent, #2563eb);
+      background: color-mix(in srgb, var(--lu-accent, #2563eb) 14%, transparent);
+    }
+    @media (forced-colors: active) { .selectable:not(.sel) { border-inline-start-color: Canvas; } }
     .list { display: flex; flex-direction: column; gap: 6px; }
     .text { color: var(--lu-text, #e6edf3); font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
     .badge {
@@ -66,39 +71,47 @@ export class LuA2UIView extends LitElement {
     .unknown { color: var(--lu-text-dim, #8b949e); font-size: 12px; font-style: italic; }
   `;
 
-  /** Tree path of the selected item last scrolled to; scroll only when it changes. */
+  /** Identity of the selected item last scrolled to; scroll only when it changes. */
   private scrolledTo: string | null = null;
-  /** Tree path of the selected item in the current render (first one wins). */
+  /** Tree path of the selected item in the current render (the first one wins). */
   private selectedPath: string | null = null;
+  /** Scroll identity of that item: its `selectedKey` when given, else its tree path. */
+  private selectedId: string | null = null;
 
   render() {
-    if (!this.view) return html`<div class="unknown">${say("lu.state.emptyView")}</div>`;
     this.selectedPath = null;
+    this.selectedId = null;
+    if (!this.view) return html`<div class="unknown">${say("lu.state.emptyView")}</div>`;
     return this.paint(planView(this.view, this.data), "0");
   }
 
   protected updated(): void {
-    const key = this.selectedPath;
-    if (key === this.scrolledTo) return;
-    this.scrolledTo = key;
-    if (key === null) return;
+    const id = this.selectedId;
+    if (id === this.scrolledTo) return;
+    if (id === null) {
+      this.scrolledTo = null;
+      return;
+    }
+    const path = this.selectedPath;
     const el = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-a2ui-path]")).find(
-      (e) => e.dataset.a2uiPath === key
+      (e) => e.dataset.a2uiPath === path
     );
-    const reduce =
-      typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el?.scrollIntoView?.({
-      block: "nearest",
-      inline: "nearest",
-      behavior: reduce ? "auto" : "smooth",
-    });
+    // Not found, or not laid out yet (hidden tab, display:none ancestor): leave the marker unset
+    // so the next update retries.
+    if (!el || el.getClientRects().length === 0) return;
+    this.scrolledTo = id;
+    scrollWithinContainer(el);
   }
 
-  /** The attributes marking a selected container: `aria-current` (not colour-only) plus the highlight. */
-  private selAttrs(node: { selected?: true }, path: string) {
-    if (!node.selected) return { cls: "", cur: nothing, p: nothing };
-    this.selectedPath ??= path;
-    return { cls: " sel", cur: "true", p: path };
+  /** The attributes of a Column/Row: selectable reserves the bar; the first selected item in
+   * document order alone gets `aria-current` and the highlight (single selection). */
+  private selAttrs(node: SelectMeta, path: string) {
+    const base = node.selectable ? " selectable" : "";
+    if (!node.selected || this.selectedPath !== null)
+      return { cls: base, cur: nothing, p: nothing };
+    this.selectedPath = path;
+    this.selectedId = node.selectedKey ?? `p:${path}`;
+    return { cls: `${base} sel`, cur: "true", p: path };
   }
 
   private paint(node: A2UIRender, path: string): TemplateResult | typeof nothing {
@@ -157,4 +170,42 @@ declare global {
   interface HTMLElementTagNameMap {
     "lu-a2ui-view": LuA2UIView;
   }
+}
+
+/** The nearest ancestor (crossing shadow boundaries and slots) that scrolls vertically. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  let n: Node | null = el;
+  while (n) {
+    const next: Node | null =
+      (n as Element).assignedSlot ??
+      n.parentNode ??
+      ((n as ShadowRoot).host as Node | undefined) ??
+      null;
+    n = next;
+    if (n instanceof HTMLElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if ((oy === "auto" || oy === "scroll" || oy === "overlay") && n.scrollHeight > n.clientHeight)
+        return n;
+    }
+  }
+  return null;
+}
+
+/** Bring `el` into view by moving ONLY its nearest vertical scroll container, and only when it
+ * is out of view: never the page, never horizontally. No scrollable ancestor means no scroll. */
+function scrollWithinContainer(el: HTMLElement): void {
+  const box = scrollParent(el);
+  if (!box) return;
+  const e = el.getBoundingClientRect();
+  const c = box.getBoundingClientRect();
+  let delta = 0;
+  if (e.top < c.top || e.height > c.height) delta = e.top - c.top;
+  else if (e.bottom > c.bottom) delta = e.bottom - c.bottom;
+  if (delta === 0) return;
+  const reduce =
+    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const top = box.scrollTop + delta;
+  if (typeof box.scrollTo === "function")
+    box.scrollTo({ top, behavior: reduce ? "auto" : "smooth" });
+  else box.scrollTop = top;
 }

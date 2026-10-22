@@ -244,5 +244,48 @@ describe("selected item", () => {
       planView({ nodes: [{ id: "root", component: "Row", selected, children: [] }] }, {});
     expect(col(true)).toMatchObject({ kind: "row", selected: true });
     expect(col("yes")).not.toHaveProperty("selected");
+    expect(col(false)).not.toHaveProperty("selected");
+    expect(col(false)).toMatchObject({ selectable: true });
+  });
+  it('only exact true counts: bound "true", 1, null and a missing key are not selected', () => {
+    const v: A2UIView = {
+      nodes: [
+        { id: "root", component: "List", children: { path: "/items", componentId: "item" } },
+        { id: "item", component: "Row", selected: { path: "/on" }, children: [] },
+      ],
+    };
+    const plan = planView(v, { items: [{ on: "true" }, { on: 1 }, { on: null }, {}] });
+    expect(plan.kind === "list" && plan.children.some((c) => "selected" in c)).toBe(false);
+  });
+  it("a node with no selected prop carries no selection metadata", () => {
+    expect(planView({ nodes: [{ id: "root", component: "Row", children: [] }] }, {})).toEqual({
+      kind: "row",
+      children: [],
+    });
+  });
+  it("exposes selectedKey (string or finite number) only on the selected item", () => {
+    const k = (key: unknown, selected = true) =>
+      planView(
+        { nodes: [{ id: "root", component: "Row", selected, selectedKey: key, children: [] }] },
+        {}
+      );
+    expect(k("a")).toMatchObject({ selectedKey: "s:a" });
+    expect(k(3)).toMatchObject({ selectedKey: "n:3" });
+    expect(k({})).not.toHaveProperty("selectedKey");
+    expect(k("a", false)).not.toHaveProperty("selectedKey");
+  });
+  it("an item without the bound key falls back to the ROOT data (pinned resolveProp behaviour)", () => {
+    const v: A2UIView = {
+      nodes: [
+        { id: "root", component: "List", children: { path: "/items", componentId: "item" } },
+        { id: "item", component: "Row", selected: { path: "/on" }, children: [] },
+      ],
+    };
+    const plan = planView(v, { on: true, items: [{ name: "a" }, { on: false }] });
+    // the first item lacks `on`, so it reads the root's `/on`; an item that has it wins.
+    expect(plan.kind === "list" && plan.children.map((c) => "selected" in c)).toEqual([
+      true,
+      false,
+    ]);
   });
 });

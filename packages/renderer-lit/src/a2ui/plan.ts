@@ -132,11 +132,21 @@ export function resolveNodeProps(
 // switch, child resolution, List iteration/scoping, cycle guarding — unit-testable
 // in isolation; the Lit element is then a thin, low-risk map from plan to DOM.
 
+/** Selection metadata on a Column/Row. `selectable`: the node declares a `selected` prop at all
+ * (so the view can reserve space and selecting never shifts layout). `selected`: it resolved to
+ * exactly `true`. `selectedKey`: an optional stable identity (`selectedKey` prop, a string or
+ * finite number, typically bound relative to the List element, e.g. `{ "path": "/id" }`). */
+export interface SelectMeta {
+  selectable?: true;
+  selected?: true;
+  selectedKey?: string;
+}
+
 export type A2UIRender =
   | { kind: "text"; text: string }
   | { kind: "badge"; label: string; tone: string }
-  | { kind: "row"; children: A2UIRender[]; selected?: true }
-  | { kind: "column"; children: A2UIRender[]; selected?: true }
+  | ({ kind: "row"; children: A2UIRender[] } & SelectMeta)
+  | ({ kind: "column"; children: A2UIRender[] } & SelectMeta)
   | { kind: "list"; children: A2UIRender[] }
   | { kind: "button"; label: string; action: string; context: unknown }
   | { kind: "unknown"; component: string }
@@ -157,9 +167,18 @@ export function formatValue(value: unknown): string {
 
 /** A Column/Row's optional `selected` prop (literal or bound, typically relative to a List
  * element): exactly `true` marks it the selected item. Anything else (absent, false,
- * non-boolean) leaves the key off, so unselected plans are unchanged. */
-function selectedFlag(props: Record<string, unknown>): { selected?: true } {
-  return props.selected === true ? { selected: true } : {};
+ * non-boolean) leaves `selected` off. Nodes without a `selected` prop get no metadata at all,
+ * so existing plans are unchanged. */
+function selectMeta(node: A2UINode, props: Record<string, unknown>): SelectMeta {
+  if (!Object.hasOwn(node, "selected")) return {};
+  const out: SelectMeta = { selectable: true };
+  if (props.selected === true) {
+    out.selected = true;
+    const k = props.selectedKey;
+    if (typeof k === "string" && k !== "") out.selectedKey = `s:${k}`;
+    else if (typeof k === "number" && Number.isFinite(k)) out.selectedKey = `n:${k}`;
+  }
+  return out;
 }
 
 /** Walk one node into a render plan. `scope` is the current List element (relative
@@ -195,9 +214,9 @@ export function planNode(
         tone: typeof props.tone === "string" ? props.tone : "",
       };
     case "Column":
-      return { kind: "column", children: idChildren(), ...selectedFlag(props) };
+      return { kind: "column", children: idChildren(), ...selectMeta(node, props) };
     case "Row":
-      return { kind: "row", children: idChildren(), ...selectedFlag(props) };
+      return { kind: "row", children: idChildren(), ...selectMeta(node, props) };
     case "List": {
       if (!isListChildren(node.children)) return { kind: "list", children: [] };
       const { path, componentId } = node.children;
