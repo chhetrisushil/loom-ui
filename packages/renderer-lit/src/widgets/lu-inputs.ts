@@ -24,7 +24,7 @@ import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatS
 
 // ── The input widgets (U8): TextInput, FormInput, SelectInput ────────────────────────────────────
 //
-// Static (props only; a value reaching one is a contract error, as for a Note). Each emits ONE
+// Static (props only; a value reaching TextInput / FormInput is a contract error, as for a Note; SelectInput alone may bind its current choice, below). Each emits ONE
 // action per submit — SUBMIT_TEXT / SUBMIT_FORM / SELECT — which the renderer stamps with
 // `viewedVersion` (U5) and the HOST re-validates (`acceptChatSubmit`): everything checked here is a
 // courtesy to the user, checked in a browser the user controls.
@@ -56,6 +56,8 @@ abstract class LuInput extends LuWidget {
     return this.renderReady();
   }
 }
+
+const sameValue = (a: unknown, b: unknown): boolean => Object.is(a, b);
 
 type Phase = "idle" | "sending" | "sent" | DispatchResult | "invalid";
 
@@ -339,24 +341,37 @@ export class LuSelectInput extends LuInput {
     return typeof v === "string" && this.options?.some((o) => o.value === v) === true ? v : "";
   }
 
-  /** Not LuInput's matrix: a bound value is optional and only ever displayed. */
+  /** The bound value at the moment the last choice was sent: a recompile re-reading it is not news. */
+  private sentFrom: unknown;
+  /** A choice has been sent and not yet confirmed by a CHANGED bound value. */
+  private awaiting = false;
+
+  /**
+   * The state matrix applies as for every widget: a wrong-type value or an error / stale / pending
+   * status draws the contract's state. With no value yet (loading) the control draws, since a bound
+   * value is optional and only ever displayed.
+   */
   override render(): TemplateResult | typeof nothing {
-    return this.widget ? this.renderReady() : nothing;
+    if (!this.widget) return nothing;
+    if (this.state().state === "loading") return this.renderReady();
+    return super.render();
   }
 
   protected override willUpdate(changed: PropertyValues): void {
+    super.willUpdate(changed);
     this.toggleAttribute(
       "compact",
       (this.widget?.props as { size?: unknown } | undefined)?.size === "compact"
     );
-    // The host's value moved: follow it, unless a choice is in flight (that choice is newer than
-    // whatever the host last read). An unloaded value (undefined) changes nothing.
-    if (
-      (changed.has("value") || changed.has("widget")) &&
-      this.value !== undefined &&
-      this.phase !== "sending"
-    )
-      this.picked = this.bound;
+    if (!(changed.has("value") || changed.has("widget")) || this.value === undefined) return;
+    // A choice is in flight, or was just sent and the host has not read it back yet: the choice is
+    // newer than what the host last read, so a value equal to the send-time one changes nothing.
+    // A value that genuinely differs is the host's newer truth and is followed (after the send settles
+    // when it arrived mid-flight: `settle` below).
+    if (this.phase === "sending") return;
+    if (this.awaiting && sameValue(this.value, this.sentFrom)) return;
+    this.awaiting = false;
+    this.picked = this.bound;
   }
 
   protected override updated(): void {
@@ -383,6 +398,7 @@ export class LuSelectInput extends LuInput {
     }
     const previous = this.picked;
     this.picked = v.value;
+    this.sentFrom = this.value;
     this.phase = "sending";
     const result = await dispatch(this.onAction, {
       type: SELECT_ACTION,
@@ -390,8 +406,13 @@ export class LuSelectInput extends LuInput {
       // One selection = one submission = one key. A failed choice is undone, so it can be made again.
       payload: { value: v.value, key: newSubmitKey() },
     });
-    if (result === "ok") this.phase = "sent";
-    else {
+    const moved = this.value !== undefined && !sameValue(this.value, this.sentFrom);
+    if (result === "ok") {
+      this.phase = "sent";
+      // The host's value moved while the choice was in flight: it is newer than what was sent from.
+      if (moved) this.picked = this.bound;
+      else this.awaiting = true;
+    } else {
       this.picked = this.value !== undefined ? this.bound : previous;
       this.phase = result;
     }

@@ -37,7 +37,7 @@ export const CHAT_TEXT_PROPS: Readonly<Record<string, readonly string[]>> = Obje
 });
 
 /** The version the chat entries declare; bump with a kind's props or value contract. */
-export const CHAT_TYPE_VERSION = "1.0.0";
+export const CHAT_TYPE_VERSION = "1.1.0";
 
 /** How a SelectInput is sized: `default` fills its row; `compact` fits its content so it can sit beside other controls. */
 export const SELECT_SIZES: readonly string[] = ["default", "compact"];

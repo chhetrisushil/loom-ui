@@ -53,6 +53,13 @@ function readable(root: ParentNode): string {
       const v = el.getAttribute(a);
       if (v) parts.push(v);
     }
+    // A chosen option is something a viewer is shown (the select reads as its choice).
+    if (
+      el.tagName === "OPTION" &&
+      (el as HTMLOptionElement).selected &&
+      (el as HTMLOptionElement).value !== ""
+    )
+      parts.push("(selected)");
     if (el.shadowRoot) walk(el.shadowRoot);
     for (const c of Array.from(el.childNodes)) walk(c);
   };

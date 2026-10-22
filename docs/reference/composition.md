@@ -130,7 +130,8 @@ whose contracts loom's React renderers depend on and which are never widened.
 The media and conversation kinds (`Image`, `Audio`, `Video`, `File`, `MediaInput`, `Chat`,
 `TextInput`, `FormInput`, `SelectInput`) are also in `FRAMEWORK_KINDS`; their value contracts are
 described in the [`@loom-ui/core` README](../../packages/core/README.md) under "Media" and "Chat and
-inputs".
+inputs". `SelectInput` is the one input that may bind (optionally): the bound value is its current
+choice, shown only when it is a declared option.
 
 An app declares a framework kind on a semantic entry's `surfaces.web` by copying its contract from
 `frameworkKindContracts`.
