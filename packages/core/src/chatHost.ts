@@ -55,6 +55,7 @@ export type InputSpec =
   | { readonly kind: "TextInput"; readonly maxChars: number }
   | { readonly kind: "FormInput"; readonly fields: readonly FormField[] }
   | { readonly kind: "SelectInput"; readonly options: readonly InputOption[] }
+  | { readonly kind: "MultiSelectInput"; readonly maxSelected: number }
   | { readonly kind: "Chat"; readonly editable: boolean };
 
 export type Submission =
@@ -338,6 +339,9 @@ export function acceptChatSubmit(action: unknown, options: AcceptChatOptions): C
         submission = { kind: "select", widgetId, key, value: v.value };
         break;
       }
+      case "MultiSelectInput":
+        // Not yet submittable: refused until its SELECT_MANY action is accepted here (fail closed).
+        return refuse("not-an-input");
       case "Chat": {
         if (!spec.editable || options.canEdit === undefined) return refuse("edit-not-allowed");
         const turn = own(payload, "turn");

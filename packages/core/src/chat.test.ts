@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog, validateExperience } from "./catalog";
 import {
   CHAT_ALLOWED_PROPS,
+  CHAT_TYPE_VERSION,
   chatCatalogEntries,
   chatPropFindings,
   chatReasonText,
   chatSpeaker,
   chatTranscriptLines,
+  isChatFamilyKind,
 } from "./chat";
-import { inputSpecsOf } from "./chatSpecs";
+import { inputSpecFromProps, inputSpecsOf } from "./chatSpecs";
 import type { ChatValue } from "./chatValue";
 import { genesis } from "./experience";
 import { handleKindsWithMedia } from "./handles";
@@ -38,6 +40,7 @@ describe("chat prop guard", () => {
     expect(Object.keys(CHAT_ALLOWED_PROPS).sort()).toEqual([
       "Chat",
       "FormInput",
+      "MultiSelectInput",
       "SelectInput",
       "TextInput",
     ]);
@@ -150,6 +153,7 @@ describe("chat in a catalogue", () => {
       expect(catalog.entries.map((e) => e.kind).sort()).toEqual([
         "Chat",
         "FormInput",
+        "MultiSelectInput",
         "SelectInput",
         "TextInput",
       ]);
@@ -421,5 +425,40 @@ describe("a transcript in the seen log", () => {
     expect(by.big?.state).toBe("oversize");
     expect(JSON.stringify(snap)).not.toContain("xxxxxxxx");
     expect(snap.restricted).toBe(true);
+  });
+});
+
+describe("MultiSelectInput in the catalogue", () => {
+  it("is a chat-family entry that must bind its value", () => {
+    const e = chatCatalogEntries().find((x) => x.name === "MultiSelectInput");
+    expect(e).toMatchObject({
+      version: CHAT_TYPE_VERSION,
+      binding: "required",
+      props: ["label", "emptyLabel", "placeholder", "maxSelected"],
+      textProps: ["label", "emptyLabel", "placeholder"],
+    });
+    expect(isChatFamilyKind("MultiSelectInput")).toBe(true);
+  });
+  it("refuses an authored value or options, and a maxSelected outside 1..100", () => {
+    expect(codes("MultiSelectInput", { label: "Search in", maxSelected: 100 })).toEqual([]);
+    expect(codes("MultiSelectInput", { selected: ["a"] })).toEqual(["chat-prop-forbidden"]);
+    expect(codes("MultiSelectInput", { options: [] })).toEqual(["chat-prop-forbidden"]);
+    expect(codes("MultiSelectInput", { maxSelected: 0 })).toEqual(["chat-prop-shape"]);
+    expect(codes("MultiSelectInput", { maxSelected: 101 })).toEqual(["chat-prop-shape"]);
+    expect(codes("MultiSelectInput", { maxSelected: 2.5 })).toEqual(["chat-prop-shape"]);
+  });
+  it("its input spec carries maxSelected (100 when absent or invalid)", () => {
+    expect(inputSpecFromProps("MultiSelectInput", { maxSelected: 3 })).toEqual({
+      kind: "MultiSelectInput",
+      maxSelected: 3,
+    });
+    expect(inputSpecFromProps("MultiSelectInput", {})).toEqual({
+      kind: "MultiSelectInput",
+      maxSelected: 100,
+    });
+    expect(inputSpecFromProps("MultiSelectInput", { maxSelected: 500 })).toEqual({
+      kind: "MultiSelectInput",
+      maxSelected: 100,
+    });
   });
 });
