@@ -26,11 +26,17 @@ import { type MediaRef, mediaValueIssues } from "./mediaRef";
 
 /** The kind that DISPLAYS a transcript: bound to a {@link ChatValue}. */
 export const CHAT_KIND = "Chat";
-/** The kinds that COLLECT input: static (props only), except that `SelectInput` may bind its current choice. File upload is the existing `MediaInput`. */
+/** The kinds that COLLECT input: static (props only), except that `SelectInput` may bind its current choice and `MultiSelectInput` must bind its options and choice. File upload is the existing `MediaInput`. */
 export const TEXT_INPUT_KIND = "TextInput";
 export const FORM_INPUT_KIND = "FormInput";
 export const SELECT_INPUT_KIND = "SelectInput";
-export const CHAT_INPUT_KINDS = [TEXT_INPUT_KIND, FORM_INPUT_KIND, SELECT_INPUT_KIND] as const;
+export const MULTI_SELECT_INPUT_KIND = "MultiSelectInput";
+export const CHAT_INPUT_KINDS = [
+  TEXT_INPUT_KIND,
+  FORM_INPUT_KIND,
+  SELECT_INPUT_KIND,
+  MULTI_SELECT_INPUT_KIND,
+] as const;
 export type ChatInputKind = (typeof CHAT_INPUT_KINDS)[number];
 /** Every kind the chat vocabulary adds. */
 export const CHAT_KINDS = [CHAT_KIND, ...CHAT_INPUT_KINDS] as const;
@@ -492,4 +498,84 @@ export function chatValueIssues(value: unknown): ChatIssue[] {
 /** The {@link ChatValue} verdict as a type guard (the contract, not a cast). */
 export function isChatValue(value: unknown): value is ChatValue {
   return chatValueIssues(value).length === 0;
+}
+
+// ── MultiSelectInput: the bound value (options and the current choice) ──────────────────────────
+//
+// Unlike SelectInput's static `options` prop, a MultiSelectInput's options are DATA (a document list
+// changes as a user uploads), so the host binds them with the choice. Strict and bounded like the
+// transcript; messages are value-free. The host still re-checks every SELECT_MANY against what it
+// published (`acceptChatSubmit`'s `optionsOf`): this contract only keeps a malformed value out of a store.
+
+export const MAX_MULTI_OPTIONS = 500;
+export const MAX_MULTI_SELECTED = 100;
+const MAX_MULTI_VALUE = 128;
+const MAX_MULTI_LABEL = 200;
+const MAX_MULTI_HINT = 40;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: refusing controls is the point
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+export interface MultiSelectOption {
+  readonly value: string;
+  readonly label: string;
+  readonly hint?: string;
+}
+export interface MultiSelectValue {
+  readonly options: readonly MultiSelectOption[];
+  readonly selected: readonly string[];
+  readonly note?: string;
+}
+
+const MULTI_KEYS: ReadonlySet<string> = new Set(["options", "selected", "note"]);
+const OPTION_KEYS: ReadonlySet<string> = new Set(["value", "label", "hint"]);
+const shortText = (v: unknown, max: number): boolean =>
+  typeof v === "string" && v.length >= 1 && v.length <= max;
+
+export function multiSelectValueIssues(value: unknown): ChatIssue[] {
+  if (!isRecord(value)) return [{ path: [], message: "Expected a multi-select value" }];
+  const out: ChatIssue[] = [];
+  if (extraKey(value, MULTI_KEYS)) out.push({ path: [], message: "unexpected field" });
+  const values = new Set<string>();
+  const options = own(value, "options");
+  if (!Array.isArray(options)) out.push({ path: ["options"], message: "options is required" });
+  else if (options.length > MAX_MULTI_OPTIONS)
+    out.push({ path: ["options"], message: `at most ${MAX_MULTI_OPTIONS} options` });
+  else
+    options.forEach((o: unknown, i: number) => {
+      if (!isRecord(o))
+        return void out.push({ path: ["options", i], message: "an option is { value, label }" });
+      if (extraKey(o, OPTION_KEYS)) out.push({ path: ["options", i], message: "unexpected field" });
+      const v = own(o, "value");
+      if (!shortText(v, MAX_MULTI_VALUE) || CONTROL.test(v as string))
+        out.push({
+          path: ["options", i, "value"],
+          message: "an option value is short text without control characters",
+        });
+      else if (values.has(v as string))
+        out.push({ path: ["options", i, "value"], message: "option values are unique" });
+      else values.add(v as string);
+      if (!shortText(own(o, "label"), MAX_MULTI_LABEL))
+        out.push({ path: ["options", i, "label"], message: "an option label is short text" });
+      const hint = own(o, "hint");
+      if (hint !== undefined && !shortText(hint, MAX_MULTI_HINT))
+        out.push({ path: ["options", i, "hint"], message: "a hint is short text" });
+    });
+  const selected = own(value, "selected");
+  if (!Array.isArray(selected)) out.push({ path: ["selected"], message: "selected is required" });
+  else if (selected.length > MAX_MULTI_SELECTED)
+    out.push({ path: ["selected"], message: `at most ${MAX_MULTI_SELECTED} selected` });
+  else {
+    const seen = new Set<string>();
+    selected.forEach((s: unknown, i: number) => {
+      if (typeof s !== "string" || !values.has(s))
+        out.push({ path: ["selected", i], message: "a selected value is one of the options" });
+      else if (seen.has(s))
+        out.push({ path: ["selected", i], message: "selected values are unique" });
+      else seen.add(s);
+    });
+  }
+  const note = own(value, "note");
+  if (note !== undefined && !shortText(note, MAX_MULTI_LABEL))
+    out.push({ path: ["note"], message: "note is short text" });
+  return out;
 }

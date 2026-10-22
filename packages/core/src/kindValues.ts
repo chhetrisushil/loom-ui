@@ -11,7 +11,12 @@
 // AND the same finding message, which is the message a reader sees in an error state. Change a
 // contract in `values.ts` and that test fails until this file follows.
 
-import { CHAT_INPUT_KINDS, CHAT_KIND, chatValueIssues } from "./chatValue";
+import {
+  CHAT_INPUT_KINDS,
+  CHAT_KIND,
+  chatValueIssues,
+  multiSelectValueIssues,
+} from "./chatValue";
 import type { Finding } from "./experience";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import { tableRowProblems } from "./tableRows";
@@ -448,6 +453,18 @@ const chatContract = (v: unknown, p: Path, out: Out): Status => {
   return "dirty";
 };
 
+/** The MultiSelectValue contract: the shared issue list, recorded in order, like the transcript. */
+const multiSelectContract = (v: unknown, p: Path, out: Out): Status => {
+  const issues = multiSelectValueIssues(v);
+  if (issues.length === 0) return "valid";
+  for (const i of issues) {
+    for (const seg of i.path) p.push(seg);
+    fail(out, p, i.message);
+    p.length -= i.path.length;
+  }
+  return "dirty";
+};
+
 const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Status>> = {
   MetricCard: number,
   StatusBadge: string,
@@ -472,11 +489,12 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   File: mediaContract("File"),
   // An upload control is static (props only); a value reaching it is a defect, as for a Note.
   MediaInput: (v, p, out) => type("undefined", v, p, out),
-  // U8: a transcript is a ChatValue; the input controls are static like a Note, except SelectInput, which may bind its current choice (checked here).
+  // U8: a transcript is a ChatValue; the input controls are static like a Note, except SelectInput, which may bind its current choice, and MultiSelectInput, which must bind its options and choice (checked here).
   Chat: chatContract,
   TextInput: (v, p, out) => type("undefined", v, p, out),
   FormInput: (v, p, out) => type("undefined", v, p, out),
   SelectInput: optionalString,
+  MultiSelectInput: multiSelectContract,
 };
 
 /**

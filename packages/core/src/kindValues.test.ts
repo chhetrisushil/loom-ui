@@ -92,6 +92,7 @@ const VALID: Readonly<Record<string, unknown>> = {
   TextInput: undefined,
   FormInput: undefined,
   SelectInput: "b",
+  MultiSelectInput: { options: [{ value: "a", label: "A" }], selected: ["a"] },
 };
 
 const JUNK: readonly unknown[] = [
