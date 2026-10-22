@@ -155,6 +155,32 @@ describe("lu-a2ui-view selected item", () => {
     expect(scrolls).toEqual([]);
     expect(pageScrolls).toBe(0);
   });
+  it("aligns to the scrollport, not the border box (a container border never hides the item)", async () => {
+    Object.defineProperty(box, "clientTop", { value: 10, configurable: true });
+    await set({ items: items(1) });
+    // scrollport 10..110: item bottom 620 - 110 = 510, from scrollTop 40
+    expect(scrolls).toEqual([{ top: 550, behavior: "smooth" }]);
+  });
+  it("never scrolls the page: a scrolling <body> is not a container", async () => {
+    Object.defineProperty(box, "scrollHeight", { value: 100 });
+    const body = document.body;
+    body.style.overflowY = "auto";
+    Object.defineProperty(body, "scrollHeight", { value: 5000, configurable: true });
+    Object.defineProperty(body, "clientHeight", { value: 100, configurable: true });
+    const bodyScrolls: unknown[] = [];
+    const orig = body.scrollTo;
+    body.scrollTo = ((o: unknown) => bodyScrolls.push(o)) as typeof body.scrollTo;
+    try {
+      await set({ items: items(1) });
+      expect(bodyScrolls).toEqual([]);
+      expect(scrolls).toEqual([]);
+    } finally {
+      body.scrollTo = orig;
+      body.style.overflowY = "";
+      Reflect.deleteProperty(body, "scrollHeight");
+      Reflect.deleteProperty(body, "clientHeight");
+    }
+  });
   it("unsetting the view resets the selection so a later view scrolls again", async () => {
     await set({ items: items(1) });
     el.view = undefined as unknown as typeof el.view;

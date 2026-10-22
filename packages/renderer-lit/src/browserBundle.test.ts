@@ -95,7 +95,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // chat 82_652 -> 91 kB, signals 2_074 -> 2.5 kB.
     // Turn-failure reasons (rate-limited, quota, tool-error): 133 -> 134 kB (measured 133_178, 178 over): three more fixed sentences in the catalogue.
     // A2UI selected item (Column/Row `selected`, aria-current, scroll into view): 134 -> 135 kB (measured 134_490, 490 over).
-    // Fix round (single selection, selectedKey identity, nearest-container scroll, reserved bar): 135 -> 136 kB (measured 135_669, 669 over; unavoidable, the container-scroll helper alone replaces scrollIntoView).
+    // Fix round (single selection, selectedKey identity, nearest-container scroll, reserved bar): 135 -> 136 kB (measured 135_669, 669 over: the selection logic plus a container-only scroll helper in place of scrollIntoView, which can move the page).
     ["index.js", 136 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
