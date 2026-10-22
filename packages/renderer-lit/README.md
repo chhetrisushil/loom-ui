@@ -150,9 +150,17 @@ the actor.
 **Selected item (A2UI).** A `Column` or `Row` (typically a List item template) may carry
 `selected`, a literal or a binding (relative to the List element, e.g. `{ "path": "/selected" }`). Exactly
 `true` draws it highlighted (a thick leading bar plus tint, so not colour-only) with
-`aria-current="true"`, and the view scrolls it into view (`block: "nearest"`; instant under
-`prefers-reduced-motion`) when the selected item changes, not on unrelated re-renders. Order is the
-data's order; the view never reorders. The terminal renderer has no A2UI interpreter (it says so).
+`aria-current="true"`. Selection is single: if several items resolve `true`, only the first in
+document order is marked and scrolled to. Every item of a list that declares `selected` reserves
+the bar's space, so selecting never shifts content. The view scrolls the selected item into view when
+the selection changes, not on unrelated re-renders, moving only its nearest scrollable ancestor
+vertically and only if the item is out of view (never the page, never horizontally; instant under
+`prefers-reduced-motion`; if the item is not laid out yet it retries on the next update). What counts
+as "the selection changed": by default the item's position in the tree, so inserting or removing items
+before it counts as a change (A2UI Lists have no key). Add an optional `selectedKey` (a string or
+number, typically bound relative to the item, e.g. `{ "path": "/id" }`) for a stable identity: then
+only a different key scrolls, wherever it sits. Order is the data's order; the view never reorders.
+The terminal renderer has no A2UI interpreter (it says so).
 
 **`A2UI_ACTION` and `SANDBOX_ACTION` are untrusted intent.** A Button's label AND action name are
 authored by a model/A2UI producer; a sandbox frame can post `{ type: "action" }` with no user
