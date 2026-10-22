@@ -505,6 +505,39 @@ describe("lu-select-input: a bound current value and a compact size", () => {
     expect(sel(el).value).toBe("c");
   });
 
+  it("a host move during a second send clears the earlier unconfirmed send's memory (a return to the old value is followed)", async () => {
+    const { el, release } = await pickB({ value: "a" });
+    release({ ok: true });
+    await settle(el);
+    expect(sel(el).value).toBe("b"); // sent from "a", not yet confirmed
+    sel(el).value = "c";
+    sel(el).dispatchEvent(new Event("change"));
+    await settle(el);
+    await withValue(el, "b"); // the host moves while the second send is in flight
+    release({ ok: true });
+    await settle(el);
+    expect(sel(el).value).toBe("b");
+    await withValue(el, "a"); // equals the first send-time value: a real change, so followed
+    expect(sel(el).value).toBe("a");
+  });
+
+  it("a bound value first arriving keeps the same <select> and its focus", async () => {
+    const el = await mount("lu-select-input", "SelectInput", { options });
+    expect(q(el, "[role=group]")).toBeNull(); // unbound default: bare control
+    const before = sel(el);
+    before.focus();
+    expect(root(el).activeElement).toBe(before);
+    await withValue(el, "b");
+    expect(sel(el)).toBe(before);
+    expect(root(el).activeElement).toBe(before);
+    expect(sel(el).value).toBe("b");
+    expect(q(el, "[role=group]")).not.toBeNull();
+    (el as unknown as { status: unknown }).status = { state: "stale" };
+    await settle(el);
+    expect(sel(el)).toBe(before);
+    expect(root(el).activeElement).toBe(before);
+  });
+
   it("a failed choice goes back to the bound value", async () => {
     const el = await mount(
       "lu-select-input",

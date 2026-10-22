@@ -288,7 +288,7 @@ Media is never bytes in an Experience, a Blueprint, a seen log or a change feed.
 The contract is strict (a field outside the list — inline bytes, a `url` — is refused), checked by
 `checkKindValue` like every other kind, and its messages never echo the value. `MediaInput` is the
 static upload control (props `accept`, `maxBytes`, `label`; a value reaching it is a defect).
-`mediaCatalogEntries()` returns the five semantic entries (`@1.1.0`) to splice into a catalogue; a
+`mediaCatalogEntries()` returns the five semantic entries (`@1.0.0`) to splice into a catalogue; a
 catalogue without them cannot compose a media node, so a planner is offered media only if the host
 chose to. Node props are text only (`alt`, `caption`, `label`) plus the upload control's `accept` /
 `maxBytes`.

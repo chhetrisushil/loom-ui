@@ -110,8 +110,8 @@ export function chatPropFindings(
 
 /**
  * The semantic entries for the chat kinds, ready to splice into a catalogue's `entries` (`Chat`,
- * `TextInput`, `FormInput`, `SelectInput`, each `@1.0.0`). A planner is offered chat and inputs ONLY
- * by including these. `Chat` requires a binding (its transcript); the inputs take none. `surfaces`
+ * `TextInput`, `FormInput`, `SelectInput`, each `@1.1.0`). A planner is offered chat and inputs ONLY
+ * by including these. `Chat` requires a binding (its transcript); `SelectInput` alone may take an optional binding (its current choice); the other inputs take none. `surfaces`
  * names the surfaces to resolve (default `web` and `terminal`); every one resolves to the
  * framework kind. File upload is the existing `mediaCatalogEntries()` `MediaInput`.
  */

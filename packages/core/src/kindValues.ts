@@ -472,7 +472,7 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   File: mediaContract("File"),
   // An upload control is static (props only); a value reaching it is a defect, as for a Note.
   MediaInput: (v, p, out) => type("undefined", v, p, out),
-  // U8: a transcript is a ChatValue; the input controls are static, like a Note.
+  // U8: a transcript is a ChatValue; the input controls are static like a Note, except SelectInput, which may bind its current choice (checked here).
   Chat: chatContract,
   TextInput: (v, p, out) => type("undefined", v, p, out),
   FormInput: (v, p, out) => type("undefined", v, p, out),
