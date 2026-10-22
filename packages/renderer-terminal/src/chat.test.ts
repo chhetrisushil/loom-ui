@@ -180,6 +180,29 @@ describe("terminal inputs are prompts", () => {
     expect(draw("SelectInput", 42, props)).not.toContain("(current)");
   });
 
+  it("a MultiSelectInput lists its chosen options, marked, and counts the rest", () => {
+    const v = {
+      options: [
+        { value: "a", label: "Q3 report" },
+        { value: "b", label: "Contract v2", hint: "processing" },
+        { value: "c", label: "Invoice" },
+      ],
+      selected: ["b"],
+    };
+    expect(draw("MultiSelectInput", v, { label: "Search in", emptyLabel: "All documents" })).toBe(
+      "Support: > Search in [choices — answer on an interactive surface]\n      1) Contract v2 (processing) (current)\n      + 2 more options"
+    );
+    expect(
+      draw(
+        "MultiSelectInput",
+        { ...v, selected: [] },
+        { label: "Search in", emptyLabel: "All documents" }
+      )
+    ).toBe(
+      "Support: > Search in [choices — answer on an interactive surface]\n      All documents\n      + 3 more options"
+    );
+  });
+
   it("props are cleaned to one line; an invalid spec prints no fields", () => {
     expect(draw("TextInput", undefined, { label: `A${ESC}[2J\nB` }, "host")).toBe(
       "> A[2J B [text input — answer on an interactive surface]"

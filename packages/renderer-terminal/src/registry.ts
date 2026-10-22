@@ -38,6 +38,7 @@ import {
   tableColumnLabel,
   unitSuffix,
 } from "@loom-ui/core";
+import { type MultiSelectValue, multiSelectValueIssues } from "@loom-ui/core/chat-ui";
 import { RendererRegistry, type Widget } from "@loom/blueprint-runtime";
 import {
   type TerminalWidgetRenderer,
@@ -475,6 +476,26 @@ const selectPrompt =
     return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
   };
 
+const multiPrompt =
+  (host: boolean, x: Env): TerminalWidgetRenderer =>
+  (w, v) => {
+    const label = propText(w.props.label) || x.say("lu.input.choose");
+    const m = multiSelectValueIssues(v).length === 0 ? (v as MultiSelectValue) : undefined;
+    const byValue = new Map((m?.options ?? []).map((o) => [o.value, o]));
+    const chosen = (m?.selected ?? []).map((s) => byValue.get(s)).filter((o) => o !== undefined);
+    const text = (o: { label: string; hint?: string }) =>
+      `${oneLineChatText(o.label, 60)}${o.hint === undefined ? "" : ` (${oneLineChatText(o.hint, 40)})`}`;
+    const rows =
+      chosen.length === 0
+        ? [`${hang(host)}  ${propText(w.props.emptyLabel) || x.say("lu.input.none")}`]
+        : chosen.map((o, i) => `${hang(host)}  ${i + 1}) ${text(o)} ${x.say("lu.terminal.current")}`);
+    const rest = (m?.options.length ?? 0) - chosen.length;
+    if (rest > 0) rows.push(`${hang(host)}  + ${rest} ${x.say("lu.terminal.moreOptions")}`);
+    if (m?.note !== undefined) rows.push(`${hang(host)}  ${oneLineChatText(m.note, 200)}`);
+    const head = `> ${label} ${x.say("lu.terminal.multiSelectInput")}`;
+    return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
+  };
+
 /** The framework kinds' renderers. A NEW registry each call — never mutate a shared one. */
 export function createLoomUiTerminalRegistry(
   opts: TerminalRegistryOptions = {}
@@ -498,7 +519,8 @@ export function createLoomUiTerminalRegistry(
     .register("Chat", chatTranscript(host, x))
     .register("TextInput", textPrompt(host, x))
     .register("FormInput", formPrompt(host, x))
-    .register("SelectInput", selectPrompt(host, x));
+    .register("SelectInput", selectPrompt(host, x))
+    .register("MultiSelectInput", multiPrompt(host, x));
 }
 
 export const loomUiTerminalRegistry: RendererRegistry<TerminalWidgetRenderer> =
