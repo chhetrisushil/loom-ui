@@ -25,6 +25,14 @@ export {
   type MdDoc,
   type MdInline,
 } from "./chatMarkdown";
+export {
+  MD_DOC_MAX_NODES,
+  MD_DOC_MAX_TABLE_ROWS,
+  MD_DOC_MAX_TEXT,
+  parseMarkdownDocument,
+  type MdDocument,
+  type MdRange,
+} from "./mdDocument";
 export * from "./chatMdText";
 export {
   mdDestination,

@@ -136,7 +136,17 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
   const nest = depth < MD_MAX_DEPTH;
   const n = lines.length;
   let i = 0;
+  // Top-level only: nested calls get re-sliced line arrays, so only depth 0 maps to source lines.
+  const spans = depth === 0 ? st.spans : undefined;
+  let open: { line: number; count: number } | undefined;
+  // Every branch pushes at most one block and leaves `i` past its last line, so the span of the block a
+  // branch pushed is [open.line, i). A branch that pushed nothing (a table cut by the node budget) records nothing.
+  const flush = (): void => {
+    if (spans && open && out.length > open.count) spans.push({ line: open.line, end: i });
+    open = undefined;
+  };
   while (i < n) {
+    flush();
     work(st);
     const l = lines[i] as string;
     if (blank(l)) {
@@ -144,6 +154,7 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
       continue;
     }
     if (!take(st)) break;
+    if (spans) open = { line: i, count: out.length };
     const fence = fenceOf(l);
     if (fence) {
       const body: string[] = [];
@@ -253,7 +264,7 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
         ) {
           work(st);
           if (spent) continue;
-          if (rows.length >= MD_MAX_TABLE_ROWS) {
+          if (rows.length >= (st.maxTableRows ?? MD_MAX_TABLE_ROWS)) {
             st.truncated = true;
             spent = true;
             continue;
@@ -273,5 +284,6 @@ export function parseBlocks(lines: readonly string[], depth: number, st: MdState
       para.push((lines[i] as string).trimStart());
     out.push({ type: "paragraph", inlines: parseInlines(para.join("\n"), st) });
   }
+  flush();
   return out;
 }
