@@ -58,6 +58,12 @@ export interface MdState {
   truncated: boolean;
   readonly markers: boolean;
   readonly streaming: boolean;
+  /** Node budget; absent = {@link MD_MAX_NODES} (chat). The document profile raises it. */
+  readonly maxNodes?: number;
+  /** Rows per table; absent = {@link MD_MAX_TABLE_ROWS} (chat). */
+  readonly maxTableRows?: number;
+  /** When present, `parseBlocks` records each TOP-LEVEL block's line span here, parallel to its result. */
+  readonly spans?: { line: number; end: number }[];
   /** Test-only work counter: bumped once per scanned character or delimiter step. Absent in production. */
   readonly meter?: { steps: number };
 }
@@ -66,7 +72,7 @@ export const work = (st: { readonly meter?: { steps: number } }, n = 1): void =>
   if (st.meter) st.meter.steps += n;
 };
 export const take = (st: MdState): boolean => {
-  if (st.nodes >= MD_MAX_NODES) {
+  if (st.nodes >= (st.maxNodes ?? MD_MAX_NODES)) {
     st.truncated = true;
     return false;
   }
