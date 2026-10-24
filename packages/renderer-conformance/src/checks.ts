@@ -577,6 +577,21 @@ check(
           note: HOSTILE,
         })
       );
+      // A document's text in each format, and its note, are untrusted text like a chat turn: the markup is shown
+      // literally and no control sequence is interpreted.
+      for (const format of ["markdown", "org", "plain"] as const)
+        await probe(
+          `Prose ${format} text`,
+          ["Prose"],
+          () => viewOf([bound("Prose", "pr", "Probe", "h-pr")]),
+          ready("h-pr", { format, text: HOSTILE })
+        );
+      await probe(
+        "Prose note",
+        ["Prose"],
+        () => viewOf([bound("Prose", "pr", "Probe", "h-pr")]),
+        ready("h-pr", { format: "plain", text: "body", note: HOSTILE })
+      );
       await probe(
         "chat turn",
         ["Chat"],

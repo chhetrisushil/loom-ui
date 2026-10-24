@@ -46,13 +46,10 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "containerRoles.js",
   "format.js",
   "kindValues.js",
-  "mdDocument.js",
   "media.js",
   "mediaRef.js",
   "mediaText.js",
   "messages.js",
-  "orgDocument.js",
-  "orgInline.js",
   "paths.js",
   "streamText.js",
   "tableRows.js",
@@ -100,8 +97,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // A2UI selected item (Column/Row `selected`, aria-current, scroll into view): 134 -> 135 kB (measured 134_490, 490 over).
     // Fix round (single selection, selectedKey identity, nearest-container scroll, reserved bar): 135 -> 136 kB (measured 135_669, 669 over: the selection logic plus a container-only scroll helper in place of scrollIntoView, which can move the page).
     // MultiSelectInput web slice: 136 -> 138 kB (measured 137_860). Cause: the MultiSelectInput value contract (core, PR #107), which rides in `checkKindValue` for every page (137_810 before this slice).
-    // Prose kind: 138 -> 139 kB (measured 138_470): the Prose value contract and its three fixed words. `lu-prose` itself is
-    // NOT exported from the root (its parsers and drawer would add 23 kB to every page); it rides in the opt-in `chat.js` registry.
+    // Prose kind (2026-10-24): 138 -> 139 kB (measured 138_470): the Prose value contract and its three fixed words ride in
+    // `checkKindValue` and the catalogue for every page. `lu-prose` itself is NOT exported from the root (its drawer and the
+    // `@loom-ui/core/document` parsers would add 23 kB to every page): the element ships through `defineAll` and `elements/lu-prose`.
     ["index.js", 139 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
@@ -117,7 +115,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     // MultiSelectInput web slice: 71 -> 72 kB (measured 71_895). Cause: the MultiSelectInput value contract (core, PR #107).
-    // Prose kind: 72 -> 73 kB (measured 72_502): the Prose value contract and its three fixed words.
+    // Prose kind (2026-10-24): 72 -> 73 kB (measured 72_502): the Prose value contract and its three fixed words.
     ["media.js", 73 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
@@ -128,7 +126,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // link check `chatMdDest` (the drawer uses the latter; the former rides in with the transcript words).
     // Follow-ups (176k): 114 -> 112 kB: the first number was looser than needed; 112 keeps about 2.5 kB over the measurement.
     // MultiSelectInput web slice: 112 -> 121 kB (measured 119_014; 113_675 before): lu-multi-select-input.
-    ["chat.js", 121 * 1000],
+    // Prose kind (2026-10-24): 121 -> 123 kB (measured 120_995, 5 bytes under the old budget): the Prose value contract and its three fixed
+    // words. `chat.js` does not reach `lu-prose` or `@loom-ui/core/document`; 123 keeps about 2 kB over the measurement.
+    ["chat.js", 123 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

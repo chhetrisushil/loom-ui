@@ -194,6 +194,17 @@ describe("terminal registry", () => {
     expect(out).not.toContain("\u001b");
     expect(r?.(w, { format: "plain", text: "" })).toContain("(no text)");
   });
+  it("Prose: bidi and control characters never reach the note or the plain lines; an over-cap text is cut and says so", () => {
+    const r = loomUiTerminalRegistry.get("Prose");
+    const w = customWidget$({ kind: "Prose", id: "p", title: "Doc", binding: b });
+    const bad = "\u202ex\u2066y\u0007";
+    const out = r?.(w, { format: "plain", text: `a${bad}`, note: `n${bad}` }) ?? "";
+    expect(["\u202e", "\u2066", "\u0007"].some((c) => out.includes(c))).toBe(false);
+    expect(out).toContain("nxy");
+    const big = r?.(w, { format: "plain", text: `${"x\n".repeat(600_000)}` }) ?? "";
+    expect(big).toContain("(document cut short)");
+    expect(big.split("\n").length).toBeLessThan(300);
+  });
   it("Note: static text from props, with no binding and no value", () => {
     const r = loomUiTerminalRegistry.get("Note");
     expect(

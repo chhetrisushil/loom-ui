@@ -32,7 +32,7 @@ function reachEsm(entry: string): Set<string> {
     if (seen.has(file)) continue;
     seen.add(file);
     for (const m of readFileSync(file, "utf8").matchAll(
-      /(?:\bfrom|\bimport)\s*\(?\s*["']([^"']+)["']/g
+      /(?<![\w$"'.])(?:from|import)\s*\(?\s*["']([^"']+)["']/g
     )) {
       const spec = m[1] as string;
       if (spec.startsWith(".")) stack.push(resolve(file, "..", `${spec}.js`));

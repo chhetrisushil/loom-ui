@@ -97,6 +97,12 @@ export const KIND_FIXTURES: readonly KindFixture[] = [
     needles: ["p99-series"],
   },
   {
+    kind: "Prose",
+    title: "Prose doc",
+    value: { format: "markdown", text: "# Heading\n\nbody" },
+    needles: ["Heading", "body"],
+  },
+  {
     kind: "Note",
     title: "About note",
     props: { text: "Plain words 77" },

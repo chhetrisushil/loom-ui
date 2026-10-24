@@ -104,6 +104,7 @@ export const litAdapter: RendererAdapter = {
     "BarChart",
     "TimeSeries",
     "Note",
+    "Prose",
     "Image",
     "Chat",
     "TextInput",

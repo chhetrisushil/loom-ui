@@ -64,7 +64,7 @@ node** names a catalogue entry (`type`, `typeVersion`), carries `props`, `label`
 | `GRID_COLUMNS` · `MAX_TREE_DEPTH` | 12 · the depth cap |
 
 Entries: `@loom-ui/core` (everything above), `/log` (seal, Node), `/browser`, `/media`, `/chat`,
-`/chat-ui`, `/signals`. → [composition reference](reference/composition.md#compose-seal-log-compile),
+`/chat-ui`, `/document`, `/signals`. → [composition reference](reference/composition.md#compose-seal-log-compile),
 [composing guide](guides/composing.md).
 
 ### Widgets and kinds
@@ -78,7 +78,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `Table` | `TableValue` `{ columns, rows }` | column = string or `{ label, format? }` |
 | `StatusCard` | `StatusCardValue` `{ level, headline, detail? }` | level: `ok` · `warning` · `critical` |
 | `Note` | none — static `text` prop | also what a redacted node becomes |
-| `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (opt-in element) |
+| `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (registered by `defineAll` and `elements/lu-prose`; parsers in `@loom-ui/core/document`) |
 | `TimeSeries` | `TimeSeriesValue` | series may sit on a `left` / `right` axis |
 | `BarChart` | `BarChartValue` | |
 | `A2UIView` · `SandboxView` | the bound value as data | mount `lu-a2ui-view` / `lu-sandbox` |

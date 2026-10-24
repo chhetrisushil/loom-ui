@@ -18,6 +18,7 @@ export const terminalAdapter: RendererAdapter = {
     "BarChart",
     "TimeSeries",
     "Note",
+    "Prose",
     "Image",
     "Chat",
     "TextInput",
