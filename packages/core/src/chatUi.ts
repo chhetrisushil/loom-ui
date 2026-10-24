@@ -33,6 +33,7 @@ export {
   type MdDocument,
   type MdRange,
 } from "./mdDocument";
+export { parseOrgDocument } from "./orgDocument";
 export * from "./chatMdText";
 export {
   mdDestination,
