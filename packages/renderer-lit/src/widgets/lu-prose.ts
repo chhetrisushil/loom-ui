@@ -1,5 +1,11 @@
 import type { ProseValue } from "@loom-ui/core/browser";
-import { type MdDocument, parseMarkdownDocument, parseOrgDocument } from "@loom-ui/core/chat-ui";
+import { sanitizeChatText, stripUnsafeChars } from "@loom-ui/core/chat-ui";
+import {
+  MD_DOC_MAX_TEXT,
+  type MdDocument,
+  parseMarkdownDocument,
+  parseOrgDocument,
+} from "@loom-ui/core/document";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { say } from "../say";
@@ -49,6 +55,9 @@ export class LuProse extends LuWidget {
 
   @state() private shown = PAGE;
   private parsed: { format: string; text: string; doc: MdDocument } | undefined;
+  private plainOf: { text: string; shown: string; cut: boolean } | undefined;
+  // The document the paging and the scroll belong to: a new one starts at the first page and may scroll again.
+  private docId: string | undefined;
   private scrolledFor = "";
 
   private doc(v: ProseValue): MdDocument {
@@ -56,6 +65,22 @@ export class LuProse extends LuWidget {
     const doc = v.format === "org" ? parseOrgDocument(v.text) : parseMarkdownDocument(v.text);
     this.parsed = { format: v.format, text: v.text, doc };
     return doc;
+  }
+
+  // Plain text is untrusted too: control and reordering characters are removed, and a text over the document cap is
+  // cut at a line break (the cut line says so).
+  private plain(text: string): { shown: string; cut: boolean } {
+    if (this.plainOf?.text === text) return this.plainOf;
+    let head = text;
+    let cut = false;
+    if (head.length > MD_DOC_MAX_TEXT) {
+      head = head.slice(0, MD_DOC_MAX_TEXT);
+      const nl = head.lastIndexOf("\n");
+      if (nl > 0) head = head.slice(0, nl);
+      cut = true;
+    }
+    this.plainOf = { text, shown: stripUnsafeChars(head), cut };
+    return this.plainOf;
   }
 
   private focusIndex(v: ProseValue, doc: MdDocument): number {
@@ -67,7 +92,15 @@ export class LuProse extends LuWidget {
   protected override willUpdate(changed: PropertyValues): void {
     super.willUpdate(changed);
     const v = this.value as ProseValue | undefined;
-    if (changed.has("value") && v && this.state().state === "ready" && v.format !== "plain") {
+    if (!v || this.state().state !== "ready") return;
+    const id = `${v.format}\u0000${v.text}`;
+    if (id !== this.docId) {
+      this.docId = id;
+      this.shown = PAGE;
+      this.scrolledFor = "";
+    }
+    // Every update, not only a new value: a value that arrived before the status turned ready still gets its block drawn.
+    if (v.format !== "plain") {
       const f = this.focusIndex(v, this.doc(v));
       if (f >= this.shown) this.shown = Math.ceil((f + 1) / PAGE) * PAGE;
     }
@@ -77,7 +110,7 @@ export class LuProse extends LuWidget {
     super.updated(changed);
     const v = this.value as ProseValue | undefined;
     if (!v?.focus || this.state().state !== "ready") return;
-    const key = `${v.focus.from}:${v.focus.to}:${v.text.length}`;
+    const key = `${v.focus.from}:${v.focus.to}`;
     if (key === this.scrolledFor) return;
     const el = this.renderRoot.querySelector("[data-block].focus");
     if (el) {
@@ -88,10 +121,14 @@ export class LuProse extends LuWidget {
 
   protected renderReady(): TemplateResult | typeof nothing {
     const v = this.value as ProseValue;
-    const note = v.note ? html`<p class="note">${v.note}</p>` : nothing;
+    const noteText = v.note ? sanitizeChatText(v.note, 500) : "";
+    const note = noteText ? html`<p class="note">${noteText}</p>` : nothing;
     const cut = v.truncated ? html`<p class="cut">${say("lu.prose.cut")}</p>` : nothing;
     if (v.text === "") return html`${note}<p class="note">${say("lu.prose.empty")}</p>`;
-    if (v.format === "plain") return html`${note}<pre class="plain">${v.text}</pre>${cut}`;
+    if (v.format === "plain") {
+      const p = this.plain(v.text);
+      return html`${note}<pre class="plain">${p.shown}</pre>${v.truncated || p.cut ? html`<p class="cut">${say("lu.prose.cut")}</p>` : nothing}`;
+    }
     const doc = this.doc(v);
     const focus = this.focusIndex(v, doc);
     const blocks = doc.blocks.slice(0, this.shown);

@@ -22,6 +22,7 @@ const ENTRIES = [
   "@loom-ui/core/media",
   "@loom-ui/core/chat",
   "@loom-ui/core/chat-ui",
+  "@loom-ui/core/document",
   "@loom-ui/core/signals",
   "@loom-ui/hydration",
   "@loom-ui/hydration/client",

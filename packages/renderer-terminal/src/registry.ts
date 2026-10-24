@@ -35,8 +35,6 @@ import {
   maxBytesFor,
   oneLineChatText,
   optionsProblem,
-  parseMarkdownDocument,
-  parseOrgDocument,
   pluralForms,
   selectPlural,
   tableColumnFormat,
@@ -44,6 +42,7 @@ import {
   unitSuffix,
 } from "@loom-ui/core";
 import { type MultiSelectValue, multiSelectValueIssues } from "@loom-ui/core/chat-ui";
+import { MD_DOC_MAX_TEXT, parseMarkdownDocument, parseOrgDocument } from "@loom-ui/core/document";
 import { RendererRegistry, type Widget } from "@loom/blueprint-runtime";
 import {
   type TerminalWidgetRenderer,
@@ -340,11 +339,13 @@ const statusCard = (host: boolean, x: Env) =>
 const prose = (host: boolean, x: Env) =>
   guarded(host, "Prose", (w, v) => {
     const p = v as ProseValue;
+    // Plain text over the document cap is cut (before it is split) and says so.
+    const over = p.format === "plain" && p.text.length > MD_DOC_MAX_TEXT;
     const body =
       p.text === ""
         ? [x.say("lu.prose.empty")]
         : p.format === "plain"
-          ? p.text
+          ? (over ? p.text.slice(0, MD_DOC_MAX_TEXT) : p.text)
               .split("\n")
               .slice(0, MD_MAX_LINES)
               .map((l) => oneLineChatText(l, 200))
@@ -354,7 +355,7 @@ const prose = (host: boolean, x: Env) =>
     const out = [
       ...(p.note ? [oneLineChatText(p.note)] : []),
       ...body,
-      ...(p.truncated ? [x.say("lu.prose.cut")] : []),
+      ...(p.truncated || over ? [x.say("lu.prose.cut")] : []),
     ];
     const indent = hang(host);
     return [...(host ? [] : [`${title(w)}:`]), ...out.map((l) => `${indent}${l}`)].join("\n");

@@ -44,6 +44,12 @@
       "import": "./dist/esm/chatUi.js",
       "default": "./dist/chatUi.js"
     },
+    "./document": {
+      "types": "./dist/document.d.ts",
+      "node": "./dist/document.js",
+      "import": "./dist/esm/document.js",
+      "default": "./dist/document.js"
+    },
     "./signals": {
       "types": "./dist/signals.d.ts",
       "node": "./dist/signals.js",
@@ -64,6 +70,7 @@
       "media": ["./dist/media.d.ts"],
       "chat": ["./dist/chat.d.ts"],
       "chat-ui": ["./dist/chatUi.d.ts"],
+      "document": ["./dist/document.d.ts"],
       "signals": ["./dist/signals.d.ts"],
       "messages": ["./dist/messages.d.ts"]
     }

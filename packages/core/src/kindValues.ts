@@ -435,10 +435,8 @@ const offset = (v: unknown, p: Path, out: Out): Status => {
   }
   return status;
 };
-// The first key is built by concatenation on purpose: the browser-entry graph test scans emitted JS for import
-// specifiers with a loose pattern, and that key spelled whole would read as one.
 const RANGE = [
-  ["fro" + "m", offset],
+  ["from", offset],
   ["to", offset],
 ] as const;
 const prose = (v: unknown, p: Path, out: Out): Status =>
