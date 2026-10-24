@@ -1,5 +1,7 @@
 # loom-ui
 
+> **Disclaimer:** The idea behind loom-ui is mine (Sushil Chhetri), but the codebase is vibe coded using Claude ([Claude Code](https://claude.com/claude-code)).
+
 loom-ui is a generic UI framework on top of [loom](../loom). You describe an **experience**: semantic
 nodes such as `Metric`, `Trend` or `Collection`, with stable ids, bound to data by handle. loom-ui
 compiles it, per surface, to a loom `Blueprint` that loom's own renderers draw. Because composition is
