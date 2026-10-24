@@ -6,7 +6,7 @@ import {
   mdLabelIsSite,
   mdPlainText,
 } from "@loom-ui/core/chat-ui";
-import { type TemplateResult, html, nothing } from "lit";
+import { type CSSResult, type TemplateResult, css, html, nothing } from "lit";
 import { say } from "../say";
 
 // ── Markdown parts of a transcript, drawn (U8c) ─────────────────────────────────────────────────────
@@ -161,3 +161,28 @@ export function drawMarkdown(doc: MdDoc, d: MarkdownDraw): TemplateResult {
   const c: Ctx = { d, tables: 0, visits: MAX_VISITS, depth: 0 };
   return html`${arr(doc.blocks).map((b) => block(b, c))}${doc.truncated === true ? html`<p class="cut"><span aria-hidden="true">…</span><span class="sr-only">${say("lu.chat.cut")}</span></p>` : nothing}`;
 }
+
+/** The markdown block styles, scoped under a `.md` ancestor; shared by every widget that draws markdown. */
+export const markdownStyles: CSSResult = css`
+      .md { overflow-wrap: anywhere; }
+      .md .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+      .md > :first-child { margin-top: 0; }
+      .md > :last-child { margin-bottom: 0; }
+      .md p { margin: 0 0 0.6em; }
+      .md .h { margin: 0.8em 0 0.4em; font-weight: 600; }
+      .md .h1, .md .h2 { font-size: 1.15em; }
+      .md .h3 { font-size: 1.05em; }
+      .md ul, .md ol { margin: 0 0 0.6em; padding-inline-start: 1.4em; }
+      .md blockquote { margin: 0 0 0.6em; padding-inline-start: 0.8em; border-inline-start: 3px solid var(--lu-border, #30363d); color: var(--lu-text-dim, #8b949e); }
+      .md code { font-family: var(--lu-mono, ui-monospace, monospace); font-size: 0.92em; padding: 0 0.25em; border-radius: 4px; background: var(--lu-panel, rgba(127, 127, 127, 0.15)); }
+      .md pre { margin: 0 0 0.6em; padding: 0.6em 0.8em; overflow: auto; white-space: pre; border-radius: var(--lu-radius, 6px); background: var(--lu-panel, rgba(127, 127, 127, 0.15)); }
+      .md pre code { padding: 0; background: none; }
+      .md pre:focus-visible, .md .table:focus-visible { outline: 2px solid var(--lu-accent, #6366f1); outline-offset: 1px; }
+      .md .table { margin: 0 0 0.6em; overflow: auto; }
+      .md table { border-collapse: collapse; }
+      .md th, .md td { padding: 0.25em 0.6em; text-align: start; border: 1px solid var(--lu-border, #30363d); }
+      .md [data-align="center"] { text-align: center; }
+      .md [data-align="right"] { text-align: end; }
+      .md a { color: var(--lu-accent, #6366f1); }
+      .md hr { margin: 0.8em 0; border: 0; border-top: 1px solid var(--lu-border, #30363d); }
+`;
