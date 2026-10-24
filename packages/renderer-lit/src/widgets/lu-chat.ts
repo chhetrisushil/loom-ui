@@ -133,6 +133,13 @@ export class LuChat extends LuWidget {
         flex-direction: column;
         min-height: 0;
       }
+      /* LuWidget's state wrapper sits between the host and the section: it passes the height on, so the log scrolls */
+      :host > [data-state] {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
       section {
         display: flex;
         flex-direction: column;
