@@ -29,7 +29,7 @@ import { parseOrgInlines } from "./orgInline";
 const HEADLINE = /^(\*+)\s+(.*)$/;
 const TODO = /^(?:TODO|DONE|NEXT|WAITING|HOLD|CANCELLED|CANCELED)\s+/;
 const PRIORITY = /^\[#[A-Za-z0-9]\]\s*/;
-const TAGS = /\s+:[\w@#%:]+:\s*$/;
+const TAG_CHAR = /[\w@#%:]/;
 const KEYWORD = /^\s*#\+(\w+):\s*(.*)$/;
 const BEGIN = /^\s*#\+begin_(\w+)(?:\s+(\S+))?/i;
 const DRAWER = /^\s*:[\w-]+:\s*$/;
@@ -57,11 +57,32 @@ const cells = (l: string) =>
     .split("|")
     .map((c) => c.trim());
 
+/** Drop a trailing `:tag:tag:` (preceded by whitespace) with one backward scan; a regex here backtracks quadratically. */
+function stripTags(title: string): string {
+  const end = title.trimEnd().length;
+  if (end === 0 || title[end - 1] !== ":") return title;
+  let k = end;
+  while (k > 0 && TAG_CHAR.test(title[k - 1] as string)) k--;
+  // the tag run must be `:...:` (at least one char between) and be preceded by whitespace
+  if (k === 0 || end - k < 3 || title[k] !== ":" || !/\s/.test(title[k - 1] as string))
+    return title;
+  return title.slice(0, k).trimEnd();
+}
+
 function parseOrgBlocks(lines: readonly string[], depth: number, st: MdState): MdBlock[] {
   const out: MdBlock[] = [];
   const spans = depth === 0 ? st.spans : undefined;
   const inl = (s: string): MdInline[] => parseOrgInlines(s, st);
   const n = lines.length;
+  // The last `:END:` line: a drawer opener after it can never close, so it is never scanned for (keeps the scan linear).
+  let lastEnd = -1;
+  for (let k = n - 1; k >= 0; k--) {
+    work(st);
+    if (/^\s*:END:\s*$/i.test(lines[k] as string)) {
+      lastEnd = k;
+      break;
+    }
+  }
   let i = 0;
   let open: { line: number; count: number } | undefined;
   const flush = (): void => {
@@ -76,20 +97,21 @@ function parseOrgBlocks(lines: readonly string[], depth: number, st: MdState): M
       i++;
       continue;
     }
-    if (DRAWER.test(l) && !/^\s*:END:\s*$/i.test(l)) {
+    if (i < lastEnd && DRAWER.test(l) && !/^\s*:END:\s*$/i.test(l)) {
       let j = i + 1;
       while (j < n && !/^\s*:END:\s*$/i.test(lines[j] as string)) {
         work(st);
         j++;
       }
-      i = j < n ? j + 1 : i + 1; // an unclosed drawer is just a line
+      i = j + 1; // lastEnd > i guarantees a close
       continue;
     }
     if (!take(st)) break;
     if (spans) open = { line: i, count: out.length };
     const h = HEADLINE.exec(l);
     if (h) {
-      const title = (h[2] as string).replace(TODO, "").replace(PRIORITY, "").replace(TAGS, "");
+      let title = (h[2] as string).replace(TODO, "").replace(PRIORITY, "");
+      title = stripTags(title);
       out.push({
         type: "heading",
         level: Math.min((h[1] as string).length, 6) as 1 | 2 | 3 | 4 | 5 | 6,
