@@ -32,6 +32,7 @@ describe("kindValueContracts", () => {
         "MetricCard",
         "Note",
         "ProgressBar",
+        "Prose",
         "SandboxView",
         "StatusBadge",
         "StatusCard",
@@ -49,6 +50,7 @@ describe("kindValueContracts", () => {
       "Table",
       "StatusCard",
       "Note",
+      "Prose",
       "A2UIView",
       "SandboxView",
       "Image",
@@ -146,6 +148,15 @@ describe("Kpi, Table, StatusCard, Note, A2UIView, SandboxView value contracts", 
       ok: false,
     });
     expect(checkKindValue("StatusCard", "ok")).toMatchObject({ ok: false });
+  });
+  it("Prose: format and text required, focus offsets are non-negative integers, extra keys pass", () => {
+    const ok = { format: "markdown", text: "# hi", focus: { from: 0, to: 4 }, applicable: true };
+    expect(checkKindValue("Prose", ok)).toEqual({ ok: true });
+    expect(checkKindValue("Prose", { format: "html", text: "" })).toMatchObject({ ok: false });
+    expect(checkKindValue("Prose", { format: "plain" })).toMatchObject({ ok: false });
+    expect(
+      checkKindValue("Prose", { format: "org", text: "", focus: { from: -1, to: 0 } })
+    ).toMatchObject({ ok: false });
   });
   it("Note takes no value; A2UIView and SandboxView accept any data", () => {
     expect(checkKindValue("Note", undefined)).toEqual({ ok: true });

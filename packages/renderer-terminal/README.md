@@ -194,6 +194,9 @@ The keys the terminal asks for (including the shared chat and media words from `
 | `lu.chat.who.notice` | `Notice` |
 | `lu.chat.who.you` | `You` |
 | `lu.chat.who.user` | `User` |
+| `lu.prose.more` | `Show more` |
+| `lu.prose.cut` | `(document cut short)` |
+| `lu.prose.empty` | `(no text)` |
 | `lu.chat.who.userNamed` | `User "{name}"` |
 | `lu.chat.status.replying` | `replying` |
 | `lu.chat.status.interrupted` | `interrupted` |

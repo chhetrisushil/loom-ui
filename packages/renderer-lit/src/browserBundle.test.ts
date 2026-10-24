@@ -46,10 +46,13 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "containerRoles.js",
   "format.js",
   "kindValues.js",
+  "mdDocument.js",
   "media.js",
   "mediaRef.js",
   "mediaText.js",
   "messages.js",
+  "orgDocument.js",
+  "orgInline.js",
   "paths.js",
   "streamText.js",
   "tableRows.js",
@@ -97,7 +100,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // A2UI selected item (Column/Row `selected`, aria-current, scroll into view): 134 -> 135 kB (measured 134_490, 490 over).
     // Fix round (single selection, selectedKey identity, nearest-container scroll, reserved bar): 135 -> 136 kB (measured 135_669, 669 over: the selection logic plus a container-only scroll helper in place of scrollIntoView, which can move the page).
     // MultiSelectInput web slice: 136 -> 138 kB (measured 137_860). Cause: the MultiSelectInput value contract (core, PR #107), which rides in `checkKindValue` for every page (137_810 before this slice).
-    ["index.js", 138 * 1000],
+    // Prose kind: 138 -> 139 kB (measured 138_470): the Prose value contract and its three fixed words. `lu-prose` itself is
+    // NOT exported from the root (its parsers and drawer would add 23 kB to every page); it rides in the opt-in `chat.js` registry.
+    ["index.js", 139 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
@@ -112,7 +117,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // U9: the opt-in media widgets (resolver-driven elements + the upload control) and the default
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     // MultiSelectInput web slice: 71 -> 72 kB (measured 71_895). Cause: the MultiSelectInput value contract (core, PR #107).
-    ["media.js", 72 * 1000],
+    // Prose kind: 72 -> 73 kB (measured 72_502): the Prose value contract and its three fixed words.
+    ["media.js", 73 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
     // Chat markdown (176i): 94 -> 110 kB (measured 93_391 -> 107_720): core's bounded parser (chatMarkdown, chatMdBlock,

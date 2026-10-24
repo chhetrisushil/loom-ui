@@ -234,6 +234,19 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
     return o;
   },
   Note: () => undefined,
+  Prose: (r) => {
+    const o: Record<string, unknown> = {
+      format: pick(r, ["markdown", "org", "plain", "html"]),
+      text: pick(r, strs),
+    };
+    withOptional(r, o, "truncated", () => chance(r, 0.5));
+    withOptional(r, o, "focus", () => ({
+      from: pick(r, [0, 3, -1, 1.5, -2.5]),
+      to: pick(r, [0, 9, -1, 2.5]),
+    }));
+    withOptional(r, o, "note", () => pick(r, strs));
+    return o;
+  },
   A2UIView: (r) => pick(r, [{ x: 1 }, [], "s"]),
   SandboxView: (r) => pick(r, [{ x: 1 }, [], "s"]),
   Image: (r) => genMedia(r, "image"),
@@ -443,7 +456,7 @@ describe(`zod-free checker vs zod contracts — seeded fuzz (seed 0x${SEED.toStr
         expect(failures).toBeLessThan(ITERATIONS);
       }
       // The full-list comparison is only meaningful if the corpus has multi-issue values.
-      if (["TimeSeries", "BarChart", "Table", "StatusCard", "Kpi"].includes(kind)) {
+      if (["TimeSeries", "BarChart", "Table", "StatusCard", "Kpi", "Prose"].includes(kind)) {
         expect(multi, `${kind}: no multi-issue values in the corpus`).toBeGreaterThan(0);
       }
     });

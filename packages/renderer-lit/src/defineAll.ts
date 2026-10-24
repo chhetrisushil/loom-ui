@@ -11,6 +11,7 @@ import { defineMedia } from "./define/lu-media";
 import { defineMediaMissing } from "./define/lu-media-missing";
 import { defineMetricCard } from "./define/lu-metric-card";
 import { defineNote } from "./define/lu-note";
+import { defineProse } from "./define/lu-prose";
 import { defineSandbox } from "./define/lu-sandbox";
 import { defineSimple } from "./define/lu-simple";
 import { defineStatusBadge } from "./define/lu-status-badge";
@@ -34,6 +35,7 @@ export function defineAll(): void {
   defineMedia();
   defineMetricCard();
   defineNote();
+  defineProse();
   defineSandbox();
   defineSimple();
   defineStatusBadge();

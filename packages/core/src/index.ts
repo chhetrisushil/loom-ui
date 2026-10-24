@@ -238,6 +238,7 @@ export {
   KpiValue,
   SemanticFormat,
   StatusCardValue,
+  ProseValue,
   StatusLevel,
   TableCell,
   TableColumn,

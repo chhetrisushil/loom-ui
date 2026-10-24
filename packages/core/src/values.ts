@@ -160,6 +160,18 @@ export const StatusCardValue = z.object({
 });
 export type StatusCardValue = z.infer<typeof StatusCardValue>;
 
+/** A long document: its `text` in `format`, optionally cut short, with a source range to bring into view. */
+export const ProseValue = z.object({
+  format: z.enum(["markdown", "org", "plain"]),
+  text: z.string(),
+  truncated: z.boolean().optional(),
+  focus: z
+    .object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative() })
+    .optional(),
+  note: z.string().optional(),
+});
+export type ProseValue = z.infer<typeof ProseValue>;
+
 /**
  * A MediaRef for `kind`: the SHARED checker (`media.ts`) drives zod, so the zod-free contract in
  * `kindValues.ts` cannot drift from it. Messages are value-free.
@@ -186,6 +198,7 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   StatusCard: StatusCardValue,
   // Static text from props: a Note is never bound, so any value that reaches it is a defect.
   Note: z.undefined(),
+  Prose: ProseValue,
   // The bound value is the embedded view's / component's data model — any JSON.
   A2UIView: z.unknown(),
   SandboxView: z.unknown(),

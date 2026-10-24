@@ -46,6 +46,7 @@ const VALID: Readonly<Record<string, unknown>> = {
   },
   StatusCard: { level: "ok", headline: "h", detail: "d" },
   Note: undefined,
+  Prose: { format: "markdown", text: "# hi", focus: { from: 0, to: 4 } },
   A2UIView: { x: 1 },
   SandboxView: [1],
   Image: {

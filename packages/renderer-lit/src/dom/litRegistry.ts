@@ -97,6 +97,8 @@ export const frameworkKindContracts: readonly CatalogEntry[] = [
   { kind: "StatusCard", props: [], binding: "required" },
   // Static text; declare `textProps: ["text"]` on the semantic entry to localize it at compile.
   { kind: "Note", props: ["text"], binding: "none" },
+  // A long document (markdown, org or plain text), drawn block by block.
+  { kind: "Prose", props: [], binding: "required" },
   // The declarative component tree / the untrusted render code ride as declared props; the
   // bound value is their data.
   { kind: "A2UIView", props: ["view"], binding: "required" },
@@ -166,6 +168,7 @@ export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
       .register("Table", el("lu-table"))
       .register("StatusCard", el("lu-status-card"))
       .register("Note", el("lu-note"))
+      .register("Prose", el("lu-prose"))
       .register("A2UIView", el("lu-a2ui-widget"))
       .register("SandboxView", el("lu-sandbox-widget"))
       // The media kinds draw one fixed placeholder here; `@loom-ui/renderer-lit/media` replaces them.

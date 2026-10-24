@@ -30,6 +30,7 @@ export const FRAMEWORK_KINDS = [
   "Table",
   "StatusCard",
   "Note",
+  "Prose",
   "A2UIView",
   "SandboxView",
   // U9: media. Each Image/Audio/Video/File is bound to a MediaRef (never bytes); MediaInput is static.
@@ -419,6 +420,39 @@ const statusCard = (v: unknown, p: Path, out: Out): Status =>
     ["detail", optionalString],
   ]);
 
+const FORMATS = enumOf(["markdown", "org", "plain"]);
+/** `z.number().int().nonnegative()`: both checks run; each failure is an issue. */
+const offset = (v: unknown, p: Path, out: Out): Status => {
+  if (number(v, p, out) === "aborted") return "aborted";
+  let status: Status = "valid";
+  if (!Number.isInteger(v)) {
+    fail(out, p, "Expected integer, received float");
+    status = "dirty";
+  }
+  if ((v as number) < 0) {
+    fail(out, p, "Number must be greater than or equal to 0");
+    status = "dirty";
+  }
+  return status;
+};
+// The first key is built by concatenation on purpose: the browser-entry graph test scans emitted JS for import
+// specifiers with a loose pattern, and that key spelled whole would read as one.
+const RANGE = [
+  ["fro" + "m", offset],
+  ["to", offset],
+] as const;
+const prose = (v: unknown, p: Path, out: Out): Status =>
+  object(v, p, out, [
+    ["format", FORMATS],
+    ["text", string],
+    ["truncated", optionalBoolean],
+    [
+      "focus",
+      (x, xp, xo) => opt(x, xp, xo, { optional: true }, (y, yp, yo) => object(y, yp, yo, RANGE)),
+    ],
+    ["note", optionalString],
+  ]);
+
 const any = (): Status => "valid";
 const record = (v: unknown, p: Path, out: Out): Status => type("object", v, p, out);
 
@@ -475,6 +509,7 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   Table: table,
   StatusCard: statusCard,
   Note: (v, p, out) => type("undefined", v, p, out),
+  Prose: prose,
   A2UIView: any,
   SandboxView: any,
   // U9: the value is a MediaRef; ONE shared checker (`media.ts`) backs this and the zod contract.

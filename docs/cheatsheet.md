@@ -78,6 +78,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `Table` | `TableValue` `{ columns, rows }` | column = string or `{ label, format? }` |
 | `StatusCard` | `StatusCardValue` `{ level, headline, detail? }` | level: `ok` · `warning` · `critical` |
 | `Note` | none — static `text` prop | also what a redacted node becomes |
+| `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (opt-in element) |
 | `TimeSeries` | `TimeSeriesValue` | series may sit on a `left` / `right` axis |
 | `BarChart` | `BarChartValue` | |
 | `A2UIView` · `SandboxView` | the bound value as data | mount `lu-a2ui-view` / `lu-sandbox` |
