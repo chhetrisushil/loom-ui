@@ -85,6 +85,8 @@ client-graph guards, the genericity rule, how to add a framework kind) are in [A
 
 ## Where next
 
+- [Codebase guide](docs/codebase-guide.md): architecture of loom and loom-ui, where to start
+  reading, and walkthroughs of the data and control flow.
 - [Getting started](docs/getting-started.md): install, compose, compile and render a first
   experience.
 - [User guide](docs/user-guide.md): task-oriented guides for each capability.
