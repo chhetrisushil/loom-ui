@@ -129,6 +129,17 @@ describe("parseOrgDocument ranges and bounds", () => {
       "#+BEGIN_SRC\nx\n#+END_SRC",
     ]);
   });
+  it("tags are stripped with a linear scan (generous time bound)", () => {
+    expect(blocks("* a :x:\n* b :: \n* c:d:\n* :e:")).toEqual([
+      { type: "heading", level: 1, inlines: [t("a")] },
+      { type: "heading", level: 1, inlines: [t("b :: ")] },
+      { type: "heading", level: 1, inlines: [t("c:d:")] },
+      { type: "heading", level: 1, inlines: [t(":e:")] },
+    ]);
+    const start = Date.now();
+    parseOrgDocument(`* x${" ".repeat(200_000)}y\n* x${" ".repeat(200_000)}:`);
+    expect(Date.now() - start).toBeLessThan(200);
+  });
   it("is total on non-strings", () => {
     expect(parseOrgDocument(null)).toEqual({ blocks: [], ranges: [], truncated: false });
   });
@@ -141,6 +152,7 @@ describe("parseOrgDocument ranges and bounds", () => {
     "open links": (k) => "[[".repeat(k),
     paragraphs: (k) => "p\n\n".repeat(k),
     "nested emphasis": (k) => "*/".repeat(k),
+    "unclosed drawers": (k) => ":a:\n".repeat(k),
     "table rows": (k) => `| a |\n|---|\n${"| 1 |\n".repeat(k)}`,
   };
   for (const [name, mk] of Object.entries(gens)) {
