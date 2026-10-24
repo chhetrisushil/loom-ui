@@ -35,6 +35,10 @@ export class LuProse extends LuWidget {
       [data-block] {
         scroll-margin-top: 16px;
       }
+      mark[data-block].focus {
+        background: transparent;
+        color: inherit;
+      }
       [data-block].focus {
         outline: 2px solid var(--lu-accent, #58a6ff);
         outline-offset: 4px;
@@ -55,7 +59,9 @@ export class LuProse extends LuWidget {
 
   @state() private shown = PAGE;
   private parsed: { format: string; text: string; doc: MdDocument } | undefined;
-  private plainOf: { text: string; shown: string; cut: boolean } | undefined;
+  private plainOf:
+    | { text: string; key: string; pre: string; mid: string; post: string; cut: boolean }
+    | undefined;
   // The document the paging and the scroll belong to: a new one starts at the first page and may scroll again.
   private docId: string | undefined;
   private scrolledFor = "";
@@ -68,9 +74,15 @@ export class LuProse extends LuWidget {
   }
 
   // Plain text is untrusted too: control and reordering characters are removed, and a text over the document cap is
-  // cut at a line break (the cut line says so).
-  private plain(text: string): { shown: string; cut: boolean } {
-    if (this.plainOf?.text === text) return this.plainOf;
+  // cut at a line break (the cut line says so). The RAW text is split at the focus first (offsets are raw), then each
+  // part is stripped, so the focus lands on the right characters.
+  private plain(
+    text: string,
+    focus: { from: number; to: number } | undefined
+  ): { pre: string; mid: string; post: string; cut: boolean } {
+    const key = focus ? `${focus.from}:${focus.to}` : "";
+    const c = this.plainOf;
+    if (c?.text === text && c.key === key) return c;
     let head = text;
     let cut = false;
     if (head.length > MD_DOC_MAX_TEXT) {
@@ -79,14 +91,45 @@ export class LuProse extends LuWidget {
       if (nl > 0) head = head.slice(0, nl);
       cut = true;
     }
-    this.plainOf = { text, shown: stripUnsafeChars(head), cut };
+    let a = 0;
+    let z = 0;
+    if (focus && Number.isFinite(focus.from) && Number.isFinite(focus.to)) {
+      a = Math.min(Math.max(focus.from, 0), head.length);
+      z = Math.min(Math.max(focus.to, a), head.length);
+    }
+    this.plainOf = {
+      text,
+      key,
+      pre: stripUnsafeChars(head.slice(0, a)),
+      mid: stripUnsafeChars(head.slice(a, z)),
+      post: stripUnsafeChars(head.slice(z)),
+      cut,
+    };
     return this.plainOf;
   }
 
-  private focusIndex(v: ProseValue, doc: MdDocument): number {
-    if (!v.focus) return -1;
+  // Every block overlapping the focus is marked (the chunker starts a chunk inside the previous paragraph, so the
+  // first overlapping block may be only overlap). The scroll goes to the first block that starts inside the focus,
+  // else the first overlapping one. `last` is the last marked block (paging draws up to it).
+  private focusInfo(
+    v: ProseValue,
+    doc: MdDocument
+  ): { marked: Set<number>; scroll: number; last: number } {
+    const marked = new Set<number>();
+    if (!v.focus) return { marked, scroll: -1, last: -1 };
     const { from, to } = v.focus;
-    return doc.ranges.findIndex((r) => r.from < Math.max(to, from + 1) && r.to > from);
+    const end = Math.max(to, from + 1);
+    let scroll = -1;
+    let inside = -1;
+    let last = -1;
+    doc.ranges.forEach((r, i) => {
+      if (!(r.from < end && r.to > from)) return;
+      marked.add(i);
+      last = i;
+      if (scroll < 0) scroll = i;
+      if (inside < 0 && r.from >= from) inside = i;
+    });
+    return { marked, scroll: inside >= 0 ? inside : scroll, last };
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -101,7 +144,7 @@ export class LuProse extends LuWidget {
     }
     // Every update, not only a new value: a value that arrived before the status turned ready still gets its block drawn.
     if (v.format !== "plain") {
-      const f = this.focusIndex(v, this.doc(v));
+      const f = this.focusInfo(v, this.doc(v)).last;
       if (f >= this.shown) this.shown = Math.ceil((f + 1) / PAGE) * PAGE;
     }
   }
@@ -112,8 +155,9 @@ export class LuProse extends LuWidget {
     if (!v?.focus || this.state().state !== "ready") return;
     const key = `${v.focus.from}:${v.focus.to}`;
     if (key === this.scrolledFor) return;
-    const el = this.renderRoot.querySelector("[data-block].focus");
-    if (el) {
+    const el = this.renderRoot.querySelector("[data-block][data-landing]");
+    // A block in a hidden tab/host has no boxes: scrolling could not take effect, so a later update retries.
+    if (el && el.getClientRects().length > 0) {
       this.scrolledFor = key;
       el.scrollIntoView?.({ block: "start" });
     }
@@ -126,17 +170,20 @@ export class LuProse extends LuWidget {
     const cut = v.truncated ? html`<p class="cut">${say("lu.prose.cut")}</p>` : nothing;
     if (v.text === "") return html`${note}<p class="note">${say("lu.prose.empty")}</p>`;
     if (v.format === "plain") {
-      const p = this.plain(v.text);
-      return html`${note}<pre class="plain">${p.shown}</pre>${v.truncated || p.cut ? html`<p class="cut">${say("lu.prose.cut")}</p>` : nothing}`;
+      const p = this.plain(v.text, v.focus);
+      const mid = p.mid
+        ? html`<mark data-block data-landing class="focus">${p.mid}</mark>`
+        : nothing;
+      return html`${note}<pre class="plain">${p.pre}${mid}${p.post}</pre>${v.truncated || p.cut ? html`<p class="cut">${say("lu.prose.cut")}</p>` : nothing}`;
     }
     const doc = this.doc(v);
-    const focus = this.focusIndex(v, doc);
+    const { marked: focus, scroll } = this.focusInfo(v, doc);
     const blocks = doc.blocks.slice(0, this.shown);
     return html`${note}
       <div class="doc md">
         ${blocks.map(
           (block, i) =>
-            html`<div data-block=${i} class=${i === focus ? "focus" : ""}>${drawMarkdown({ blocks: [block], truncated: false }, { ref: noRef })}</div>`
+            html`<div data-block=${i} class=${focus.has(i) ? "focus" : ""} ?data-landing=${i === scroll}>${drawMarkdown({ blocks: [block], truncated: false }, { ref: noRef })}</div>`
         )}
       </div>
       ${
