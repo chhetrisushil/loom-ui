@@ -393,7 +393,7 @@ describe("lu-chat, markdown and reference markers", () => {
 
 describe("the markdown renderer's source", () => {
   it("never reaches for HTML-parsing APIs", () => {
-    for (const f of ["chatMarkdown.ts", "lu-chat.ts"]) {
+    for (const f of ["chatMarkdown.ts", "lu-chat.ts", "lu-prose.ts"]) {
       const src = readFileSync(resolve(__dirname, f), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/^\s*\/\/.*$/gm, "");

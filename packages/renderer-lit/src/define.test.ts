@@ -16,6 +16,7 @@ const DEFAULT_TAGS = [
   "lu-table",
   "lu-status-card",
   "lu-note",
+  "lu-prose",
   "lu-a2ui-widget",
   "lu-sandbox-widget",
   "lu-a2ui-view",

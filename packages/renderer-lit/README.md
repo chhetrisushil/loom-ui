@@ -54,7 +54,7 @@ import "@loom-ui/renderer-lit/elements/lu-simple"; // lu-progress, lu-alert, lu-
 Entries are named after the widget module: `lu-a2ui-view`, `lu-bar-chart`, `lu-chat`,
 `lu-chat-missing`, `lu-data-table`, `lu-embedded` (the A2UI / sandbox widgets, plus the two elements
 they nest), `lu-inputs`, `lu-kpi`, `lu-locale-picker`, `lu-media`, `lu-media-missing`,
-`lu-metric-card`, `lu-note`, `lu-sandbox`, `lu-simple`, `lu-status-badge`, `lu-status-card`,
+`lu-metric-card`, `lu-note`, `lu-prose`, `lu-sandbox`, `lu-simple`, `lu-status-badge`, `lu-status-card`,
 `lu-table`, `lu-time-range-picker`, `lu-timeseries`. `defineElement(tag, ctor)` (root entry) is the
 idempotent define they use. The opt-in `./media` and `./chat` registries (`createMediaLitRegistry`,
 `createChatLitRegistry`, `registerMediaWidgets`, `registerChatWidgets`) define their own elements
@@ -449,6 +449,9 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.chat.dispatch.stale` | `The view changed. Review it and send again.` |
 | `lu.chat.dispatch.unavailable` | `Sending is not available here.` |
 | `lu.chat.dispatch.failed` | `Not sent. Try again.` |
+| `lu.prose.more` | `Show more` |
+| `lu.prose.cut` | `(document cut short)` |
+| `lu.prose.empty` | `(no text)` |
 | `lu.input.message` | `Message` |
 | `lu.input.hint` | `Press Ctrl+Enter to send.` |
 | `lu.input.sent` | `Sent` |

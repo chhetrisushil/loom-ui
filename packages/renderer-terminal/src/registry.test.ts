@@ -170,6 +170,30 @@ describe("terminal registry", () => {
       })
     ).toBe("Replication: [warning] Replica lag — 12s behind");
   });
+  it("Prose lays a markdown document out as text", () => {
+    const r = loomUiTerminalRegistry.get("Prose");
+    const out = r?.(customWidget$({ kind: "Prose", id: "p", title: "Doc", binding: b }), {
+      format: "markdown",
+      text: "# Head\n\n- one\n- two",
+    });
+    expect(out).toContain("Head");
+    expect(out).toContain("one");
+  });
+  it("Prose: plain and org text, a note and the cut line, nothing from a control byte", () => {
+    const r = loomUiTerminalRegistry.get("Prose");
+    const w = customWidget$({ kind: "Prose", id: "p", title: "Doc", binding: b });
+    expect(r?.(w, { format: "org", text: "* Head\n/it/" })).toContain("Head");
+    const out = r?.(w, {
+      format: "plain",
+      text: "a\u001b[31mred\nb",
+      note: "First part",
+      truncated: true,
+    });
+    expect(out).toContain("First part");
+    expect(out).toContain("(document cut short)");
+    expect(out).not.toContain("\u001b");
+    expect(r?.(w, { format: "plain", text: "" })).toContain("(no text)");
+  });
   it("Note: static text from props, with no binding and no value", () => {
     const r = loomUiTerminalRegistry.get("Note");
     expect(

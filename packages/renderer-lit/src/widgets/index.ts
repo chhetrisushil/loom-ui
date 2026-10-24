@@ -10,6 +10,7 @@ export { LuLocalePicker } from "./lu-locale-picker";
 export { LuMediaMissing } from "./lu-media-missing";
 export { LuMetricCard } from "./lu-metric-card";
 export { LuNote } from "./lu-note";
+export { LuProse } from "./lu-prose";
 export { LuSandbox } from "./lu-sandbox";
 export { LuAlert, LuApproval, LuList, LuProgress, LuText } from "./lu-simple";
 export { LuStatusBadge } from "./lu-status-badge";

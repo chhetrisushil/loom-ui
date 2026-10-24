@@ -7,15 +7,18 @@ import {
   LocalizedText,
   type LuI18n,
   type LuMessageKey,
+  MD_MAX_LINES,
   type MediaKind,
   type MediaPolicy,
   type MediaRef,
+  type ProseValue,
   type Say,
   type SemanticFormat,
   type StatusCardValue,
   type TableCell,
   type TableValue,
   type TimeSeriesValue,
+  chatMarkdownLines,
   chatTranscriptLines,
   checkKindValue,
   checkMediaUrl,
@@ -32,6 +35,8 @@ import {
   maxBytesFor,
   oneLineChatText,
   optionsProblem,
+  parseMarkdownDocument,
+  parseOrgDocument,
   pluralForms,
   selectPlural,
   tableColumnFormat,
@@ -330,6 +335,31 @@ const statusCard = (host: boolean, x: Env) =>
     return l(w, `[${x.say(LEVEL_KEY[s.level])}] ${s.headline}${s.detail ? ` — ${s.detail}` : ""}`);
   });
 
+// A document laid out as text: markdown and org through core's document parsers and `chatMarkdownLines` (which
+// cleans every line and caps the total), plain text as its first lines. Hung under the title like Chat.
+const prose = (host: boolean, x: Env) =>
+  guarded(host, "Prose", (w, v) => {
+    const p = v as ProseValue;
+    const body =
+      p.text === ""
+        ? [x.say("lu.prose.empty")]
+        : p.format === "plain"
+          ? p.text
+              .split("\n")
+              .slice(0, MD_MAX_LINES)
+              .map((l) => oneLineChatText(l, 200))
+          : chatMarkdownLines(
+              p.format === "org" ? parseOrgDocument(p.text) : parseMarkdownDocument(p.text)
+            );
+    const out = [
+      ...(p.note ? [oneLineChatText(p.note)] : []),
+      ...body,
+      ...(p.truncated ? [x.say("lu.prose.cut")] : []),
+    ];
+    const indent = hang(host);
+    return [...(host ? [] : [`${title(w)}:`]), ...out.map((l) => `${indent}${l}`)].join("\n");
+  });
+
 // Never bound, so never `guarded`: loom calls a channel-less widget's renderer directly, with
 // `value === undefined`, and the text lives in props (a string after compile; an uncompiled
 // LocalizedText shows its fallback, never its key).
@@ -511,6 +541,7 @@ export function createLoomUiTerminalRegistry(
     .register("Table", table(host, x))
     .register("StatusCard", statusCard(host, x))
     .register("Note", note(host, x))
+    .register("Prose", prose(host, x))
     .register("A2UIView", a2uiView(host, x))
     .register("SandboxView", sandboxView(host, x))
     .register("Image", mediaLine(host, x, "Image", opts.media))

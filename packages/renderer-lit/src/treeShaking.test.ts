@@ -56,7 +56,7 @@ describe("per-element entries", () => {
         "base",
         "chatShared",
         "virtual",
-        ...(m === "lu-chat" ? ["chatMarkdown"] : []),
+        ...(m === "lu-chat" || m === "lu-prose" ? ["chatMarkdown"] : []),
         // `<lu-multi-select-input>` has its own module but registers with the other inputs.
         ...(m === "lu-inputs" ? ["lu-multi-select"] : []),
         m,

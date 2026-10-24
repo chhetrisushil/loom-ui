@@ -173,6 +173,9 @@ export const LU_MESSAGES = {
   "lu.chat.dispatch.stale": "The view changed. Review it and send again.",
   "lu.chat.dispatch.unavailable": "Sending is not available here.",
   "lu.chat.dispatch.failed": "Not sent. Try again.",
+  "lu.prose.more": "Show more",
+  "lu.prose.cut": "(document cut short)",
+  "lu.prose.empty": "(no text)",
 
   // ── inputs and forms ──────────────────────────────────────────────────────────────────────────
   "lu.input.message": "Message",

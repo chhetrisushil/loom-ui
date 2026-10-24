@@ -56,6 +56,7 @@ export type {
   KpiValue,
   SemanticFormat,
   StatusCardValue,
+  ProseValue,
   TableCell,
   TableColumn,
   TableValue,
