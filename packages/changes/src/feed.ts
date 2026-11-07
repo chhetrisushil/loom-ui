@@ -18,6 +18,7 @@ import {
   type LineageStore,
   foldLineage,
 } from "@loom-ui/lineage";
+import { isKeyUnavailable, isPayloadShredded } from "@loom/event-runtime";
 
 // ── The change feed ───────────────────────────────────────────────────────────
 // A feed turns one experience's lineage log into a stream of CHANGE EVENTS a notifier can consume:
@@ -181,7 +182,19 @@ export class LineageChangeFeed implements ChangeFeed {
           ? Math.min(opts.limit, MAX_PAGE)
           : undefined;
     if (limit === undefined) return err("limit-invalid", "limit is not a positive integer");
-    const records = await this.events.read(experienceId);
+    let records: Awaited<ReturnType<LineageStore["read"]>>;
+    try {
+      records = await this.events.read(experienceId);
+    } catch (e) {
+      // An erased line (its key destroyed, or not on this node) fails closed with a typed finding;
+      // any other failure propagates unchanged.
+      if (isKeyUnavailable(e) || isPayloadShredded(e))
+        return err(
+          "line-erased",
+          `lineage "${experienceId}" is erased: its key is destroyed or unavailable`
+        );
+      throw e;
+    }
     const fold = foldLineage(experienceId, records);
     if (!fold.ok) return { ok: false, finding: fold.finding };
     const out: ChangeEvent[] = [];
