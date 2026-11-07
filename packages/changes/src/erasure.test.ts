@@ -1,6 +1,7 @@
 import {
   LINEAGE_STREAM_PREFIX,
   LineErasedError,
+  LineUnreadableError,
   Lineage,
   eventStoreLineageStore,
   registerLineageSensitivePaths,
@@ -22,7 +23,7 @@ import { pollingHeadSignal } from "./signal";
 
 const owners: Record<string, string> = { ann: "user:ann", bob: "user:bob" };
 
-async function setup() {
+async function setup(confirm = true) {
   const keys = new InMemoryKeyStore();
   const subjectOf = (e: { executionId: string }) =>
     owners[e.executionId.slice(LINEAGE_STREAM_PREFIX.length)] ?? e.executionId;
@@ -30,9 +31,13 @@ async function setup() {
   const sealed = new EncryptingEventStore(raw, keys, { sensitive: {}, subjectOf });
   registerLineageSensitivePaths(sealed);
   const events = eventStoreLineageStore(sealed);
+  const confirmErased = async (id: string) =>
+    (await keys.wasDestroyed?.(subjectOf({ executionId: `${LINEAGE_STREAM_PREFIX}${id}` }))) ===
+    true;
   const lineage = new Lineage({
     events,
     content: new EncryptingContentStore(new InMemoryContentStore(), keys, { subjectOf }),
+    ...(confirm && { confirmErased }),
   });
   const errors: unknown[] = [];
   const feed = new LineageChangeFeed({
@@ -43,6 +48,7 @@ async function setup() {
       onError: (e) => errors.push(e),
     }),
   });
+  void feed;
   for (const id of ["ann", "bob"]) {
     const s = await lineage.start(g(id), by);
     if (!s.ok) throw new Error(JSON.stringify(s.refusal));
@@ -55,8 +61,19 @@ async function setup() {
     });
     if (!c.ok) throw new Error(JSON.stringify(c.refusal));
   }
-  return { keys, feed, lineage, events, errors };
+  return { keys, feed, lineage, events, errors, confirmErased };
 }
+
+const setupConfirm = (keys: InMemoryKeyStore) => async (id: string) =>
+  (await keys.wasDestroyed?.(owners[id] ?? id)) === true;
+
+const until = async (cond: () => boolean, ms = 3000) => {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error("until: timed out");
+    await new Promise((r) => setTimeout(r, 2));
+  }
+};
 
 describe("ChangeFeed over an erased line", () => {
   it("read and describe refuse with line-erased; another line's feed is unaffected", async () => {
@@ -104,6 +121,7 @@ describe("ChangeFeed over an erased line", () => {
     const sig = pollingHeadSignal(events, {
       schedule: () => () => undefined,
       onError: (e) => errors.push(e),
+      confirmErased: setupConfirm(keys),
     });
     const offA = sig.watch("ann", (c) => heads.push(c));
     const offB = sig.watch("bob", (c) => heads.push(c));
@@ -125,5 +143,83 @@ describe("ChangeFeed over an erased line", () => {
       signal: pollingHeadSignal(events, { schedule: () => () => undefined }),
     });
     await expect(broken.read("ann")).rejects.toBe(boom);
+  });
+});
+
+describe("unconfirmed vs confirmed", () => {
+  it("without a confirmation hook the feed reports line-unreadable, not line-erased", async () => {
+    const { keys, feed } = await setup(false);
+    await keys.destroy("user:ann");
+    const r = await feed.read("ann");
+    expect(!r.ok && r.finding.code).toBe("line-unreadable");
+  });
+
+  it("a head signal without the hook reports LineUnreadableError, and keeps checking", async () => {
+    const { keys, events } = await setup(false);
+    await keys.destroy("user:ann");
+    const errors: unknown[] = [];
+    let tick: (() => void) | undefined;
+    const sig = pollingHeadSignal(events, {
+      schedule: (fn) => {
+        tick = fn;
+        return () => undefined;
+      },
+      onError: (e) => errors.push(e),
+    });
+    const off = sig.watch("ann", () => undefined);
+    await until(() => errors.length === 1);
+    tick?.();
+    tick?.();
+    await until(() => errors.length >= 2);
+    off();
+    expect(errors.every((e) => e instanceof LineUnreadableError)).toBe(true);
+  });
+
+  it("a confirmed-erased line's signal reports once and goes terminal (timer cancelled)", async () => {
+    const { keys, events } = await setup();
+    await keys.destroy("user:ann");
+    const errors: unknown[] = [];
+    let cancelled = false;
+    let tick: (() => void) | undefined;
+    const sig = pollingHeadSignal(events, {
+      schedule: (fn) => {
+        tick = fn;
+        return () => {
+          cancelled = true;
+        };
+      },
+      onError: (e) => errors.push(e),
+      confirmErased: setupConfirm(keys),
+    });
+    const off = sig.watch("ann", () => undefined);
+    await until(() => errors.length === 1 && cancelled);
+    tick?.();
+    tick?.();
+    await new Promise((r) => setTimeout(r, 20));
+    off();
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toBeInstanceOf(LineErasedError);
+  });
+
+  it("a subscription on a confirmed-erased line reports once and stops retrying; unconfirmed retries", async () => {
+    for (const confirm of [true, false]) {
+      const { keys, feed } = await setup(confirm);
+      await keys.destroy("user:ann");
+      const reported: unknown[] = [];
+      const off = feed.subscribe("ann", () => undefined, {
+        onError: (e) => reported.push(e),
+        retry: { baseMs: 1, maxMs: 2 },
+      });
+      if (confirm) {
+        await until(() => reported.length === 1);
+        await new Promise((r) => setTimeout(r, 60));
+        expect(reported.length).toBe(1);
+        expect((reported[0] as { code?: string }).code).toBe("line-erased");
+      } else {
+        await until(() => reported.length >= 3);
+        expect((reported[0] as { code?: string }).code).toBe("line-unreadable");
+      }
+      off();
+    }
   });
 });

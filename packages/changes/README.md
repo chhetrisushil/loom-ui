@@ -114,6 +114,14 @@ idempotency key; the first call reports the current state of a non-empty line).
   underneath it is used directly. A host with its own transport (websocket, SSE, a database notify)
   implements `HeadSignal`, one method.
 
+**Sealed lines.** Over a lineage sealed per owner (see the lineage README, "Erasure") the feed
+INHERITS the lineage's `confirmErased` hook: `read`/`describe` refuse `line-erased` (confirmed) or
+`line-unreadable` (not confirmed), and a subscription on a confirmed-erased line reports it once and
+stops (no retry timer, no further wakes). An unconfirmed `line-unreadable` line keeps retrying, since
+the key may come back to this node. A head signal is built over a store, so it takes its own
+`confirmErased` option; it reports `LineErasedError` once and goes terminal, or
+`LineUnreadableError` on every check.
+
 ## Not in this package
 
 Authorization (who may see an experience at all), delivery transport (email, push, a toast), and

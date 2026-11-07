@@ -208,26 +208,86 @@ erasing the owner makes the line unreadable:
    mapping covers events and blobs. A blob's address is scoped to its subject: the same bytes in two
    lines with different owners get different refs. Nothing here compares refs across lines (a version
    is identified by `versionHash`).
-4. Erase by destroying the owner's key: `keys.destroy(subject)`, or loom's `shredSubject(keys, store,
-   streamId, { subjectId, executionIds: [] })` (a reserved stream is never tombstoned, so pass no
-   execution ids for it).
+4. Give the `Lineage` a `confirmErased` hook (below), so a destroyed key reads as an erasure and not
+   as an unreadable line.
+5. Erase the owner the normal way: `app.eraseSubject`, or loom's `shredSubject` with ALL of the
+   owner's executions. The lineage stream needs nothing extra: it shares the owner's key, and a
+   reserved stream is never tombstoned. Pass `executionIds: []` ONLY for an owner with no executions
+   at all: a key destroyed that way leaves any execution sealed under it without a tombstone, and a
+   later shred can no longer write one (loom `plugins/crypto/README.md`, A6). Do not call
+   `keys.destroy` directly for an owner who has executions either.
 
-Afterwards a read of that line refuses with `{ kind: "refused", finding: { code: "line-erased" } }`:
-`state`, `head`, `versions`, `walk`, `get`, `getMany`, `resolveLatest`, `resolvePromoted`,
-`provenance`, `explain` and `cite`; `verify` returns a single `line-erased` finding. The plain-value
-reads (`forEachContentRef`, `pins` and so `rootsFor`) throw `LineErasedError` (`experienceId`, code
-`line-erased`): a collector must refuse rather than guess a root set it cannot read. A write
-(`start`, `advance`, `compose`, `revert`, `undo`, `promote`, `branch`) on an erased line refuses with
-the same code; the owner's key is never re-minted. Erasure is recognised by `isKeyUnavailable` and
-`isPayloadShredded` (`@loom/event-runtime`), never by message text; any other failure (a corrupt blob,
-`PayloadUndecryptableError`) propagates unchanged. Note loom reads "key not on this node" and an
-erased key the same way for a sealed event, and so does this package: fail closed.
+**Erased versus unreadable.** loom reads "the key is not on this node" and "the key was destroyed"
+the same way for a sealed event (`KeyUnavailableError`), and reports a sealed event that will not
+open under a PRESENT key (a tampered row, a `subjectOf` that drifted) as `KeyUnavailableError` too, so
+none of those can be told apart from the read alone. `isPayloadShredded` alone is not confirmation
+either. So the package separates them with ONE rule: a line is `line-erased` only when the host says so,
+
+```ts
+new Lineage({
+  events, content,
+  // the KeyStore recorded the destruction of this line's owner key
+  confirmErased: async (experienceId) =>
+    (await keys.wasDestroyed?.(subjectOf({ executionId: `__loom_ui_lineage__:${experienceId}` }))) === true,
+});
+```
+
+and every other read that hits `isKeyUnavailable` / `isPayloadShredded` is **`line-unreadable`** ("the
+line's key is unavailable on this node or its ciphertext does not open; not confirmed erased"). A
+blob that exists but does not open although the key exists (plaintext written before sealing was
+composed, or damaged bytes: `ContentUndecryptableError`) is `line-unreadable` with the distinct
+finding code `artifact-unsealed`, and is never an erasure. A throwing hook counts as "not confirmed".
+Both outcomes are fail-closed, and writes are refused either way. `LineErasedError` (confirmed) and
+`LineUnreadableError` (`confirmed: false`, `reason`) are the two error classes of the plain-value reads.
+`@loom-ui/changes` inherits the hook for its `ChangeFeed` (it classifies through `lineage.block`); a
+head signal is built over a store, so it takes its own `confirmErased` option.
+
+Afterwards a read of that line refuses with `{ kind: "refused", finding: { code: "line-erased" } }`
+(or `line-unreadable`): `state`, `head`, `versions`, `walk`, `get`, `getMany`, `resolveLatest`,
+`resolvePromoted`, `provenance`, `explain` and `cite`; `verify` returns a single such finding. A
+write (`start`, `advance`, `compose`, `revert`, `undo`, `promote`, `branch`) on such a line refuses
+with the same code; the owner's key is never re-minted. A key destroyed between the read and the
+append is re-checked on the append's failure and returns the typed refusal. Recognition is by
+`isKeyUnavailable` / `isPayloadShredded` (`@loom/event-runtime`), never by message text.
+
+**GC.** The plain-value reads (`forEachContentRef`, `pins`, so `rootsFor` and `collectSeenGarbage`)
+SKIP a line whose erasure is confirmed: it contributes no roots, so its sealed blobs become
+reclaimable, which is the point of erasure. An unconfirmed `line-unreadable` line makes them throw
+`LineUnreadableError` (and `collectSeenGarbage` return `gc-roots-unavailable`): guessing could delete
+live blobs. Without a `confirmErased` hook GC therefore stays refused after any erasure.
 
 Erasure is scoped to the owner. A branch reads its source with the SOURCE line's access and writes its
-own first artifact under the TARGET line's, so a line branched from an erased line keeps reading. Its
-`verify` can no longer recompute the fork from the erased source, so it attests that first version by
-its content address alone and reports a `branch-source-erased` warning; versions after it verify
-normally. What was written before crypto was composed stays plaintext: seal from the first write.
+own first artifact under the TARGET line's, so a line branched from an erased line keeps reading. A
+branch COPIES the source's content into the target line under the TARGET owner's key: it is NOT
+erased with the source owner (erase the target's owner too if it must go). Its `verify` can no longer
+recompute the fork from the erased source, so it attests that first version by its content address
+alone and reports a `branch-source-erased` WARNING, only when the source's erasure is confirmed (also
+when the host deleted the source's events too); an unconfirmed unreadable source is an ERROR finding
+(`line-unreadable`). Versions after it verify normally.
+
+**What stays plaintext after erasure.** Only `ops`, `summary` and `by` are sealed. `versionHash`,
+`parents`, `revertedTo`, `carriedFrom`, `from` and `experienceId` stay plain so the log folds, and
+`versionHash` is a plain SHA-256 of the artifact: after erasure a guessed artifact can be CONFIRMED
+against it. Do not put personal data in `experienceId`, `streamPrefix` or `workflowId`.
+
+**Seen records are separate.** `SeenLog` calls `content.put` WITHOUT a `ContentAccess`, so it cannot
+share a sealing `EncryptingContentStore` and needs its own store. Erasing a line's owner does not
+erase viewers' seen records of that line: those have their own per-viewer erasure (`eraseViewer`), and
+`SeenLog.read` on an erased line returns `restricted: true` with no entries.
+
+**Enabling sealing on an existing deployment.** What was written before an `EncryptingContentStore`
+(or `registerLineageSensitivePaths`) was composed stays plaintext, and reads through a sealing store
+as `line-unreadable` / `artifact-unsealed`, never as erased. There is no `reseal` helper: a version's
+event records the artifact's ref, and an append-only log cannot be rewritten to a new ref without
+new events (a new version, which changes the line's history). Seal from the first write: start a new
+store and re-create the lines, or keep a plain store for the old lines.
+
+A `Lineage` fails closed at construction when its content store declares `sealsContent: true` but its
+events store does not expose a `streamPrefix` (use `eventStoreLineageStore`): the blobs could
+otherwise be sealed under a different subject than the events.
+
+A `describe` of Bob's branched event whose BASE is an erased line refuses (the base cannot be read);
+that edge is a known limitation.
 
 Genericity: nothing here names a consumer.
 

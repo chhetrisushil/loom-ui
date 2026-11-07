@@ -5,6 +5,7 @@ import {
   type ContentRef,
   type ContentStore,
   InMemoryContentStore,
+  sweepUnpinnedContent,
 } from "@loom/plugin-content";
 import {
   EncryptingContentStore,
@@ -13,7 +14,11 @@ import {
 } from "@loom/plugin-crypto";
 import { describe, expect, it } from "vitest";
 import { LINEAGE_SENSITIVE_PATHS, registerLineageSensitivePaths } from "./events";
-import { LineErasedError, Lineage, type LineageResult } from "./lineage";
+import { LineErasedError, LineUnreadableError, Lineage, type LineageResult } from "./lineage";
+import { rootsFor } from "./rootsFor";
+import { SeenLog } from "./seen";
+import { InMemorySeenKeyStore } from "./seenCrypto";
+import { collectSeenGarbage } from "./seenGc";
 import {
   InMemoryLineageStore,
   LINEAGE_STREAM_PREFIX,
@@ -64,7 +69,8 @@ const stream = (id: string) => `${LINEAGE_STREAM_PREFIX}${id}`;
 
 /** Records every blob put (the bytes the RAW store would hold), and can corrupt reads. */
 class RawContent implements ContentStore {
-  readonly inner = new InMemoryContentStore();
+  readonly clock = { now: 0 };
+  readonly inner = new InMemoryContentStore({ now: () => this.clock.now });
   readonly puts: string[] = [];
   corrupt = false;
   async put(bytes: Uint8Array, _access?: ContentAccess): Promise<ContentRef> {
@@ -86,7 +92,7 @@ class RawContent implements ContentStore {
   }
 }
 
-function setup(owners: Record<string, string>) {
+function setup(owners: Record<string, string>, opts: { confirm?: boolean } = {}) {
   const keys = new InMemoryKeyStore();
   const subjectOf = (e: { executionId: string }): string =>
     owners[e.executionId.slice(LINEAGE_STREAM_PREFIX.length)] ?? e.executionId;
@@ -99,8 +105,13 @@ function setup(owners: Record<string, string>) {
     events: eventStoreLineageStore(events),
     content,
     now: () => T0,
+    // the host's confirmation: its KeyStore recorded the destruction of the owner's key
+    ...(opts.confirm !== false && {
+      confirmErased: async (id: string) =>
+        (await keys.wasDestroyed?.(subjectOf({ executionId: stream(id) }))) === true,
+    }),
   });
-  return { keys, raw, events, rawContent, content, lineage };
+  return { keys, raw, events, rawContent, content, lineage, subjectOf };
 }
 
 type World = ReturnType<typeof setup>;
@@ -279,22 +290,38 @@ describe("lineage erasure: after the owner's key is destroyed", () => {
     expect(findings.map((f) => f.code)).toEqual(["line-erased"]);
   });
 
-  it("the plain-value reads throw LineErasedError", async () => {
+  it("the plain-value reads skip a confirmed-erased line and throw LineUnreadableError when unconfirmed", async () => {
     const { w } = await erased();
-    const err = await w.lineage
+    // confirmed (the hook says so): skipped, nothing thrown
+    await w.lineage.forEachContentRef(() => undefined);
+    for await (const _ of w.lineage.pins()) void _;
+    // the same destroyed key WITHOUT a confirmation hook: refuse rather than guess
+    const u = setup({ "exp-ann": "user:ann" }, { confirm: false });
+    await writeAnn(u);
+    await u.keys.destroy("user:ann");
+    const err = await u.lineage
       .forEachContentRef(() => undefined)
       .then(
         () => undefined,
         (e: unknown) => e
       );
-    expect(err).toBeInstanceOf(LineErasedError);
-    expect((err as LineErasedError).code).toBe("line-erased");
-    expect(["exp-ann", "exp-ann-fork"]).toContain((err as LineErasedError).experienceId);
+    expect(err).toBeInstanceOf(LineUnreadableError);
+    expect((err as LineUnreadableError).code).toBe("line-unreadable");
+    expect((err as LineUnreadableError).experienceId).toBe("exp-ann");
     await expect(
       (async () => {
-        for await (const _ of w.lineage.pins()) void _;
+        for await (const _ of u.lineage.pins()) void _;
       })()
-    ).rejects.toBeInstanceOf(LineErasedError);
+    ).rejects.toBeInstanceOf(LineUnreadableError);
+    // the single-line read throws the confirmed class
+    const one = await w.lineage.block(
+      "exp-ann",
+      await w.events.read(stream("exp-ann")).then(
+        () => undefined,
+        (e: unknown) => e
+      )
+    );
+    expect(one).toBeInstanceOf(LineErasedError);
   });
 
   it("every write is refused typed", async () => {
@@ -471,8 +498,13 @@ describe("lineage erasure: blobs alone", () => {
     const content = new EncryptingContentStore(new InMemoryContentStore(), keys, {
       subjectOf: () => "user:ann",
     });
-    const events = new InMemoryLineageStore();
-    const l = new Lineage({ events, content, now: () => T0 });
+    const events = eventStoreLineageStore(new InMemoryAsyncEventStore());
+    const l = new Lineage({
+      events,
+      content,
+      now: () => T0,
+      confirmErased: async () => (await keys.wasDestroyed?.("user:ann")) === true,
+    });
     const start = ok(await l.start(g("e"), ANN));
     expect(ok(await l.head("e"))).toBe(start.version.versionHash);
     await keys.destroy("user:ann");
@@ -488,11 +520,10 @@ describe("lineage erasure: blobs alone", () => {
         by: ANN,
       })
     );
-    await expect(
-      (async () => {
-        for await (const _ of l.pins()) void _;
-      })()
-    ).rejects.toThrow(); // not enumerable on a plain store: refused, never guessed
+    // confirmed erased: the line contributes no roots, GC is not blocked
+    const roots: string[] = [];
+    for await (const a of l.pins()) roots.push(a);
+    expect(roots).toEqual([]);
   });
 });
 
@@ -501,14 +532,10 @@ describe("lineage erasure: negative control", () => {
     const w = setup({ "exp-ann": "user:ann" });
     const ann = await writeAnn(w);
     w.rawContent.corrupt = true;
-    const err = await w.lineage.get("exp-ann", ann.c1.version.versionHash).then(
-      () => undefined,
-      (e: unknown) => e
-    );
-    expect(err).toBeInstanceOf(Error);
-    expect(err).not.toBeInstanceOf(LineErasedError);
-    expect(isKeyUnavailable(err) || isPayloadShredded(err)).toBe(false);
-    expect((err as Error).name).toBe("ContentUndecryptableError");
+    // typed, but never an erasure: the key is present and nothing was confirmed erased
+    const r = await w.lineage.get("exp-ann", ann.c1.version.versionHash);
+    expect(codeOf(r)).toBe("artifact-unsealed");
+    expect(codeOf(r)).not.toBe("line-erased");
   });
 
   it("a corrupted sealed event with the key PRESENT propagates its own error, not an erasure", async () => {
@@ -538,5 +565,287 @@ describe("lineage erasure: negative control", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err).not.toBeInstanceOf(LineErasedError);
     expect(isKeyUnavailable(err) || isPayloadShredded(err)).toBe(false);
+  });
+});
+
+// ── confirmed erasure vs an unreadable line ───────────────────────────────────────────────────────
+const DAY = 24 * 60 * 60 * 1000;
+const NOW = 100 * DAY;
+
+async function twoOwners(confirm: boolean) {
+  const w = setup({ "exp-ann": "user:ann", "exp-bob": "user:bob" }, { confirm });
+  w.rawContent.clock.now = NOW - 60 * DAY;
+  const ann = await writeAnn(w);
+  const l = w.lineage;
+  const bs = ok(await l.start(g("exp-bob"), BOB));
+  const b1 = ok(
+    await l.compose({
+      experienceId: "exp-bob",
+      expectedHead: bs.version.versionHash,
+      ops: [
+        rec({ type: "insertNode", parentId: "root", node: node("b1", { note: BOB_SECRET }) }, BOB),
+      ],
+      by: BOB,
+    })
+  );
+  const refs = async (id: string) =>
+    ok(await l.versions(id)).map((v) => (v.ref as ContentRef).__loomContent);
+  const annRefs = await refs("exp-ann");
+  const bobRefs = await refs("exp-bob");
+  w.rawContent.clock.now = NOW;
+  const sweep = () =>
+    sweepUnpinnedContent({
+      eventStores: [],
+      contentStore: w.rawContent.inner,
+      pinnedEventTypes: [],
+      olderThanMs: 30 * DAY,
+      now: NOW,
+      roots: () => rootsFor({ lineages: [{ lineage: l }] }),
+      reclaimOrphans: { completeScan: true },
+    });
+  const present = async (a: string) =>
+    (await w.rawContent.inner.get({ __loomContent: a })) !== null;
+  return { w, ann, b1, annRefs, bobRefs, sweep, present };
+}
+
+describe("lineage erasure: GC liveness", () => {
+  it("a CONFIRMED-erased line contributes no roots: Bob stays rooted and Ann's blobs are reclaimed", async () => {
+    const t = await twoOwners(true);
+    await t.w.keys.destroy("user:ann");
+    const roots = new Set<string>();
+    for await (const a of rootsFor({ lineages: [{ lineage: t.w.lineage }] })) roots.add(a);
+    for (const a of t.bobRefs) expect(roots.has(a)).toBe(true);
+    for (const a of t.annRefs) expect(roots.has(a)).toBe(false);
+    await t.sweep();
+    for (const a of t.annRefs) expect(await t.present(a)).toBe(false);
+    for (const a of t.bobRefs) expect(await t.present(a)).toBe(true);
+    // Bob is still fully readable after the sweep
+    expect(JSON.stringify(ok(await t.w.lineage.resolveLatest("exp-bob")))).toContain(BOB_SECRET);
+    // forEachContentRef skips the erased line as well
+    const seen: string[] = [];
+    await t.w.lineage.forEachContentRef((a) => seen.push(a));
+    for (const a of t.annRefs) expect(seen).not.toContain(a);
+  });
+
+  it("an unreadable line that is NOT confirmed erased still makes GC refuse", async () => {
+    const t = await twoOwners(false);
+    await t.w.keys.destroy("user:ann");
+    await expect(
+      (async () => {
+        for await (const _ of rootsFor({ lineages: [{ lineage: t.w.lineage }] })) void _;
+      })()
+    ).rejects.toBeInstanceOf(LineUnreadableError);
+    await expect(t.sweep()).rejects.toBeInstanceOf(LineUnreadableError);
+    for (const a of t.annRefs) expect(await t.present(a)).toBe(true); // nothing was deleted
+  });
+
+  it("collectSeenGarbage proceeds past a confirmed erasure and refuses an unconfirmed one", async () => {
+    for (const confirm of [true, false]) {
+      const t = await twoOwners(confirm);
+      await t.w.keys.destroy("user:ann");
+      const content = new InMemoryContentStore({ now: () => NOW });
+      const log = new SeenLog({
+        events: new InMemoryLineageStore(),
+        content,
+        lineage: t.w.lineage,
+        keys: new InMemorySeenKeyStore(),
+      });
+      const r = await collectSeenGarbage(log, { graceMs: 1000, ownsContentStore: true });
+      if (confirm) expect(r.ok).toBe(true);
+      else {
+        expect(r.ok).toBe(false);
+        expect(!r.ok && r.refusal.code).toBe("gc-roots-unavailable");
+      }
+    }
+  });
+
+  it("Bob's branch from Ann verifies with a branch-source-erased warn, before and after the sweep", async () => {
+    const t = await twoOwners(true);
+    const l = t.w.lineage;
+    ok(
+      await l.branch({
+        from: { experienceId: "exp-ann", versionHash: t.ann.c1.version.versionHash },
+        experienceId: "exp-fork",
+        by: BOB,
+      })
+    );
+    await t.w.keys.destroy("user:ann");
+    const codes = async () => (await l.verify("exp-fork")).map((f) => `${f.code}:${f.severity}`);
+    expect(await codes()).toEqual(["branch-source-erased:warn"]);
+    await t.sweep();
+    expect(await codes()).toEqual(["branch-source-erased:warn"]);
+  });
+
+  it("a confirmed-erased source whose EVENTS were deleted too still reads as branch-source-erased", async () => {
+    const t = await twoOwners(true);
+    const l = t.w.lineage;
+    ok(
+      await l.branch({
+        from: { experienceId: "exp-ann", versionHash: t.ann.c1.version.versionHash },
+        experienceId: "exp-fork",
+        by: BOB,
+      })
+    );
+    await t.w.keys.destroy("user:ann");
+    const real = t.w.raw.read.bind(t.w.raw);
+    t.w.raw.read = (async (id: string, ...rest: unknown[]) =>
+      id === stream("exp-ann")
+        ? []
+        : (real as (...a: unknown[]) => unknown)(id, ...rest)) as typeof t.w.raw.read;
+    const findings = await l.verify("exp-fork");
+    expect(findings.map((f) => `${f.code}:${f.severity}`)).toEqual(["branch-source-erased:warn"]);
+  });
+});
+
+describe("lineage erasure: unreadable is not erased", () => {
+  const tamper = (w: World) => {
+    const real = w.raw.read.bind(w.raw);
+    w.raw.read = (async (id: string) =>
+      (await real(id)).map((e) => {
+        const by = (e.payload as { by: { data: string } }).by;
+        return {
+          ...e,
+          payload: {
+            ...(e.payload as object),
+            by: { ...by, data: `${by.data.slice(0, 6)}AAAA${by.data.slice(10)}` },
+          },
+        };
+      })) as typeof w.raw.read;
+  };
+
+  it("without a confirmation hook a destroyed key is line-unreadable, never line-erased", async () => {
+    const w = setup({ "exp-ann": "user:ann" }, { confirm: false });
+    await writeAnn(w);
+    await w.keys.destroy("user:ann");
+    const r = await w.lineage.head("exp-ann");
+    expect(codeOf(r)).toBe("line-unreadable");
+    expect((await w.lineage.verify("exp-ann")).map((f) => f.code)).toEqual(["line-unreadable"]);
+    expect(codeOf(await w.lineage.start(g("exp-ann"), ANN))).toBe("line-unreadable");
+  });
+
+  it("a tampered sealed event (key present) is line-unreadable even with the hook; a branch over it errors", async () => {
+    const w = setup({ "exp-ann": "user:ann", "exp-bob": "user:bob" });
+    const ann = await writeAnn(w);
+    ok(
+      await w.lineage.branch({
+        from: { experienceId: "exp-ann", versionHash: ann.c1.version.versionHash },
+        experienceId: "exp-bob",
+        by: BOB,
+      })
+    );
+    const realRead = w.raw.read.bind(w.raw);
+    tamper(w);
+    const annOnly = w.raw.read.bind(w.raw);
+    w.raw.read = (async (id: string) =>
+      id === stream("exp-ann") ? annOnly(id) : realRead(id)) as typeof w.raw.read;
+    expect(codeOf(await w.lineage.head("exp-ann"))).toBe("line-unreadable");
+    const f = await w.lineage.verify("exp-bob");
+    expect(f.some((x) => x.severity === "error" && x.code === "line-unreadable")).toBe(true);
+    expect(f.some((x) => x.code === "branch-source-erased")).toBe(false);
+  });
+
+  it("a drifted subjectOf is line-unreadable, never line-erased", async () => {
+    const keys = new InMemoryKeyStore();
+    let subj = "user:ann";
+    const subjectOf = () => subj;
+    const raw = new InMemoryAsyncEventStore();
+    const ee = new EncryptingEventStore(raw, keys, { sensitive: {}, subjectOf });
+    registerLineageSensitivePaths(ee);
+    const l = new Lineage({
+      events: eventStoreLineageStore(ee),
+      content: new EncryptingContentStore(new InMemoryContentStore(), keys, { subjectOf }),
+      now: () => T0,
+      confirmErased: async () => (await keys.wasDestroyed?.(subj)) === true,
+    });
+    ok(await l.start(g("x"), ANN));
+    await keys.getOrCreate("user:other");
+    subj = "user:other";
+    expect(codeOf(await l.head("x"))).toBe("line-unreadable");
+    expect((await l.verify("x")).map((f) => f.code)).toEqual(["line-unreadable"]);
+  });
+
+  it("a plaintext line opened through a sealing store is typed, with a distinct code, never erased", async () => {
+    const inner = new InMemoryContentStore();
+    const evs = new InMemoryAsyncEventStore();
+    const plain = new Lineage({
+      events: eventStoreLineageStore(evs),
+      content: inner,
+      now: () => T0,
+    });
+    const start = ok(await plain.start(g("old"), ANN));
+    const keys = new InMemoryKeyStore();
+    const subjectOf = () => "user:ann";
+    const ee = new EncryptingEventStore(evs, keys, { sensitive: {}, subjectOf });
+    registerLineageSensitivePaths(ee);
+    const sealed = new Lineage({
+      events: eventStoreLineageStore(ee),
+      content: new EncryptingContentStore(inner, keys, { subjectOf }),
+      now: () => T0,
+      confirmErased: async () => (await keys.wasDestroyed?.("user:ann")) === true,
+    });
+    // key present (minted by a write elsewhere): the plaintext blob does not open
+    await keys.getOrCreate("user:ann");
+    expect(codeOf(await sealed.resolveLatest("old"))).toBe("artifact-unsealed");
+    expect((await sealed.verify("old")).map((f) => f.code)).toEqual(["artifact-unsealed"]);
+    // no key at all: unreadable, still not erased (nothing was destroyed)
+    const bare = new InMemoryKeyStore();
+    const noKey = new Lineage({
+      events: eventStoreLineageStore(evs),
+      content: new EncryptingContentStore(inner, bare, { subjectOf }),
+      now: () => T0,
+      confirmErased: async () => (await bare.wasDestroyed?.("user:ann")) === true,
+    });
+    const r = await noKey.resolveLatest("old");
+    expect(codeOf(r)).not.toBe("line-erased");
+    expect(["line-unreadable", "artifact-unsealed"]).toContain(codeOf(r));
+    void start;
+  });
+});
+
+describe("lineage erasure: construction and write races", () => {
+  it("fails closed at construction when the content store seals but the events store has no prefix", () => {
+    const content = new EncryptingContentStore(new InMemoryContentStore(), new InMemoryKeyStore(), {
+      subjectOf: () => "user:ann",
+    });
+    expect(() => new Lineage({ events: new InMemoryLineageStore(), content })).toThrow(
+      /sealsContent|streamPrefix/
+    );
+    expect(
+      () => new Lineage({ events: eventStoreLineageStore(new InMemoryAsyncEventStore()), content })
+    ).not.toThrow();
+  });
+
+  it("a key destroyed between state() and append returns the typed refusal, not the key store's error", async () => {
+    const w = setup({ "exp-ann": "user:ann" });
+    const ann = await writeAnn(w);
+    const store = w.events as unknown as { append: (...a: unknown[]) => Promise<unknown> };
+    store.append = async (...a: unknown[]) => {
+      await w.keys.destroy("user:ann");
+      throw new Error("key store: subject destroyed"); // untyped, as a key store may raise it
+    };
+    const r = await w.lineage.compose({
+      experienceId: "exp-ann",
+      expectedHead: ann.rev.version.versionHash,
+      ops: [rec({ type: "setLabel", nodeId: "n1", label: null }, ANN)],
+      by: ANN,
+    });
+    erasedRefusal(r);
+  });
+
+  it("an append failure on a still-readable line rethrows", async () => {
+    const w = setup({ "exp-ann": "user:ann" });
+    const ann = await writeAnn(w);
+    const store = w.events as unknown as { append: (...a: unknown[]) => Promise<unknown> };
+    store.append = async () => {
+      throw new Error("disk full");
+    };
+    await expect(
+      w.lineage.compose({
+        experienceId: "exp-ann",
+        expectedHead: ann.rev.version.versionHash,
+        ops: [rec({ type: "setLabel", nodeId: "n1", label: null }, ANN)],
+        by: ANN,
+      })
+    ).rejects.toThrow("disk full");
   });
 });

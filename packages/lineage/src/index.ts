@@ -1,5 +1,5 @@
-export { LineErasedError, Lineage } from "./lineage";
-export type { PinsExtra } from "./lineage";
+export { LineErasedError, LineUnreadableError, Lineage, classifyLineFailure } from "./lineage";
+export type { LineBlockedError, PinsExtra } from "./lineage";
 export type {
   Committed,
   HeadMoved,
