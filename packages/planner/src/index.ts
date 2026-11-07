@@ -27,7 +27,7 @@ export type {
   PlanDraft,
   StructureIssue,
 } from "./contract";
-export { planDecisionId } from "./decision";
+export { MIN_DECISION_KEY_BYTES, type PlanDecisionIdOptions, planDecisionId } from "./decision";
 export {
   driftCapabilities,
   driftContext,

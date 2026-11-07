@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type { ContainerRoleSpec, Surface } from "@loom-ui/core";
 import { canonicalJson, fnv1a64 } from "@loom/core";
 import type { CapabilityRef, ComposeInput, ReviseInput } from "./spi";
@@ -34,6 +35,30 @@ const catalogKey = (catalog: { id: string; entries: unknown }) => ({
   entries: fnv1a64(canonicalJson(catalog.entries)),
 });
 
+/** The shortest decision key accepted, in bytes (a string is measured as UTF-8). */
+export const MIN_DECISION_KEY_BYTES = 32;
+
+/** Options of {@link planDecisionId}. */
+export interface PlanDecisionIdOptions {
+  /**
+   * A host secret of at least {@link MIN_DECISION_KEY_BYTES} bytes. Set: the id is
+   * `plan:<kind>:k:<32 hex of HMAC-SHA-256>`. Unset: the unkeyed `plan:<kind>:<16 hex of FNV-1a>`
+   * id, byte-for-byte what every earlier version produced.
+   */
+  readonly key?: Uint8Array | string;
+}
+
+/** Validates a decision key and returns its bytes; throws on one shorter than the minimum. */
+export function decisionKeyBytes(key: Uint8Array | string): Uint8Array {
+  const bytes = typeof key === "string" ? new TextEncoder().encode(key) : key;
+  if (bytes.byteLength < MIN_DECISION_KEY_BYTES) {
+    throw new Error(
+      `decisionKey must be at least ${MIN_DECISION_KEY_BYTES} bytes (got ${bytes.byteLength}); a shorter secret can be brute-forced from a logged decision id`
+    );
+  }
+  return bytes;
+}
+
 export function planDecisionId(
   kind: "compose",
   input: Pick<ComposeInput, "intent" | "catalog" | "capabilities"> & {
@@ -43,7 +68,8 @@ export function planDecisionId(
     containers?: readonly ContainerRoleSpec[];
     /** The planner variant (U11, `variantKey`); keyed only when there is one. */
     variant?: string;
-  }
+  },
+  options?: PlanDecisionIdOptions
 ): string;
 export function planDecisionId(
   kind: "revise",
@@ -60,9 +86,14 @@ export function planDecisionId(
     containers?: readonly ContainerRoleSpec[];
     /** The planner variant (U11, `variantKey`); keyed only when there is one. */
     variant?: string;
-  }
+  },
+  options?: PlanDecisionIdOptions
 ): string;
-export function planDecisionId(kind: "compose" | "revise", input: Record<string, unknown>): string {
+export function planDecisionId(
+  kind: "compose" | "revise",
+  input: Record<string, unknown>,
+  options?: PlanDecisionIdOptions
+): string {
   const surface = (input.surface as Surface | undefined) ?? "web";
   const catalog = input.catalog as ReviseInput["catalog"] | undefined;
   // The roles shape the prompt and the contract, so they key the decision — but only when offered,
@@ -98,5 +129,13 @@ export function planDecisionId(kind: "compose" | "revise", input: Record<string,
               observedHandles: [...(input.observedHandles as readonly string[])].sort(),
             }),
         };
-  return `plan:${kind}:${fnv1a64(canonicalJson(key))}`;
+  if (options?.key === undefined) return `plan:${kind}:${fnv1a64(canonicalJson(key))}`;
+  // 32 hex = 128 bits of HMAC-SHA-256: far past birthday-collision range for any log, and the
+  // truncation leaks nothing the full tag would not. The `k:` marker keeps a keyed id from ever
+  // equalling (or being read as) an unkeyed one, whose digest is 16 hex.
+  const tag = createHmac("sha256", decisionKeyBytes(options.key))
+    .update(canonicalJson(key))
+    .digest("hex")
+    .slice(0, 32);
+  return `plan:${kind}:k:${tag}`;
 }
