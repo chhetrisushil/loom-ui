@@ -545,9 +545,12 @@ export class Lineage {
       const fold = foldLineage(id, records);
       if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
       const { keep } = retainedVersions(fold.state, policy, kept.get(id));
-      // This line's roots are gathered locally and emitted only once its artifacts read: a line whose
-      // erasure is confirmed (events readable, blobs gone) must contribute NO roots at all.
+      // This line's roots are gathered locally and emitted once its artifacts read. If its blobs turn
+      // out to be confirmed erased (events readable, blobs gone), only its OWN version artifacts are
+      // dropped (they are the erased ciphertext, reclaimable by design); every other address its
+      // plain events cite (a shared blob an op points at) stays rooted, which is the conservative side.
       const lineRoots: string[] = [];
+      const ownArtifacts = new Set<string>();
       for (const rec of records) {
         const p = rec.payload as {
           ref?: { __loomContent?: unknown };
@@ -556,6 +559,7 @@ export class Lineage {
         // The artifact ref of a version event is pinned only if its version is retained.
         const artifact =
           typeof p?.ref?.__loomContent === "string" ? p.ref.__loomContent : undefined;
+        if (artifact !== undefined) ownArtifacts.add(artifact);
         // (a PROMOTED event cites the same artifact; it counts as a citation of that version too)
         const droppedVersion = typeof p?.versionHash === "string" && !keep.has(p.versionHash);
         walkContentRefs(rec.payload, (a) => {
@@ -571,8 +575,13 @@ export class Lineage {
         const v = fold.state.versions.get(h);
         if (v === undefined) continue;
         const ref = v.ref as ContentRef;
-        if (walked.has(ref.__loomContent)) continue;
-        walked.add(ref.__loomContent);
+        // Marked walked only once this line's reads succeed (below): a line skipped as erased must not
+        // stop a later line that cites the same address from walking it.
+        if (
+          walked.has(ref.__loomContent) ||
+          toWalk.some((r) => r.__loomContent === ref.__loomContent)
+        )
+          continue;
         toWalk.push(ref);
       }
       let arts: (Experience | undefined)[];
@@ -591,9 +600,13 @@ export class Lineage {
           );
         });
       } catch (err) {
-        if (err instanceof LineErasedError) continue; // confirmed erased: no roots from this line
-        throw err;
+        if (!(err instanceof LineErasedError)) throw err;
+        // Confirmed erased: drop this line's own artifacts, keep what its events cite elsewhere.
+        for (const a of lineRoots) if (!ownArtifacts.has(a)) emit(a);
+        while (pending.length > 0) yield pending.shift() as string;
+        continue;
       }
+      for (const ref of toWalk) walked.add(ref.__loomContent);
       for (const a of lineRoots) emit(a);
       for (const exp of arts) if (exp !== undefined) walkContentRefs(exp, emit);
       while (pending.length > 0) yield pending.shift() as string;
