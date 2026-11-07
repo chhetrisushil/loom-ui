@@ -89,7 +89,7 @@ per-operation list is in the [composition reference](../reference/composition.md
 | A change feed handler runs again for an event | Delivery is at-least-once. Dedupe on the event `id`. |
 | `summary-withheld` from a planner | A capability carries a `sampleOutput` but no `sensitivity`, and no `contextClass` was declared. Declare one. |
 | `prompt-replay-mismatch` from the conformance kit | A planner's `prompt` op does not replay to the artifact its materialised primitives produce. |
-| A replay calls the model again | The decision inputs are unstable (a clock, a random id, an unordered collection). Compare `planDecisionId` between runs. |
+| A replay calls the model again | The decision inputs are unstable (a clock, a random id, an unordered collection), or the planner's `decisionKey` changed (rotated, lost, added, or a string key re-spelled in another Unicode normalisation form). Compare `planDecisionId` between runs, passing `{ key }` when the planner has a key (without it the ids never match a keyed log). A key change while executions were in flight re-plans them live, possibly to a different plan; drain executions before changing it. |
 | `capability-unsampled` | The planner may not bind a tool that has no `sampleOutput`; supply one. |
 
 ## Renderers
