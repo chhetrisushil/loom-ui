@@ -29,7 +29,7 @@ import {
   planSchema,
 } from "./contract";
 import { isControlPlaneError } from "./controlPlane";
-import { planDecisionId } from "./decision";
+import { type PlanDecisionIdOptions, decisionKeyBytes, planDecisionId } from "./decision";
 import { materialize } from "./materialize";
 import { type PreviousError, composeMessages, reviseMessages } from "./prompt";
 import { type PlannerReach, declarePlannerReach } from "./reach";
@@ -97,6 +97,25 @@ export interface ReferencePlannerOptions {
    * exactly the planner as it was, with no extra decision.
    */
   readonly variants?: PlanVariants;
+  /**
+   * A host secret (at least 32 bytes; a string counts as UTF-8) that keys every plan decision id
+   * with HMAC-SHA-256 (`plan:<kind>:k:<hex>`) instead of an unkeyed hash.
+   *
+   * WHY: the id is recorded as `DECISION_RECORDED.decisionId` in PLAINTEXT, and it survives a
+   * crypto-shred of the owner's key. It is derived from the intent, the caller's context, a
+   * revise's request and the catalogue, so the unkeyed default is a guess-and-confirm oracle after
+   * erasure: hash a guessed intent and compare it with the log. For a low-entropy intent that
+   * guess is cheap. A keyed id is useless without the secret.
+   *
+   * THE KEY IS AS DURABLE AS THE LOG. The same key gives the same id for the same input, which is
+   * what makes a replay serve the recorded decision. Lose or rotate it and decisions recorded under
+   * the old key no longer match: the planner re-decides (a NEW model call, recorded under a new id)
+   * instead of serving the old answer. Do NOT use the KeyStore's per-subject keys: those are
+   * destroyed at erasure, which would also orphan the decisions of everyone not erased.
+   * Omitted = the unkeyed id, byte-for-byte as before, so existing logs keep replaying; switching
+   * an existing log to a key has the same re-decide effect for its old decisions.
+   */
+  readonly decisionKey?: Uint8Array | string;
 }
 
 /** Ops are id-based and every genesis has the same root, so validation can run against a scratch lineage. */
@@ -148,6 +167,13 @@ export class ReferencePlanner implements Planner {
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
     if (opts.reach !== undefined) declarePlannerReach(this, opts.reach);
     if (opts.variants !== undefined) assertVariants(opts.variants);
+    // Refuse a short key now, not on the first turn.
+    if (opts.decisionKey !== undefined) decisionKeyBytes(opts.decisionKey);
+  }
+
+  /** The decision id options: the planner's key, when it has one. */
+  private idOptions(): PlanDecisionIdOptions {
+    return this.opts.decisionKey === undefined ? {} : { key: this.opts.decisionKey };
   }
 
   /**
@@ -326,7 +352,7 @@ export class ReferencePlanner implements Planner {
     if (this.opts.variants !== undefined) {
       const chosen = await this.chooseVariant(
         "compose",
-        planDecisionId("compose", input),
+        planDecisionId("compose", input, this.idOptions()),
         input.unit,
         input.catalog.id,
         ctx
@@ -335,10 +361,14 @@ export class ReferencePlanner implements Planner {
       variant = chosen.chosen;
       effective = withVariant(input, variant.variant);
     }
-    const decisionId = planDecisionId("compose", {
-      ...effective,
-      ...(variant !== undefined && { variant: variantKey(variant.id, variant.variant) }),
-    });
+    const decisionId = planDecisionId(
+      "compose",
+      {
+        ...effective,
+        ...(variant !== undefined && { variant: variantKey(variant.id, variant.variant) }),
+      },
+      this.idOptions()
+    );
     const result = await ctx.decide(
       decisionId,
       (scope) =>
@@ -374,17 +404,21 @@ export class ReferencePlanner implements Planner {
     stream: PlanStreamOptions = {}
   ): Promise<PlanResult> {
     const keyOf = (variant?: string) =>
-      planDecisionId("revise", {
-        versionHash: input.experience.versionHash,
-        request: input.request,
-        catalog: input.catalog,
-        capabilities: input.capabilities,
-        ...(input.context !== undefined && { context: input.context }),
-        ...(input.surface !== undefined && { surface: input.surface }),
-        ...(input.containers !== undefined && { containers: input.containers }),
-        ...(input.observed !== undefined && { observedHandles: Object.keys(input.observed) }),
-        ...(variant !== undefined && { variant }),
-      });
+      planDecisionId(
+        "revise",
+        {
+          versionHash: input.experience.versionHash,
+          request: input.request,
+          catalog: input.catalog,
+          capabilities: input.capabilities,
+          ...(input.context !== undefined && { context: input.context }),
+          ...(input.surface !== undefined && { surface: input.surface }),
+          ...(input.containers !== undefined && { containers: input.containers }),
+          ...(input.observed !== undefined && { observedHandles: Object.keys(input.observed) }),
+          ...(variant !== undefined && { variant }),
+        },
+        this.idOptions()
+      );
     const baseId = keyOf();
     if (input.experience.versionHash === "") {
       const report: PlanReport = {

@@ -142,6 +142,17 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   then reports the hand-off as unresolved, which is honest; a partial guess would not be. The
   declaration is attached structurally under `Symbol.for("loom.verify.reach")` (non-enumerable, a
   copy), with no dependency on `@loom/verify`.
+- `decisionKey?: Uint8Array | string` — a host secret (at least 32 bytes, refused at construction
+  otherwise) that keys every plan decision id with HMAC-SHA-256: `plan:<kind>:k:<32 hex>`. **Why:**
+  the id is recorded in PLAINTEXT as `DECISION_RECORDED.decisionId` and survives a crypto-shred of
+  the owner's key; the unkeyed default hashes the intent, context, revise request and catalogue
+  with a fast non-secret hash, so after erasure anyone can hash a guessed (low-entropy) intent and
+  compare it with the log. Unset = the unkeyed id, byte-for-byte as before (existing logs replay).
+  **Keep the key as durable as the log**: the same key gives the same id, which is how a replay
+  serves the recorded decision. Lose or rotate it (or switch an existing log to a key) and old
+  decisions no longer match: the planner re-decides, with a NEW model call recorded under a new id,
+  rather than serving the old answer. Never reuse the KeyStore's per-subject keys; erasure destroys
+  those. `planDecisionId(kind, input, { key })` takes the same option.
 - `declarePlannerReach(target, reach)` / `readPlannerReach(value)` / `REACH_DECLARATION` — the same
   attachment for a custom `Planner` (or any object a flow hands `ctx` to).
 - `REFERENCE_POLICY`, `REFERENCE_SOURCE` — the fixed `{ id, version }` policy stamp and decision
