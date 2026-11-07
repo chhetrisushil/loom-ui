@@ -525,6 +525,49 @@ describe("lineage erasure: blobs alone", () => {
     for await (const a of l.pins()) roots.push(a);
     expect(roots).toEqual([]);
   });
+
+  it("blobs erased, events plain: the line's own artifacts are dropped, a shared blob its ops cite stays rooted", async () => {
+    // The conservative side of the asymmetry: an address the plain events cite OUTSIDE the line's
+    // own artifacts may belong to someone else, so erasing this line's blobs must not unroot it.
+    const keys = new InMemoryKeyStore();
+    const content = new EncryptingContentStore(new InMemoryContentStore(), keys, {
+      subjectOf: () => "user:ann",
+    });
+    const events = eventStoreLineageStore(new InMemoryAsyncEventStore());
+    const l = new Lineage({
+      events,
+      content,
+      now: () => T0,
+      confirmErased: async () => (await keys.wasDestroyed?.("user:ann")) === true,
+    });
+    const SHARED = "shared-blob-address";
+    const start = ok(await l.start(g("e"), ANN));
+    const c1 = ok(
+      await l.compose({
+        experienceId: "e",
+        expectedHead: start.version.versionHash,
+        ops: [
+          rec(
+            {
+              type: "insertNode",
+              parentId: "root",
+              node: node("n", { image: { __loomContent: SHARED } }),
+            },
+            ANN
+          ),
+        ],
+        by: ANN,
+      })
+    );
+    const own = [start.version.ref, c1.version.ref].map(
+      (r) => (r as { __loomContent: string }).__loomContent
+    );
+    await keys.destroy("user:ann");
+    const roots: string[] = [];
+    for await (const a of l.pins()) roots.push(a);
+    expect(roots).toContain(SHARED);
+    for (const a of own) expect(roots).not.toContain(a);
+  });
 });
 
 describe("lineage erasure: negative control", () => {
