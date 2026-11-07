@@ -127,7 +127,9 @@ export class InMemoryLineageStore implements LineageStore {
 
 /** The reserved-stream namespace a lineage's events live under in an `EventStore`. */
 export const LINEAGE_STREAM_PREFIX = "__loom_ui_lineage__:";
-const WORKFLOW_ID = "loom-ui.lineage";
+/** The `workflowId` a lineage event is written under unless `eventStoreLineageStore` is given another. */
+export const LINEAGE_WORKFLOW_ID = "loom-ui.lineage";
+const WORKFLOW_ID = LINEAGE_WORKFLOW_ID;
 
 /** Every stream prefix this package may write under; the kernel's own reserved prefixes are not ours. */
 export const LOOM_UI_STREAM_NAMESPACE = "__loom_ui_";
@@ -136,6 +138,11 @@ const WORKFLOW_ID_SHAPE = /^[A-Za-z0-9._:-]{1,128}$/;
 /** A `LineageStore` that knows which stream prefix it writes under (see {@link eventStoreLineageStore}). */
 export interface PrefixedLineageStore extends LineageStore {
   readonly streamPrefix: string;
+  /**
+   * The `workflowId` its events are written under. A `Lineage` passes it, with the stream id, as the
+   * `ContentAccess` of every artifact blob, so one host `subjectOf` covers events and blobs alike.
+   */
+  readonly workflowId?: string;
 }
 
 /**
@@ -171,6 +178,7 @@ export function eventStoreLineageStore(
   const streamOf = (experienceId: string) => `${prefix}${experienceId}`;
   return {
     streamPrefix: prefix,
+    workflowId,
     async append(experienceId, expectedSequence, record) {
       const executionId = streamOf(experienceId);
       const tip = (await headOf(store, executionId)) ?? 0;

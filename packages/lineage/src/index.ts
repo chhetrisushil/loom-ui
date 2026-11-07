@@ -1,4 +1,4 @@
-export { Lineage } from "./lineage";
+export { LineErasedError, Lineage } from "./lineage";
 export type { PinsExtra } from "./lineage";
 export type {
   Committed,
@@ -18,8 +18,10 @@ export {
   EXPERIENCE_COMPOSED,
   EXPERIENCE_PROMOTED,
   EXPERIENCE_REVERTED,
+  LINEAGE_SENSITIVE_PATHS,
   PromotedPayload,
   RevertedPayload,
+  registerLineageSensitivePaths,
 } from "./events";
 export type { LineageEventType, SummaryClass } from "./events";
 export { foldLineage } from "./state";
@@ -27,6 +29,7 @@ export type { Fold, LineageState, VersionKind, VersionRecord } from "./state";
 export {
   InMemoryLineageStore,
   LINEAGE_STREAM_PREFIX,
+  LINEAGE_WORKFLOW_ID,
   LOOM_UI_STREAM_NAMESPACE,
   eventStoreLineageStore,
 } from "./store";
