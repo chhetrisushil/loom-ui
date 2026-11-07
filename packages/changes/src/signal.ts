@@ -1,7 +1,7 @@
 import type { HeadChange, HeadSignal } from "@loom-ui/core";
-import { type LineageStore, foldLineage } from "@loom-ui/lineage";
+import { LineErasedError, type LineageStore, foldLineage } from "@loom-ui/lineage";
 import { LINEAGE_STREAM_PREFIX } from "@loom-ui/lineage";
-import type { EventStore } from "@loom/event-runtime";
+import { type EventStore, isKeyUnavailable, isPayloadShredded } from "@loom/event-runtime";
 
 // ── Head signals: how a reader learns "this experience moved" ─────────────────
 // Two implementations of core's `HeadSignal`, sharing one check: read the line, and if its tip is
@@ -71,7 +71,12 @@ function checker(
         }
       } while (rerun && !stopped);
     } catch (e) {
-      fail(e);
+      // an erased line reports a typed LineErasedError; anything else is reported unchanged
+      fail(
+        isKeyUnavailable(e) || isPayloadShredded(e)
+          ? new LineErasedError(experienceId, { cause: e })
+          : e
+      );
     } finally {
       busy = false;
     }
