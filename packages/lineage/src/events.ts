@@ -94,3 +94,32 @@ export const PAYLOAD_SCHEMAS = {
 
 export const isLineageEventType = (t: string): t is LineageEventType =>
   Object.hasOwn(PAYLOAD_SCHEMAS, t);
+
+/**
+ * The payload paths that carry host or model TEXT, per event type: the op props and labels, the
+ * author's `summary` and the `by` provenance (a user's own words and ids). These are what a host
+ * seals under its owner's key so erasing the owner makes the line unreadable
+ * (`registerLineageSensitivePaths`). Everything else on an event is an identifier (`experienceId`,
+ * `versionHash`, `ref`, `parents`, `from`, `carriedFrom`, `revertedTo`) or a class
+ * (`summaryClass`), and stays plain so the log's structure survives the key.
+ *
+ * `ops` is one path: it covers every nested op's `by`, props, labels and prompt text.
+ */
+export const LINEAGE_SENSITIVE_PATHS: Readonly<Record<LineageEventType, readonly string[]>> = {
+  [EXPERIENCE_COMPOSED]: ["ops", "summary", "by"],
+  [EXPERIENCE_REVERTED]: ["by"],
+  [EXPERIENCE_BRANCHED]: ["by"],
+  [EXPERIENCE_PROMOTED]: ["by"],
+};
+
+/**
+ * Register {@link LINEAGE_SENSITIVE_PATHS} on a crypto event store (`EncryptingEventStore`'s
+ * `registerSensitive`). Call it once at composition, before the first lineage write: what was
+ * written before stays plaintext.
+ */
+export function registerLineageSensitivePaths(store: {
+  registerSensitive(eventType: string, paths: readonly string[]): void;
+}): void {
+  for (const [type, paths] of Object.entries(LINEAGE_SENSITIVE_PATHS))
+    store.registerSensitive(type, paths);
+}

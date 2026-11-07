@@ -1,5 +1,6 @@
 import { canonicalJson } from "@loom/core";
 import {
+  type ContentAccess,
   type ContentRef,
   type ContentStore,
   contentAddress,
@@ -72,7 +73,8 @@ const reason = (err: unknown): string => (err instanceof Error ? err.message : S
 
 export async function putExperience(
   store: ContentStore,
-  exp: Experience
+  exp: Experience,
+  access?: ContentAccess
 ): Promise<
   { ok: true; experience: Experience; ref: ContentRef } | { ok: false; finding: Finding }
 > {
@@ -91,15 +93,16 @@ export async function putExperience(
   // address, so it must not depend on the key order the experience happened to arrive in (e.g.
   // from a store that reorders keys, such as a JSONB column). `getExperience` reads any key
   // order, so blobs written by the older insertion-order encoding remain readable.
-  const ref = await store.put(bytes);
+  const ref = await store.put(bytes, access);
   return { ok: true, experience, ref };
 }
 
 export async function getExperience(
   store: ContentStore,
-  ref: ContentRef
+  ref: ContentRef,
+  access?: ContentAccess
 ): Promise<{ ok: true; experience: Experience } | { ok: false; finding: Finding }> {
-  const bytes = await store.get(ref);
+  const bytes = await store.get(ref, access);
   if (!bytes)
     return {
       ok: false,

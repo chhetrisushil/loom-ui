@@ -190,13 +190,44 @@ different line from then on.
 
 **Reserved stream namespace.** `eventStoreLineageStore` writes `__loom_ui_lineage__:<experienceId>`,
 inside loom's `RESERVED_STREAM_PREFIX` (`__loom_`), so enumerators of real executions skip lineage
-streams (a prefix outside it would be mistaken for an execution). Consequences: loom's
-`shredSubject` throws for `__loom_*` ids, so a lineage stream CANNOT be crypto-shred tombstoned, yet
-events carry `by` provenance and op payloads (props, labels). Hosts must not put personal data in
-props, labels or `by`; if one did, the only erasure is to delete the line's events and blobs in the
-store itself (a content address does not protect a blob from deletion). Streams are never compacted,
-so a long-lived line grows without bound. loom will register the prefix as a sanctioned extension
-stream (a follow-up in loom, not part of this package).
+streams (a prefix outside it would be mistaken for an execution). Streams are never compacted, so a
+long-lived line grows without bound.
+
+**Erasure (crypto-shred).** A line holds personal data: op props and labels, the `summary`, `by`.
+A reserved stream is not an execution, so no default maps it to a person; the host does, and then
+erasing the owner makes the line unreadable:
+
+1. In the `subjectOf` you give loom's `EncryptingEventStore` (`@loom/plugin-crypto`), map the stream
+   id (`__loom_ui_lineage__:<experienceId>`, or your `streamPrefix`) to the owner's subject.
+2. Call `registerLineageSensitivePaths(encryptingEventStore)` once at composition (the paths are
+   `LINEAGE_SENSITIVE_PATHS`: `ops`, `summary`, `by` on a composed event, `by` on the others;
+   identifiers, hashes and refs stay plain so the log still folds structurally).
+3. Back the `Lineage` with an `EncryptingContentStore` over the SAME `KeyStore` and the SAME
+   `subjectOf`. The lineage passes every artifact `put`/`get` a `ContentAccess` of
+   `{ executionId: <the line's stream id>, workflowId: <the lineage workflow id> }`, so the one
+   mapping covers events and blobs. A blob's address is scoped to its subject: the same bytes in two
+   lines with different owners get different refs. Nothing here compares refs across lines (a version
+   is identified by `versionHash`).
+4. Erase by destroying the owner's key: `keys.destroy(subject)`, or loom's `shredSubject(keys, store,
+   streamId, { subjectId, executionIds: [] })` (a reserved stream is never tombstoned, so pass no
+   execution ids for it).
+
+Afterwards a read of that line refuses with `{ kind: "refused", finding: { code: "line-erased" } }`:
+`state`, `head`, `versions`, `walk`, `get`, `getMany`, `resolveLatest`, `resolvePromoted`,
+`provenance`, `explain` and `cite`; `verify` returns a single `line-erased` finding. The plain-value
+reads (`forEachContentRef`, `pins` and so `rootsFor`) throw `LineErasedError` (`experienceId`, code
+`line-erased`): a collector must refuse rather than guess a root set it cannot read. A write
+(`start`, `advance`, `compose`, `revert`, `undo`, `promote`, `branch`) on an erased line refuses with
+the same code; the owner's key is never re-minted. Erasure is recognised by `isKeyUnavailable` and
+`isPayloadShredded` (`@loom/event-runtime`), never by message text; any other failure (a corrupt blob,
+`PayloadUndecryptableError`) propagates unchanged. Note loom reads "key not on this node" and an
+erased key the same way for a sealed event, and so does this package: fail closed.
+
+Erasure is scoped to the owner. A branch reads its source with the SOURCE line's access and writes its
+own first artifact under the TARGET line's, so a line branched from an erased line keeps reading. Its
+`verify` can no longer recompute the fork from the erased source, so it attests that first version by
+its content address alone and reports a `branch-source-erased` warning; versions after it verify
+normally. What was written before crypto was composed stays plaintext: seal from the first write.
 
 Genericity: nothing here names a consumer.
 
