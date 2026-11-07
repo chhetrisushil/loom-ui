@@ -14,11 +14,11 @@ import {
   EXPERIENCE_BRANCHED,
   EXPERIENCE_PROMOTED,
   EXPERIENCE_REVERTED,
+  LineErasedError,
   type Lineage,
   type LineageStore,
   foldLineage,
 } from "@loom-ui/lineage";
-import { isKeyUnavailable, isPayloadShredded } from "@loom/event-runtime";
 
 // ── The change feed ───────────────────────────────────────────────────────────
 // A feed turns one experience's lineage log into a stream of CHANGE EVENTS a notifier can consume:
@@ -186,14 +186,17 @@ export class LineageChangeFeed implements ChangeFeed {
     try {
       records = await this.events.read(experienceId);
     } catch (e) {
-      // An erased line (its key destroyed, or not on this node) fails closed with a typed finding;
-      // any other failure propagates unchanged.
-      if (isKeyUnavailable(e) || isPayloadShredded(e))
-        return err(
-          "line-erased",
-          `lineage "${experienceId}" is erased: its key is destroyed or unavailable`
-        );
-      throw e;
+      // The feed INHERITS the lineage's `confirmErased` hook (it classifies through `lineage.block`):
+      // a confirmed erasure is `line-erased`, any other unreadable line is `line-unreadable` (or
+      // `artifact-unsealed`); both fail closed. Anything else propagates unchanged.
+      const b = await this.lineage.block(experienceId, e);
+      if (b === undefined) throw e;
+      return err(
+        b instanceof LineErasedError ? "line-erased" : b.reason,
+        b instanceof LineErasedError
+          ? `lineage "${experienceId}" is erased: its key is destroyed (confirmed)`
+          : `lineage "${experienceId}" is unreadable: its key is unavailable on this node or its ciphertext does not open; not confirmed erased`
+      );
     }
     const fold = foldLineage(experienceId, records);
     if (!fold.ok) return { ok: false, finding: fold.finding };
@@ -315,6 +318,12 @@ export class LineageChangeFeed implements ChangeFeed {
             const r = await this.read(experienceId, { after: cursor });
             if (!r.ok) {
               report(r.finding);
+              // A CONFIRMED erasure is terminal: report once and stop (no retry, no further wakes).
+              // An unconfirmed `line-unreadable` keeps retrying: the key may come back to this node.
+              if (r.finding.code === "line-erased") {
+                terminate();
+                return;
+              }
               failed = true;
               return;
             }
@@ -346,14 +355,17 @@ export class LineageChangeFeed implements ChangeFeed {
         else failures = 0;
       }
     };
-    const unwatch = this.signal.watch(experienceId, () => void pump());
-    void pump();
-    return () => {
+    let unwatch: (() => void) | undefined;
+    const terminate = (): void => {
       stopped = true;
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
-      unwatch();
+      unwatch?.();
+      unwatch = undefined;
     };
+    unwatch = this.signal.watch(experienceId, () => void pump());
+    void pump();
+    return terminate;
   }
 
   async describe(

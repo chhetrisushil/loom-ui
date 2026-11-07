@@ -1,7 +1,12 @@
 import type { HeadChange, HeadSignal } from "@loom-ui/core";
-import { LineErasedError, type LineageStore, foldLineage } from "@loom-ui/lineage";
+import {
+  LineErasedError,
+  type LineageStore,
+  classifyLineFailure,
+  foldLineage,
+} from "@loom-ui/lineage";
 import { LINEAGE_STREAM_PREFIX } from "@loom-ui/lineage";
-import { type EventStore, isKeyUnavailable, isPayloadShredded } from "@loom/event-runtime";
+import type { EventStore } from "@loom/event-runtime";
 
 // ── Head signals: how a reader learns "this experience moved" ─────────────────
 // Two implementations of core's `HeadSignal`, sharing one check: read the line, and if its tip is
@@ -22,6 +27,13 @@ import { type EventStore, isKeyUnavailable, isPayloadShredded } from "@loom/even
 export interface SignalOptions {
   /** A read or fold that failed. The watcher keeps going: the next trigger tries again. */
   readonly onError?: (err: unknown) => void;
+  /**
+   * Has this line's erasure been confirmed? (The same host hook as `LineageOptions.confirmErased`;
+   * a signal is built over a store, not a lineage, so it takes its own.) A CONFIRMED erasure reports
+   * one `LineErasedError` and the watcher goes terminal (no more checks). An unconfirmed unreadable
+   * line reports `LineUnreadableError` on every check and keeps retrying.
+   */
+  readonly confirmErased?: (experienceId: string) => Promise<boolean>;
 }
 
 /** One watcher's check: at most one read in flight, reports each new tip once. */
@@ -29,7 +41,9 @@ function checker(
   store: LineageStore,
   experienceId: string,
   onChange: (c: HeadChange) => void,
-  onError: ((e: unknown) => void) | undefined
+  onError: ((e: unknown) => void) | undefined,
+  confirmErased: ((experienceId: string) => Promise<boolean>) | undefined,
+  onTerminal: () => void
 ): { check: () => Promise<void>; stop: () => void } {
   let seen = 0;
   let stopped = false;
@@ -43,6 +57,7 @@ function checker(
     }
   };
   const check = async (): Promise<void> => {
+    if (stopped) return;
     if (busy) {
       rerun = true;
       return;
@@ -71,12 +86,14 @@ function checker(
         }
       } while (rerun && !stopped);
     } catch (e) {
-      // an erased line reports a typed LineErasedError; anything else is reported unchanged
-      fail(
-        isKeyUnavailable(e) || isPayloadShredded(e)
-          ? new LineErasedError(experienceId, { cause: e })
-          : e
-      );
+      // an unreadable line reports a typed error; anything else is reported unchanged
+      const b = await classifyLineFailure(experienceId, e, confirmErased);
+      fail(b ?? e);
+      if (b instanceof LineErasedError) {
+        // confirmed erased: terminal, reported once
+        stopped = true;
+        onTerminal();
+      }
     } finally {
       busy = false;
     }
@@ -110,12 +127,17 @@ export function pollingHeadSignal(store: LineageStore, opts: PollingOptions = {}
   const schedule = opts.schedule ?? defaultSchedule;
   return {
     watch(experienceId, onChange) {
-      const c = checker(store, experienceId, onChange, opts.onError);
+      let cancel: (() => void) | undefined;
+      let ended = false;
+      const c = checker(store, experienceId, onChange, opts.onError, opts.confirmErased, () => {
+        ended = true;
+        cancel?.();
+      });
       void c.check();
-      const cancel = schedule(() => void c.check(), intervalMs);
+      if (!ended) cancel = schedule(() => void c.check(), intervalMs);
       return () => {
         c.stop();
-        cancel();
+        cancel?.();
       };
     },
   };
@@ -150,9 +172,14 @@ export function eventStoreHeadSignal(
   };
   return {
     watch(experienceId, onChange) {
-      const c = checker(store, experienceId, onChange, opts.onError);
+      let cancel: (() => void) | undefined;
       let off: (() => void) | undefined;
       let stopped = false;
+      const c = checker(store, experienceId, onChange, opts.onError, opts.confirmErased, () => {
+        stopped = true;
+        cancel?.();
+        off?.();
+      });
       events
         .subscribe(`${LINEAGE_STREAM_PREFIX}${experienceId}`, () => void c.check())
         .then((u) => {
@@ -161,7 +188,7 @@ export function eventStoreHeadSignal(
         })
         .catch(report);
       void c.check();
-      const cancel = fallback === undefined ? undefined : schedule(() => void c.check(), fallback);
+      if (!stopped && fallback !== undefined) cancel = schedule(() => void c.check(), fallback);
       return () => {
         stopped = true;
         c.stop();

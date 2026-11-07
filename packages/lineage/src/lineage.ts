@@ -91,41 +91,128 @@ export interface LineageOptions {
    * classes only).
    */
   readonly readPolicy?: ReadPolicy;
+  /**
+   * Host hook: has this line's erasure been CONFIRMED? A read that hits a sealed line whose key is
+   * unavailable (`isKeyUnavailable`) or whose blob is shredded (`isPayloadShredded`) cannot tell an
+   * erasure from "the key is not on this node" or "the ciphertext does not open" (loom says so
+   * itself). The line is reported `line-erased` ONLY when this returns true, else `line-unreadable`.
+   * Implement it with your KeyStore: `(id) => keys.wasDestroyed(subjectOf({ executionId: stream(id) }))`.
+   * Absent = nothing is ever confirmed. A throwing hook counts as "not confirmed". Both outcomes
+   * fail closed; only a confirmed erasure is skipped by the GC root walks.
+   */
+  readonly confirmErased?: (experienceId: string) => Promise<boolean>;
 }
 
 /**
  * Thrown by the reads that return plain values (`forEachContentRef`, `pins` and so `rootsFor`) when
- * a line's key is gone: the line's events or artifact blobs are sealed under an erasure subject that
- * was destroyed (or whose key this node does not hold). Every method that returns a `LineageResult`
- * (or `verify`'s findings) reports the same condition as a `refused` result with code `line-erased`
- * instead of throwing. Any other failure (corruption, an undecryptable payload) is NOT this error
- * and propagates unchanged.
+ * a line's key is gone AND the host confirmed the erasure (`LineageOptions.confirmErased`). Those
+ * reads SKIP a confirmed-erased line (it contributes no roots), so this reaches a caller only from a
+ * single-line read; every method that returns a `LineageResult` (or `verify`'s findings) reports the
+ * same condition as a `refused` result with code `line-erased` instead of throwing.
  */
 export class LineErasedError extends Error {
   override readonly name = "LineErasedError";
   readonly code = "line-erased" as const;
+  readonly confirmed = true as const;
   constructor(
     readonly experienceId: string,
     options?: { readonly cause?: unknown }
   ) {
     super(
-      `lineage "${experienceId}" is erased: the key that seals its events or artifacts is destroyed or unavailable`,
+      `lineage "${experienceId}" is erased: its key is destroyed (confirmed by the host)`,
       options
     );
     Object.setPrototypeOf(this, LineErasedError.prototype);
   }
 }
 
-/** Erasure by the kernel's stable predicates (class- and realm-safe), never by message text. */
-const isErasure = (err: unknown): boolean => isKeyUnavailable(err) || isPayloadShredded(err);
+/**
+ * The line's key is unavailable on this node, or its ciphertext / artifact does not open, and the
+ * erasure is NOT confirmed (no `confirmErased` hook, or it said no). Could be a destroyed key, a key
+ * this node does not hold, a tampered event, a drifted `subjectOf`, or an artifact written before an
+ * `EncryptingContentStore` was composed (`reason: "artifact-unsealed"`). Fail closed, but not an
+ * erasure: GC refuses rather than guess, and a read says so. `reason` is also the refusal's finding code.
+ */
+export class LineUnreadableError extends Error {
+  override readonly name = "LineUnreadableError";
+  readonly code = "line-unreadable" as const;
+  readonly confirmed = false as const;
+  readonly reason: "line-unreadable" | "artifact-unsealed";
+  constructor(
+    readonly experienceId: string,
+    options?: {
+      readonly cause?: unknown;
+      readonly reason?: "line-unreadable" | "artifact-unsealed";
+    }
+  ) {
+    super(
+      `lineage "${experienceId}" is unreadable: its key is unavailable on this node or its ciphertext does not open; not confirmed erased`,
+      options?.cause === undefined ? undefined : { cause: options.cause }
+    );
+    this.reason = options?.reason ?? "line-unreadable";
+    Object.setPrototypeOf(this, LineUnreadableError.prototype);
+  }
+}
 
-const erasedFinding = (experienceId: string): Finding => ({
-  code: "line-erased",
-  severity: "error",
-  message: `lineage "${experienceId}" is erased: its key is destroyed or unavailable (nothing readable or writable)`,
-});
-const erased = (experienceId: string): { ok: false; refusal: Refusal } =>
-  fromFinding(erasedFinding(experienceId));
+export type LineBlockedError = LineErasedError | LineUnreadableError;
+
+/** Is `err` a read failure that makes a line unreadable? The kernel's stable predicates, never message text. */
+const isUnreadableCause = (err: unknown): boolean =>
+  isKeyUnavailable(err) || isPayloadShredded(err);
+/** loom's "the blob exists but does not open although the key exists" (plaintext or damaged bytes). */
+const isUndecryptable = (err: unknown): boolean =>
+  err instanceof Error && err.name === "ContentUndecryptableError";
+
+/**
+ * Classify a read failure of one line: `undefined` when it is not an unreadable-line failure
+ * (rethrow it), else a typed error. ONE rule: `line-erased` iff the host's `confirmErased` says so;
+ * `isPayloadShredded` alone is not confirmation. An undecryptable blob is never an erasure.
+ */
+export async function classifyLineFailure(
+  experienceId: string,
+  err: unknown,
+  confirmErased?: (experienceId: string) => Promise<boolean>
+): Promise<LineBlockedError | undefined> {
+  if (isUndecryptable(err))
+    return new LineUnreadableError(experienceId, { cause: err, reason: "artifact-unsealed" });
+  if (!isUnreadableCause(err)) return undefined;
+  let confirmed = false;
+  if (confirmErased !== undefined) {
+    try {
+      confirmed = (await confirmErased(experienceId)) === true;
+    } catch {
+      confirmed = false;
+    }
+  }
+  return confirmed
+    ? new LineErasedError(experienceId, { cause: err })
+    : new LineUnreadableError(experienceId, { cause: err });
+}
+
+const blockedFinding = (e: LineBlockedError): Finding =>
+  e instanceof LineErasedError
+    ? {
+        code: "line-erased",
+        severity: "error",
+        message: `lineage "${e.experienceId}" is erased: its key is destroyed (confirmed); nothing readable or writable`,
+      }
+    : {
+        code: e.reason,
+        severity: "error",
+        message:
+          e.reason === "artifact-unsealed"
+            ? `lineage "${e.experienceId}" is unreadable: an artifact blob did not open under the line's key (written before sealing was composed, or damaged); not an erasure`
+            : `lineage "${e.experienceId}" is unreadable: its key is unavailable on this node or its ciphertext does not open; not confirmed erased`,
+      };
+const blocked = (e: LineBlockedError): { ok: false; refusal: Refusal } =>
+  fromFinding(blockedFinding(e));
+const BLOCKED_CODES: ReadonlySet<string> = new Set([
+  "line-erased",
+  "line-unreadable",
+  "artifact-unsealed",
+]);
+const isBlockedRefusal = (r: { ok: false; refusal: Refusal }): boolean =>
+  r.refusal.kind === "refused" && BLOCKED_CODES.has(r.refusal.finding.code);
 const isErasedRefusal = (r: { ok: false; refusal: Refusal }): boolean =>
   r.refusal.kind === "refused" && r.refusal.finding.code === "line-erased";
 
@@ -239,13 +326,22 @@ export class Lineage {
   private readonly policy: ReadPolicy;
   private readonly streamPrefix: string;
   private readonly workflowId: string;
+  private readonly confirmErased: LineageOptions["confirmErased"];
 
   constructor(opts: LineageOptions) {
     this.policy = mergeReadPolicy(opts.readPolicy);
     this.events = opts.events;
     this.content = opts.content;
     this.now = opts.now ?? (() => new Date().toISOString());
+    this.confirmErased = opts.confirmErased;
     const p = (opts.events as { streamPrefix?: unknown }).streamPrefix;
+    if (
+      (opts.content as { sealsContent?: unknown }).sealsContent === true &&
+      !(typeof p === "string" && p.length > 0)
+    )
+      throw new Error(
+        "Lineage: the content store seals per subject (sealsContent: true) but the events store does not expose a streamPrefix (use eventStoreLineageStore): the blobs could be sealed under a different subject than the line's events"
+      );
     this.streamPrefix = typeof p === "string" && p.length > 0 ? p : LINEAGE_STREAM_PREFIX;
     const w = (opts.events as { workflowId?: unknown }).workflowId;
     this.workflowId = typeof w === "string" && w.length > 0 ? w : LINEAGE_WORKFLOW_ID;
@@ -261,14 +357,46 @@ export class Lineage {
     return { executionId: `${this.streamPrefix}${experienceId}`, workflowId: this.workflowId };
   }
 
-  /** Every record of a line; an erased line THROWS {@link LineErasedError}, anything else propagates. */
+  /**
+   * Classify a read failure of `experienceId` with this lineage's `confirmErased` hook: a typed
+   * {@link LineErasedError} (confirmed) or {@link LineUnreadableError}, or `undefined` when `err` is
+   * not an unreadable-line failure. Readers built over this lineage (the change feed) use it.
+   */
+  block(experienceId: string, err: unknown): Promise<LineBlockedError | undefined> {
+    return classifyLineFailure(experienceId, err, this.confirmErased);
+  }
+
+  /** Every record of a line; an unreadable line THROWS a {@link LineBlockedError}, anything else propagates. */
   private async readLine(experienceId: string) {
     try {
       return await this.events.read(experienceId);
     } catch (err) {
-      if (isErasure(err)) throw new LineErasedError(experienceId, { cause: err });
-      throw err;
+      throw (await this.block(experienceId, err)) ?? err;
     }
+  }
+
+  private async confirms(experienceId: string): Promise<boolean> {
+    if (this.confirmErased === undefined) return false;
+    try {
+      return (await this.confirmErased(experienceId)) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A write step failed with `err`: a typed refusal when the line is (now) unreadable, else rethrow.
+   * The re-read catches a key destroyed between `state()` and the append, whose own error is untyped.
+   */
+  private async failedWrite(
+    experienceId: string,
+    err: unknown
+  ): Promise<never | { ok: false; refusal: Refusal }> {
+    const b = await this.block(experienceId, err);
+    if (b !== undefined) return blocked(b);
+    const after = await this.state(experienceId).catch(() => undefined);
+    if (after !== undefined && !after.ok && isBlockedRefusal(after)) return after;
+    throw err;
   }
 
   /** The read policy bound at construction (empty when none); readers built over this lineage inherit it. */
@@ -314,8 +442,16 @@ export class Lineage {
   async forEachContentRef(visit: (address: string) => void): Promise<void> {
     if (this.events.listStreams === undefined)
       throw new Error("Lineage.forEachContentRef: the LineageStore cannot enumerate its lines");
-    for await (const id of this.events.listStreams())
-      for (const rec of await this.readLine(id)) walkContentRefs(rec.payload, visit);
+    for await (const id of this.events.listStreams()) {
+      let records: Awaited<ReturnType<LineageStore["read"]>>;
+      try {
+        records = await this.readLine(id);
+      } catch (err) {
+        if (err instanceof LineErasedError) continue; // confirmed erased: no roots, its blobs are reclaimable
+        throw err; // unconfirmed: refuse rather than guess
+      }
+      for (const rec of records) walkContentRefs(rec.payload, visit);
+    }
   }
 
   /**
@@ -377,7 +513,14 @@ export class Lineage {
     };
     for (const v of extra.keepVersions ?? []) addKept(v.experienceId, v.versionHash);
     for await (const id of this.events.listStreams()) {
-      const fold = foldLineage(id, await this.readLine(id));
+      let records1: Awaited<ReturnType<LineageStore["read"]>>;
+      try {
+        records1 = await this.readLine(id);
+      } catch (err) {
+        if (err instanceof LineErasedError) continue; // confirmed erased: contributes nothing
+        throw err; // unconfirmed: refuse rather than guess
+      }
+      const fold = foldLineage(id, records1);
       if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
       for (const v of fold.state.versions.values())
         if (v.from !== undefined) addKept(v.from.experienceId, v.from.versionHash);
@@ -392,10 +535,19 @@ export class Lineage {
       pending.push(a);
     };
     for await (const id of this.events.listStreams()) {
-      const records = await this.readLine(id);
+      let records: Awaited<ReturnType<LineageStore["read"]>>;
+      try {
+        records = await this.readLine(id);
+      } catch (err) {
+        if (err instanceof LineErasedError) continue;
+        throw err;
+      }
       const fold = foldLineage(id, records);
       if (!fold.ok) throw new Error(`Lineage.pins: "${id}" does not fold: ${fold.finding.message}`);
       const { keep } = retainedVersions(fold.state, policy, kept.get(id));
+      // This line's roots are gathered locally and emitted only once its artifacts read: a line whose
+      // erasure is confirmed (events readable, blobs gone) must contribute NO roots at all.
+      const lineRoots: string[] = [];
       for (const rec of records) {
         const p = rec.payload as {
           ref?: { __loomContent?: unknown };
@@ -408,7 +560,7 @@ export class Lineage {
         const droppedVersion = typeof p?.versionHash === "string" && !keep.has(p.versionHash);
         walkContentRefs(rec.payload, (a) => {
           if (a === artifact && droppedVersion) return;
-          emit(a);
+          lineRoots.push(a);
         });
       }
       // Refs that live only inside a retained artifact's bytes. Artifacts are content-addressed, so
@@ -423,20 +575,26 @@ export class Lineage {
         walked.add(ref.__loomContent);
         toWalk.push(ref);
       }
-      const arts = await mapLimit(toWalk, concurrency, async (ref) => {
-        let art: Awaited<ReturnType<typeof getExperience>>;
-        try {
-          art = await getExperience(this.content, ref, this.accessFor(id));
-        } catch (err) {
-          if (isErasure(err)) throw new LineErasedError(id, { cause: err });
-          throw err;
-        }
-        if (art.ok) return art.experience;
-        if (art.finding.code === "artifact-missing") return undefined; // already gone: nothing inside to root
-        throw new Error(
-          `Lineage.pins: "${id}" artifact ${ref.__loomContent}: ${art.finding.message}`
-        );
-      });
+      let arts: (Experience | undefined)[];
+      try {
+        arts = await mapLimit(toWalk, concurrency, async (ref) => {
+          let art: Awaited<ReturnType<typeof getExperience>>;
+          try {
+            art = await getExperience(this.content, ref, this.accessFor(id));
+          } catch (err) {
+            throw (await this.block(id, err)) ?? err;
+          }
+          if (art.ok) return art.experience;
+          if (art.finding.code === "artifact-missing") return undefined; // already gone: nothing inside to root
+          throw new Error(
+            `Lineage.pins: "${id}" artifact ${ref.__loomContent}: ${art.finding.message}`
+          );
+        });
+      } catch (err) {
+        if (err instanceof LineErasedError) continue; // confirmed erased: no roots from this line
+        throw err;
+      }
+      for (const a of lineRoots) emit(a);
       for (const exp of arts) if (exp !== undefined) walkContentRefs(exp, emit);
       while (pending.length > 0) yield pending.shift() as string;
     }
@@ -479,7 +637,7 @@ export class Lineage {
     try {
       records = await this.readLine(experienceId);
     } catch (err) {
-      if (err instanceof LineErasedError) return erased(experienceId);
+      if (err instanceof LineErasedError || err instanceof LineUnreadableError) return blocked(err);
       throw err;
     }
     const fold = foldLineage(experienceId, records);
@@ -569,7 +727,8 @@ export class Lineage {
         this.accessFor(state.experienceId)
       );
     } catch (err) {
-      if (isErasure(err)) return erased(state.experienceId);
+      const b = await this.block(state.experienceId, err);
+      if (b !== undefined) return blocked(b);
       throw err;
     }
     if (!r.ok) return fromFinding(r.finding);
@@ -769,7 +928,7 @@ export class Lineage {
     const out = new Map<string, Experience | undefined>();
     for (const h of new Set(versionHashes)) {
       const r = await this.load(s.value, h);
-      if (!r.ok && isErasedRefusal(r)) return r;
+      if (!r.ok && isBlockedRefusal(r)) return r;
       out.set(h, r.ok ? r.value : undefined);
     }
     return { ok: true, value: out };
@@ -1089,8 +1248,7 @@ export class Lineage {
           payload: promotedPayload,
         });
       } catch (err) {
-        if (isErasure(err)) return erased(experienceId);
-        throw err;
+        return this.failedWrite(experienceId, err);
       }
       if (out.ok) {
         await this.cite(experienceId, [versionHash]).catch(() => undefined); // best effort: the write is durable
@@ -1211,16 +1369,33 @@ export class Lineage {
           );
       } else {
         const srcState = v.from === undefined ? undefined : await this.state(v.from.experienceId);
-        if (srcState !== undefined && !srcState.ok && isErasedRefusal(srcState)) {
-          // The source line was erased: the fork cannot be recomputed from it. Like a genesis it is
-          // attested by its address alone (the stored blob hashed to `hash` when it was loaded
-          // above), and the gap is surfaced rather than reported as damage.
+        // The source line's erasure is CONFIRMED (the host's hook), either because it refuses
+        // `line-erased` or because its events were deleted too (the version is simply absent) and the
+        // hook still confirms: the fork cannot be recomputed. Like a genesis it is attested by its
+        // address alone (the stored blob hashed to `hash` when it was loaded above), and the gap is
+        // surfaced as a warning. An UNCONFIRMED unreadable source is an error (below).
+        const srcErased =
+          v.from !== undefined &&
+          srcState !== undefined &&
+          (srcState.ok
+            ? !srcState.value.versions.has(v.from.versionHash) &&
+              (await this.confirms(v.from.experienceId))
+            : isErasedRefusal(srcState));
+        if (srcErased) {
           findings.push({
             code: "branch-source-erased",
             severity: "warn",
             message: `version ${hash}: the source line "${v.from?.experienceId}" is erased, so this branch is attested by its content address only`,
           });
           rebuilt.set(hash, stored.value);
+          continue;
+        }
+        if (srcState !== undefined && !srcState.ok && isBlockedRefusal(srcState)) {
+          const f = srcState.refusal.kind === "refused" ? srcState.refusal.finding : unreachable();
+          err(
+            f.code,
+            `version ${hash}: source line "${v.from?.experienceId}" cannot be read and its erasure is not confirmed: ${f.message}`
+          );
           continue;
         }
         if (
@@ -1327,8 +1502,7 @@ export class Lineage {
     try {
       put = await putExperience(this.content, artifact, this.accessFor(experienceId));
     } catch (err) {
-      if (isErasure(err)) return erased(experienceId);
-      throw err;
+      return this.failedWrite(experienceId, err);
     }
     if (!put.ok) return fromFinding(put.finding);
     for (let attempt = 0; attempt < MAX_TIP_RETRIES; attempt++) {
@@ -1340,8 +1514,7 @@ export class Lineage {
           payload: payload(put.ref),
         });
       } catch (err) {
-        if (isErasure(err)) return erased(experienceId);
-        throw err;
+        return this.failedWrite(experienceId, err);
       }
       if (out.ok) {
         const after = await this.state(experienceId);
