@@ -48,15 +48,32 @@ export interface PlanDecisionIdOptions {
   readonly key?: Uint8Array | string;
 }
 
-/** Validates a decision key and returns its bytes; throws on one shorter than the minimum. */
+/**
+ * Validates a decision key and returns a COPY of its bytes (a caller who later zeroes or reuses its
+ * own buffer must not change the key in use); throws on one shorter than the minimum. The length
+ * is a floor, not a measure of entropy: the key must be random bytes.
+ */
 export function decisionKeyBytes(key: Uint8Array | string): Uint8Array {
-  const bytes = typeof key === "string" ? new TextEncoder().encode(key) : key;
+  const bytes = typeof key === "string" ? new TextEncoder().encode(key) : new Uint8Array(key);
   if (bytes.byteLength < MIN_DECISION_KEY_BYTES) {
     throw new Error(
-      `decisionKey must be at least ${MIN_DECISION_KEY_BYTES} bytes (got ${bytes.byteLength}); a shorter secret can be brute-forced from a logged decision id`
+      `decisionKey must be at least ${MIN_DECISION_KEY_BYTES} bytes (got ${bytes.byteLength}) of random key material, for example randomBytes(${MIN_DECISION_KEY_BYTES}); length alone does not make a key safe`
     );
   }
   return bytes;
+}
+
+/**
+ * The keyed stand-in for a revise's recorded `base` (the artifact's `versionHash`, an unkeyed
+ * SHA-256 that confirms a guessed artifact). `k:<32 hex of HMAC-SHA-256>` under the same key and a
+ * `base:` domain prefix, so it can never equal a decision id's tag.
+ */
+export function keyedBaseHash(versionHash: string, key: Uint8Array | string): string {
+  const tag = createHmac("sha256", decisionKeyBytes(key))
+    .update(`base:${versionHash}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `k:${tag}`;
 }
 
 export function planDecisionId(

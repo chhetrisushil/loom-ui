@@ -29,7 +29,12 @@ import {
   planSchema,
 } from "./contract";
 import { isControlPlaneError } from "./controlPlane";
-import { type PlanDecisionIdOptions, decisionKeyBytes, planDecisionId } from "./decision";
+import {
+  type PlanDecisionIdOptions,
+  decisionKeyBytes,
+  keyedBaseHash,
+  planDecisionId,
+} from "./decision";
 import { materialize } from "./materialize";
 import { type PreviousError, composeMessages, reviseMessages } from "./prompt";
 import { type PlannerReach, declarePlannerReach } from "./reach";
@@ -98,22 +103,30 @@ export interface ReferencePlannerOptions {
    */
   readonly variants?: PlanVariants;
   /**
-   * A host secret (at least 32 bytes; a string counts as UTF-8) that keys every plan decision id
-   * with HMAC-SHA-256 (`plan:<kind>:k:<hex>`) instead of an unkeyed hash.
+   * A host secret that keys every plan decision id with HMAC-SHA-256 (`plan:<kind>:k:<hex>`)
+   * instead of an unkeyed hash. It must be 32 or more RANDOM bytes, for example `randomBytes(32)`
+   * stored base64 and decoded to a `Uint8Array`. Prefer the `Uint8Array`: the length check is a
+   * floor and does not measure entropy. A string is UTF-8 encoded WITHOUT normalisation, so an NFC
+   * and an NFD spelling of the same key are DIFFERENT keys (a silent rotation, see below) and a
+   * lone surrogate collapses to U+FFFD. The planner copies the bytes once at construction and
+   * holds them privately (not on `JSON.stringify` / `util.inspect` output).
    *
    * WHY: the id is recorded as `DECISION_RECORDED.decisionId` in PLAINTEXT, and it survives a
    * crypto-shred of the owner's key. It is derived from the intent, the caller's context, a
    * revise's request and the catalogue, so the unkeyed default is a guess-and-confirm oracle after
    * erasure: hash a guessed intent and compare it with the log. For a low-entropy intent that
-   * guess is cheap. A keyed id is useless without the secret.
+   * guess is cheap. A keyed id is useless without the secret. A revise's recorded `context.base`
+   * (the artifact's version hash) is keyed the same way.
    *
    * THE KEY IS AS DURABLE AS THE LOG. The same key gives the same id for the same input, which is
-   * what makes a replay serve the recorded decision. Lose or rotate it and decisions recorded under
-   * the old key no longer match: the planner re-decides (a NEW model call, recorded under a new id)
-   * instead of serving the old answer. Do NOT use the KeyStore's per-subject keys: those are
-   * destroyed at erasure, which would also orphan the decisions of everyone not erased.
-   * Omitted = the unkeyed id, byte-for-byte as before, so existing logs keep replaying; switching
-   * an existing log to a key has the same re-decide effect for its old decisions.
+   * what makes a replay serve the recorded decision. Changing, losing or ADDING the key is safe
+   * ONLY when no execution is in flight: drain or finish them first. Otherwise a resumed
+   * execution's planner computes a new id, misses the recorded decision and re-plans LIVE. That
+   * may compose a DIFFERENT plan, so an approval or a later step served from the log then applies
+   * to a plan nobody saw, and a later step whose id derives from the plan can fail replay with
+   * `FlowReplayDivergenceError` under `divergence: "fail"`. Do NOT use the KeyStore's per-subject
+   * keys: those are destroyed at erasure, which would also orphan the decisions of everyone not
+   * erased. Omitted = the unkeyed id, byte-for-byte as before, so existing logs keep replaying.
    */
   readonly decisionKey?: Uint8Array | string;
 }
@@ -163,17 +176,31 @@ const errorsOf = (fs: readonly Finding[]) => fs.filter((f) => f.severity === "er
 
 export class ReferencePlanner implements Planner {
   private readonly maxAttempts: number;
-  constructor(private readonly opts: ReferencePlannerOptions) {
+  // Secrets live in ES #private fields (not enumerable, not reachable by JSON.stringify or
+  // util.inspect) and are stripped from `opts`, which is an ordinary own field.
+  readonly #decisionKey: Uint8Array | undefined;
+  readonly #bucketSecret: string | undefined;
+  private readonly opts: ReferencePlannerOptions;
+  constructor(options: ReferencePlannerOptions) {
+    const { decisionKey, ...rest } = options;
+    const opts = rest as ReferencePlannerOptions;
+    let stripped: ReferencePlannerOptions = opts;
+    if (options.variants?.rollout?.bucketSecret !== undefined) {
+      this.#bucketSecret = options.variants.rollout.bucketSecret;
+      const { bucketSecret: _drop, ...rollout } = options.variants.rollout;
+      stripped = { ...opts, variants: { ...options.variants, rollout } as never };
+    }
+    this.opts = stripped;
+    // Refuse a short key now, not on the first turn; keep ONE private copy of the bytes.
+    if (decisionKey !== undefined) this.#decisionKey = decisionKeyBytes(decisionKey);
     this.maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
     if (opts.reach !== undefined) declarePlannerReach(this, opts.reach);
     if (opts.variants !== undefined) assertVariants(opts.variants);
-    // Refuse a short key now, not on the first turn.
-    if (opts.decisionKey !== undefined) decisionKeyBytes(opts.decisionKey);
   }
 
   /** The decision id options: the planner's key, when it has one. */
   private idOptions(): PlanDecisionIdOptions {
-    return this.opts.decisionKey === undefined ? {} : { key: this.opts.decisionKey };
+    return this.#decisionKey === undefined ? {} : { key: this.#decisionKey };
   }
 
   /**
@@ -252,7 +279,7 @@ export class ReferencePlanner implements Planner {
           ids,
           {
             source: REFERENCE_SOURCE,
-            ...(vs.rollout.bucketSecret !== undefined && { bucketSecret: vs.rollout.bucketSecret }),
+            ...(this.#bucketSecret !== undefined && { bucketSecret: this.#bucketSecret }),
           }
         );
       } else {
@@ -466,7 +493,11 @@ export class ReferencePlanner implements Planner {
         context: {
           kind: "revise",
           catalogId: input.catalog.id,
-          base: input.experience.versionHash,
+          // Keyed: the raw versionHash is an unkeyed SHA-256 of the artifact (intent included).
+          base:
+            this.#decisionKey === undefined
+              ? input.experience.versionHash
+              : keyedBaseHash(input.experience.versionHash, this.#decisionKey),
           scope: input.request.scopeNodeIds?.length ?? 0,
           ...(variant !== undefined && { variant: variant.id }),
         },

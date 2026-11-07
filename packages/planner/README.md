@@ -142,17 +142,35 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   then reports the hand-off as unresolved, which is honest; a partial guess would not be. The
   declaration is attached structurally under `Symbol.for("loom.verify.reach")` (non-enumerable, a
   copy), with no dependency on `@loom/verify`.
-- `decisionKey?: Uint8Array | string` — a host secret (at least 32 bytes, refused at construction
-  otherwise) that keys every plan decision id with HMAC-SHA-256: `plan:<kind>:k:<32 hex>`. **Why:**
-  the id is recorded in PLAINTEXT as `DECISION_RECORDED.decisionId` and survives a crypto-shred of
-  the owner's key; the unkeyed default hashes the intent, context, revise request and catalogue
-  with a fast non-secret hash, so after erasure anyone can hash a guessed (low-entropy) intent and
-  compare it with the log. Unset = the unkeyed id, byte-for-byte as before (existing logs replay).
-  **Keep the key as durable as the log**: the same key gives the same id, which is how a replay
-  serves the recorded decision. Lose or rotate it (or switch an existing log to a key) and old
-  decisions no longer match: the planner re-decides, with a NEW model call recorded under a new id,
-  rather than serving the old answer. Never reuse the KeyStore's per-subject keys; erasure destroys
-  those. `planDecisionId(kind, input, { key })` takes the same option.
+- `decisionKey?: Uint8Array | string` — a host secret of 32 or more RANDOM bytes (for example
+  `randomBytes(32)`, stored base64 and decoded to a `Uint8Array`) that keys every plan decision id
+  with HMAC-SHA-256: `plan:<kind>:k:<32 hex>`. The length check (refused at construction below 32
+  bytes) is a floor and does not measure entropy; a passphrase is not a key. Prefer the
+  `Uint8Array`. A string is UTF-8 encoded without normalisation: an NFC and an NFD spelling of the
+  same key are DIFFERENT keys (a silent rotation, below), and lone surrogates collapse to U+FFFD.
+  The planner copies the bytes once at construction, so zeroing your buffer afterwards changes
+  nothing, and keeps them (and `variants.rollout.bucketSecret`) in private fields that
+  `JSON.stringify` and `util.inspect` do not show. **Why:** the id is recorded in PLAINTEXT as
+  `DECISION_RECORDED.decisionId` and survives a crypto-shred of the owner's key; the unkeyed
+  default hashes the intent, context, revise request and catalogue with a fast non-secret hash, so
+  after erasure anyone can hash a guessed (low-entropy) intent and compare it with the log. A
+  revise also records `context.base`; with a key it is a keyed `k:<32 hex>` HMAC of the version
+  hash instead of the raw (unkeyed SHA-256) hash. Unset = the unkeyed id and raw `base`,
+  byte-for-byte as before (existing logs replay).
+  **Keep the key as durable as the log, and change it only with no execution in flight.** The same
+  key gives the same id, which is how a replay serves the recorded decision. Changing, losing or
+  adding the key is safe ONLY after you drain or finish every in-flight execution. Otherwise a
+  resumed execution's planner computes a new id, misses the recorded decision and re-plans LIVE: it
+  may compose a DIFFERENT plan, so an approval or later step served from the log then applies to a
+  plan nobody saw, and a later step whose id derives from the plan can fail replay with
+  `FlowReplayDivergenceError` under `divergence: "fail"`. Never reuse the KeyStore's per-subject
+  keys; erasure destroys those. `planDecisionId(kind, input, { key })` takes the same option.
+  **Still plaintext with a key** (this option does not cover them): the lineage's `experienceId`
+  and its `versionHash`, `parents`, `revertedTo`, `carriedFrom` and `from` (`versionHash` is a
+  plain SHA-256 of the artifact, so a guessed artifact can be confirmed against it; see the erasure
+  section of `@loom-ui/lineage`); the variant `unit` and the catalogue id in a variant decision's
+  recorded context; the planner `modelId`, the decision's source and policy labels; and any other
+  event field the host or loom records outside the planner. Keep personal data out of those.
 - `declarePlannerReach(target, reach)` / `readPlannerReach(value)` / `REACH_DECLARATION` — the same
   attachment for a custom `Planner` (or any object a flow hands `ctx` to).
 - `REFERENCE_POLICY`, `REFERENCE_SOURCE` — the fixed `{ id, version }` policy stamp and decision
