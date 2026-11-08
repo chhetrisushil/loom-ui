@@ -1,4 +1,4 @@
-import type { SemanticFormat } from "./values";
+import type { SemanticFormat, TimeFormat } from "./values";
 
 /** `deltaPct` is a fraction; it reads as a percentage to one decimal. One declaration, shared by
  * every renderer's delta badge (a KPI's ▲/▼, its spoken form, and the terminal's), so they never
@@ -125,4 +125,51 @@ export function deltaDirection(delta: number): DeltaDirection {
   // Percent points at the badge's precision: 0.0004 → 0.04% → rounds to 0.0%.
   if (Math.round(Math.abs(delta) * 100 * 10 ** digits) === 0) return "flat";
   return delta > 0 ? "up" : "down";
+}
+
+// ── Time labels ───────────────────────────────────────────────────────────────────────────────────
+
+/** How coarse a point in time reads, from a whole year down to a date and time of day. */
+export const TIME_GRANULARITIES = [
+  "year",
+  "half",
+  "quarter",
+  "month",
+  "week",
+  "day",
+  "datetime",
+] as const;
+export type TimeGranularity = (typeof TIME_GRANULARITIES)[number];
+
+/** The finding when a `TimeFormat.timeZone` is refused (one message, both checkers). */
+export const TIME_ZONE_REFUSED =
+  'timeZone must be a zone Intl.DateTimeFormat accepts (an IANA name such as "America/New_York", or "UTC")';
+
+const zoneVerdicts = new Map<string, boolean>();
+
+/** A zone `Intl.DateTimeFormat` accepts (an IANA name such as "America/New_York", or "UTC"). */
+export function isTimeZone(zone: string): boolean {
+  let ok = zoneVerdicts.get(zone);
+  if (ok === undefined) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: zone });
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    // Bounded: a hostile stream of distinct strings must not grow this without limit.
+    if (zoneVerdicts.size >= 256) zoneVerdicts.clear();
+    zoneVerdicts.set(zone, ok);
+  }
+  return ok;
+}
+
+/** The `TimeFormat` contract without zod, for a value that was never checked (a widget prop). */
+export function isTimeFormat(v: unknown): v is TimeFormat {
+  if (v === null || typeof v !== "object") return false;
+  const f = v as { granularity?: unknown; timeZone?: unknown };
+  return (
+    (TIME_GRANULARITIES as readonly unknown[]).includes(f.granularity) &&
+    (f.timeZone === undefined || (typeof f.timeZone === "string" && isTimeZone(f.timeZone)))
+  );
 }

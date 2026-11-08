@@ -49,6 +49,7 @@ interface RendererAdapter {
     interpretsControlCharacters?: boolean; // your surface reads ESC sequences / markup (terminal, speech)
     chatMarkdown?: boolean;      // you parse and draw `format: "markdown"` assistant parts
     chatEntryAccessory?: boolean; // you draw host content under a transcript entry (mount's chatAccessory)
+    timeAxisLabels?: boolean;    // you label a TimeSeries' time axis as its declared timeFormat says
   };
   mount(blueprint, { values, onAction, i18n, chatAccessory }): MountedRenderer;
 }

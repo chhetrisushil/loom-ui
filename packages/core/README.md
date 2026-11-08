@@ -271,6 +271,10 @@ never forward them to the viewer.
   `semanticNumberFormatOptions`, `unitSuffix`, `deltaDirection`, `DELTA_FORMAT` — what a bound
   number MEANS (`number` / `integer` / `decimal` / `percentage` / `currency`, with `notation` and
   fraction-digit bounds) and how every renderer formats, rounds and suffixes it identically.
+- `TimeFormat`, `formatTimeLabel`, `isTimeFormat`, `isTimeZone`, `TIME_GRANULARITIES` — how a point
+  in time READS (`TimeSeriesValue.timeFormat`: `year` / `half` / `quarter` / `month` / `week` /
+  `day` / `datetime`, and an optional zone; UTC by default for a period) and the one formatter
+  every renderer labels it with. See `docs/reference/composition.md` (Time semantics).
 
 ### Media (U9, `@loom-ui/core/media`)
 

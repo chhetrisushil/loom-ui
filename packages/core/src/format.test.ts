@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deltaDirection,
   formatSemanticNumber,
+  isTimeFormat,
   semanticNumberFormatOptions,
   unitSuffix,
 } from "./format";
+import { type TimeLabelWords, formatTimeLabel } from "./timeWords";
 
 describe("formatSemanticNumber", () => {
   it("rounds and groups an integer, deterministically, whatever the locale argument omitted", () => {
@@ -113,5 +115,74 @@ describe("deltaDirection", () => {
     expect(deltaDirection(0.0001)).toBe("flat");
     expect(deltaDirection(-0.0004)).toBe("flat");
     expect(deltaDirection(0.0006)).toBe("up");
+  });
+});
+
+describe("formatTimeLabel", () => {
+  const words: TimeLabelWords = (key, vars) =>
+    ({
+      "lu.time.half": "H{n} {year}",
+      "lu.time.quarter": "Q{n} {year}",
+      "lu.time.weekOf": "Week of {date}",
+    })[key].replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k]));
+  const label = (iso: string, granularity: string, timeZone?: string, locale = "en-US") =>
+    formatTimeLabel(
+      iso,
+      { granularity, ...(timeZone && { timeZone }) } as Parameters<typeof formatTimeLabel>[1],
+      locale,
+      words
+    );
+  afterEach(() => vi.unstubAllEnvs());
+
+  const ZONES = ["America/New_York", "America/Los_Angeles", "Asia/Tokyo", "UTC"];
+
+  it("draws each coarse granularity as the written period in every reader zone", () => {
+    for (const zone of ZONES) {
+      vi.stubEnv("TZ", zone);
+      expect(label("2026-01", "year"), zone).toBe("2026");
+      expect(label("2026-01", "half"), zone).toBe("H1 2026");
+      expect(label("2026-07-01", "half"), zone).toBe("H2 2026");
+      expect(label("2026-01", "quarter"), zone).toBe("Q1 2026");
+      expect(label("2026-04-01", "quarter"), zone).toBe("Q2 2026");
+      expect(label("2026-12-31", "quarter"), zone).toBe("Q4 2026");
+      expect(label("2026-01", "month"), zone).toBe("Jan 2026");
+      expect(label("2026-01-05", "week"), zone).toBe("Week of Jan 5, 2026");
+      expect(label("2026-01-05", "day"), zone).toBe("Jan 5, 2026");
+      // a UTC-midnight instant is still its UTC period, not the reader's previous day
+      expect(label("2026-01-01T00:00:00Z", "month"), zone).toBe("Jan 2026");
+    }
+  });
+
+  it("datetime reads in the reader's zone unless the format names one; a named zone moves the period", () => {
+    vi.stubEnv("TZ", "America/New_York");
+    expect(label("2026-01-01T13:05:00Z", "datetime")).toBe("Jan 1, 2026, 8:05 AM");
+    vi.stubEnv("TZ", "Asia/Tokyo");
+    expect(label("2026-01-01T13:05:00Z", "datetime")).toBe("Jan 1, 2026, 10:05 PM");
+    expect(label("2026-01-01T13:05:00Z", "datetime", "UTC")).toBe("Jan 1, 2026, 1:05 PM");
+    // an explicit zone applies to coarse granularities too: 03:00Z on Jan 1 is still Dec 31 in New York
+    expect(label("2026-01-01T03:00:00Z", "quarter", "America/New_York")).toBe("Q4 2025");
+    expect(label("2026-01-01T03:00:00Z", "month", "America/New_York")).toBe("Dec 2025");
+  });
+
+  it("follows the locale, and the catalogue words come from the caller", () => {
+    expect(label("2026-01", "month", undefined, "de-DE")).toBe("Jan. 2026");
+    expect(label("2026-04", "quarter", undefined, "ar-EG")).toBe("Q٢ ٢٠٢٦");
+    const fr: TimeLabelWords = (key, v) => (key === "lu.time.quarter" ? `T${v.n} ${v.year}` : "?");
+    expect(formatTimeLabel("2026-04", { granularity: "quarter" }, "fr-FR", fr)).toBe("T2 2026");
+  });
+
+  it("is undefined for a timestamp that does not parse or a zone Intl refuses", () => {
+    expect(label("not a date", "month")).toBeUndefined();
+    expect(label("2026-01", "month", "Mars/Olympus")).toBeUndefined();
+  });
+
+  it("isTimeFormat is the contract without zod (a widget prop is never checked)", () => {
+    expect(isTimeFormat({ granularity: "month" })).toBe(true);
+    expect(isTimeFormat({ granularity: "month", timeZone: "Asia/Tokyo" })).toBe(true);
+    expect(isTimeFormat({ granularity: "fortnight" })).toBe(false);
+    expect(isTimeFormat({ granularity: "month", timeZone: "Mars/Olympus" })).toBe(false);
+    expect(isTimeFormat({ granularity: "month", timeZone: 5 })).toBe(false);
+    expect(isTimeFormat(null)).toBe(false);
+    expect(isTimeFormat("month")).toBe(false);
   });
 });

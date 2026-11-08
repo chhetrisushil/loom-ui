@@ -94,7 +94,7 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
 /** The loom contract an app declares on a semantic entry's `surfaces.web` when it resolves to a
  * framework kind. */
 export const frameworkKindContracts: readonly CatalogEntry[] = [
-  { kind: "TimeSeries", props: ["unit", "format"], binding: "required" },
+  { kind: "TimeSeries", props: ["unit", "format", "timeFormat"], binding: "required" },
   { kind: "BarChart", props: ["unit", "format"], binding: "required" },
   { kind: "Kpi", props: ["unit", "format"], binding: "required" },
   { kind: "Table", props: [], binding: "required" },

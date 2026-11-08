@@ -92,6 +92,13 @@ export interface AdapterCapabilities {
    * this off and is only checked to draw the transcript unchanged.
    */
   readonly chatEntryAccessory?: boolean;
+  /**
+   * The renderer draws a TimeSeries' time axis as text, and labels it as a declared
+   * `TimeSeriesValue.timeFormat` says (core's `formatTimeLabel`): each period as written, once. A
+   * surface that draws no time labels (a sparkline) leaves this off and is only checked to accept
+   * and draw a value that declares one.
+   */
+  readonly timeAxisLabels?: boolean;
 }
 
 export interface RendererAdapter {

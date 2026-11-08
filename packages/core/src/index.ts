@@ -195,10 +195,15 @@ export {
   effectiveFormat,
   formatFromUnit,
   formatSemanticNumber,
+  isTimeFormat,
+  isTimeZone,
+  TIME_GRANULARITIES,
   semanticNumberFormatOptions,
   unitSuffix,
 } from "./format";
-export type { DeltaDirection } from "./format";
+export type { DeltaDirection, TimeGranularity } from "./format";
+export { formatTimeLabel } from "./timeWords";
+export type { TimeLabelKey, TimeLabelWords } from "./timeWords";
 export {
   HYDRATION_STATUS_PREFIX,
   HYDRATION_VALUES_PREFIX,
@@ -237,6 +242,7 @@ export {
   FRAMEWORK_KINDS,
   KpiValue,
   SemanticFormat,
+  TimeFormat,
   StatusCardValue,
   ProseValue,
   StatusLevel,

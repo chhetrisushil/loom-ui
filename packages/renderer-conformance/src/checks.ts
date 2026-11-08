@@ -913,6 +913,60 @@ check(
     })
 );
 
+// ── time format ────────────────────────────────────────────────────────────────────────────────
+check(
+  "time-format",
+  "a declared timeFormat labels the time axis: each period as written, once, in its zone",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      // A surface that draws no TimeSeries owes nothing here (as the i18n check treats its kinds).
+      if (!adapter.kinds.includes("TimeSeries")) return;
+      const claims = adapter.capabilities?.timeAxisLabels === true;
+      const months = Array.from({ length: 12 }, (_, i) => `2026-${String(i + 1).padStart(2, "0")}`);
+      const series = (timestamps: readonly string[]) => [
+        {
+          label: "trend-series",
+          points: timestamps.map((timestamp, i) => ({ timestamp, value: i })),
+        },
+      ];
+      const draw = async (value: unknown, i18n?: import("@loom-ui/core").LuI18n) =>
+        (
+          await s.mount(
+            viewOf([bound("TimeSeries", "ts", "Trend", "h-ts")]),
+            { "h-ts": { value, state: "ready" } },
+            i18n
+          )
+        ).text();
+      const out = await draw({ timeFormat: { granularity: "quarter" }, series: series(months) });
+      must(has(out, "trend-series"), `a value declaring a timeFormat was not drawn: ${show(out)}`);
+      if (!claims) return; // a surface that draws no time labels owes only the above
+      for (const q of ["Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"]) {
+        const n = flat(out).split(q).length - 1;
+        must(n === 1, `"${q}" is labelled ${n} times, not once: ${show(out)}`);
+      }
+      must(!has(out, "2025"), `a period moved to the previous year: ${show(out)}`);
+      // A named zone moves the period: 03:00Z on Feb 1 is still January in New York.
+      const zoned = await draw({
+        timeFormat: { granularity: "month", timeZone: "America/New_York" },
+        series: series(["2026-02-01T03:00:00Z", "2026-03-01T12:00:00Z"]),
+      });
+      must(
+        has(zoned, "Jan 2026") && !has(zoned, "Feb 2026"),
+        `the declared timeZone was not applied: ${show(zoned)}`
+      );
+      if (adapter.capabilities?.i18n === true) {
+        const words = await draw(
+          { timeFormat: { granularity: "quarter" }, series: series(["2026-01", "2026-04"]) },
+          { messages: { "lu.time.quarter": "Quartal-{n}-{year}" } }
+        );
+        must(
+          has(words, "Quartal-1-2026"),
+          `the host's word did not label the quarter: ${show(words)}`
+        );
+      }
+    })
+);
+
 // ── i18n ───────────────────────────────────────────────────────────────────────────────────────
 check("i18n", "the host's words and locale replace the fixed ones", (adapter) =>
   withSession(adapter, async (s) => {
