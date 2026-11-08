@@ -63,12 +63,24 @@ export type {
   TimeFormat,
   StatusCardValue,
   ProseValue,
+  DiagramValue,
   TableCell,
   TableColumn,
   TableValue,
   TimeSeriesValue,
 } from "./values";
 export { MAX_ROW_ACTIONS, TABLE_ROW_ACTION, tableRowProblems } from "./tableRows";
+export {
+  DIAGRAM_LAYOUTS,
+  MAX_DIAGRAM_EDGES,
+  MAX_DIAGRAM_NODES,
+  diagramProblems,
+} from "./diagramStructure";
+export type { DiagramLayout, DiagramProblem } from "./diagramStructure";
+export { diagramGraph } from "./diagramGraph";
+export type { DiagramGraph, ResolvedEdge } from "./diagramGraph";
+export { OUTLINE_ARROW, OUTLINE_DASH, diagramOutline } from "./diagramText";
+export type { OutlineLine } from "./diagramText";
 export type { TableRowAction } from "./tableRows";
 export type { Finding } from "./experience";
 export { MAX_CHUNK_TEXT, MAX_STREAM_TEXT, appendChunk } from "./streamText";

@@ -7,12 +7,13 @@ import {
 } from "@loom-ui/core/browser";
 import type {
   BarChartValue,
+  DiagramValue,
   KpiValue,
   StatusCardValue,
   TableValue,
   TimeSeriesValue,
 } from "@loom-ui/core/browser";
-import { pluralForms } from "@loom-ui/core/messages";
+import { type LuMessageKey, pluralForms } from "@loom-ui/core/messages";
 import { type SemanticFormat, effectiveFormat, measure } from "./format";
 import { tPlural } from "./plural";
 import { LEVEL_KEY, say } from "./say";
@@ -95,9 +96,28 @@ export function describeValue(
       const v = value as StatusCardValue;
       return `${title}: ${say(LEVEL_KEY[v.level])}, ${v.headline}${v.detail ? `. ${v.detail}` : ""}`;
     }
+    case "Diagram":
+      return `${title}: ${diagramSummary(value as DiagramValue)}`;
     default:
       return title;
   }
+}
+
+const LAYOUT_KEY = {
+  tree: "lu.diagram.layout.tree",
+  flow: "lu.diagram.layout.flow",
+  timeline: "lu.diagram.layout.timeline",
+  network: "lu.diagram.layout.network",
+} as const satisfies Record<DiagramValue["layout"], LuMessageKey>;
+
+/** "diagram, tree, 12 nodes": the short spoken form of a diagram (its structure is the widget's outline). */
+export function diagramSummary(v: Pick<DiagramValue, "layout" | "nodes">): string {
+  const n = v.nodes.length;
+  return say("lu.diagram.summary", {
+    layout: say(LAYOUT_KEY[v.layout]),
+    n,
+    noun: tPlural("lu.plural.node", n, pluralForms("lu.plural.node")),
+  });
 }
 /** One phrase for every table, so Table, DataTable and their <caption>s read alike. */
 function tableWith(rows: number): string {

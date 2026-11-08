@@ -103,6 +103,19 @@ export const KIND_FIXTURES: readonly KindFixture[] = [
     needles: ["Heading", "body"],
   },
   {
+    kind: "Diagram",
+    title: "Org diagram",
+    value: {
+      layout: "tree",
+      nodes: [
+        { id: "a", label: "boss-node" },
+        { id: "b", label: "report-node" },
+      ],
+      edges: [{ from: "a", to: "b" }],
+    },
+    needles: ["boss-node", "report-node"],
+  },
+  {
     kind: "Note",
     title: "About note",
     props: { text: "Plain words 77" },

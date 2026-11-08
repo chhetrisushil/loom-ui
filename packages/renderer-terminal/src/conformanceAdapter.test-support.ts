@@ -19,6 +19,7 @@ export const terminalAdapter: RendererAdapter = {
     "TimeSeries",
     "Note",
     "Prose",
+    "Diagram",
     "Image",
     "Chat",
     "TextInput",

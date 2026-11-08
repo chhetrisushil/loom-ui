@@ -1,7 +1,7 @@
 import { FRAMEWORK_KINDS, type SemanticFormat, formatSemanticNumber } from "@loom-ui/core";
 import { builtinCatalog, catalogCoverage, customWidget$ } from "@loom/blueprint-runtime";
 import { describe, expect, it } from "vitest";
-import { loomUiTerminalRegistry, terminalRegistry } from "./registry";
+import { createLoomUiTerminalRegistry, loomUiTerminalRegistry, terminalRegistry } from "./registry";
 
 const b = { projectionId: "p", path: "v" };
 describe("terminal registry", () => {
@@ -204,6 +204,68 @@ describe("terminal registry", () => {
     const big = r?.(w, { format: "plain", text: `${"x\n".repeat(600_000)}` }) ?? "";
     expect(big).toContain("(document cut short)");
     expect(big.split("\n").length).toBeLessThan(300);
+  });
+  describe("Diagram", () => {
+    const r = loomUiTerminalRegistry.get("Diagram");
+    const w = customWidget$({ kind: "Diagram", id: "d", title: "Chart", binding: b });
+    const node = (id: string, extra: Record<string, unknown> = {}) => ({ id, label: id, ...extra });
+    const edge = (from: string, to: string, extra: Record<string, unknown> = {}) => ({
+      from,
+      to,
+      ...extra,
+    });
+    it("a tree is an indented outline under the title", () => {
+      const out = r?.(w, {
+        layout: "tree",
+        title: "Org",
+        nodes: [node("ceo"), node("cto"), node("cfo"), node("dev")],
+        edges: [edge("ceo", "cto"), edge("ceo", "cfo"), edge("cto", "dev")],
+      });
+      expect(out).toBe(
+        ["Chart:", "    Org", "    ceo", "      cto", "        dev", "      cfo"].join("\n")
+      );
+    });
+    it("a flow or network is one arrow line per edge, edge-less nodes after", () => {
+      const out = r?.(w, {
+        layout: "flow",
+        nodes: [node("a"), node("b"), node("c"), node("lone")],
+        edges: [edge("b", "c", { label: "ok" }), edge("a", "b"), edge("c", "a")],
+      });
+      expect(out).toBe(
+        ["Chart:", "    a → b", "    b → c (ok)", "    c → a", "    lone"].join("\n")
+      );
+      expect(
+        r?.(w, { layout: "network", nodes: [node("x"), node("y")], edges: [edge("x", "y")] })
+      ).toBe("Chart:\n    x → y");
+    });
+    it("a timeline is dated lines in chronological order", () => {
+      const out = r?.(w, {
+        layout: "timeline",
+        timeFormat: { granularity: "month" },
+        nodes: [node("later", { at: "2026-03-05" }), node("sooner", { at: "2026-01-02" })],
+        edges: [],
+      });
+      expect(out).toBe("Chart:\n    Jan 2026 — sooner\n    Mar 2026 — later");
+    });
+    it("labels are inert: controls, bidi and newlines never reach the frame", () => {
+      const out =
+        r?.(w, {
+          layout: "network",
+          title: "t\u001b[31m",
+          nodes: [{ id: "a", label: "x\u001b[31mred\u202e\nline2" }, node("b")],
+          edges: [edge("a", "b", { label: "e\u0007" })],
+        }) ?? "";
+      expect(["\u001b", "\u202e", "\u0007"].some((c) => out.includes(c))).toBe(false);
+      expect(out.split("\n")).toEqual(["Chart:", "    t[31m", "    x[31mred line2 → b (e)"]);
+    });
+    it("a value that breaks a rule is an error line, not a diagram; chrome host drops the lead", () => {
+      expect(r?.(w, { layout: "tree", nodes: [node("a"), node("b")], edges: [] })).toMatch(
+        /^✗ Chart: value for kind "Diagram" does not match its contract at edges: a tree has exactly one root/
+      );
+      expect(r?.(w, undefined)).toBe("Chart: —");
+      const host = createLoomUiTerminalRegistry({ chrome: "host" }).get("Diagram");
+      expect(host?.(w, { layout: "network", nodes: [node("a")], edges: [] })).toBe("a");
+    });
   });
   it("Note: static text from props, with no binding and no value", () => {
     const r = loomUiTerminalRegistry.get("Note");

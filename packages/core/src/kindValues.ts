@@ -12,6 +12,7 @@
 // contract in `values.ts` and that test fails until this file follows.
 
 import { CHAT_INPUT_KINDS, CHAT_KIND, chatValueIssues, multiSelectValueIssues } from "./chatValue";
+import { DIAGRAM_LAYOUTS, diagramProblems } from "./diagramStructure";
 import type { Finding } from "./experience";
 import { TIME_GRANULARITIES, TIME_ZONE_REFUSED, isTimeZone } from "./format";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
@@ -32,6 +33,7 @@ export const FRAMEWORK_KINDS = [
   "StatusCard",
   "Note",
   "Prose",
+  "Diagram",
   "A2UIView",
   "SandboxView",
   // U9: media. Each Image/Audio/Video/File is bound to a MediaRef (never bytes); MediaInput is static.
@@ -469,6 +471,49 @@ const prose = (v: unknown, p: Path, out: Out): Status =>
     ["note", optionalString],
   ]);
 
+const diagram = (v: unknown, p: Path, out: Out): Status => {
+  const status = object(v, p, out, [
+    ["layout", enumOf(DIAGRAM_LAYOUTS)],
+    ["title", optionalString],
+    ["timeFormat", (x, xp, xo) => opt(x, xp, xo, { optional: true }, timeFormat)],
+    [
+      "nodes",
+      (x, xp, xo) =>
+        array(x, xp, xo, (n, np, no) =>
+          object(n, np, no, [
+            ["id", string],
+            ["label", string],
+            ["kind", optionalString],
+            ["group", optionalString],
+            ["at", optionalString],
+          ])
+        ),
+    ],
+    [
+      "edges",
+      (x, xp, xo) =>
+        array(x, xp, xo, (e, ep, eo) =>
+          object(e, ep, eo, [
+            ["from", string],
+            ["to", string],
+            ["label", optionalString],
+            ["kind", optionalString],
+          ])
+        ),
+    ],
+  ]);
+  // Like zod's `superRefine`: the structural rules run unless a type error aborted the parse.
+  if (status === "aborted") return status;
+  let worst: Status = status;
+  for (const problem of diagramProblems(v as Record<string, unknown>)) {
+    for (const seg of problem.path) p.push(seg);
+    fail(out, p, problem.message);
+    p.length -= problem.path.length;
+    worst = "dirty";
+  }
+  return worst;
+};
+
 const any = (): Status => "valid";
 const record = (v: unknown, p: Path, out: Out): Status => type("object", v, p, out);
 
@@ -526,6 +571,7 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   StatusCard: statusCard,
   Note: (v, p, out) => type("undefined", v, p, out),
   Prose: prose,
+  Diagram: diagram,
   A2UIView: any,
   SandboxView: any,
   // U9: the value is a MediaRef; ONE shared checker (`media.ts`) backs this and the zod contract.

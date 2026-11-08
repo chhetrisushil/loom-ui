@@ -52,15 +52,36 @@ import "@loom-ui/renderer-lit/elements/lu-simple"; // lu-progress, lu-alert, lu-
 ```
 
 Entries are named after the widget module: `lu-a2ui-view`, `lu-bar-chart`, `lu-chat`,
-`lu-chat-missing`, `lu-data-table`, `lu-embedded` (the A2UI / sandbox widgets, plus the two elements
+`lu-chat-missing`, `lu-data-table`, `lu-diagram`, `lu-diagram-missing`, `lu-embedded` (the A2UI / sandbox widgets, plus the two elements
 they nest), `lu-inputs`, `lu-kpi`, `lu-locale-picker`, `lu-media`, `lu-media-missing`,
 `lu-metric-card`, `lu-note`, `lu-prose`, `lu-sandbox`, `lu-simple`, `lu-status-badge`, `lu-status-card`,
 `lu-table`, `lu-time-range-picker`, `lu-timeseries`. `defineElement(tag, ctor)` (root entry) is the
-idempotent define they use. The opt-in `./media` and `./chat` registries (`createMediaLitRegistry`,
-`createChatLitRegistry`, `registerMediaWidgets`, `registerChatWidgets`) define their own elements
+idempotent define they use. The opt-in `./media`, `./chat` and `./diagram` registries (`createMediaLitRegistry`,
+`createChatLitRegistry`, `createDiagramLitRegistry`, `registerMediaWidgets`, `registerChatWidgets`, `registerDiagramWidgets`) define their own elements
 when called, so those hosts need no change. Measured effect (minified, esm): `./dom` 178,969 ->
 103,042 bytes, `./media` 186,244 -> 134,995, `./chat` 201,022 -> 149,815, a single `elements/lu-kpi`
 entry 62,501 against 166,282 for `register`.
+
+## The diagram entry
+
+`Diagram` (a tree, flow, timeline or network; contract and rules in `docs/reference/composition.md`) is an
+opt-in entry like `./media` and `./chat`, so a page with no diagram pays for neither the layout math nor
+the drawer (only the value contract rides in every page, and the default registry draws a fixed
+"not loaded" placeholder for the kind).
+
+```ts
+import { createDiagramLitRegistry } from "@loom-ui/renderer-lit/diagram";
+renderBlueprintDom(host, blueprint, { registry: createDiagramLitRegistry() });
+// or, on a registry you already built:  registerDiagramWidgets(registerChatWidgets(createLitRegistry()))
+```
+
+`diagramKindContracts` is the loom contract a catalogue's `surfaces.web` carries (`props: ["timeFormat"]`, a
+fallback for a value that declares none). `lu-diagram` draws deterministic SVG in the shadow root at its
+natural size inside a scroll container, with node and edge labels as text only (never markup), node
+colour by `group`, and `data-kind` from `kind`. The svg is `aria-hidden`; the accessible name is the
+short summary ("title: diagram, tree, 12 nodes") and the full structure is a visually hidden list built
+from core's shared `diagramOutline` (nested for a tree). The layout math (`layoutDiagram`, in
+`charts/diagramLayout.ts`) is pure and iterative.
 
 ## Key concepts
 
@@ -342,6 +363,8 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.plural.row.other` | `rows` |
 | `lu.plural.entry.one` | `entry` |
 | `lu.plural.entry.other` | `entries` |
+| `lu.plural.node.one` | `node` |
+| `lu.plural.node.other` | `nodes` |
 | `lu.level.ok` | `ok` |
 | `lu.level.warning` | `warning` |
 | `lu.level.critical` | `critical` |
@@ -455,6 +478,13 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.prose.more` | `Show more` |
 | `lu.prose.cut` | `(document cut short)` |
 | `lu.prose.empty` | `(no text)` |
+| `lu.diagram.summary` | `diagram, {layout}, {n} {noun}` |
+| `lu.diagram.layout.tree` | `tree` |
+| `lu.diagram.layout.flow` | `flow` |
+| `lu.diagram.layout.timeline` | `timeline` |
+| `lu.diagram.layout.network` | `network` |
+| `lu.diagram.outline` | `Diagram outline` |
+| `lu.diagram.notLoaded` | `Diagram (not loaded)` |
 | `lu.input.message` | `Message` |
 | `lu.input.hint` | `Press Ctrl+Enter to send.` |
 | `lu.input.sent` | `Sent` |

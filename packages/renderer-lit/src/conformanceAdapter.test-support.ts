@@ -5,6 +5,7 @@ import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
 import { vi } from "vitest";
 import "./register";
 import { registerChatWidgets } from "./chat";
+import { registerDiagramWidgets } from "./diagram";
 import { createLitRegistry } from "./dom/litRegistry";
 import { renderBlueprintDom } from "./dom/renderBlueprintDom";
 import { configureI18n, setLocale } from "./i18n";
@@ -105,6 +106,7 @@ export const litAdapter: RendererAdapter = {
     "TimeSeries",
     "Note",
     "Prose",
+    "Diagram",
     "Image",
     "Chat",
     "TextInput",
@@ -171,7 +173,9 @@ export const litAdapter: RendererAdapter = {
               },
             },
           };
-    const registry = registerMediaWidgets(registerChatWidgets(createLitRegistry(opts), opts));
+    const registry = registerDiagramWidgets(
+      registerMediaWidgets(registerChatWidgets(createLitRegistry(opts), opts))
+    );
     const handle = renderBlueprintDom(host, blueprint, {
       projectionRuntime: runtime,
       executionId: store.executionId,

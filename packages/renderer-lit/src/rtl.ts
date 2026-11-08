@@ -37,6 +37,8 @@ export const RTL_BEHAVIOR: Record<string, RtlBehavior> = {
   "lu-timeseries": "preserve",
   "lu-bar-chart": "preserve",
   "lu-sparkline": "preserve",
+  // Node positions are the diagram's own: a timeline reads left to right, a flow in its layers.
+  "lu-diagram": "preserve",
   // Everything else is text and boxes, and mirrors.
 };
 

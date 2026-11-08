@@ -16,7 +16,7 @@ import {
 } from "./litRegistry";
 import "../register";
 
-// The opt-in entries' kinds (`@loom-ui/renderer-lit/media`, `/chat`): the default registry draws a fixed placeholder for them.
+// The opt-in entries' kinds (`@loom-ui/renderer-lit/media`, `/chat`, `/diagram`): the default registry draws a fixed placeholder for them.
 const MEDIA = new Set<string>([
   "Image",
   "Audio",
@@ -28,6 +28,7 @@ const MEDIA = new Set<string>([
   "FormInput",
   "SelectInput",
   "MultiSelectInput",
+  "Diagram",
 ]);
 
 describe("litRegistry parity", () => {

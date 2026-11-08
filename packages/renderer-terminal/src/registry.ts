@@ -3,6 +3,7 @@ import {
   type BarChartValue,
   type ChatValue,
   DELTA_FORMAT,
+  type DiagramValue,
   type KpiValue,
   LocalizedText,
   type LuI18n,
@@ -26,6 +27,7 @@ import {
   createSay,
   deltaDirection,
   describeMedia,
+  diagramOutline,
   effectiveFormat,
   fieldsProblem,
   formatSemanticNumber,
@@ -361,6 +363,36 @@ const prose = (host: boolean, x: Env) =>
     return [...(host ? [] : [`${title(w)}:`]), ...out.map((l) => `${indent}${l}`)].join("\n");
   });
 
+// A diagram as text: core's shared outline (the same lines the web's hidden outline holds), one per
+// line, hung under the title. Every label is untrusted data: cut to one clean line BEFORE the outline
+// joins them, so no control or bidi character, and no newline, reaches the frame.
+const diagram = (host: boolean, x: Env) =>
+  guarded(host, "Diagram", (w, v) => {
+    const d = v as DiagramValue;
+    const clean = (t: string): string => oneLineChatText(t, 200);
+    const checked: DiagramValue = {
+      ...d,
+      nodes: d.nodes.map((n) => ({
+        ...n,
+        label: clean(n.label),
+        ...(n.at === undefined ? {} : { at: n.at }),
+      })),
+      edges: d.edges.map((e) => ({
+        ...e,
+        ...(e.label === undefined ? {} : { label: clean(e.label) }),
+      })),
+    };
+    const indent = hang(host);
+    const body = diagramOutline(checked, x.locale, x.say).map(
+      (l) => `${indent}${"  ".repeat(l.depth)}${l.text}`
+    );
+    return [
+      ...(host ? [] : [`${title(w)}:`]),
+      ...(d.title ? [`${indent}${clean(d.title)}`] : []),
+      ...body,
+    ].join("\n");
+  });
+
 // Never bound, so never `guarded`: loom calls a channel-less widget's renderer directly, with
 // `value === undefined`, and the text lives in props (a string after compile; an uncompiled
 // LocalizedText shows its fallback, never its key).
@@ -543,6 +575,7 @@ export function createLoomUiTerminalRegistry(
     .register("StatusCard", statusCard(host, x))
     .register("Note", note(host, x))
     .register("Prose", prose(host, x))
+    .register("Diagram", diagram(host, x))
     .register("A2UIView", a2uiView(host, x))
     .register("SandboxView", sandboxView(host, x))
     .register("Image", mediaLine(host, x, "Image", opts.media))

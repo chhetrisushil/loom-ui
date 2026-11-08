@@ -247,6 +247,39 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
     withOptional(r, o, "note", () => pick(r, strs));
     return o;
   },
+  Diagram: (r) => {
+    // Small graphs over a tiny id pool, so duplicates, dangling edges, extra roots, cycles and
+    // undated timeline nodes all turn up often; the structural rules are compared as full issue lists.
+    const ids = ["a", "b", "c", "d", ""];
+    const layout = pick(r, ["tree", "tree", "flow", "timeline", "network", "bogus"]);
+    const nodes = arr(
+      r,
+      () => {
+        const n: Record<string, unknown> = { id: pick(r, ids), label: pick(r, strs) };
+        withOptional(r, n, "at", () => pick(r, ["2026-01-05", "2026-01-01T10:00:00Z", "soon", ""]));
+        withOptional(r, n, "kind", () => pick(r, strs));
+        withOptional(r, n, "group", () => pick(r, strs));
+        return n;
+      },
+      5
+    );
+    const edges = arr(
+      r,
+      () => {
+        const e: Record<string, unknown> = { from: pick(r, ids), to: pick(r, ids) };
+        withOptional(r, e, "label", () => pick(r, strs));
+        return e;
+      },
+      6
+    );
+    const o: Record<string, unknown> = { layout, nodes, edges };
+    withOptional(r, o, "title", () => pick(r, strs));
+    withOptional(r, o, "timeFormat", () => ({
+      granularity: pick(r, ["day", "month", "bogus"]),
+      ...(chance(r, 0.3) ? { timeZone: pick(r, ["UTC", "Mars/Olympus"]) } : {}),
+    }));
+    return o;
+  },
   A2UIView: (r) => pick(r, [{ x: 1 }, [], "s"]),
   SandboxView: (r) => pick(r, [{ x: 1 }, [], "s"]),
   Image: (r) => genMedia(r, "image"),
@@ -456,7 +489,9 @@ describe(`zod-free checker vs zod contracts — seeded fuzz (seed 0x${SEED.toStr
         expect(failures).toBeLessThan(ITERATIONS);
       }
       // The full-list comparison is only meaningful if the corpus has multi-issue values.
-      if (["TimeSeries", "BarChart", "Table", "StatusCard", "Kpi", "Prose"].includes(kind)) {
+      if (
+        ["TimeSeries", "BarChart", "Table", "StatusCard", "Kpi", "Prose", "Diagram"].includes(kind)
+      ) {
         expect(multi, `${kind}: no multi-issue values in the corpus`).toBeGreaterThan(0);
       }
     });

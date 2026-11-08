@@ -82,6 +82,7 @@ settle first (await your scheduler) so the kit never sleeps.
 | `untrusted-text` | markup in a text is shown literally; on a surface that interprets control characters, none reach it |
 | `media-refs` | a media reference is described and its address (or any prefix) is never shown |
 | `chat` | complete turns in order; a restricted turn only as a placeholder; a field outside the `ChatValue` contract is not drawn |
+| `diagram` | every renderer that draws `Diagram`: each node on the surface in the shared outline's order (a tree parent before its child, a flow's edges by source layer, a timeline chronological), an edge's label shown, and a value that breaks a rule (duplicate id, dangling edge, two roots, a cycle in a tree, an undated timeline node, 201 nodes, 401 edges) is the error state: the widget's title and no node. A markup-looking label is shown literally. A renderer that does not claim `Diagram` owes nothing here |
 | `i18n` | the host's messages replace fixed words (`LU_MESSAGES` keys) and its locale formats numbers |
 | `actions` | controls emit the shared `WidgetAction` shapes (`APPROVE`/`REJECT` with `payload.approved`; `SELECT` / `SELECT_MANY` (`payload.values`, in the order driven) / `SUBMIT_TEXT` with a well-formed idempotency `key`) |
 | `multi-select-current-value` | a bound `MultiSelectInput` reads differently for each chosen set and draws what is chosen |
