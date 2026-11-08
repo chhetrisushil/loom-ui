@@ -21,6 +21,7 @@ import {
 import { cssomStyle } from "../cssomStyle";
 import { effectiveFormat, tick as formatTick, measure, timeLabel, unitSuffix } from "../format";
 
+import { refOverlayStyles, refStyles } from "../refStyles";
 import { dirFor } from "../rtl";
 import { say } from "../say";
 import { hideTooltip, showTooltip } from "../tooltip";
@@ -48,6 +49,7 @@ export class LuTimeseries extends LuWidget {
   private ro?: ResizeObserver;
 
   static styles = [
+    refStyles,
     chartHostStyles,
     css`
     svg {
@@ -95,6 +97,7 @@ export class LuTimeseries extends LuWidget {
       inset-inline-start: 0;
     }
   `,
+    refOverlayStyles,
   ];
 
   connectedCallback(): void {

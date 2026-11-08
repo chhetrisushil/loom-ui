@@ -42,6 +42,7 @@ import {
   tableColumnFormat,
   tableColumnLabel,
   unitSuffix,
+  widgetRefsOf,
 } from "@loom-ui/core";
 import { type MultiSelectValue, multiSelectValueIssues } from "@loom-ui/core/chat-ui";
 import { MD_DOC_MAX_TEXT, parseMarkdownDocument, parseOrgDocument } from "@loom-ui/core/document";
@@ -206,8 +207,23 @@ const guarded =
     const check = checkKindValue(kind, v);
     if (!check.ok) return `✗ ${l(w, check.finding.message)}`;
     if (v === undefined) return l(w, "—");
-    return body(w, v, l, host);
+    const out = body(w, v, l, host);
+    const notes = refFootnotes(kind, v, host);
+    return notes === "" ? out : `${out}\n${notes}`;
   };
+
+/**
+ * `[1] label` per source the value cites, one line each under the widget (`[1]` alone without a label). The label is
+ * data, so it is cut to one clean line like any untrusted text; the numbering is the web's (array order from 1).
+ */
+function refFootnotes(kind: string, v: unknown, host: boolean): string {
+  return widgetRefsOf(kind, v)
+    .map((r, i) => {
+      const label = r.label === undefined ? "" : oneLineChatText(r.label, 80);
+      return `${hang(host)}[${i + 1}]${label === "" ? "" : ` ${label}`}`;
+    })
+    .join("\n");
+}
 
 // The right-axis marker is semantic information (which axis a series reads against), so it must
 // never be lost to the label column's fixed width. `pad(`${label}${marker}`, width)` — padding

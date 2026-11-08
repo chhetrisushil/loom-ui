@@ -10,6 +10,7 @@ import {
   measure,
   unitSuffix,
 } from "../format";
+import { refOverlayStyles, refStyles } from "../refStyles";
 import { dirFor } from "../rtl";
 import { LuWidget } from "./base";
 
@@ -37,6 +38,7 @@ export class LuBarChart extends LuWidget {
   private ro?: ResizeObserver;
 
   static styles = [
+    refStyles,
     chartHostStyles,
     css`
     /* Out of flow: what the plot draws must not change what the host measures (charts/frame.ts) */
@@ -58,6 +60,7 @@ export class LuBarChart extends LuWidget {
       font-size: 10px;
     }
   `,
+    refOverlayStyles,
   ];
 
   connectedCallback(): void {

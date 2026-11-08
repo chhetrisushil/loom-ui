@@ -120,8 +120,9 @@ export const litAdapter: RendererAdapter = {
     chatMarkdown: true,
     chatEntryAccessory: true,
     timeAxisLabels: true,
+    references: true,
   },
-  mount(blueprint, { values, onAction, i18n, chatAccessory }) {
+  mount(blueprint, { values, onAction, i18n, chatAccessory, unattended }) {
     vi.stubGlobal("IntersectionObserver", undefined);
     if (i18n !== undefined) {
       configureI18n(i18n);
@@ -180,7 +181,7 @@ export const litAdapter: RendererAdapter = {
       projectionRuntime: runtime,
       executionId: store.executionId,
       registry,
-      onAction: forward,
+      ...(unattended === true ? {} : { onAction: forward }),
     });
     let live = true;
     return {
@@ -241,6 +242,11 @@ export const litAdapter: RendererAdapter = {
             held = undefined;
             if (last !== undefined) await onAction(last);
           }
+        } else if (intent.kind === "ref") {
+          // A marker is a button only when a host listens; otherwise there is nothing to press.
+          const marker = inner(w, `button[data-n="${intent.n}"]`);
+          if (!marker) throw new Error(`no source marker ${intent.n}`);
+          marker.click();
         } else if (intent.kind === "select") {
           const sel = inner(w, "select") as HTMLSelectElement | null;
           if (!sel) throw new Error("no select");

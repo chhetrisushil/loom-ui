@@ -59,7 +59,9 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "streamText.js",
   "tableRows.js",
   "timeWords.js",
+  // Source refs on a data widget: the zod-free rule (`widgetRefProblems`) rides in `checkKindValue`, the reader in the widget frame.
   "viewer.js",
+  "widgetRefs.js",
 ]);
 
 async function bundle(entry: string) {
@@ -111,7 +113,12 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Diagram kind: 142 -> 146 kB (measured 141_334 -> 144_731): the DiagramValue contract and its structural rules
     // (core's `diagramStructure.js`, 2.2 kB) in `checkKindValue`, the `lu-diagram-missing` placeholder and the diagram's fixed words.
     // `lu-diagram`, the layout math and core's outline/graph helpers are NOT here: they ship in the opt-in `diagram.js` entry.
-    ["index.js", 146 * 1000],
+    // Source references (refs on Kpi, BarChart, TimeSeries, Table, StatusCard, Diagram): 146 -> 150 kB (measured 144_731 -> 148_773),
+    // media 78 -> 84 kB (76_628 -> 81_765), chat 128 -> 132 kB (126_671 -> 129_382), diagram stays under 84 kB (76_816 -> 83_314),
+    // dom/index 32_833 -> 32_993, containers 12_775 -> 12_935. Cause: the refs rule and the zod-free list checker in `checkKindValue`, the
+    // marker strip with its press/answer handling in the shared `LuWidget` frame (plus chat's dispatch helper, now reached from it) and
+    // its styles in six widgets, and four catalogue words.
+    ["index.js", 150 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
@@ -129,7 +136,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Prose kind (2026-10-24): 72 -> 73 kB (measured 72_502): the Prose value contract and its three fixed words.
     // TimeFormat: 73 -> 74 kB (measured 72_571 -> 73_255): the TimeFormat contract in `checkKindValue` and its three words.
     // Diagram kind: 74 -> 78 kB (measured 73_255 -> 76_628): the DiagramValue contract and the placeholder (as index.js).
-    ["media.js", 78 * 1000],
+    ["media.js", 84 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
     // Chat markdown (176i): 94 -> 110 kB (measured 93_391 -> 107_720): core's bounded parser (chatMarkdown, chatMdBlock,
@@ -143,7 +150,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // words. `chat.js` does not reach `lu-prose` or `@loom-ui/core/document`; 123 keeps about 2 kB over the measurement.
     // TimeFormat: 123 -> 124 kB (measured 122_610 -> 123_295): the TimeFormat contract in `checkKindValue` and its three words.
     // Diagram kind: 124 -> 128 kB (measured 123_295 -> 126_671): the DiagramValue contract and the placeholder (as index.js).
-    ["chat.js", 128 * 1000],
+    ["chat.js", 132 * 1000],
     // The opt-in diagram widget (`@loom-ui/renderer-lit/diagram`): lu-diagram, the layout math and core's outline and graph
     // helpers, on top of the default registry it extends. Measured 76_859; budget = measured + ~10%.
     ["diagram.js", 84 * 1000],

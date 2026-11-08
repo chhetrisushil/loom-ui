@@ -1,6 +1,8 @@
 import {
   type ContainerNode,
+  REF_OPEN_ACTION,
   type SemanticNode,
+  WIDGET_REF_KINDS,
   compile,
   defineSemanticCatalog,
   genesis,
@@ -54,7 +56,7 @@ class Session {
     blueprint: Blueprint,
     values: Record<string, HandleEntry> = {},
     i18n?: import("@loom-ui/core").LuI18n,
-    extra: Pick<MountOptions, "chatAccessory"> = {}
+    extra: Pick<MountOptions, "chatAccessory" | "unattended"> = {}
   ): Promise<MountedRenderer> {
     const m = await this.adapter.mount(blueprint, {
       values,
@@ -1148,6 +1150,127 @@ check(
         has(literal, "<img src=x onerror=alert(1)>"),
         `a markup-looking label was not shown literally: ${show(literal)}`
       );
+    })
+);
+
+// ── references ─────────────────────────────────────────────────────────────────────────────────
+check(
+  "references",
+  "a value's source refs are drawn with their labels; a marker emits REF_OPEN; a bad list is the error state",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      // The six kinds a value may cite sources on, as far as this surface draws them.
+      const fixtures = KIND_FIXTURES.filter(
+        (f) =>
+          WIDGET_REF_KINDS.includes(f.kind) &&
+          adapter.kinds.includes(f.kind) &&
+          f.value !== undefined
+      );
+      if (fixtures.length === 0) return;
+      const withRefs = (f: KindFixture, refs: unknown) => ({
+        ...(f.value as Record<string, unknown>),
+        refs,
+      });
+      const draw = async (f: KindFixture, refs: unknown): Promise<string> =>
+        (
+          await s.mount(viewOf([widgetOf(f)]), {
+            [handleOf(`w-${f.kind}`)]: { value: withRefs(f, refs), state: "ready" },
+          })
+        ).text();
+
+      // Universal: a value with refs is accepted and drawn, its labels readable (a footnote counts).
+      for (const f of fixtures) {
+        const out = await draw(f, [{ id: "s1", label: "zq-first" }, { id: "s2.x" }]);
+        for (const n of f.needles)
+          must(
+            has(out, n),
+            `${f.kind} with refs: "${n}" is no longer on the surface: ${show(out)}`
+          );
+        must(has(out, "zq-first"), `${f.kind}: a ref's label is not on the surface: ${show(out)}`);
+        // A label is data: markup stays the characters.
+        const literal = await draw(f, [{ id: "s1", label: "<img src=x onerror=alert(1)>" }]);
+        must(
+          has(literal, "<img src=x onerror=alert(1)>"),
+          `${f.kind}: a markup-looking ref label was not shown literally: ${show(literal)}`
+        );
+        // A value that breaks a rule is the error state: the title, no source label, never the widget.
+        const refused: [string, unknown][] = [
+          ["17 refs", Array.from({ length: 17 }, (_, i) => ({ id: `r${i}`, label: `zq-${i}` }))],
+          ["a bad id", [{ id: "bad id", label: "zq-bad" }]],
+          [
+            "a duplicate id",
+            [
+              { id: "a", label: "zq-a" },
+              { id: "a", label: "zq-b" },
+            ],
+          ],
+          ["an over-long label", [{ id: "a", label: `zq-${"l".repeat(200)}` }]],
+        ];
+        for (const [what, refs] of refused) {
+          const bad = await draw(f, refs);
+          must(
+            has(bad, f.title),
+            `${f.kind}, ${what}: the widget is gone, not refused: ${show(bad)}`
+          );
+          must(
+            !has(bad, "zq-"),
+            `${f.kind}, ${what}: drawn with its refs instead of refused: ${show(bad)}`
+          );
+          for (const n of f.needles)
+            must(
+              !has(bad, n),
+              `${f.kind}, ${what}: the value is drawn though it is refused: ${show(bad)}`
+            );
+        }
+      }
+
+      // Interactive surfaces: a marker is a control that emits REF_OPEN; with no host listening it is not one.
+      if (adapter.capabilities?.references !== true) return;
+      if (adapter.capabilities.invoke !== true) return;
+      for (const f of fixtures) {
+        const refs = [
+          { id: "s1", label: "zq-first" },
+          { id: "s2.x" },
+          { id: "s3", label: "zq-third" },
+        ];
+        const id = `w-${f.kind}`;
+        const entry = { [handleOf(id)]: { value: withRefs(f, refs), state: "ready" as const } };
+        const m = await s.mount(viewOf([widgetOf(f)]), entry);
+        for (const n of [2, 1, 3]) {
+          const before = s.actions.length;
+          await m.invoke?.(id, { kind: "ref", n });
+          must(
+            s.actions.length === before + 1,
+            `${f.kind}: activating source ${n} emitted ${s.actions.length - before} actions, not 1`
+          );
+          const a = s.actions[before] as WidgetAction;
+          const p = a.payload as { refId?: unknown; n?: unknown } | undefined;
+          must(
+            a.type === REF_OPEN_ACTION &&
+              a.widgetId === id &&
+              p?.refId === (refs[n - 1] as { id: string }).id &&
+              p?.n === n,
+            `${f.kind}: source ${n}: unexpected action ${JSON.stringify(a)}`
+          );
+        }
+        // Nobody listening: the markers are text, so there is nothing to activate.
+        const quiet = await s.mount(viewOf([widgetOf(f)]), entry, undefined, { unattended: true });
+        const before = s.actions.length;
+        let failed = false;
+        try {
+          await quiet.invoke?.(id, { kind: "ref", n: 1 });
+        } catch {
+          failed = true;
+        }
+        must(
+          failed && s.actions.length === before,
+          `${f.kind}: with no host listening a source marker was still a control`
+        );
+        must(
+          has(await quiet.text(), "zq-first"),
+          `${f.kind}: with no host listening the source label is gone`
+        );
+      }
     })
 );
 

@@ -1,7 +1,13 @@
-import { type ContractRegistry, checkKindValue, hasKindContract } from "@loom-ui/core/browser";
+import {
+  type ContractRegistry,
+  REF_OPEN_ACTION,
+  checkKindValue,
+  hasKindContract,
+  widgetRefsOf,
+} from "@loom-ui/core/browser";
 import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
-import { property } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import {
   describeValue,
   emptyStateText,
@@ -12,6 +18,7 @@ import {
 import { localized } from "../i18n";
 import { say } from "../say";
 import { titleText } from "../title";
+import { type DispatchResult, dispatch, failureText } from "./chatShared";
 
 /**
  * Who draws the widget's title. `"widget"` (default) — the widget prints its own title in its
@@ -130,6 +137,51 @@ export abstract class LuWidget extends LitElement {
     verdict: WidgetVerdict;
   };
 
+  // ── Source references ─────────────────────────────────────────────────────────────────────────
+  // A value with `refs` (Kpi, BarChart, TimeSeries, Table, StatusCard, Diagram) gets numbered markers after the
+  // widget's content: buttons when a host listens (`onAction`), inert text otherwise. A press emits REF_OPEN
+  // `{ refId, n }` for this widget and awaits the host; a refused or failed answer is shown in a status line.
+  private openingSources = new Set<string>();
+  @state() private sourceFailure: DispatchResult | null = null;
+
+  private async openSource(refId: string, n: number): Promise<void> {
+    if (this.openingSources.has(refId)) return;
+    this.openingSources = new Set(this.openingSources).add(refId);
+    this.sourceFailure = null;
+    this.requestUpdate();
+    const result = await dispatch(this.onAction, {
+      type: REF_OPEN_ACTION,
+      widgetId: this.widget.id,
+      payload: { refId, n },
+    });
+    const left = new Set(this.openingSources);
+    left.delete(refId);
+    this.openingSources = left;
+    this.sourceFailure = result === "ok" ? null : result;
+    this.requestUpdate();
+  }
+
+  private renderSources(): TemplateResult | typeof nothing {
+    const refs = widgetRefsOf(this.kind, this.value);
+    if (refs.length === 0) return nothing;
+    const live = this.onAction !== undefined;
+    return html`<div class="lu-refs" role="group" aria-label=${say("lu.ref.list")} data-refs>${refs.map(
+      (r, i) => {
+        const n = i + 1;
+        const name = r.label
+          ? say("lu.ref.named", { n, label: r.label })
+          : say("lu.chat.ref", { n });
+        return live
+          ? html`<button type="button" class="lu-ref" data-ref=${r.id} data-n=${n} aria-label=${name} title=${r.label ?? nothing} aria-disabled=${this.openingSources.has(r.id) ? "true" : "false"} @click=${() => void this.openSource(r.id, n)}>${n}</button>`
+          : html`<span class="lu-ref" role="img" data-ref=${r.id} data-n=${n} aria-label=${name} title=${r.label ?? nothing}>${n}</span>`;
+      }
+    )}${
+      live
+        ? html`<span class="lu-ref-status" role="status" data-ref-status ?data-error=${this.sourceFailure !== null}>${this.sourceFailure === null ? "" : failureText(this.sourceFailure)}</span>`
+        : nothing
+    }</div>`;
+  }
+
   protected willUpdate(changed: PropertyValues): void {
     // Warm the memo at the top of the cycle so the first reader is not the one paying for it.
     this.state();
@@ -236,7 +288,7 @@ export abstract class LuWidget extends LitElement {
         marker !== undefined
           ? html`<span class="${s.state}-marker" title=${s.finding ?? ""}>${marker}</span>`
           : nothing
-      }${this.renderReady()}
+      }${this.renderReady()}${this.renderSources()}
     </div>`;
   }
   protected abstract renderReady(): TemplateResult | typeof nothing;

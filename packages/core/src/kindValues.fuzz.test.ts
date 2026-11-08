@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkKindValue as lite, checkKindValueIssues as liteIssues } from "./kindValues";
 import { kindValueContract, kindValueContracts, checkKindValue as zodCheck } from "./values";
+import { WIDGET_REF_KINDS } from "./widgetRefs";
 
 // A SEEDED randomized differential test: the hand-written zod-free `checkKindValue` against the
 // zod contracts, for EVERY kind. It exists to catch drift — e.g. after a zod upgrade changes an
@@ -158,7 +159,7 @@ function genChatEntry(r: Rng, i: number): unknown {
   return o;
 }
 
-const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
+const BASE_GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
   MetricCard: finite,
   StatusBadge: (r) => pick(r, strs),
   ProgressBar: finite,
@@ -316,6 +317,34 @@ const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = {
     return o;
   },
 };
+
+/** `refs` for the six kinds that carry them: mostly fine, sometimes over the cap, badly spelled, repeated, over-long or mistyped. */
+function genRefs(r: Rng): unknown {
+  const ids = ["s1", "s2", "s3", "bad id", "", "a".repeat(129), "s1", "x.y:z-1", 7];
+  const labels = ["L", "", "Quarterly report", "l".repeat(200), "l".repeat(201), 5, null];
+  const n = chance(r, 0.05) ? 17 : int(r, 5);
+  return Array.from({ length: n }, (_, i) => {
+    if (chance(r, 0.03)) return pick(r, [1, "s", null, []]);
+    const o: Record<string, unknown> = { id: chance(r, 0.7) ? `r${i}` : pick(r, ids) };
+    withOptional(r, o, "label", () => pick(r, labels));
+    return o;
+  });
+}
+const GENERATORS: Readonly<Record<string, (r: Rng) => unknown>> = Object.fromEntries(
+  Object.entries(BASE_GENERATORS).map(([kind, gen]) => [
+    kind,
+    WIDGET_REF_KINDS.includes(kind)
+      ? (r: Rng) => {
+          const v = gen(r);
+          if (typeof v === "object" && v !== null && chance(r, 0.5))
+            (v as Record<string, unknown>).refs = chance(r, 0.04)
+              ? pick(r, ["x", 1, {}])
+              : genRefs(r);
+          return v;
+        }
+      : gen,
+  ])
+);
 
 // ── Deep junk: a fresh value each call (the checkers must not mutate it, but never share) ────
 

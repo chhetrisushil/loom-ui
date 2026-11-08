@@ -83,6 +83,18 @@ short summary ("title: diagram, tree, 12 nodes") and the full structure is a vis
 from core's shared `diagramOutline` (nested for a tree). The layout math (`layoutDiagram`, in
 `charts/diagramLayout.ts`) is pure and iterative.
 
+## Source references
+
+A `Kpi`, `BarChart`, `TimeSeries`, `Table`, `StatusCard` or `Diagram` value with `refs` (contract in
+`docs/reference/composition.md`) gets one strip of numbered markers drawn by the shared `LuWidget` frame, after the
+widget's content and its title (over a chart's plot margin, which draws no title of its own). With an `onAction`
+they are real `<button>`s named "Source 1: <label>" (just "Source 1", the chat word `lu.chat.ref`, without a label);
+with none they are inert `<span>`s: nothing pretends to be pressable. A press emits `REF_OPEN { refId, n }` for the
+widget, awaits the host, and shows a refused or failed answer in a status line (chat's wording and handling); a
+second press while one is in flight is ignored. Labels are text bindings and tooltips only, never markup. The spoken
+summary gains ", N sources". A value without refs draws exactly what it drew before. New catalogue keys:
+`lu.ref.list`, `lu.ref.named`, `lu.ref.summary`, `lu.plural.source.*` (table below).
+
 ## Key concepts
 
 - **One surface, two entry points.** The root entry (`index.ts`) exports every `lu-*` element class
@@ -365,6 +377,8 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.plural.entry.other` | `entries` |
 | `lu.plural.node.one` | `node` |
 | `lu.plural.node.other` | `nodes` |
+| `lu.plural.source.one` | `source` |
+| `lu.plural.source.other` | `sources` |
 | `lu.level.ok` | `ok` |
 | `lu.level.warning` | `warning` |
 | `lu.level.critical` | `critical` |
@@ -485,6 +499,9 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.diagram.layout.network` | `network` |
 | `lu.diagram.outline` | `Diagram outline` |
 | `lu.diagram.notLoaded` | `Diagram (not loaded)` |
+| `lu.ref.list` | `Sources` |
+| `lu.ref.named` | `Source {n}: {label}` |
+| `lu.ref.summary` | `, {n} {noun}` |
 | `lu.input.message` | `Message` |
 | `lu.input.hint` | `Press Ctrl+Enter to send.` |
 | `lu.input.sent` | `Sent` |

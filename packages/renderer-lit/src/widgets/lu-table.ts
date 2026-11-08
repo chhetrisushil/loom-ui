@@ -14,6 +14,7 @@ import { cssomStyle } from "../cssomStyle";
 import { measure } from "../format";
 import { formattingLocale } from "../i18n";
 import { tPlural } from "../plural";
+import { refStyles } from "../refStyles";
 import { say } from "../say";
 import { LuWidget } from "./base";
 import { type DispatchResult, dispatch, failureText } from "./chatShared";
@@ -64,6 +65,7 @@ export class LuTable extends LuWidget {
   private numericCache: boolean[] = [];
 
   static styles = css`
+    ${refStyles}
     .sr-only {
       position: absolute;
       width: 1px;

@@ -18,6 +18,7 @@ import { TIME_GRANULARITIES, TIME_ZONE_REFUSED, isTimeZone } from "./format";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import { tableRowProblems } from "./tableRows";
 import type { SemanticFormat, TableColumn } from "./values";
+import { widgetRefProblems } from "./widgetRefs";
 
 /**
  * The kinds this framework adds over loom's built-ins. This list GROWS as vocabulary slices land (charts and
@@ -329,6 +330,27 @@ function timeFormat(v: unknown, path: Path, out: Out): Status {
   return status;
 }
 
+/** `WidgetRefs` (values.ts): a list of `{ id, label? }`, then the shared rules, unless a type error aborted it. */
+function widgetRefs(v: unknown, path: Path, out: Out): Status {
+  const status = array(v, path, out, (r, rp, ro) =>
+    object(r, rp, ro, [
+      ["id", string],
+      ["label", optionalString],
+    ])
+  );
+  if (status === "aborted") return status;
+  let worst: Status = status;
+  for (const problem of widgetRefProblems(v)) {
+    for (const seg of problem.path) path.push(seg);
+    fail(out, path, problem.message);
+    path.length -= problem.path.length;
+    worst = "dirty";
+  }
+  return worst;
+}
+const optionalRefs = (v: unknown, p: Path, out: Out): Status =>
+  opt(v, p, out, { optional: true }, widgetRefs);
+
 const timeSeries = (v: unknown, p: Path, out: Out): Status =>
   object(v, p, out, [
     ["timeFormat", (x, xp, xo) => opt(x, xp, xo, { optional: true }, timeFormat)],
@@ -354,6 +376,7 @@ const timeSeries = (v: unknown, p: Path, out: Out): Status =>
           ])
         ),
     ],
+    ["refs", optionalRefs],
   ]);
 
 const barChart = (v: unknown, p: Path, out: Out): Status =>
@@ -370,6 +393,7 @@ const barChart = (v: unknown, p: Path, out: Out): Status =>
           ])
         ),
     ],
+    ["refs", optionalRefs],
   ]);
 
 const kpi = (v: unknown, p: Path, out: Out): Status =>
@@ -379,6 +403,7 @@ const kpi = (v: unknown, p: Path, out: Out): Status =>
     ["format", optionalFormat],
     ["label", optionalString],
     ["deltaPct", (x, xp, xo) => opt(x, xp, xo, { optional: true, nullable: true }, number)],
+    ["refs", optionalRefs],
   ]);
 
 const tableColumn = (v: unknown, p: Path, out: Out): Status =>
@@ -418,6 +443,7 @@ const table = (v: unknown, p: Path, out: Out): Status => {
           array(x, xp, xo, (r, rp, ro) => array(r, rp, ro, rowAction))
         ),
     ],
+    ["refs", optionalRefs],
   ]);
   // Like zod's `superRefine`: the cross-field rules run unless a type error aborted the parse.
   if (status === "aborted") return status;
@@ -438,6 +464,7 @@ const statusCard = (v: unknown, p: Path, out: Out): Status =>
     ["level", LEVELS],
     ["headline", string],
     ["detail", optionalString],
+    ["refs", optionalRefs],
   ]);
 
 const FORMATS = enumOf(["markdown", "org", "plain"]);
@@ -501,6 +528,7 @@ const diagram = (v: unknown, p: Path, out: Out): Status => {
           ])
         ),
     ],
+    ["refs", optionalRefs],
   ]);
   // Like zod's `superRefine`: the structural rules run unless a type error aborted the parse.
   if (status === "aborted") return status;

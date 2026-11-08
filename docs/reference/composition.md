@@ -253,6 +253,33 @@ for each collapsed subtree (`label: "Platform (+14)"`), group a graph's leaves i
 or bind a window of the events. A tree that arrives with several roots or a shared child is not a
 tree: add one synthetic root, or use `flow`.
 
+## Source references
+
+A chart or figure can show which sources it came from. A `Kpi`, `BarChart`, `TimeSeries`, `Table`, `StatusCard` or
+`Diagram` VALUE may carry:
+
+```ts
+refs?: { id: string; label?: string }[];
+```
+
+- **Value-level, widget-level.** `refs` is part of the hydrated data, never a planner prop, and it belongs to the
+  whole widget: there are no per-row or per-point refs. (`MetricCard`'s value is a bare number, so it cannot carry any.)
+- **Caps and rules**, one zod-free checker (`widgetRefProblems`) that both the zod contract and the browser checker
+  call, so verdicts and messages match; a message never echoes data. At most `MAX_WIDGET_REFS` (16) refs ("at most 16
+  refs"); each `id` matches chat's ref id rule, `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}` ("a ref id must be a short
+  identifier") and is unique in the list ("ref ids must be unique"); a `label` is a string of at most
+  `MAX_WIDGET_REF_LABEL` (200) characters ("a ref label is at most 200 characters"). A value that breaks a rule is
+  the widget's error state, never drawn with a cut list.
+- **Activation uses the action channel.** Markers are numbered 1, 2, ... in array order. Activating one emits the
+  widget action `REF_OPEN` (`REF_OPEN_ACTION`) with `payload: { refId, n }` and the widget's id in `widgetId`, exactly
+  as a table row action or a chat reference does; the host decides what "open" means and answers (`{ ok: false }` or a
+  rejection is shown as a refused or failed answer, any other return is success). With no `onAction` (no host
+  listening) the markers are inert text, not controls.
+- **What each renderer draws.** renderer-lit: a strip of markers after the widget's content, buttons only with an
+  `onAction`, each named "Source 1: <label>" (the label as text, never markup), and ", N sources" in the spoken
+  summary. renderer-terminal: `[1] label` footnote lines under the widget's output, the label cut to one clean line.
+  A value without `refs` draws exactly as before.
+
 ## Operations beyond insert, remove and move
 
 Operations beyond insert/remove/move/props/label/bind/remap: `setPlacement { nodeId, span?, row?,

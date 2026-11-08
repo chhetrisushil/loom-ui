@@ -272,6 +272,12 @@ never forward them to the viewer.
   the cap it is refused, never cut). `diagramProblems(v)` is the one zod-free rule check both contracts call;
   `diagramOutline(value, locale, words)` is the one text form every renderer shares; `diagramGraph(value)`
   breaks cycles and layers a flow. See `docs/reference/composition.md` (Diagrams).
+- Source references: a `Kpi`, `BarChart`, `TimeSeries`, `Table`, `StatusCard` or `Diagram` value may carry
+  `refs?: { id: string; label?: string }[]` (at most `MAX_WIDGET_REFS` = 16; an id is a short identifier, unique in
+  the list; a label is at most `MAX_WIDGET_REF_LABEL` = 200 characters). Widget-level only, value-level only.
+  `widgetRefProblems(refs)` is the one zod-free rule check both contracts call; `widgetRefsOf(kind, value)` reads the
+  list; `WIDGET_REF_KINDS` names the six kinds; a renderer's marker emits `REF_OPEN_ACTION` (`"REF_OPEN"`) with
+  `{ refId, n }`. See `docs/reference/composition.md` (Source references).
 - `SemanticFormat`, `effectiveFormat`, `formatFromUnit`, `formatSemanticNumber`,
   `semanticNumberFormatOptions`, `unitSuffix`, `deltaDirection`, `DELTA_FORMAT` — what a bound
   number MEANS (`number` / `integer` / `decimal` / `percentage` / `currency`, with `notation` and
