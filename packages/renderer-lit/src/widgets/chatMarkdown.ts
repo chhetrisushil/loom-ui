@@ -164,7 +164,8 @@ export function drawMarkdown(doc: MdDoc, d: MarkdownDraw): TemplateResult {
 
 /** The markdown block styles, scoped under a `.md` ancestor; shared by every widget that draws markdown. */
 export const markdownStyles: CSSResult = css`
-      .md { overflow-wrap: anywhere; }
+      /* position: a containing block, so the absolute .sr-only text stays in the widget, not the host page */
+      .md { overflow-wrap: anywhere; position: relative; }
       .md .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
       .md > :first-child { margin-top: 0; }
       .md > :last-child { margin-bottom: 0; }
