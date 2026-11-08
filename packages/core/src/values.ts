@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { chatValueIssues, multiSelectValueIssues } from "./chatValue";
+import { DIAGRAM_LAYOUTS, diagramProblems } from "./diagramStructure";
 import type { Finding } from "./experience";
 import { TIME_GRANULARITIES, TIME_ZONE_REFUSED, isTimeZone } from "./format";
 import {
@@ -195,6 +196,42 @@ export const ProseValue = z.object({
 export type ProseValue = z.infer<typeof ProseValue>;
 
 /**
+ * A diagram bound to data: a tree (org chart), a flow (process), a timeline (dated events) or a
+ * network (relationships), as nodes and edges. At most `MAX_DIAGRAM_NODES` nodes and
+ * `MAX_DIAGRAM_EDGES` edges: over the cap the value is refused, never cut. The structural rules
+ * (unique ids, edges name nodes, a tree is one rooted tree, a timeline's nodes are dated) live once
+ * in `diagramProblems`, which the zod-free checker calls too. `timeFormat` labels a timeline's dates.
+ */
+export const DiagramValue = z
+  .object({
+    layout: z.enum(DIAGRAM_LAYOUTS),
+    title: z.string().optional(),
+    timeFormat: TimeFormat.optional(),
+    nodes: z.array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        kind: z.string().optional(),
+        group: z.string().optional(),
+        at: z.string().optional(),
+      })
+    ),
+    edges: z.array(
+      z.object({
+        from: z.string(),
+        to: z.string(),
+        label: z.string().optional(),
+        kind: z.string().optional(),
+      })
+    ),
+  })
+  .superRefine((v, ctx) => {
+    for (const p of diagramProblems(v))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: p.path, message: p.message });
+  });
+export type DiagramValue = z.infer<typeof DiagramValue>;
+
+/**
  * A MediaRef for `kind`: the SHARED checker (`media.ts`) drives zod, so the zod-free contract in
  * `kindValues.ts` cannot drift from it. Messages are value-free.
  */
@@ -221,6 +258,7 @@ export const kindValueContracts: Readonly<Record<string, z.ZodType>> = {
   // Static text from props: a Note is never bound, so any value that reaches it is a defect.
   Note: z.undefined(),
   Prose: ProseValue,
+  Diagram: DiagramValue,
   // The bound value is the embedded view's / component's data model — any JSON.
   A2UIView: z.unknown(),
   SandboxView: z.unknown(),

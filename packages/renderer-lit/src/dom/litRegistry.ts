@@ -193,6 +193,8 @@ export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
       .register("FormInput", el("lu-chat-missing"))
       .register("SelectInput", el("lu-chat-missing"))
       .register("MultiSelectInput", el("lu-chat-missing"))
+      // Likewise `Diagram`: `@loom-ui/renderer-lit/diagram` replaces it.
+      .register("Diagram", el("lu-diagram-missing"))
       .register("ProgressBar", el("lu-progress"))
       .register("AlertCard", el("lu-alert"))
       .register("StreamingText", el("lu-text"))

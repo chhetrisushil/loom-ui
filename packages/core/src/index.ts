@@ -245,6 +245,7 @@ export {
   TimeFormat,
   StatusCardValue,
   ProseValue,
+  DiagramValue,
   StatusLevel,
   TableCell,
   TableColumn,
@@ -259,6 +260,17 @@ export {
   tableColumnLabel,
 } from "./values";
 export { MAX_ROW_ACTIONS, TABLE_ROW_ACTION, tableRowProblems } from "./tableRows";
+export {
+  DIAGRAM_LAYOUTS,
+  MAX_DIAGRAM_EDGES,
+  MAX_DIAGRAM_NODES,
+  diagramProblems,
+} from "./diagramStructure";
+export type { DiagramLayout, DiagramProblem } from "./diagramStructure";
+export { diagramGraph } from "./diagramGraph";
+export type { DiagramGraph, ResolvedEdge } from "./diagramGraph";
+export { OUTLINE_ARROW, OUTLINE_DASH, diagramOutline } from "./diagramText";
+export type { OutlineLine } from "./diagramText";
 export type { TableRowAction } from "./tableRows";
 export { effectiveViewer, isBroadcast, mayView, strictestClass } from "./viewer";
 export type { Audience, Viewer } from "./viewer";

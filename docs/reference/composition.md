@@ -125,6 +125,7 @@ whose contracts loom's React renderers depend on and which are never widened.
 | `Table` | `TableValue`: `{ columns: TableColumn[], rows: TableCell[][] }`. A `TableColumn` is a string or `{ label, format? }`, read through `tableColumnLabel` and `tableColumnFormat`; a `TableCell` is a string, number or `null`. Text sorts in the formatting locale. Optional `rowKeys` (one stable key per row) and `rowActions` (at most 4 per row: `{ id, label, primary?, destructive? }`; needs `rowKeys`) draw a trailing actions cell, one named button per action, and the `primary` one in the first cell; each emits `TABLE_ROW_ACTION { action, rowKey }` through `onAction` (buttons are disabled with no handler). A value that breaks a rule is refused by `checkKindValue`. |
 | `StatusCard` | `StatusCardValue`: `{ level: StatusLevel, headline, detail? }`, where `StatusLevel` is `"ok"`, `"warning"` or `"critical"`. Announced through `role="status" aria-live="polite"`. |
 | `Note` | Static text from its `text` prop; never bound. |
+| `Diagram` | `DiagramValue`: a tree, flow, timeline or network as nodes and edges. See [Diagrams](#diagrams). Drawn by the opt-in `@loom-ui/renderer-lit/diagram` entry; the default registry draws a fixed placeholder. |
 | `A2UIView`, `SandboxView` | Mount `lu-a2ui-view` / `lu-sandbox` with the declared `view` / `code` prop and the bound value as data. |
 
 The media and conversation kinds (`Image`, `Audio`, `Video`, `File`, `MediaInput`, `Chat`,
@@ -194,6 +195,63 @@ once a month) and a coarse granularity never shows a time of day. `formatTimeLab
 locale, words)` is the one formatter (the catalogue words `lu.time.half`, `lu.time.quarter` and
 `lu.time.weekOf` come from the caller, so a host translates them); `isTimeFormat` is the contract
 without zod. The spoken summary and the terminal's sparkline draw no time labels.
+
+## Diagrams
+
+`Diagram` binds a diagram to data: an org chart or other hierarchy (`tree`), a process (`flow`), dated
+events (`timeline`) or relationships (`network`).
+
+```ts
+type DiagramValue = {
+  layout: "tree" | "flow" | "timeline" | "network";
+  title?: string;
+  timeFormat?: TimeFormat;   // labels a timeline's dates (the Time semantics above)
+  nodes: { id: string; label: string; kind?: string; group?: string; at?: string }[];
+  edges: { from: string; to: string; label?: string; kind?: string }[];
+};
+```
+
+**Caps.** 1 to `MAX_DIAGRAM_NODES` (200) nodes and at most `MAX_DIAGRAM_EDGES` (400) edges. Over the
+cap the value is REFUSED (the widget's error state) and never truncated: a cut diagram would be a
+false picture. The cost of that refusal is bounded: nothing is walked once a cap is broken.
+
+**Rules**, one zod-free checker (`diagramProblems`) that both the zod contract and the browser checker
+call, so they cannot disagree. Each is a finding with a fixed message that never echoes a label.
+
+- Node ids are non-empty and unique; every edge's `from` and `to` name an existing node.
+- `tree`: no self-edge, exactly one root (a node with no incoming edge), every other node has exactly
+  one parent, and every node is reachable from the root (so no cycle).
+- `timeline`: every node has an `at` that `Date.parse` accepts. Other layouts ignore `at`.
+- `flow` may contain cycles (drawn as dashed back-edges); `network` takes anything beyond the id rules.
+
+All checks are O(nodes + edges) and iterative: a 200-deep chain is a valid tree and recurses nowhere.
+
+**The outline.** `diagramOutline(value, locale, words)` is the one text form: a tree as an indented
+outline (depth first, children in edge order), a flow or network as one `A → B (label)` line per edge
+(a flow by the layer of the edge's source, then input order; nodes with no edge after), a timeline as
+`date — label` lines sorted by `at` (stable for ties), the date through `formatTimeLabel` with the value's
+`timeFormat` (else `day`). Labels are DATA: never translated, never parsed as markup. The web widget's
+hidden list, the terminal's lines and the conformance check all read this one function. A flow's
+layers come from `diagramGraph`, which also supplies the web drawing, so the order a listener hears
+is the order a sighted reader sees.
+
+**What each renderer draws.** `lu-diagram` (opt-in entry `@loom-ui/renderer-lit/diagram`,
+`createDiagramLitRegistry` / `registerDiagramWidgets`, `diagramKindContracts`) draws SVG at its natural
+size inside a scroll container (no zoom): a tidy top-down tree, a layered left-to-right flow
+(longest-path layers, barycenter ordering, back-edges dashed), a timeline with time-proportional x
+and a labelled axis, and a network on a circle in input order. A `group` picks a colour by first
+appearance; `kind` is a `data-kind` attribute. The SVG is hidden from assistive technology; the
+accessible name is "title: diagram, tree, 12 nodes" and the whole structure is a visually hidden
+list (nested for a tree). The terminal prints the title and then the outline lines.
+
+**Reshaping data into a `DiagramValue`.** A hierarchy (an org chart, a folder tree): one node per
+item and one edge from each parent to its child; the single top item is the root. A graph with
+cycles (dependencies, a process with retries): `flow`, or `network` when direction does not matter.
+Dated events: `timeline`, with ISO dates in `at`; edges are optional (an ordering, a causation). When
+the data is over the cap, reduce it before binding: show the top levels of a hierarchy and one node
+for each collapsed subtree (`label: "Platform (+14)"`), group a graph's leaves into a single node,
+or bind a window of the events. A tree that arrives with several roots or a shared child is not a
+tree: add one synthetic root, or use `flow`.
 
 ## Operations beyond insert, remove and move
 

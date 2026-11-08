@@ -600,6 +600,44 @@ check(
         () => viewOf([bound("Prose", "pr", "Probe", "h-pr")]),
         ready("h-pr", { format: "plain", text: "body", note: HOSTILE })
       );
+      // A diagram's labels are data like a table cell: node, edge and the value's own title.
+      await probe(
+        "Diagram node label",
+        ["Diagram"],
+        () => viewOf([bound("Diagram", "dg", "Probe", "h-dg")]),
+        ready("h-dg", {
+          layout: "network",
+          nodes: [
+            { id: "a", label: HOSTILE },
+            { id: "b", label: "Beta" },
+          ],
+          edges: [],
+        })
+      );
+      await probe(
+        "Diagram edge label",
+        ["Diagram"],
+        () => viewOf([bound("Diagram", "dg", "Probe", "h-dg")]),
+        ready("h-dg", {
+          layout: "flow",
+          nodes: [
+            { id: "a", label: "Alpha" },
+            { id: "b", label: "Beta" },
+          ],
+          edges: [{ from: "a", to: "b", label: HOSTILE }],
+        })
+      );
+      await probe(
+        "Diagram title",
+        ["Diagram"],
+        () => viewOf([bound("Diagram", "dg", "Probe", "h-dg")]),
+        ready("h-dg", {
+          layout: "network",
+          title: HOSTILE,
+          nodes: [{ id: "a", label: "Alpha" }],
+          edges: [],
+        })
+      );
       await probe(
         "chat turn",
         ["Chat"],
@@ -964,6 +1002,152 @@ check(
           `the host's word did not label the quarter: ${show(words)}`
         );
       }
+    })
+);
+
+// ── diagram ────────────────────────────────────────────────────────────────────────────────────
+check(
+  "diagram",
+  "a Diagram draws every node in the outline's order, and a value that breaks a rule is the error state",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      // A surface that does not claim the kind owes nothing here (the `kinds` check covers its refusal).
+      if (!adapter.kinds.includes("Diagram")) return;
+      const node = (id: string, extra: Record<string, unknown> = {}) => ({
+        id,
+        label: `zq-${id}`,
+        ...extra,
+      });
+      const draw = async (value: unknown): Promise<string> =>
+        (
+          await s.mount(viewOf([bound("Diagram", "dg", "Probe diagram", "h-dg")]), {
+            "h-dg": { value, state: "ready" },
+          })
+        ).text();
+      /** Every label is on the surface, in this order (by first appearance). */
+      const inOrder = (out: string, labels: readonly string[], where: string): void => {
+        let from = 0;
+        for (const label of labels) {
+          const at = flat(out).indexOf(label, from);
+          must(at >= 0, `${where}: "${label}" is missing, or out of order: ${show(out)}`);
+          from = at + label.length;
+        }
+      };
+
+      // The order is the shared outline's (core's `diagramOutline`): parent before child, source
+      // before target, dates ascending.
+      const tree = await draw({
+        layout: "tree",
+        nodes: ["root", "left", "right", "leaf"].map((id) => node(id)),
+        edges: [
+          { from: "root", to: "left" },
+          { from: "root", to: "right" },
+          { from: "left", to: "leaf" },
+        ],
+      });
+      inOrder(tree, ["zq-root", "zq-left", "zq-leaf", "zq-right"], "tree");
+
+      const flow = await draw({
+        layout: "flow",
+        nodes: ["a", "b", "c"].map((id) => node(id)),
+        edges: [
+          { from: "b", to: "c", label: "edge-word" },
+          { from: "a", to: "b" },
+          { from: "c", to: "a" }, // a cycle: allowed in a flow
+        ],
+      });
+      inOrder(flow, ["zq-a", "zq-b", "zq-c"], "flow");
+      must(has(flow, "edge-word"), `flow: an edge's label is not shown: ${show(flow)}`);
+
+      const network = await draw({
+        layout: "network",
+        nodes: ["x", "y", "z"].map((id) => node(id)),
+        edges: [{ from: "x", to: "y" }],
+      });
+      inOrder(network, ["zq-x", "zq-y", "zq-z"], "network");
+
+      // Chronological, whatever order the nodes were listed in.
+      const timeline = await draw({
+        layout: "timeline",
+        nodes: [
+          node("late", { at: "2026-03-05" }),
+          node("early", { at: "2026-01-02" }),
+          node("mid", { at: "2026-02-03" }),
+        ],
+        edges: [],
+      });
+      inOrder(timeline, ["zq-early", "zq-mid", "zq-late"], "timeline");
+
+      // A value that breaks a rule is the error state (the title, no node), never a diagram.
+      const two = (extra: Record<string, unknown>) => ({
+        layout: "tree",
+        nodes: [node("a"), node("b")],
+        edges: [{ from: "a", to: "b" }],
+        ...extra,
+      });
+      const refused: [string, unknown][] = [
+        ["duplicate node id", two({ nodes: [node("a"), node("a")] })],
+        ["dangling edge", two({ edges: [{ from: "a", to: "ghost" }] })],
+        ["tree with two roots", two({ edges: [] })],
+        [
+          "tree with a cycle",
+          two({
+            nodes: [node("a"), node("b"), node("c")],
+            edges: [
+              { from: "b", to: "c" },
+              { from: "c", to: "b" },
+              { from: "a", to: "a" },
+            ],
+          }),
+        ],
+        [
+          "tree with a detached cycle",
+          two({
+            nodes: [node("a"), node("b"), node("c")],
+            edges: [
+              { from: "b", to: "c" },
+              { from: "c", to: "b" },
+            ],
+          }),
+        ],
+        ["timeline node without `at`", { layout: "timeline", nodes: [node("a")], edges: [] }],
+        [
+          "timeline node with a non-date `at`",
+          { layout: "timeline", nodes: [node("a", { at: "never" })], edges: [] },
+        ],
+        [
+          "201 nodes",
+          {
+            layout: "network",
+            nodes: Array.from({ length: 201 }, (_, i) => node(`n${i}`)),
+            edges: [],
+          },
+        ],
+        [
+          "401 edges",
+          {
+            layout: "network",
+            nodes: [node("a"), node("b")],
+            edges: Array.from({ length: 401 }, () => ({ from: "a", to: "b" })),
+          },
+        ],
+      ];
+      for (const [what, value] of refused) {
+        const out = await draw(value);
+        must(has(out, "Probe diagram"), `${what}: the widget is gone, not refused: ${show(out)}`);
+        must(!has(out, "zq-"), `${what}: drawn as a diagram instead of refused: ${show(out)}`);
+      }
+
+      // A label is data: markup stays the characters.
+      const literal = await draw({
+        layout: "network",
+        nodes: [{ id: "a", label: "<img src=x onerror=alert(1)>" }],
+        edges: [],
+      });
+      must(
+        has(literal, "<img src=x onerror=alert(1)>"),
+        `a markup-looking label was not shown literally: ${show(literal)}`
+      );
     })
 );
 

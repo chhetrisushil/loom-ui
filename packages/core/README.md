@@ -255,7 +255,7 @@ never forward them to the viewer.
 ### Framework kinds and number formatting
 
 - `FRAMEWORK_KINDS` — the kinds this package adds beside loom's built-ins (the charts and tables
-  such as `TimeSeries`, `BarChart`, `Kpi`, `Table`, plus `StatusCard`, `Note`, `A2UIView`,
+  such as `TimeSeries`, `BarChart`, `Kpi`, `Table`, plus `StatusCard`, `Note`, `Prose`, `Diagram`, `A2UIView`,
   `SandboxView`, the media kinds in "Media" below and the chat kinds). It is an OPEN set that grows
   with each vocabulary slice: a host that renders a subset should assert its kinds are present
   (`arrayContaining`), never pin the length or the whole list.
@@ -267,6 +267,11 @@ never forward them to the viewer.
   `tableColumnFormat(column)` read a `TableColumn` regardless of its string-or-object form. A `Table` may carry
   `rowKeys` (one stable key per row) and `rowActions` (up to `MAX_ROW_ACTIONS` per row, `TableRowAction`);
   `tableRowProblems(v)` is the one zod-free rule check both contracts call, and the widget emits `TABLE_ROW_ACTION`.
+- `DiagramValue` `{ layout: "tree" | "flow" | "timeline" | "network", title?, timeFormat?, nodes, edges }` —
+  a diagram bound to data, at most `MAX_DIAGRAM_NODES` (200) nodes and `MAX_DIAGRAM_EDGES` (400) edges (over
+  the cap it is refused, never cut). `diagramProblems(v)` is the one zod-free rule check both contracts call;
+  `diagramOutline(value, locale, words)` is the one text form every renderer shares; `diagramGraph(value)`
+  breaks cycles and layers a flow. See `docs/reference/composition.md` (Diagrams).
 - `SemanticFormat`, `effectiveFormat`, `formatFromUnit`, `formatSemanticNumber`,
   `semanticNumberFormatOptions`, `unitSuffix`, `deltaDirection`, `DELTA_FORMAT` — what a bound
   number MEANS (`number` / `integer` / `decimal` / `percentage` / `currency`, with `notation` and

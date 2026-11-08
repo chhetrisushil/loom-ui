@@ -3,6 +3,8 @@
 export { LuA2UIView } from "./lu-a2ui-view";
 export { LuBarChart } from "./lu-bar-chart";
 export { LuDataTable } from "./lu-data-table";
+export { LuDiagram } from "./lu-diagram";
+export { LuDiagramMissing } from "./lu-diagram-missing";
 export { LuA2UIWidget, LuSandboxWidget } from "./lu-embedded";
 export { LuChatMissing } from "./lu-chat-missing";
 export { LuKpi } from "./lu-kpi";

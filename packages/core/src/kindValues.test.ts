@@ -48,6 +48,20 @@ const VALID: Readonly<Record<string, unknown>> = {
   StatusCard: { level: "ok", headline: "h", detail: "d" },
   Note: undefined,
   Prose: { format: "markdown", text: "# hi", focus: { from: 0, to: 4 } },
+  Diagram: {
+    layout: "tree",
+    title: "Org",
+    timeFormat: { granularity: "month", timeZone: "UTC" },
+    nodes: [
+      { id: "a", label: "A", kind: "team", group: "g", at: "2026-01-01" },
+      { id: "b", label: "B" },
+      { id: "c", label: "C" },
+    ],
+    edges: [
+      { from: "a", to: "b", label: "owns", kind: "k" },
+      { from: "a", to: "c" },
+    ],
+  },
   A2UIView: { x: 1 },
   SandboxView: [1],
   Image: {

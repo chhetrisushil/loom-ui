@@ -3,6 +3,8 @@ import { defineBarChart } from "./define/lu-bar-chart";
 import { defineChat } from "./define/lu-chat";
 import { defineChatMissing } from "./define/lu-chat-missing";
 import { defineDataTable } from "./define/lu-data-table";
+import { defineDiagram } from "./define/lu-diagram";
+import { defineDiagramMissing } from "./define/lu-diagram-missing";
 import { defineEmbedded } from "./define/lu-embedded";
 import { defineInputs } from "./define/lu-inputs";
 import { defineKpi } from "./define/lu-kpi";
@@ -27,6 +29,8 @@ export function defineAll(): void {
   defineChatMissing();
   defineChat();
   defineDataTable();
+  defineDiagram();
+  defineDiagramMissing();
   defineEmbedded();
   defineInputs();
   defineKpi();

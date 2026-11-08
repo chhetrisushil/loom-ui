@@ -111,6 +111,12 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
   the same `createWriteBack` as the web. The web renderer's `chatAccessories` (host content drawn under
   an entry) has no terminal counterpart: the terminal prints the transcript only, and a host's
   accessory content is not shown here.
+- **Diagram prints core's shared outline.** `Diagram` prints its title, the value's own `title`, then the
+  SAME lines the web's hidden list holds (`diagramOutline`): a tree as an indented outline, a flow or
+  network as `A → B (label)` lines, a timeline as `date — label` lines in chronological order. Every label
+  is cut to one clean line before the outline joins them, so no control or bidi character, and no newline,
+  reaches the screen. A value that breaks a rule (over 200 nodes, a dangling edge, two tree roots, ...) is
+  the usual `✗` error line.
 - **Media prints a line, never loads (U9).** `Image`/`Audio`/`Video`/`File` print the same one-line
   description the web speaks (`describeMedia`: `image chart.png (image/png, 2 KiB)`), `[untrusted]`
   unless `media.trusted(ref)` says the host vouches (never for `origin: "user"`), and either a
