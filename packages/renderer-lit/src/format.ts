@@ -39,9 +39,22 @@ export function tick(value: number, format?: SemanticFormat): string {
   ).format(value);
 }
 
+/** `2026`, `2026-01`, `2026-01-31`: a calendar date with no time of day (ECMAScript reads these as UTC). */
+const DATE_ONLY = /^\d{4}(-\d{2}(-\d{2})?)?$/;
+
+/**
+ * A time-axis label. A timestamp is drawn in the viewer's zone, as a time within 3 days and a date
+ * beyond. A date-only value names a calendar date, not an instant: it is parsed as UTC midnight, so it
+ * is formatted in UTC too (else "2026-01" reads "Dec 31, 2025" west of UTC), and always as a date.
+ */
 export function timeTick(iso: string, spanMs: number): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return NOT_A_NUMBER;
+  if (DATE_ONLY.test(iso))
+    return new Intl.DateTimeFormat(formattingLocale(), {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(d);
   const withinDays = spanMs <= 3 * 86_400_000;
   return new Intl.DateTimeFormat(
     formattingLocale(),
