@@ -1,4 +1,4 @@
-import type { BarChartValue } from "@loom-ui/core/browser";
+import { type BarChartValue, widgetRefsOf } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { state } from "lit/decorators.js";
 import { chartHostStyles } from "../charts/frame";
@@ -10,7 +10,7 @@ import {
   measure,
   unitSuffix,
 } from "../format";
-import { refOverlayStyles, refStyles } from "../refStyles";
+import { REF_STRIP_HEIGHT, refOverlayStyles, refStyles } from "../refStyles";
 import { dirFor } from "../rtl";
 import { LuWidget } from "./base";
 
@@ -84,7 +84,13 @@ export class LuBarChart extends LuWidget {
     super.disconnectedCallback();
   }
 
+  /** The plot's top edge: the margin, plus room for the source strip when the value cites (refStyles.ts). */
+  private plotTop(): number {
+    return M.top + (widgetRefsOf(this.kind, this.value).length > 0 ? REF_STRIP_HEIGHT : 0);
+  }
+
   protected renderReady(): TemplateResult | typeof nothing {
+    const top = this.plotTop();
     const v = this.value as BarChartValue;
     const bars = v.bars;
     if (bars.length === 0) return nothing;
@@ -96,12 +102,12 @@ export class LuBarChart extends LuWidget {
     const w = this.width;
     const h = this.height;
     const innerW = w - M.left - M.right;
-    const innerH = h - M.top - M.bottom;
+    const innerH = h - top - M.bottom;
     // Finite values only. A single Infinite bar — a reshape script dividing by a count that
     // was zero — otherwise becomes the axis maximum, scaling every real bar to zero height and
     // putting NaN into the gridline geometry.
     const maxV = finiteMax(bars);
-    const sy = linearScale([0, maxV * 1.08 || 1], [M.top + innerH, M.top]);
+    const sy = linearScale([0, maxV * 1.08 || 1], [top + innerH, top]);
     const ticks = niceTicks(0, maxV * 1.08 || 1, 4);
     const band = innerW / bars.length;
     const barW = Math.min(band * 0.62, 64);
@@ -132,7 +138,7 @@ export class LuBarChart extends LuWidget {
         const y = sy(b.value);
         const color = SERIES_COLORS[i % SERIES_COLORS.length]!;
         return svg`
-          <rect class="bar" x=${x} y=${y} width=${barW} height=${Math.max(M.top + innerH - y, 0)}
+          <rect class="bar" x=${x} y=${y} width=${barW} height=${Math.max(top + innerH - y, 0)}
             rx="3" fill=${color}
             opacity=${this.hover === null || this.hover === i ? 0.95 : 0.45}
             @pointerenter=${() => {
@@ -143,7 +149,7 @@ export class LuBarChart extends LuWidget {
               ? svg`<text class="val" x=${x + barW / 2} y=${y - 4} text-anchor="middle">${measure(b.value, fmt)}${suffix ? ` ${suffix}` : ""}</text>`
               : nothing
           }
-          <text x=${x + barW / 2} y=${M.top + innerH + 14} text-anchor="middle">${b.label.slice(0, Math.max(4, Math.floor(band / 7)))}</text>`;
+          <text x=${x + barW / 2} y=${top + innerH + 14} text-anchor="middle">${b.label.slice(0, Math.max(4, Math.floor(band / 7)))}</text>`;
       })}
     </svg>`;
   }

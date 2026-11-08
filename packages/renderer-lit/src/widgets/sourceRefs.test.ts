@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { describeValue } from "../a11y";
 import { configureI18n, setLocale } from "../i18n";
 import "../register";
+import { REF_STRIP_HEIGHT } from "../refStyles";
 
 const b = { projectionId: "hydration", path: "values.h" };
 type El = HTMLElement & { updateComplete: Promise<boolean> };
@@ -61,6 +62,39 @@ describe("source markers on a data widget", () => {
     configureI18n(undefined);
     setLocale("en-US");
   });
+
+  // A chart draws out of flow, so the strip sits over the plot's top margin: that margin grows by the strip's height
+  // when the value cites, and nothing of the plot (a bar, a gridline, a tick label) is drawn under the markers.
+  for (const [kind, plotTop] of [
+    // the tallest bar reaches near the top of the plot
+    [
+      "BarChart",
+      async (el: El) =>
+        Math.min(
+          ...[...root(el).querySelectorAll("rect.bar")].map((r) => Number(r.getAttribute("y")))
+        ),
+    ],
+    // the hover crosshair runs from the plot's top edge
+    [
+      "TimeSeries",
+      async (el: El) => {
+        root(el)
+          .querySelector("svg")
+          ?.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 0 }));
+        await el.updateComplete;
+        return Number(root(el).querySelector("line[stroke-dasharray]")?.getAttribute("y1"));
+      },
+    ],
+  ] as const) {
+    it(`${kind}: the plot starts below the source strip, and only when the value cites`, async () => {
+      const cited = await plotTop(await mount(kind, REFS, () => undefined));
+      const plain = await plotTop(await mount(kind, undefined));
+      // 24 px: the markers' hit area (WCAG 2.2 2.5.8), written out so a smaller reserve fails here
+      expect(cited).toBeGreaterThanOrEqual(24);
+      expect(plain).toBeLessThan(24); // without refs the plot keeps that space
+      expect(REF_STRIP_HEIGHT).toBe(24);
+    });
+  }
 
   for (const kind of KINDS) {
     describe(kind, () => {
