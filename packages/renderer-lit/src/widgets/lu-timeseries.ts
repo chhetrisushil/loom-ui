@@ -3,6 +3,7 @@ import {
   type TimeFormat,
   type TimeSeriesValue,
   isTimeFormat,
+  widgetRefsOf,
 } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { state } from "lit/decorators.js";
@@ -21,7 +22,7 @@ import {
 import { cssomStyle } from "../cssomStyle";
 import { effectiveFormat, tick as formatTick, measure, timeLabel, unitSuffix } from "../format";
 
-import { refOverlayStyles, refStyles } from "../refStyles";
+import { REF_STRIP_HEIGHT, refOverlayStyles, refStyles } from "../refStyles";
 import { dirFor } from "../rtl";
 import { say } from "../say";
 import { hideTooltip, showTooltip } from "../tooltip";
@@ -171,7 +172,13 @@ export class LuTimeseries extends LuWidget {
     return ticks;
   }
 
+  /** The plot's top edge: the margin, plus room for the source strip when the value cites (refStyles.ts). */
+  private plotTop(): number {
+    return M.top + (widgetRefsOf(this.kind, this.value).length > 0 ? REF_STRIP_HEIGHT : 0);
+  }
+
   protected renderReady(): TemplateResult | typeof nothing {
+    const top = this.plotTop();
     const v = this.value as TimeSeriesValue;
     const series = v.series;
     if (series.length === 0) return nothing;
@@ -193,13 +200,13 @@ export class LuTimeseries extends LuWidget {
     const w = this.width;
     const h = Math.max(this.height - (series.length > 1 ? 22 : 0), 100);
     const innerW = w - M.left - (right.length > 0 ? RIGHT_AXIS_MARGIN : M.right);
-    const innerH = h - M.top - M.bottom;
+    const innerH = h - top - M.bottom;
     const sx = linearScale([0, n - 1], [M.left, M.left + innerW]);
 
     const leftDomain = padDomain(extent(left.flatMap((s) => s.points.map((p) => p.value))));
     const rightDomain = padDomain(extent(right.flatMap((s) => s.points.map((p) => p.value))));
-    const syL = linearScale(leftDomain, [M.top + innerH, M.top]);
-    const syR = linearScale(rightDomain, [M.top + innerH, M.top]);
+    const syL = linearScale(leftDomain, [top + innerH, top]);
+    const syR = linearScale(rightDomain, [top + innerH, top]);
     const yOf = (s: Series): Scale => (onRight(s) ? syR : syL);
 
     const first = timestamps[0] ?? "";
@@ -265,7 +272,7 @@ export class LuTimeseries extends LuWidget {
             )}
             ${xTicks.map(
               (i) =>
-                svg`<text x=${sx(i)} y=${M.top + innerH + 14} text-anchor="middle">${timeLabel(timestamps[i] ?? "", spanMs, tf)}</text>`
+                svg`<text x=${sx(i)} y=${top + innerH + 14} text-anchor="middle">${timeLabel(timestamps[i] ?? "", spanMs, tf)}</text>`
             )}
           </g>
           ${series.map((s, i) => {
@@ -277,7 +284,7 @@ export class LuTimeseries extends LuWidget {
           ${
             hover !== null && hover < n
               ? svg`
-                <line x1=${sx(hover)} x2=${sx(hover)} y1=${M.top} y2=${M.top + innerH}
+                <line x1=${sx(hover)} x2=${sx(hover)} y1=${top} y2=${top + innerH}
                   stroke="var(--lu-text-dim, #8b949e)" stroke-dasharray="3,3" stroke-width="1"/>
                 ${series.map((s, i) => {
                   const p = s.points[hover];
@@ -324,7 +331,7 @@ export class LuTimeseries extends LuWidget {
       row.textContent = `${s.label}: ${measure(v, fmt)}${unit ? ` ${unit}` : ""}`;
       tip.appendChild(row);
     });
-    showTooltip(tip, rect.left + sx(hover), rect.top + M.top);
+    showTooltip(tip, rect.left + sx(hover), rect.top + this.plotTop());
   }
 }
 

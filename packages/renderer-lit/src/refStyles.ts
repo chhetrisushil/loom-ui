@@ -58,12 +58,19 @@ export const refStyles = css`
   }
 `;
 
-/** A chart draws out of flow (charts/frame.ts), so its source strip floats over the plot's empty top margin. */
+/**
+ * The height a chart reserves above its plot for the source strip (the markers' 24 px hit area). A chart draws out of
+ * flow (charts/frame.ts), so the strip sits over the plot's top margin, which grows by this much when the value has
+ * refs: the markers never cover a gridline, a tick label or a data point.
+ */
+export const REF_STRIP_HEIGHT = 24;
+
 export const refOverlayStyles = css`
   .lu-refs {
     position: absolute;
     top: 0;
     inset-inline-end: 4px;
+    height: ${REF_STRIP_HEIGHT}px;
     margin: 0;
   }
 `;
