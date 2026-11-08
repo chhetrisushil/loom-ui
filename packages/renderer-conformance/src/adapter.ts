@@ -25,6 +25,17 @@ export interface MountOptions {
   readonly onAction: (action: WidgetAction) => unknown;
   /** The host's words and locale. Only passed to an adapter that declares `capabilities.i18n`. */
   readonly i18n?: LuI18n;
+  /**
+   * Host content under a transcript entry, as TEXT (the kit's renderer-neutral stand-in for a surface's
+   * own accessory seam, e.g. the web renderer's `chatAccessories`). `null` = nothing for that entry.
+   * Only passed to an adapter that declares `capabilities.chatEntryAccessory`.
+   */
+  readonly chatAccessory?: (entry: {
+    readonly id: string;
+    readonly turn: number;
+    readonly role: string;
+    readonly status: string;
+  }) => string | null;
 }
 
 /** A live mounted view. */
@@ -75,6 +86,12 @@ export interface AdapterCapabilities {
    * never parsed); this adds the check that the markdown source itself is not what a viewer reads.
    */
   readonly chatMarkdown?: boolean;
+  /**
+   * The renderer draws host content under a transcript entry (`MountOptions.chatAccessory`): with its
+   * entry, after the entry's own text, never for a restricted entry. A surface without the seam leaves
+   * this off and is only checked to draw the transcript unchanged.
+   */
+  readonly chatEntryAccessory?: boolean;
 }
 
 export interface RendererAdapter {

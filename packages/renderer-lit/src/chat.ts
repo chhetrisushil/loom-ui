@@ -9,6 +9,7 @@
 //   import { createChatLitRegistry } from "@loom-ui/renderer-lit/chat";
 //   renderBlueprintDom(host, blueprint, {
 //     registry: createChatLitRegistry({ media }),     // `media` is optional: it draws image/file parts of a transcript
+//     // `chatAccessories` (optional): host content under an entry, e.g. { render: (e) => nodes.get(e.id) ?? null }
 //     onAction: (action) => writeBack.handle(action, { principal, current }),  // returns an ActionOutcome
 //   });
 //
@@ -23,6 +24,11 @@ import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./d
 import type { DomRegistry } from "./dom/registry";
 
 export { LuChat } from "./widgets/lu-chat";
+export type {
+  ChatAccessoryContent,
+  ChatEntryAccessories,
+  ChatEntryRef,
+} from "./widgets/chatAccessory";
 export { LuFormInput, LuSelectInput, LuTextInput } from "./widgets/lu-inputs";
 export { LuMultiSelectInput } from "./widgets/lu-multi-select";
 

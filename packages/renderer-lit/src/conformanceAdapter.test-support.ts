@@ -111,8 +111,14 @@ export const litAdapter: RendererAdapter = {
     "SelectInput",
     "MultiSelectInput",
   ],
-  capabilities: { update: true, invoke: true, i18n: true, chatMarkdown: true },
-  mount(blueprint, { values, onAction, i18n }) {
+  capabilities: {
+    update: true,
+    invoke: true,
+    i18n: true,
+    chatMarkdown: true,
+    chatEntryAccessory: true,
+  },
+  mount(blueprint, { values, onAction, i18n, chatAccessory }) {
     vi.stubGlobal("IntersectionObserver", undefined);
     if (i18n !== undefined) {
       configureI18n(i18n);
@@ -144,7 +150,27 @@ export const litAdapter: RendererAdapter = {
     for (const [h, e] of Object.entries(values)) put(h, e);
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const registry = registerMediaWidgets(registerChatWidgets(createLitRegistry()));
+    // The kit's text accessory, as a host would supply one: an owned node per entry, kept across renders.
+    const owned = new Map<string, HTMLElement>();
+    const opts =
+      chatAccessory === undefined
+        ? {}
+        : {
+            chatAccessories: {
+              render: (entry: { id: string; turn: number; role: string; status: string }) => {
+                const t = chatAccessory(entry);
+                if (t === null) return null;
+                let n = owned.get(entry.id);
+                if (n === undefined) {
+                  n = document.createElement("p");
+                  owned.set(entry.id, n);
+                }
+                n.textContent = t;
+                return n;
+              },
+            },
+          };
+    const registry = registerMediaWidgets(registerChatWidgets(createLitRegistry(opts), opts));
     const handle = renderBlueprintDom(host, blueprint, {
       projectionRuntime: runtime,
       executionId: store.executionId,

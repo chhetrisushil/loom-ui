@@ -8,7 +8,13 @@ import {
 import { SELECT_ACTION, SELECT_MANY_ACTION, SUBMIT_TEXT_ACTION } from "@loom-ui/core/chat-ui";
 import { HYDRATION_PROJECTION_ID } from "@loom-ui/hydration/client";
 import type { Blueprint, Widget, WidgetAction } from "@loom/blueprint-runtime";
-import type { HandleEntry, InvokeIntent, MountedRenderer, RendererAdapter } from "./adapter";
+import type {
+  HandleEntry,
+  InvokeIntent,
+  MountOptions,
+  MountedRenderer,
+  RendererAdapter,
+} from "./adapter";
 import {
   GARBAGE,
   KIND_FIXTURES,
@@ -47,7 +53,8 @@ class Session {
   async mount(
     blueprint: Blueprint,
     values: Record<string, HandleEntry> = {},
-    i18n?: import("@loom-ui/core").LuI18n
+    i18n?: import("@loom-ui/core").LuI18n,
+    extra: Pick<MountOptions, "chatAccessory"> = {}
   ): Promise<MountedRenderer> {
     const m = await this.adapter.mount(blueprint, {
       values,
@@ -56,6 +63,7 @@ class Session {
         return { ok: true };
       },
       ...(i18n === undefined ? {} : { i18n }),
+      ...extra,
     });
     this.live.push(m);
     return m;
@@ -834,6 +842,73 @@ check(
       must(
         !has(refused, "user-md-refused"),
         `a person's turn was drawn as markdown: ${show(refused)}`
+      );
+    })
+);
+
+// ── chat entry accessories ─────────────────────────────────────────────────────────────────────
+check(
+  "chat-entry-accessory",
+  "host content under a transcript entry is drawn with that entry, after its text, kept across updates, and never under a restricted entry",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      if (!adapter.kinds.includes("Chat")) throw new ConformanceSkip("adapter does not claim Chat");
+      const claims = adapter.capabilities?.chatEntryAccessory === true;
+      const entries = (t3: string, t3Status: string) => [
+        turn("t1.user", 1, "user", "question-one"),
+        turn("t1.assistant", 1, "assistant", "answer-one"),
+        { id: "t2.assistant", turn: 2, role: "assistant", status: "restricted" },
+        { ...turn("t3.assistant", 3, "assistant", t3), status: t3Status },
+      ];
+      const asked: string[] = [];
+      const m = await s.mount(
+        viewOf([bound("Chat", "chat", "Support chat", "h-chat")]),
+        {
+          "h-chat": {
+            value: { mode: "owner", entries: entries("partial", "streaming") },
+            state: "ready",
+          },
+        },
+        undefined,
+        claims
+          ? {
+              chatAccessory: (e) => {
+                asked.push(`${e.id}:${e.status}`);
+                return e.role === "assistant" ? `accessory-${e.id}` : null;
+              },
+            }
+          : {}
+      );
+      const out = await m.text();
+      must(
+        has(out, "answer-one") && has(out, "question-one"),
+        `the transcript is not drawn: ${show(out)}`
+      );
+      if (!claims) return; // a surface without the seam: the transcript above is all it owes
+      must(
+        !has(out, "accessory-t2.assistant") && !asked.some((a) => a.startsWith("t2.assistant")),
+        `a restricted entry was asked for or drew an accessory: ${show(out)}`
+      );
+      must(!has(out, "accessory-t1.user"), `a null accessory drew something: ${show(out)}`);
+      const flatOut = flat(out);
+      const at = (n: string): number => flatOut.indexOf(n);
+      must(
+        at("accessory-t1.assistant") > at("answer-one") &&
+          at("accessory-t1.assistant") < at("partial"),
+        `an accessory is not with its entry, after the entry's text: ${show(out)}`
+      );
+      await m.set("h-chat", {
+        value: { mode: "owner", entries: entries("partial and done", "complete") },
+        state: "ready",
+      });
+      const after = await m.text();
+      must(
+        has(after, "accessory-t1.assistant") && has(after, "accessory-t3.assistant"),
+        `an accessory was lost across an update: ${show(after)}`
+      );
+      must(
+        asked.includes("t3.assistant:complete"),
+        `a settled entry was not asked again for its new status: ${JSON.stringify(asked)}`
       );
     })
 );

@@ -532,6 +532,33 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   treat those as the CEILING for any future framework kind, not a baseline to spend again); the
   widgets are this entry (budget 121 kB; it must not pull in `ChatFeed` or the host-side code,
   `browserBundle.test.ts` fails if it does).
+  - **Host content under an entry: `chatAccessories`.** `createChatLitRegistry({ chatAccessories })`
+    (or the `lu-chat` property of the same name) lets the host draw its own content with one transcript
+    entry, without reaching into the shadow root, and it works when the chat is mounted inside a view's
+    own shadow root. `render(entry, { widgetId })` gets `{ id, turn, role, status }` (`id` is the
+    `t<turn>.<role>` slot id) and returns a node the HOST owns, a Lit `TemplateResult` (same `lit` only)
+    or `null`. It is drawn inside the entry's `<article>`, after its body, in a
+    `<div data-entry-accessory part="entry-accessory">` (style it with `::part(entry-accessory)`), so a
+    screen reader reaches it with the entry. The answer is kept per entry: it is asked again only when the
+    entry's `status` changes or the host calls the `changed(entryId?)` it got from `subscribe(changed)`
+    (unsubscribed when the widget leaves). Return the same node each time and it is never remounted,
+    streaming included. It is never asked for, or drawn under, a restricted entry (an entry that becomes
+    restricted drops it), and a throwing `render` or `subscribe` draws nothing and never breaks the
+    transcript. The content is host-trusted markup: the widget does not sanitize it. Other surfaces (the
+    terminal renderer) ignore the option.
+    ```ts
+    const visuals = new Map<string, HTMLElement>();
+    let redraw: ((id?: string) => void) | undefined;
+    const registry = createChatLitRegistry({
+      chatAccessories: {
+        render: (e) => (e.role === "assistant" ? visuals.get(e.id) ?? null : null),
+        subscribe: (changed) => ((redraw = changed), () => (redraw = undefined)),
+      },
+    });
+    // later, when the host's content for "t3.assistant" is ready:
+    visuals.set("t3.assistant", strip);
+    redraw?.("t3.assistant");
+    ```
   - **`lu-chat`** is a focusable `role="log"` region (`aria-live="polite"`, `aria-busy` while a
     reply streams, so a screen reader hears the settled reply once). Every entry is an `<article>`
     labelled with its speaker and status. Text is a Lit text binding, cleaned again with
