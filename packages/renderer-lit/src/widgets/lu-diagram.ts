@@ -19,6 +19,7 @@ import { SERIES_COLORS } from "../charts/svg";
 import { cssomStyle } from "../cssomStyle";
 import { timeLabel } from "../format";
 import { formattingLocale } from "../i18n";
+import { refStyles } from "../refStyles";
 import { dirFor } from "../rtl";
 import { say } from "../say";
 import { LuWidget } from "./base";
@@ -35,6 +36,7 @@ export class LuDiagram extends LuWidget {
   readonly kind = "Diagram";
 
   static styles = css`
+    ${refStyles}
     :host {
       display: block;
       padding: 4px 10px;

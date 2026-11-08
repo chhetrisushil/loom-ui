@@ -111,7 +111,11 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
   the same `createWriteBack` as the web. The web renderer's `chatAccessories` (host content drawn under
   an entry) has no terminal counterpart: the terminal prints the transcript only, and a host's
   accessory content is not shown here.
-- **Diagram prints core's shared outline.** `Diagram` prints its title, the value's own `title`, then the
+- **Source references are footnotes.** A `Kpi`, `BarChart`, `TimeSeries`, `Table`, `StatusCard` or `Diagram` value
+  with `refs` prints one `[n] label` line per source under the widget's output (`[n]` alone without a label), the
+  label cut to one clean line like any untrusted text. The terminal has no clickable markers, so it does not emit
+  `REF_OPEN` and does not claim the conformance capability `references`.
+- **Diagram prints core\'s shared outline.** `Diagram` prints its title, the value's own `title`, then the
   SAME lines the web's hidden list holds (`diagramOutline`): a tree as an indented outline, a flow or
   network as `A → B (label)` lines, a timeline as `date — label` lines in chronological order. Every label
   is cut to one clean line before the outline joins them, so no control or bidi character, and no newline,

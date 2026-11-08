@@ -50,6 +50,7 @@ interface RendererAdapter {
     chatMarkdown?: boolean;      // you parse and draw `format: "markdown"` assistant parts
     chatEntryAccessory?: boolean; // you draw host content under a transcript entry (mount's chatAccessory)
     timeAxisLabels?: boolean;    // you label a TimeSeries' time axis as its declared timeFormat says
+    references?: boolean;        // your source markers are controls: invoke({kind:"ref"}) emits REF_OPEN; mount honours `unattended`
   };
   mount(blueprint, { values, onAction, i18n, chatAccessory }): MountedRenderer;
 }
@@ -57,7 +58,7 @@ interface MountedRenderer {
   text(): string | Promise<string>;   // everything a viewer can READ, settled, in reading order
   set(handle, { value, state, message }): void | Promise<void>; // the hydration store's job
   update?(next: Blueprint): void | Promise<void>;
-  invoke?(widgetId, intent): void | Promise<void>; // approve | reject | select | text
+  invoke?(widgetId, intent): void | Promise<void>; // approve | reject | select | text | select-many | ref
   dispose(): void;
 }
 ```
@@ -83,6 +84,7 @@ settle first (await your scheduler) so the kit never sleeps.
 | `media-refs` | a media reference is described and its address (or any prefix) is never shown |
 | `chat` | complete turns in order; a restricted turn only as a placeholder; a field outside the `ChatValue` contract is not drawn |
 | `diagram` | every renderer that draws `Diagram`: each node on the surface in the shared outline's order (a tree parent before its child, a flow's edges by source layer, a timeline chronological), an edge's label shown, and a value that breaks a rule (duplicate id, dangling edge, two roots, a cycle in a tree, an undated timeline node, 201 nodes, 401 edges) is the error state: the widget's title and no node. A markup-looking label is shown literally. A renderer that does not claim `Diagram` owes nothing here |
+| `references` | every renderer that draws a kind that may cite sources (`Kpi`, `BarChart`, `TimeSeries`, `Table`, `StatusCard`, `Diagram`): a value with `refs` is accepted and drawn, each label on the surface (a terminal footnote counts) and a markup-looking label literal; a value with 17 refs, a bad or duplicate id or an over-long label is the error state (the title, no label). With `capabilities.references` and `invoke`: activating the nth marker emits exactly one `REF_OPEN { refId, n }` for the widget, and with `MountOptions.unattended` (no host listening) `invoke` must FAIL because a marker is then text, not a control. A surface that cannot be clicked (the terminal, speech) leaves the capability off and owes only the first two |
 | `i18n` | the host's messages replace fixed words (`LU_MESSAGES` keys) and its locale formats numbers |
 | `actions` | controls emit the shared `WidgetAction` shapes (`APPROVE`/`REJECT` with `payload.approved`; `SELECT` / `SELECT_MANY` (`payload.values`, in the order driven) / `SUBMIT_TEXT` with a well-formed idempotency `key`) |
 | `multi-select-current-value` | a bound `MultiSelectInput` reads differently for each chosen set and draws what is chosen |

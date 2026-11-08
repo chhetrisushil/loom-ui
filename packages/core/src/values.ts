@@ -15,6 +15,7 @@ import {
 } from "./kindValues";
 import { mediaValueIssues } from "./mediaRef";
 import { tableRowProblems } from "./tableRows";
+import { widgetRefProblems } from "./widgetRefs";
 
 // The zod-free vocabulary lives in kindValues.ts (a browser bundle imports it without zod);
 // re-exported here so this module keeps its public surface.
@@ -107,6 +108,18 @@ export type TimeFormat = z.infer<typeof TimeFormat>;
 export const ChartAxis = z.enum(["left", "right"]);
 export type ChartAxis = z.infer<typeof ChartAxis>;
 
+/**
+ * The sources a widget's data came from (see `widgetRefs.ts`): at most `MAX_WIDGET_REFS`, each a short
+ * identifier unique within the list and an optional bounded label. Widget-level only.
+ */
+export const WidgetRefs = z
+  .array(z.object({ id: z.string(), label: z.string().optional() }))
+  .superRefine((refs, ctx) => {
+    for (const p of widgetRefProblems(refs))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: p.path, message: p.message });
+  });
+export type WidgetRefs = z.infer<typeof WidgetRefs>;
+
 export const TimeSeriesValue = z.object({
   /** How the time axis (ticks and hover label) reads; else the renderer infers it from the timestamps. */
   timeFormat: TimeFormat.optional(),
@@ -120,6 +133,7 @@ export const TimeSeriesValue = z.object({
       points: z.array(z.object({ timestamp: z.string(), value: z.number() })),
     })
   ),
+  refs: WidgetRefs.optional(),
 });
 export type TimeSeriesValue = z.infer<typeof TimeSeriesValue>;
 
@@ -127,6 +141,7 @@ export const BarChartValue = z.object({
   unit: z.string().optional(),
   format: SemanticFormat.optional(),
   bars: z.array(z.object({ label: z.string(), value: z.number() })),
+  refs: WidgetRefs.optional(),
 });
 export type BarChartValue = z.infer<typeof BarChartValue>;
 
@@ -143,6 +158,7 @@ export const KpiValue = z.object({
   label: z.string().optional(),
   /** A FRACTION (0.12 is +12%), rendered as a percentage. `null` = no comparison available. */
   deltaPct: z.number().nullable().optional(),
+  refs: WidgetRefs.optional(),
 });
 export type KpiValue = z.infer<typeof KpiValue>;
 
@@ -167,6 +183,7 @@ export const TableValue = z
     rows: z.array(z.array(TableCell)),
     rowKeys: z.array(z.string()).optional(),
     rowActions: z.array(z.array(TableRowAction)).optional(),
+    refs: WidgetRefs.optional(),
   })
   .superRefine((v, ctx) => {
     for (const p of tableRowProblems(v))
@@ -180,6 +197,7 @@ export const StatusCardValue = z.object({
   level: StatusLevel,
   headline: z.string(),
   detail: z.string().optional(),
+  refs: WidgetRefs.optional(),
 });
 export type StatusCardValue = z.infer<typeof StatusCardValue>;
 
@@ -224,6 +242,7 @@ export const DiagramValue = z
         kind: z.string().optional(),
       })
     ),
+    refs: WidgetRefs.optional(),
   })
   .superRefine((v, ctx) => {
     for (const p of diagramProblems(v))

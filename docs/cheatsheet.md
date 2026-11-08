@@ -79,6 +79,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `StatusCard` | `StatusCardValue` `{ level, headline, detail? }` | level: `ok` · `warning` · `critical` |
 | `Note` | none — static `text` prop | also what a redacted node becomes |
 | `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (registered by `defineAll` and `elements/lu-prose`; parsers in `@loom-ui/core/document`) |
+| `Kpi` · `BarChart` · `TimeSeries` · `Table` · `StatusCard` · `Diagram` — source refs | optional `refs?: { id, label? }[]` on the value | at most 16; id a short identifier, unique; label at most 200 characters; widget-level only; a marker emits `REF_OPEN { refId, n }` (buttons only with an `onAction`; the terminal prints `[n] label` footnotes) |
 | `Diagram` | `DiagramValue` `{ layout, title?, timeFormat?, nodes, edges }` | layout `tree` · `flow` · `timeline` · `network`; at most 200 nodes and 400 edges (over the cap is refused, never cut); a tree is one rooted tree, a timeline's nodes carry `at`; drawn by `lu-diagram` from the opt-in `@loom-ui/renderer-lit/diagram` (`createDiagramLitRegistry`) |
 | `TimeSeries` | `TimeSeriesValue` | series may sit on a `left` / `right` axis |
 | `BarChart` | `BarChartValue` | |

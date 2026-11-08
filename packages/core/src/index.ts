@@ -246,6 +246,7 @@ export {
   StatusCardValue,
   ProseValue,
   DiagramValue,
+  WidgetRefs,
   StatusLevel,
   TableCell,
   TableColumn,
@@ -272,6 +273,15 @@ export type { DiagramGraph, ResolvedEdge } from "./diagramGraph";
 export { OUTLINE_ARROW, OUTLINE_DASH, diagramOutline } from "./diagramText";
 export type { OutlineLine } from "./diagramText";
 export type { TableRowAction } from "./tableRows";
+export {
+  MAX_WIDGET_REFS,
+  MAX_WIDGET_REF_LABEL,
+  REF_OPEN_ACTION,
+  WIDGET_REF_KINDS,
+  widgetRefProblems,
+  widgetRefsOf,
+} from "./widgetRefs";
+export type { WidgetRef, WidgetRefProblem } from "./widgetRefs";
 export { effectiveViewer, isBroadcast, mayView, strictestClass } from "./viewer";
 export type { Audience, Viewer } from "./viewer";
 export {

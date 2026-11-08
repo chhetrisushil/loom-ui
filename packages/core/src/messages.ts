@@ -55,6 +55,8 @@ export const LU_MESSAGES = {
   "lu.plural.entry.other": "entries",
   "lu.plural.node.one": "node",
   "lu.plural.node.other": "nodes",
+  "lu.plural.source.one": "source",
+  "lu.plural.source.other": "sources",
 
   // ── status levels (a StatusCard's level word) ─────────────────────────────────────────────────
   "lu.level.ok": "ok",
@@ -192,6 +194,11 @@ export const LU_MESSAGES = {
   "lu.diagram.layout.network": "network",
   "lu.diagram.outline": "Diagram outline",
   "lu.diagram.notLoaded": "Diagram (not loaded)",
+
+  // ── source references on a data widget (a ref's label is data and never comes from here) ──────
+  "lu.ref.list": "Sources",
+  "lu.ref.named": "Source {n}: {label}",
+  "lu.ref.summary": ", {n} {noun}",
 
   // ── inputs and forms ──────────────────────────────────────────────────────────────────────────
   "lu.input.message": "Message",
@@ -348,7 +355,7 @@ export function selectPlural(
 
 /** The English forms of a plural base in the catalogue (`lu.plural.row` → row / rows). */
 export function pluralForms(
-  base: "lu.plural.row" | "lu.plural.entry" | "lu.plural.node"
+  base: "lu.plural.row" | "lu.plural.entry" | "lu.plural.node" | "lu.plural.source"
 ): PluralForms {
   return { one: LU_MESSAGES[`${base}.one`], other: LU_MESSAGES[`${base}.other`] };
 }

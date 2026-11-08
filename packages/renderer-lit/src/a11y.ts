@@ -4,6 +4,7 @@ import {
   checkKindValue,
   deltaDirection,
   unitSuffix,
+  widgetRefsOf,
 } from "@loom-ui/core/browser";
 import type {
   BarChartValue,
@@ -25,6 +26,26 @@ import { LEVEL_KEY, say } from "./say";
  * heard the same way, not as a plain number.
  */
 export function describeValue(
+  kind: string,
+  value: unknown,
+  title: string,
+  props?: Record<string, unknown>,
+  contracts?: ContractRegistry
+): string {
+  const base = describeBase(kind, value, title, props, contracts);
+  // ", 3 sources" for a value that cites some; nothing at all otherwise (a checked value only: refs are valid).
+  const cited = widgetRefsOf(kind, value).length;
+  const n = cited > 0 && checkKindValue(kind, value, contracts).ok ? cited : 0;
+  return n === 0
+    ? base
+    : base +
+        say("lu.ref.summary", {
+          n,
+          noun: tPlural("lu.plural.source", n, pluralForms("lu.plural.source")),
+        });
+}
+
+function describeBase(
   kind: string,
   value: unknown,
   title: string,

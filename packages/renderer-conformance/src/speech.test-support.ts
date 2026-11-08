@@ -64,6 +64,12 @@ export const speechAdapter: RendererAdapter = {
     const widgets = (n: Widget | Layout | { node: Widget | Layout }): Widget[] =>
       "_tag" in n ? [n] : "node" in n ? widgets(n.node) : (n.children as never[]).flatMap(widgets);
 
+    // A value's cited sources, spoken after it: "Sources: 1 Ledger; 2" (the order is the number).
+    const sources = (value: unknown): string => {
+      const refs = (value as { refs?: { label?: unknown }[] } | undefined)?.refs;
+      if (!Array.isArray(refs) || refs.length === 0) return "";
+      return `. Sources: ${refs.map((r, i) => `${i + 1}${r.label === undefined ? "" : ` ${clean(r.label)}`}`).join("; ")}`;
+    };
     const speak = (w: Widget): string => {
       // IR 2.5.0: withheld for the audience. Decided before anything else of the widget is read, so
       // its title, props, binding and kind cannot reach the sentence; the words are a constant.
@@ -88,12 +94,12 @@ export const speechAdapter: RendererAdapter = {
         case "StatusBadge":
           return `${title}: ${clean(typeof v === "number" ? nf.format(v) : v)}${stale}`;
         case "Kpi":
-          return `${title}: ${nf.format(o.value as number)}${stale}`;
+          return `${title}: ${nf.format(o.value as number)}${stale}${sources(o)}`;
         case "StatusCard":
-          return `${title}: ${clean(o.level)}, ${clean(o.headline)}${stale}`;
+          return `${title}: ${clean(o.level)}, ${clean(o.headline)}${stale}${sources(o)}`;
         case "Table": {
           const rows = o.rows as unknown[][];
-          return `${title}: ${rows.length === 0 ? say("lu.empty.noData") : rows.map((r) => r.map(clean).join(" ")).join("; ")}`;
+          return `${title}: ${rows.length === 0 ? say("lu.empty.noData") : rows.map((r) => r.map(clean).join(" ")).join("; ")}${sources(o)}`;
         }
         case "Image":
           return `${title}: ${clean(describeMedia("Image", v as never, say))}`;

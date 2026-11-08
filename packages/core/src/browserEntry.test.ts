@@ -78,6 +78,7 @@ describe("@loom-ui/core/browser", () => {
       "tableRows.js",
       "timeWords.js",
       "viewer.js",
+      "widgetRefs.js",
     ]);
   });
 

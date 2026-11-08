@@ -30,6 +30,11 @@ export interface MountOptions {
    * own accessory seam, e.g. the web renderer's `chatAccessories`). `null` = nothing for that entry.
    * Only passed to an adapter that declares `capabilities.chatEntryAccessory`.
    */
+  /**
+   * Mount with NO host listening: the renderer is given no action handler (`onAction` is still passed so the kit can
+   * count, but the adapter must not wire it). Only passed to an adapter that declares `capabilities.references`.
+   */
+  readonly unattended?: boolean;
   readonly chatAccessory?: (entry: {
     readonly id: string;
     readonly turn: number;
@@ -65,7 +70,13 @@ export type InvokeIntent =
   | { readonly kind: "select"; readonly value: string }
   | { readonly kind: "text"; readonly text: string }
   /** Choose exactly these values of a `MultiSelectInput`, in this order, starting from an empty selection. */
-  | { readonly kind: "select-many"; readonly values: readonly string[] };
+  | { readonly kind: "select-many"; readonly values: readonly string[] }
+  /**
+   * Activate the `n`th (1-based) source marker of a widget whose value carries `refs`. Needs `capabilities.references`.
+   * Where the widget has no such control (an unattended mount draws markers as text), the adapter must FAIL, never
+   * pretend: the kit relies on it to know an inert marker is not a control.
+   */
+  | { readonly kind: "ref"; readonly n: number };
 
 export interface AdapterCapabilities {
   /** `update(next)` is incremental and keeps the view live. */
@@ -99,6 +110,13 @@ export interface AdapterCapabilities {
    * and draw a value that declares one.
    */
   readonly timeAxisLabels?: boolean;
+  /**
+   * The renderer draws a value's `refs` as numbered markers a viewer can ACTIVATE (needs `invoke`, and `mount` honours
+   * `MountOptions.unattended`): activating one emits `REF_OPEN { refId, n }` for the widget, and with no host listening
+   * the markers are not controls. A surface that cannot be clicked (the terminal, speech) leaves this off and is only
+   * checked to accept and draw a value with refs, label text included, and to refuse a bad list.
+   */
+  readonly references?: boolean;
 }
 
 export interface RendererAdapter {

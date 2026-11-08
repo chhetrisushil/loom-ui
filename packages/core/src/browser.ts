@@ -64,6 +64,7 @@ export type {
   StatusCardValue,
   ProseValue,
   DiagramValue,
+  WidgetRefs,
   TableCell,
   TableColumn,
   TableValue,
@@ -82,6 +83,15 @@ export type { DiagramGraph, ResolvedEdge } from "./diagramGraph";
 export { OUTLINE_ARROW, OUTLINE_DASH, diagramOutline } from "./diagramText";
 export type { OutlineLine } from "./diagramText";
 export type { TableRowAction } from "./tableRows";
+export {
+  MAX_WIDGET_REFS,
+  MAX_WIDGET_REF_LABEL,
+  REF_OPEN_ACTION,
+  WIDGET_REF_KINDS,
+  widgetRefProblems,
+  widgetRefsOf,
+} from "./widgetRefs";
+export type { WidgetRef, WidgetRefProblem } from "./widgetRefs";
 export type { Finding } from "./experience";
 export { MAX_CHUNK_TEXT, MAX_STREAM_TEXT, appendChunk } from "./streamText";
 export type { AppendResult, StreamedText, TextChunk } from "./streamText";

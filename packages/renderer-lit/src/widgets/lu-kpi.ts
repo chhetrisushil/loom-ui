@@ -1,6 +1,7 @@
 import { DELTA_FORMAT, type KpiValue, deltaDirection, unitSuffix } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { type SemanticFormat, effectiveFormat, measure } from "../format";
+import { refStyles } from "../refStyles";
 import { LuWidget } from "./base";
 
 // A value in its own semantics, a ▲/▼ change badge (none when flat), and the widget title with
@@ -10,6 +11,7 @@ export class LuKpi extends LuWidget {
   readonly kind = "Kpi";
 
   static styles = css`
+    ${refStyles}
     :host {
       display: flex;
       height: 100%;

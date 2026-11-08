@@ -2,6 +2,7 @@ import type { StatusCardValue } from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { describeValue } from "../a11y";
 
+import { refStyles } from "../refStyles";
 import { LEVEL_KEY, say } from "../say";
 import { LuWidget } from "./base";
 
@@ -12,6 +13,7 @@ export class LuStatusCard extends LuWidget {
   readonly kind = "StatusCard";
 
   static styles = css`
+    ${refStyles}
     .sr-only {
       position: absolute;
       width: 1px;
