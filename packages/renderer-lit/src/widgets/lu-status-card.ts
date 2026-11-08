@@ -27,6 +27,8 @@ export class LuStatusCard extends LuWidget {
     }
     :host {
       display: block;
+      /* a containing block, so the absolute .sr-only text stays in the widget, not the host page */
+      position: relative;
       height: 100%;
       padding: 6px 10px;
       box-sizing: border-box;
