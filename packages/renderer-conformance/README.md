@@ -47,8 +47,10 @@ interface RendererAdapter {
     invoke?: boolean;            // invoke() drives approvals / selects / multi-selects / text inputs
     i18n?: boolean;              // mount() honours the host's words and locale
     interpretsControlCharacters?: boolean; // your surface reads ESC sequences / markup (terminal, speech)
+    chatMarkdown?: boolean;      // you parse and draw `format: "markdown"` assistant parts
+    chatEntryAccessory?: boolean; // you draw host content under a transcript entry (mount's chatAccessory)
   };
-  mount(blueprint, { values, onAction, i18n }): MountedRenderer;
+  mount(blueprint, { values, onAction, i18n, chatAccessory }): MountedRenderer;
 }
 interface MountedRenderer {
   text(): string | Promise<string>;   // everything a viewer can READ, settled, in reading order

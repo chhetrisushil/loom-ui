@@ -29,6 +29,7 @@ import { repeat } from "lit/directives/repeat.js";
 
 import { say } from "../say";
 import { LuWidget } from "./base";
+import type { ChatAccessoryContent, ChatEntryAccessories } from "./chatAccessory";
 import { drawMarkdown, markdownStyles } from "./chatMarkdown";
 import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
 import type { MediaHostOptions } from "./lu-media";
@@ -215,6 +216,9 @@ export class LuChat extends LuWidget {
         font-size: 11px;
         color: var(--lu-text-dim, #8b949e);
       }
+      .accessory {
+        margin: 6px 0 0;
+      }
       .reasoning {
         margin: 4px 0 0;
         font-size: 12px;
@@ -341,6 +345,15 @@ export class LuChat extends LuWidget {
    * geometry, "stick to the bottom" and the "load earlier" anchor all keep working unchanged. Off by default.
    */
   @property({ attribute: false }) virtualize?: boolean | VirtualizeOptions;
+  /**
+   * Host content drawn inside an entry's article, after its body (see {@link ChatEntryAccessories}).
+   * Never for a restricted entry. Absent (the default): nothing is drawn and nothing is asked.
+   */
+  @property({ attribute: false }) chatAccessories?: ChatEntryAccessories;
+  /** The last accessory answer per entry id, with the status it was asked for. */
+  private accessoryCache = new Map<string, { status: string; content: ChatAccessoryContent }>();
+  private accessoryUnsubscribe: (() => void) | undefined;
+  private accessorySubscribed: ChatEntryAccessories | undefined;
   @state() private editing: { turn: number; key: string } | undefined;
   @state() private draft = "";
   @state() private editPhase: "idle" | "sending" | "invalid" | DispatchResult = "idle";
@@ -372,8 +385,81 @@ export class LuChat extends LuWidget {
     return this.shadowRoot?.querySelector<HTMLElement>(".log") ?? null;
   }
 
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.subscribeAccessories();
+  }
+
+  override disconnectedCallback(): void {
+    this.unsubscribeAccessories();
+    super.disconnectedCallback();
+  }
+
+  private subscribeAccessories(): void {
+    const acc = this.chatAccessories;
+    if (!this.isConnected || acc === this.accessorySubscribed) return;
+    this.unsubscribeAccessories();
+    this.accessorySubscribed = acc;
+    if (acc?.subscribe === undefined) return;
+    const changed = (entryId?: string): void => {
+      if (this.accessorySubscribed !== acc) return; // a stale subscription: the host swapped the seam
+      if (entryId === undefined) this.accessoryCache.clear();
+      else this.accessoryCache.delete(entryId);
+      this.requestUpdate();
+    };
+    try {
+      this.accessoryUnsubscribe = acc.subscribe(changed);
+    } catch {
+      // A failing host seam draws no accessories; it never breaks the transcript.
+    }
+  }
+
+  private unsubscribeAccessories(): void {
+    const off = this.accessoryUnsubscribe;
+    this.accessoryUnsubscribe = undefined;
+    this.accessorySubscribed = undefined;
+    this.accessoryCache.clear();
+    try {
+      off?.();
+    } catch {
+      // nothing to do: the widget is leaving either way
+    }
+  }
+
+  /** The host's content for `e`, asked once per (entry, status) unless the host says it changed. */
+  private accessory(e: ChatEntry): TemplateResult | typeof nothing {
+    const acc = this.chatAccessories;
+    if (acc === undefined) return nothing;
+    let hit = this.accessoryCache.get(e.id);
+    if (hit === undefined || hit.status !== e.status) {
+      let content: ChatAccessoryContent;
+      try {
+        content = acc.render(
+          { id: e.id, turn: e.turn, role: e.role, status: e.status },
+          { widgetId: this.widget.id }
+        );
+      } catch {
+        content = null;
+      }
+      hit = { status: e.status, content };
+      this.accessoryCache.set(e.id, hit);
+    }
+    return hit.content === null || hit.content === undefined
+      ? nothing
+      : html`<div class="accessory" data-entry-accessory part="entry-accessory">${hit.content}</div>`;
+  }
+
   protected override willUpdate(changed: PropertyValues): void {
     super.willUpdate(changed);
+    if (changed.has("chatAccessories")) this.subscribeAccessories();
+    if (changed.has("value")) {
+      // Forget the answers for entries that left the window or became restricted (a long chat must not
+      // grow the cache, and a restricted entry keeps nothing the host drew for it).
+      const ids = new Set(
+        this.chat?.entries.filter((x) => x.status !== "restricted").map((x) => x.id)
+      );
+      for (const id of this.accessoryCache.keys()) if (!ids.has(id)) this.accessoryCache.delete(id);
+    }
     if (!changed.has("value")) return;
     const log = this.log;
     if (log !== null)
@@ -663,6 +749,7 @@ export class LuChat extends LuWidget {
           ? html`<ul class="tools">${e.tools.map((x) => html`<li>${oneLineChatText(x.name, 64)}: ${x.status}</li>`)}</ul>`
           : nothing
       }
+      ${this.accessory(e)}
       ${
         canEdit && !editing
           ? html`<button type="button" data-edit-button=${e.turn} @click=${() => this.startEdit(e)} aria-label=${say("lu.chat.editThis")}>${say("lu.chat.edit")}</button>`

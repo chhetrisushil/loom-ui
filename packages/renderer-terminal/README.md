@@ -108,7 +108,9 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
   `Assistant:` line. `TextInput` / `FormInput` / `SelectInput` / `MultiSelectInput` print a prompt that says what they
   ask (fields, numbered options, the current choice listed with `(current)`, and a count of the other options) and that the answer goes through an interactive surface (the
   registry draws, it does not read a line): a terminal host that collects answers sends them through
-  the same `createWriteBack` as the web.
+  the same `createWriteBack` as the web. The web renderer's `chatAccessories` (host content drawn under
+  an entry) has no terminal counterpart: the terminal prints the transcript only, and a host's
+  accessory content is not shown here.
 - **Media prints a line, never loads (U9).** `Image`/`Audio`/`Video`/`File` print the same one-line
   description the web speaks (`describeMedia`: `image chart.png (image/png, 2 KiB)`), `[untrusted]`
   unless `media.trusted(ref)` says the host vouches (never for `origin: "user"`), and either a

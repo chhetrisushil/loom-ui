@@ -1,6 +1,7 @@
 import type { ContractRegistry } from "@loom-ui/core/browser";
 import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
 import type { TitleChrome } from "../widgets/base";
+import type { ChatEntryAccessories } from "../widgets/chatAccessory";
 import type { MediaHostOptions } from "../widgets/lu-media";
 import type { VirtualizeOptions } from "../widgets/virtual";
 import type { FrameScheduler } from "./coalesce";
@@ -24,6 +25,7 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
   const media = opts.media;
   const coalesce = opts.coalesce;
   const virtualize = opts.virtualize;
+  const chatAccessories = opts.chatAccessories;
   return (host, props) => {
     warnUndefined(tag);
     const el = document.createElement(tag) as HTMLElement & {
@@ -35,11 +37,13 @@ export function elementRenderer(tag: string, opts: LitRegistryOptions = {}): Dom
       contracts?: ContractRegistry;
       media?: MediaHostOptions;
       virtualize?: boolean | VirtualizeOptions;
+      chatAccessories?: ChatEntryAccessories;
     };
     if (chrome !== undefined) el.chrome = chrome;
     if (contracts !== undefined) el.contracts = contracts;
     if (media !== undefined) el.media = media;
     if (virtualize !== undefined) el.virtualize = virtualize;
+    if (chatAccessories !== undefined && tag === "lu-chat") el.chatAccessories = chatAccessories;
     el.widget = props.widget;
     el.value = props.value;
     el.status = props.status;
@@ -152,6 +156,12 @@ export interface LitRegistryOptions {
    * At or below `minRows`, and when this is absent (the default), rendering is exactly as before.
    */
   readonly virtualize?: boolean | VirtualizeOptions;
+  /**
+   * Host content drawn under a transcript entry of a `Chat` widget, inside that entry's article and
+   * after its body: `render(entry)` per entry id (`t<turn>.<role>`), `subscribe(changed)` to redraw one.
+   * Never drawn for a restricted entry. The web surface only; other surfaces ignore it.
+   */
+  readonly chatAccessories?: ChatEntryAccessories;
 }
 
 /** The widget registry, configured. A NEW registry each call; `litRegistry` is `createLitRegistry()`. */

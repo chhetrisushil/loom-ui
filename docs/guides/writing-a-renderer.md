@@ -159,6 +159,7 @@ failure; both shipped renderers do.
 | `media-refs` | a media reference is described and its address, or any prefix of it, is never shown |
 | `chat` | complete turns in order; a restricted turn only as a placeholder; a field outside the `ChatValue` contract is not drawn |
 | `chat-markdown` | markdown in an assistant part: html literal, no unsafe link target, no image address, a part with no format never parsed, a person's turn never markdown |
+| `chat-entry-accessory` | with `capabilities.chatEntryAccessory`: host content (`MountOptions.chatAccessory`) is drawn with its entry, after the entry's text, kept across updates, re-asked when the status changes, never for a restricted entry. Without the capability (a surface with no such seam, like the terminal): only that the transcript is drawn |
 | `i18n` | the host's messages replace fixed words (`LU_MESSAGES` keys) and its locale formats numbers |
 | `actions` | controls emit the shared `WidgetAction` shapes, with a well-formed idempotency `key` for `SELECT` and `SUBMIT_TEXT` |
 
