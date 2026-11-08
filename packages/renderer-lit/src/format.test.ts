@@ -17,6 +17,31 @@ describe("semantic formatting", () => {
     expect(timeTick("2026-01-01T13:05:00Z", 3_600_000)).toMatch(/\d/);
     expect(timeTick("2026-01-01T13:05:00Z", 30 * 86_400_000)).toMatch(/Jan/);
   });
+  it("timeTick draws a date-only value as the written date in every zone, and always as a date", () => {
+    setLocale("en-US");
+    try {
+      for (const zone of ["America/New_York", "America/Los_Angeles", "Asia/Tokyo", "UTC"]) {
+        vi.stubEnv("TZ", zone);
+        const month = 30 * 86_400_000;
+        expect(timeTick("2026-01", month), zone).toBe("Jan 1, 2026");
+        expect(timeTick("2026-04", month), zone).toBe("Apr 1, 2026");
+        expect(timeTick("2026-04-01", month), zone).toBe("Apr 1, 2026");
+        expect(timeTick("2026", month), zone).toBe("Jan 1, 2026");
+        // a short span of dates (two days) is still dates, never a time of day
+        expect(timeTick("2026-04-01", 86_400_000), zone).toBe("Apr 1, 2026");
+        expect(timeTick("2026-04-01", 1e12), zone).toBe("Apr 1, 2026"); // the hover label
+      }
+      // a timestamp keeps the viewer's zone (the zone switch above is real, not a no-op)
+      vi.stubEnv("TZ", "America/New_York");
+      expect(timeTick("2026-01-01T03:00:00Z", 30 * 86_400_000)).toBe("Dec 31, 2025");
+      expect(timeTick("2026-01-01T13:05:00Z", 3_600_000)).toBe("8:05 AM");
+      vi.stubEnv("TZ", "Asia/Tokyo");
+      expect(timeTick("2026-01-01T13:05:00Z", 3_600_000)).toBe("10:05 PM");
+      expect(timeTick("2026-01-31T20:00:00Z", 30 * 86_400_000)).toBe("Feb 1, 2026");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("formatFromUnit maps $ and % and leaves others; effectiveFormat prefers an explicit format", () => {
     expect(formatFromUnit("$")).toEqual({ semanticType: "currency", currency: "USD" });
     expect(formatFromUnit("%")).toEqual({ semanticType: "percentage" });
