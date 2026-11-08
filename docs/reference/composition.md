@@ -149,8 +149,8 @@ required — a code-less currency is refused, never assumed), plus optional `not
 `compact`) and `minimumFractionDigits` / `maximumFractionDigits` (0–20, min ≤ max; an `integer`
 takes none — fraction digits on it are refused, not coerced).
 
-A consumer with richer semantics (dates, durations, measurements) maps them onto these at its own
-boundary; extra keys in a payload are tolerated and ignored. Numbers read their semantics in the
+A consumer with richer semantics (durations, measurements) maps them onto these at its own
+boundary (points in time have their own contract, `TimeFormat`, below); extra keys in a payload are tolerated and ignored. Numbers read their semantics in the
 order value `format`, then widget `props.format`, then the `unit` (`effectiveFormat`: `$`, `€`, `%`
 or any ISO 4217 code, via `formatFromUnit`).
 
@@ -169,6 +169,31 @@ A delta's direction is `deltaDirection` — `"up"`, `"down"`, or `"flat"` when i
 `semanticNumberFormatOptions` is the one `SemanticFormat` → `Intl.NumberFormat` options mapping and
 `formatSemanticNumber` formats at a fixed locale, so the web, the spoken form and the terminal
 round, group and suffix identically.
+
+## Time semantics
+
+`TimeFormat` says how a point in time READS, so no renderer guesses it from the timestamps:
+`{ granularity, timeZone? }`, where `granularity` is `year` ("2026"), `half` ("H1 2026"),
+`quarter` ("Q1 2026"), `month` ("Jan 2026"), `week` ("Week of Jan 5, 2026"), `day`
+("Jan 5, 2026") or `datetime` ("Jan 5, 2026, 9:30 AM"), in the reader's locale. `timeZone` is a zone
+`Intl.DateTimeFormat` accepts (an IANA name or `"UTC"`; any other is refused). Without it, every
+granularity coarser than `datetime` reads in UTC, because a period is a calendar label and not an
+instant (`"2026-01"` is January in every reader's zone), and `datetime` reads in the reader's zone.
+
+It is a separate contract from `SemanticFormat`, which says what a NUMBER means: a time series
+carries both, the numbers per series (`series[i].format`) and the shared time axis once
+(`TimeSeriesValue.timeFormat`). The axis reads its format in the order value `timeFormat`, then
+widget `props.timeFormat` (an unchecked prop that is malformed is ignored), then the label inferred
+from the timestamp (a date-only one in UTC as a date, a timestamp in the reader's zone).
+
+A week is labelled by the timestamp's own date: the host sets it to the week's first day under its
+own week rule, since which day starts a week differs by region. A half or a quarter reads the
+timestamp's month, so any day inside the period works. With a declared granularity the axis ticks
+the first point of each period only, so a label never repeats (daily points under `month` tick
+once a month) and a coarse granularity never shows a time of day. `formatTimeLabel(iso, format,
+locale, words)` is the one formatter (the catalogue words `lu.time.half`, `lu.time.quarter` and
+`lu.time.weekOf` come from the caller, so a host translates them); `isTimeFormat` is the contract
+without zod. The spoken summary and the terminal's sparkline draw no time labels.
 
 ## Operations beyond insert, remove and move
 

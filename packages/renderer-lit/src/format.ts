@@ -1,13 +1,16 @@
 import {
   DELTA_FORMAT,
   type SemanticFormat,
+  type TimeFormat,
   deltaDirection,
   effectiveFormat,
   formatFromUnit,
+  formatTimeLabel,
   semanticNumberFormatOptions,
   unitSuffix,
 } from "@loom-ui/core/browser";
 import { formattingLocale } from "./i18n";
+import { say } from "./say";
 
 // One declaration of what a number means, and of the semantics→format-options mapping it
 // implies, in `@loom-ui/core` beside the value contracts that carry it; both this DOM renderer
@@ -60,4 +63,16 @@ export function timeTick(iso: string, spanMs: number): string {
     formattingLocale(),
     withinDays ? { timeStyle: "short" } : { dateStyle: "medium" }
   ).format(d);
+}
+
+/**
+ * A time-axis label: as the host's declared `format` says when there is one (`formatTimeLabel`, in
+ * the reader's locale and the catalogue's words), else inferred by `timeTick`.
+ */
+export function timeLabel(iso: string, spanMs: number, format?: TimeFormat): string {
+  if (format !== undefined) {
+    const text = formatTimeLabel(iso, format, formattingLocale(), say);
+    if (text !== undefined) return text;
+  }
+  return timeTick(iso, spanMs);
 }

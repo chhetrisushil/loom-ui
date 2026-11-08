@@ -43,6 +43,11 @@ export const LU_MESSAGES = {
   "lu.a11y.down": "down",
   "lu.a11y.rightAxis": "R",
 
+  // ── time labels (a declared TimeFormat: `formatTimeLabel`) ────────────────────────────────────
+  "lu.time.half": "H{n} {year}",
+  "lu.time.quarter": "Q{n} {year}",
+  "lu.time.weekOf": "Week of {date}",
+
   // ── counted nouns ─────────────────────────────────────────────────────────────────────────────
   "lu.plural.row.one": "row",
   "lu.plural.row.other": "rows",

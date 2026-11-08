@@ -30,10 +30,15 @@ export {
   effectiveFormat,
   formatFromUnit,
   formatSemanticNumber,
+  isTimeFormat,
+  isTimeZone,
+  TIME_GRANULARITIES,
   semanticNumberFormatOptions,
   unitSuffix,
 } from "./format";
-export type { DeltaDirection } from "./format";
+export type { DeltaDirection, TimeGranularity } from "./format";
+export { formatTimeLabel } from "./timeWords";
+export type { TimeLabelKey, TimeLabelWords } from "./timeWords";
 export {
   FRAMEWORK_KINDS,
   checkKindValue,
@@ -55,6 +60,7 @@ export type {
   BarChartValue,
   KpiValue,
   SemanticFormat,
+  TimeFormat,
   StatusCardValue,
   ProseValue,
   TableCell,

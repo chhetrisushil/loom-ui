@@ -141,5 +141,17 @@ export function timeTickIndices(n: number, count = 5): number[] {
   return Array.from({ length: count }, (_, i) => Math.round(i * step));
 }
 
+/**
+ * Ticks for a time axis whose points fall into labelled periods (a declared granularity): only the
+ * FIRST point of each period is a candidate, so two ticks never repeat a label (daily points under a
+ * month granularity tick once per month), then at most `count` of them, evenly spaced.
+ */
+export function periodTickIndices(labels: readonly string[], count = 5): number[] {
+  const starts: number[] = [];
+  for (let i = 0; i < labels.length; i++)
+    if (i === 0 || labels[i] !== labels[i - 1]) starts.push(i);
+  return timeTickIndices(starts.length, count).map((k) => starts[k] as number);
+}
+
 /** The categorical series ramp (indigo-anchored, colorblind-considerate). */
 export const SERIES_COLORS = ["#818cf8", "#34d399", "#fbbf24", "#f472b6", "#38bdf8", "#fb923c"];

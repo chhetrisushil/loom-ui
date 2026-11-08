@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { chatValueIssues, multiSelectValueIssues } from "./chatValue";
 import type { Finding } from "./experience";
+import { TIME_GRANULARITIES, TIME_ZONE_REFUSED, isTimeZone } from "./format";
 import {
   type ContractRegistry,
   FRAMEWORK_KINDS,
@@ -79,6 +80,25 @@ export const SemanticFormat = z
 export type SemanticFormat = z.infer<typeof SemanticFormat>;
 
 /**
+ * How a point in time READS, declared by the host so no renderer guesses it from the timestamps:
+ * a granularity (year, half, quarter, month, week, day, or datetime) and an optional zone. Separate
+ * from `SemanticFormat`, which says what a NUMBER means: a time-series carries both, the numbers per
+ * series and the shared time axis once. `formatTimeLabel` draws it (see there for each rendering).
+ * Without `timeZone`, every granularity coarser than `datetime` reads in UTC (a period is a calendar
+ * label, not an instant) and `datetime` in the reader's own zone.
+ */
+export const TimeFormat = z
+  .object({
+    granularity: z.enum(TIME_GRANULARITIES),
+    timeZone: z.string().optional(),
+  })
+  // A zone Intl refuses is a RangeError out of a render, so it is refused here instead.
+  .refine((f) => f.timeZone === undefined || isTimeZone(f.timeZone), {
+    message: TIME_ZONE_REFUSED,
+  });
+export type TimeFormat = z.infer<typeof TimeFormat>;
+
+/**
  * Which y-axis a series is scaled against. A series whose unit differs from the rest of the
  * chart — bytes alongside requests, say — would flatten to a near-flat line sharing one scale;
  * assigning it "right" gives it its own scale and its own labelled axis.
@@ -87,6 +107,8 @@ export const ChartAxis = z.enum(["left", "right"]);
 export type ChartAxis = z.infer<typeof ChartAxis>;
 
 export const TimeSeriesValue = z.object({
+  /** How the time axis (ticks and hover label) reads; else the renderer infers it from the timestamps. */
+  timeFormat: TimeFormat.optional(),
   series: z.array(
     z.object({
       label: z.string(),

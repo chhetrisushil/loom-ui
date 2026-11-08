@@ -265,6 +265,7 @@ const SCANNED = [
   // The words both renderers share live in core.
   join(PACKAGES, "core/src/chatWords.ts"),
   join(PACKAGES, "core/src/mediaText.ts"),
+  join(PACKAGES, "core/src/timeWords.ts"),
 ];
 
 /**

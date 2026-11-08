@@ -13,6 +13,7 @@
 
 import { CHAT_INPUT_KINDS, CHAT_KIND, chatValueIssues, multiSelectValueIssues } from "./chatValue";
 import type { Finding } from "./experience";
+import { TIME_GRANULARITIES, TIME_ZONE_REFUSED, isTimeZone } from "./format";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import { tableRowProblems } from "./tableRows";
 import type { SemanticFormat, TableColumn } from "./values";
@@ -310,8 +311,25 @@ const optionalFormat = (v: unknown, p: Path, out: Out): Status =>
 const optionalString = (v: unknown, p: Path, out: Out): Status =>
   opt(v, p, out, { optional: true }, string);
 
+const GRANULARITIES = enumOf(TIME_GRANULARITIES);
+
+function timeFormat(v: unknown, path: Path, out: Out): Status {
+  const status = object(v, path, out, [
+    ["granularity", GRANULARITIES],
+    ["timeZone", optionalString],
+  ]);
+  if (status === "aborted") return status;
+  const zone = (v as Record<string, unknown>).timeZone;
+  if (typeof zone === "string" && !isTimeZone(zone)) {
+    fail(out, path, TIME_ZONE_REFUSED);
+    return "dirty";
+  }
+  return status;
+}
+
 const timeSeries = (v: unknown, p: Path, out: Out): Status =>
   object(v, p, out, [
+    ["timeFormat", (x, xp, xo) => opt(x, xp, xo, { optional: true }, timeFormat)],
     [
       "series",
       (s, sp, so) =>

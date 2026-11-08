@@ -335,6 +335,9 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 | `lu.a11y.up` | `up` |
 | `lu.a11y.down` | `down` |
 | `lu.a11y.rightAxis` | `R` |
+| `lu.time.half` | `H{n} {year}` |
+| `lu.time.quarter` | `Q{n} {year}` |
+| `lu.time.weekOf` | `Week of {date}` |
 | `lu.plural.row.one` | `row` |
 | `lu.plural.row.other` | `rows` |
 | `lu.plural.entry.one` | `entry` |

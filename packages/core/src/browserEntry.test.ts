@@ -73,6 +73,7 @@ describe("@loom-ui/core/browser", () => {
       "paths.js",
       "streamText.js",
       "tableRows.js",
+      "timeWords.js",
       "viewer.js",
     ]);
   });

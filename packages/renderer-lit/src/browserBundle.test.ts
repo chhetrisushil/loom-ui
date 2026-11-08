@@ -53,6 +53,7 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "paths.js",
   "streamText.js",
   "tableRows.js",
+  "timeWords.js",
   "viewer.js",
 ]);
 
@@ -100,7 +101,9 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Prose kind (2026-10-24): 138 -> 139 kB (measured 138_470): the Prose value contract and its three fixed words ride in
     // `checkKindValue` and the catalogue for every page. `lu-prose` itself is NOT exported from the root (its drawer and the
     // `@loom-ui/core/document` parsers would add 23 kB to every page): the element ships through `defineAll` and `elements/lu-prose`.
-    ["index.js", 139 * 1000],
+    // TimeFormat (declared time-axis labels): 139 -> 142 kB (measured 138_670 -> 141_334): the TimeFormat contract in
+    // `checkKindValue`, core's `formatTimeLabel` (`timeWords.js`), its three catalogue words and lu-timeseries' period ticks.
+    ["index.js", 142 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
@@ -116,7 +119,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // registry they extend. Its own entry, so index/dom do not grow for a page with no media.
     // MultiSelectInput web slice: 71 -> 72 kB (measured 71_895). Cause: the MultiSelectInput value contract (core, PR #107).
     // Prose kind (2026-10-24): 72 -> 73 kB (measured 72_502): the Prose value contract and its three fixed words.
-    ["media.js", 73 * 1000],
+    // TimeFormat: 73 -> 74 kB (measured 72_571 -> 73_255): the TimeFormat contract in `checkKindValue` and its three words.
+    ["media.js", 74 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
     // Chat markdown (176i): 94 -> 110 kB (measured 93_391 -> 107_720): core's bounded parser (chatMarkdown, chatMdBlock,
@@ -128,7 +132,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // MultiSelectInput web slice: 112 -> 121 kB (measured 119_014; 113_675 before): lu-multi-select-input.
     // Prose kind (2026-10-24): 121 -> 123 kB (measured 120_995, 5 bytes under the old budget): the Prose value contract and its three fixed
     // words. `chat.js` does not reach `lu-prose` or `@loom-ui/core/document`; 123 keeps about 2 kB over the measurement.
-    ["chat.js", 123 * 1000],
+    // TimeFormat: 123 -> 124 kB (measured 122_610 -> 123_295): the TimeFormat contract in `checkKindValue` and its three words.
+    ["chat.js", 124 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

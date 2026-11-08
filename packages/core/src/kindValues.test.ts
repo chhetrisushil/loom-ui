@@ -22,6 +22,7 @@ const VALID: Readonly<Record<string, unknown>> = {
   DataTable: [{ a: 1 }],
   ApprovalCard: true,
   TimeSeries: {
+    timeFormat: { granularity: "quarter", timeZone: "America/New_York" },
     series: [
       {
         label: "l",

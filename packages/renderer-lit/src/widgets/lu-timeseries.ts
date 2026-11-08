@@ -1,4 +1,9 @@
-import type { SemanticFormat, TimeSeriesValue } from "@loom-ui/core/browser";
+import {
+  type SemanticFormat,
+  type TimeFormat,
+  type TimeSeriesValue,
+  isTimeFormat,
+} from "@loom-ui/core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { state } from "lit/decorators.js";
 import { chartHostStyles } from "../charts/frame";
@@ -10,10 +15,11 @@ import {
   linearScale,
   niceTicks,
   padDomain,
+  periodTickIndices,
   timeTickIndices,
 } from "../charts/svg";
 import { cssomStyle } from "../cssomStyle";
-import { effectiveFormat, tick as formatTick, measure, timeTick, unitSuffix } from "../format";
+import { effectiveFormat, tick as formatTick, measure, timeLabel, unitSuffix } from "../format";
 
 import { dirFor } from "../rtl";
 import { say } from "../say";
@@ -127,6 +133,41 @@ export class LuTimeseries extends LuWidget {
     return effectiveFormat(s.format ?? props.format, this.unitOf(s));
   }
 
+  /** value timeFormat › widget props.timeFormat (unchecked, so a malformed one is ignored) › inferred. */
+  private timeFormatOf(v: TimeSeriesValue): TimeFormat | undefined {
+    const prop = (this.widget.props as { timeFormat?: unknown }).timeFormat;
+    return v.timeFormat ?? (isTimeFormat(prop) ? prop : undefined);
+  }
+
+  // Period ticks label every point; kept while the axis is unchanged so a hover re-render does not redo
+  // it. Only WHICH points tick is kept (where a period starts does not depend on the locale); the
+  // labels themselves are drawn fresh on every render.
+  private tickMemo?: {
+    timestamps: readonly string[];
+    tf: TimeFormat;
+    count: number;
+    ticks: number[];
+  };
+
+  private xTickIndices(timestamps: string[], tf: TimeFormat | undefined, count: number): number[] {
+    if (tf === undefined) return timeTickIndices(timestamps.length, count);
+    const m = this.tickMemo;
+    if (
+      m !== undefined &&
+      m.tf === tf &&
+      m.count === count &&
+      m.timestamps.length === timestamps.length &&
+      m.timestamps.every((t, i) => t === timestamps[i])
+    )
+      return m.ticks;
+    const ticks = periodTickIndices(
+      timestamps.map((t) => timeLabel(t, 0, tf)),
+      count
+    );
+    this.tickMemo = { timestamps, tf, count, ticks };
+    return ticks;
+  }
+
   protected renderReady(): TemplateResult | typeof nothing {
     const v = this.value as TimeSeriesValue;
     const series = v.series;
@@ -161,7 +202,12 @@ export class LuTimeseries extends LuWidget {
     const first = timestamps[0] ?? "";
     const last = timestamps[n - 1] ?? "";
     const spanMs = new Date(last).getTime() - new Date(first).getTime() || 86_400_000;
-    const xTicks = timeTickIndices(n, Math.max(3, Math.min(6, Math.floor(innerW / 80))));
+    const tf = this.timeFormatOf(v);
+    const xTicks = this.xTickIndices(
+      timestamps,
+      tf,
+      Math.max(3, Math.min(6, Math.floor(innerW / 80)))
+    );
     const yTicks = niceTicks(leftDomain[0], leftDomain[1], 4);
     const yTicksR = right.length > 0 ? niceTicks(rightDomain[0], rightDomain[1], 4) : [];
     const axisFormat = (side: "left" | "right"): SemanticFormat | undefined => {
@@ -194,7 +240,7 @@ export class LuTimeseries extends LuWidget {
           aria-label=${this.label()}
           width=${w}
           height=${h}
-          @pointermove=${(e: PointerEvent) => this.onMove(e, sx, n, series, colorFor, timestamps)}
+          @pointermove=${(e: PointerEvent) => this.onMove(e, sx, n, series, colorFor, timestamps, tf)}
           @pointerleave=${() => {
             this.hoverIndex = null;
             hideTooltip();
@@ -216,7 +262,7 @@ export class LuTimeseries extends LuWidget {
             )}
             ${xTicks.map(
               (i) =>
-                svg`<text x=${sx(i)} y=${M.top + innerH + 14} text-anchor="middle">${timeTick(timestamps[i] ?? "", spanMs)}</text>`
+                svg`<text x=${sx(i)} y=${M.top + innerH + 14} text-anchor="middle">${timeLabel(timestamps[i] ?? "", spanMs, tf)}</text>`
             )}
           </g>
           ${series.map((s, i) => {
@@ -249,7 +295,8 @@ export class LuTimeseries extends LuWidget {
     n: number,
     series: TimeSeriesValue["series"],
     colorFor: (i: number) => string,
-    timestamps: string[]
+    timestamps: string[],
+    tf: TimeFormat | undefined
   ): void {
     const rect = (e.currentTarget as SVGElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -263,7 +310,7 @@ export class LuTimeseries extends LuWidget {
     const head = document.createElement("div");
     head.style.marginBottom = "2px";
     head.style.color = "var(--lu-text-dim,#8b949e)";
-    head.textContent = timeTick(timestamps[hover] ?? "", 1e12);
+    head.textContent = timeLabel(timestamps[hover] ?? "", 1e12, tf);
     tip.appendChild(head);
     series.forEach((s, i) => {
       const fmt = this.formatOf(s);

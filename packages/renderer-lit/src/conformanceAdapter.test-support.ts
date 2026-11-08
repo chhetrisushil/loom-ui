@@ -117,6 +117,7 @@ export const litAdapter: RendererAdapter = {
     i18n: true,
     chatMarkdown: true,
     chatEntryAccessory: true,
+    timeAxisLabels: true,
   },
   mount(blueprint, { values, onAction, i18n, chatAccessory }) {
     vi.stubGlobal("IntersectionObserver", undefined);
