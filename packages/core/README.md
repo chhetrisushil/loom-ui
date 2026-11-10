@@ -267,6 +267,11 @@ never forward them to the viewer.
   `tableColumnFormat(column)` read a `TableColumn` regardless of its string-or-object form. A `Table` may carry
   `rowKeys` (one stable key per row) and `rowActions` (up to `MAX_ROW_ACTIONS` per row, `TableRowAction`);
   `tableRowProblems(v)` is the one zod-free rule check both contracts call, and the widget emits `TABLE_ROW_ACTION`.
+  A `TableCell` is a string, a number, `null` or a token cell `{ tokens: { id, label }[] }` (`TableTokenCell`, `TableToken`):
+  at most `MAX_CELL_TOKENS` (20) tokens, ids short identifiers unique within the cell, a label of 1 to `MAX_TOKEN_LABEL` (80)
+  characters of plain text (never parsed as markup), no other keys. The same `tableRowProblems` enforces it (paths point at the
+  cell, `["rows", r, c]`; no value is echoed), and `rowKeys` are not required. The widget draws each token as a button and emits
+  `TABLE_TOKEN`. `tableCellText(cell)` is a cell as text (a token cell is its labels joined with ", "; `null` is "").
 - `DiagramValue` `{ layout: "tree" | "flow" | "timeline" | "network", title?, timeFormat?, nodes, edges }` —
   a diagram bound to data, at most `MAX_DIAGRAM_NODES` (200) nodes and `MAX_DIAGRAM_EDGES` (400) edges (over
   the cap it is refused, never cut). `diagramProblems(v)` is the one zod-free rule check both contracts call;
@@ -603,6 +608,7 @@ with `viewedVersion` (U5):
 | Chat (load earlier) | `LOAD_OLDER` | `{ cursor }` (a read: no key) |
 | Chat (open a reference) | `CHAT_REF_OPEN` | `{ entryId, refId, n }` (a read: no key). Untrusted: `acceptChatSubmit` matches `entryId`/`refId` against `hasRef(entryId, refId, principal, { widgetId })`, your record of what you served (per viewer, like `canEdit`); without `hasRef` it refuses (`ref-not-allowed`) |
 | MediaInput | `MEDIA_ATTACH` | `{ ref }` (U9; `acceptMediaAttach`) |
+| Table (token) | `TABLE_TOKEN` | `{ rowKey, tokenId }` with `rowKeys`, else `{ rowIndex, tokenId }` (`rowIndex` is the index into `value.rows` as you sent it, not the displayed position; never both keys). Untrusted: match them against the value you served |
 | Table (row action) | `TABLE_ROW_ACTION` | `{ action, rowKey }` (the host decides what it means; no key). The payload is untrusted: match `rowKey` and `action` against the value you served |
 
 `key` is an idempotency key the widget minted when the draft began (`newSubmitKey`). The widget

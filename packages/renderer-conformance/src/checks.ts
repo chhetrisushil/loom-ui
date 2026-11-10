@@ -2,6 +2,7 @@ import {
   type ContainerNode,
   REF_OPEN_ACTION,
   type SemanticNode,
+  TABLE_TOKEN,
   WIDGET_REF_KINDS,
   compile,
   defineSemanticCatalog,
@@ -1271,6 +1272,83 @@ check(
           `${f.kind}: with no host listening the source label is gone`
         );
       }
+    })
+);
+
+// ── table token cells ──────────────────────────────────────────────────────────────────────────
+check(
+  "table-tokens",
+  "a Table token cell's labels are text; an interactive surface emits TABLE_TOKEN for an activated token",
+  (adapter) =>
+    withSession(adapter, async (s) => {
+      if (!adapter.kinds.includes("Table")) return;
+      const tokens = [
+        { id: "t1", label: "zq-alpha" },
+        { id: "t2", label: "zq-beta" },
+      ];
+      const draw = async (value: unknown) => {
+        const m = await s.mount(viewOf([bound("Table", "tt", "Token table", "h-tt")]), {
+          "h-tt": { value, state: "ready" },
+        });
+        return m;
+      };
+      const keyed = { columns: ["name", "tags"], rows: [["a", { tokens }]], rowKeys: ["k1"] };
+      const out = await (await draw(keyed)).text();
+      for (const n of ["zq-alpha", "zq-beta"])
+        must(has(out, n), `a token cell's label "${n}" is not on the surface: ${show(out)}`);
+      // A label is plain text: markup stays the characters.
+      const literal = await (
+        await draw({
+          columns: ["tags"],
+          rows: [[{ tokens: [{ id: "m", label: "<b>zq-bold</b>" }] }]],
+        })
+      ).text();
+      must(
+        has(literal, "<b>zq-bold</b>"),
+        `a markup-looking token label was not shown literally: ${show(literal)}`
+      );
+      // A value that breaks a token rule is the error state: the title, no label, never the widget.
+      const bad = await (
+        await draw({
+          columns: ["tags"],
+          rows: [[{ tokens: [...tokens, { id: "t1", label: "zq-dup" }] }]],
+        })
+      ).text();
+      must(has(bad, "Token table"), `a refused token cell dropped the widget: ${show(bad)}`);
+      must(!has(bad, "zq-"), `a refused token cell was drawn anyway: ${show(bad)}`);
+
+      if (adapter.capabilities?.tokens !== true) return;
+      if (adapter.capabilities.invoke !== true) return;
+      const activate = async (value: unknown): Promise<WidgetAction> => {
+        const m = await draw(value);
+        const before = s.actions.length;
+        await m.invoke?.("tt", { kind: "token", tokenId: "t2" });
+        must(
+          s.actions.length === before + 1,
+          `activating a token emitted ${s.actions.length - before} actions, not 1`
+        );
+        return s.actions[before] as WidgetAction;
+      };
+      const a = await activate(keyed);
+      must(
+        a.type === TABLE_TOKEN &&
+          a.widgetId === "tt" &&
+          JSON.stringify(a.payload) === JSON.stringify({ rowKey: "k1", tokenId: "t2" }),
+        `a keyed table's token: unexpected action ${JSON.stringify(a)}`
+      );
+      const unkeyed = {
+        columns: ["name", "tags"],
+        rows: [
+          ["a", { tokens: [{ id: "t9", label: "zq-other" }] }],
+          ["b", { tokens }],
+        ],
+      };
+      const b = await activate(unkeyed);
+      must(
+        b.type === TABLE_TOKEN &&
+          JSON.stringify(b.payload) === JSON.stringify({ rowIndex: 1, tokenId: "t2" }),
+        `an unkeyed table's token: unexpected action ${JSON.stringify(b)}`
+      );
     })
 );
 

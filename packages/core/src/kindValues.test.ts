@@ -56,7 +56,19 @@ const VALID: Readonly<Record<string, unknown>> = {
   },
   Table: {
     columns: ["a", { label: "b", format: { semanticType: "decimal" } }],
-    rows: [["x", 1, null]],
+    rows: [
+      [
+        "x",
+        1,
+        null,
+        {
+          tokens: [
+            { id: "t1", label: "alpha" },
+            { id: "t2", label: "beta" },
+          ],
+        },
+      ],
+    ],
     refs: [{ id: "s1", label: "Ledger" }],
   },
   StatusCard: { level: "ok", headline: "h", detail: "d", refs: [{ id: "s1" }] },

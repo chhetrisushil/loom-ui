@@ -415,8 +415,18 @@ const tableColumn = (v: unknown, p: Path, out: Out): Status =>
         ["format", optionalFormat],
       ]),
   ]);
+const tableToken = (v: unknown, p: Path, out: Out): Status =>
+  object(v, p, out, [
+    ["id", string],
+    ["label", string],
+  ]);
 const tableCell = (v: unknown, p: Path, out: Out): Status =>
-  union(v, p, out, [string, number, (x, xp, xo) => type("null", x, xp, xo)]);
+  union(v, p, out, [
+    string,
+    number,
+    (x, xp, xo) => type("null", x, xp, xo),
+    (x, xp, xo) => object(x, xp, xo, [["tokens", (t, tp, to) => array(t, tp, to, tableToken)]]),
+  ]);
 
 const optionalBoolean = (v: unknown, p: Path, out: Out): Status =>
   opt(v, p, out, { optional: true }, (x, xp, xo) => type("boolean", x, xp, xo));

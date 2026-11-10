@@ -121,6 +121,7 @@ export const litAdapter: RendererAdapter = {
     chatEntryAccessory: true,
     timeAxisLabels: true,
     references: true,
+    tokens: true,
   },
   mount(blueprint, { values, onAction, i18n, chatAccessory, unattended }) {
     vi.stubGlobal("IntersectionObserver", undefined);
@@ -247,6 +248,10 @@ export const litAdapter: RendererAdapter = {
           const marker = inner(w, `button[data-n="${intent.n}"]`);
           if (!marker) throw new Error(`no source marker ${intent.n}`);
           marker.click();
+        } else if (intent.kind === "token") {
+          const chip = inner(w, `button[data-token="${CSS.escape(intent.tokenId)}"]`);
+          if (!chip) throw new Error(`no token chip ${intent.tokenId}`);
+          chip.click();
         } else if (intent.kind === "select") {
           const sel = inner(w, "select") as HTMLSelectElement | null;
           if (!sel) throw new Error("no select");

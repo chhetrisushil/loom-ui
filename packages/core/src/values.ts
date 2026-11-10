@@ -167,8 +167,17 @@ export const TableColumn = z.union([
   z.object({ label: z.string(), format: SemanticFormat.optional() }),
 ]);
 export type TableColumn = z.infer<typeof TableColumn>;
-export const TableCell = z.union([z.string(), z.number(), z.null()]);
-export type TableCell = z.infer<typeof TableCell>;
+/**
+ * A cell of clickable tokens. Passthrough here, so an unknown key survives to the shared rule in
+ * `tableRowProblems` (zod would silently strip it); that rule refuses it, on both contracts, without
+ * echoing the key. The exported types are the declared shape.
+ */
+export const TableToken = z.object({ id: z.string(), label: z.string() }).passthrough();
+export type TableToken = { id: string; label: string };
+export const TableTokenCell = z.object({ tokens: z.array(TableToken) }).passthrough();
+export type TableTokenCell = { tokens: TableToken[] };
+export const TableCell = z.union([z.string(), z.number(), z.null(), TableTokenCell]);
+export type TableCell = string | number | null | TableTokenCell;
 /** One action a table row offers. */
 export const TableRowAction = z.object({
   id: z.string(),

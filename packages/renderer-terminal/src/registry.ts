@@ -39,6 +39,7 @@ import {
   optionsProblem,
   pluralForms,
   selectPlural,
+  tableCellText,
   tableColumnFormat,
   tableColumnLabel,
   unitSuffix,
@@ -316,7 +317,11 @@ const table = (host: boolean, x: Env) =>
     const labels = t.columns.map((c) => inert(tableColumnLabel(c)));
     const formats = t.columns.map(tableColumnFormat);
     const cellText = (c: TableCell): string =>
-      c === null ? "—" : typeof c === "number" ? formatted(x, c, undefined, undefined) : inert(c);
+      c === null
+        ? "—"
+        : typeof c === "number"
+          ? formatted(x, c, undefined, undefined)
+          : inert(tableCellText(c));
     const body = t.rows.slice(0, TABLE_ROWS).map((row) =>
       labels.map((_, i) => {
         const c = row[i] ?? null;

@@ -118,7 +118,11 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // dom/index 32_833 -> 32_993, containers 12_775 -> 12_935. Cause: the refs rule and the zod-free list checker in `checkKindValue`, the
     // marker strip with its press/answer handling in the shared `LuWidget` frame (plus chat's dispatch helper, now reached from it) and
     // its styles in six widgets, and four catalogue words.
-    ["index.js", 150 * 1000],
+    // Table token cells (TABLE_TOKEN): 150 -> 153 kB (measured 149_304 -> 152_114), media 84 stays (81_765 -> 82_633),
+    // chat 132 stays (129_513 -> 130_381), diagram 84 -> 85 kB (83_341 -> 84_209); dom/index and containers unchanged. Cause: the
+    // token-cell rules in `tableRowProblems` and the zod-free cell checker (`checkKindValue`), `tableCellText`, and the chip
+    // markup, styles and click handler in lu-table.
+    ["index.js", 153 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
@@ -153,7 +157,8 @@ describe("renderer-lit's browser entries carry no zod", () => {
     ["chat.js", 132 * 1000],
     // The opt-in diagram widget (`@loom-ui/renderer-lit/diagram`): lu-diagram, the layout math and core's outline and graph
     // helpers, on top of the default registry it extends. Measured 76_859; budget = measured + ~10%.
-    ["diagram.js", 84 * 1000],
+    // Table token cells: 84 -> 85 kB (measured 83_341 -> 84_209), the same cause as index.js.
+    ["diagram.js", 85 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

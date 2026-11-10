@@ -250,6 +250,8 @@ export {
   StatusLevel,
   TableCell,
   TableColumn,
+  TableToken,
+  TableTokenCell,
   TableValue,
   TimeSeriesValue,
   checkKindValue,
@@ -260,7 +262,15 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./values";
-export { MAX_ROW_ACTIONS, TABLE_ROW_ACTION, tableRowProblems } from "./tableRows";
+export {
+  MAX_CELL_TOKENS,
+  MAX_ROW_ACTIONS,
+  MAX_TOKEN_LABEL,
+  TABLE_ROW_ACTION,
+  TABLE_TOKEN,
+  tableCellText,
+  tableRowProblems,
+} from "./tableRows";
 export {
   DIAGRAM_LAYOUTS,
   MAX_DIAGRAM_EDGES,

@@ -65,8 +65,11 @@ export const KIND_FIXTURES: readonly KindFixture[] = [
   {
     kind: "Table",
     title: "Top tables",
-    value: { columns: ["db", "p99"], rows: [["orders-db", 12]] },
-    needles: ["orders-db"],
+    value: {
+      columns: ["db", "p99", "tags"],
+      rows: [["orders-db", 12, { tokens: [{ id: "hot", label: "hot-tag" }] }]],
+    },
+    needles: ["orders-db", "hot-tag"],
   },
   {
     kind: "StatusCard",
