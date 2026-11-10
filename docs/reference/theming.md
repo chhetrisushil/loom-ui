@@ -16,6 +16,8 @@ are described in [`@loom-ui/renderer-lit`](../../packages/renderer-lit/README.md
 | `--lu-grid` | Chart grid lines |
 | `--lu-accent` | Accent colour |
 | `--lu-radius` | Corner radius |
+| `--lu-mono` | Monospace font for `lu-prose` and chat code spans |
+| `--lu-bg` | Text colour on an accent-filled source marker (hover) |
 
 ## Deltas and status
 

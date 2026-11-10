@@ -66,7 +66,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   going through `@loom/llm`'s `buildRequest`/`guardRequest`.
 - **Two authorisation domains.** `interpretAction` is the one seam between a widget's click and the
   Experience: an `experience.op` action is admitted only if it parses as an `Operation`, is not
-  `prompt`/`setRole`/a provider op, and does not touch the root; everything else passes through to
+  `prompt`/`setRole`/a provider op, does not touch the root, and names a node that exists; everything else passes through to
   loom's ordinary business-action path untouched.
 - **Drift re-authoring.** `reviseForDrift` takes the `DriftRecord`s collected from one or more
   `@loom-ui/hydration` `DriftReport`s (their `.drift` arrays) and turns them into a revision request
@@ -77,16 +77,17 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 
 ### The SPI
 
-- `Planner` — `{ compose(input: ComposeInput, ctx): Promise<PlanResult>; revise(input: ReviseInput,
-  ctx): Promise<PlanResult> }`.
-- `ComposeInput`, `ReviseInput` — `{ intent, catalog, capabilities, context?, surface? }` and, for a
-  revision, `{ experience, request: { text, scopeNodeIds? }, ..., observed? }`.
-- `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report, summary? }` (`summary` is
+- `Planner` — `{ compose(input: ComposeInput, ctx, opts?: PlanStreamOptions): Promise<PlanResult>;
+  revise(input: ReviseInput, ctx, opts?: PlanStreamOptions): Promise<PlanResult> }`.
+- `ComposeInput`, `ReviseInput` — `{ intent, catalog, capabilities, context?, contextClass?, surface?,
+  containers?, unit? }` and, for a revision, `{ experience, request: { text, scopeNodeIds? }, catalog,
+  capabilities, context?, contextClass?, surface?, observed?, containers?, unit? }`.
+- `PlanResult`, `PlanReport`, `AttemptTrace` — `{ ops, findings, report, summary?, summaryClass? }` (`summary` is
   the model's own description of the plan, kept for change delivery: UNTRUSTED text, bounded and
   stripped by core's `boundSummary`, never an instruction); the report's `decisionId`, `attempts`,
   `firstAttemptValid`, `modelId` and summed `usage` are what a caller stamps provenance from.
 - `CapabilityRef` — one bindable tool: `handle`, optional `kind`, `toolName`, `toolVersion`,
-  `toolSchemaHash`, optional `description`/`inputSchema`/`sampleOutput`. `kind` (absent = MCP) names
+  `toolSchemaHash`, optional `description`/`inputSchema`/`outputSchema`/`sampleOutput`/`sensitivity`. `kind` (absent = MCP) names
   the data-provider kind (see hydration): the planner treats it as opaque, copies it onto the step
   it emits, and keys handles, decision ids and observation matching by it (`toolKey`), so the same
   name under two kinds is two providers. An MCP capability keeps every id it had.
@@ -99,8 +100,8 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   the flow that asked, not as an anonymous runtime-level caller.
 - `scopeInvoker(scope): TransientInvoker` — adapts a `DecideScope` to the `TransientInvoker`
   interface `@loom-ui/hydration` is written against, so its wrappers compose on top:
-  `memoInvoker(limitInvoker(scopeInvoker(scope), 4))`. Only `signal` is forwarded; `principal`, `as`
-  and `resources` throw (the scope IS the identity; a silent drop would run a call as someone it did
+  `memoInvoker(limitInvoker(scopeInvoker(scope), 4))`. Only `signal` and `onDelta` are forwarded; `principal`, `as`
+  and `resources` are refused (the scope IS the identity; a silent drop would run a call as someone it did
   not ask to be), `label` is ignored. `memoInvoker` keys on every option except `signal`, and the
   scope fixes the identity, so a memo built inside one decider is safe — never share one memo across
   scopes (executions). A refused option is a REJECTED promise, never a synchronous throw. Do not
@@ -126,8 +127,11 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 ### Reference planner
 
 - `ReferencePlanner` — implements `Planner`. Constructor: `{ model: PlannerModel | ((scope:
-  DecideScope) => PlannerModel), modelId: string, maxAttempts?: number }` (default 2 attempts,
-  parse/validation retries included). Pass a factory to make the model calls AS the deciding
+  DecideScope) => PlannerModel), modelId: string, maxAttempts?: number, reach?, decisionKey?,
+  orderSalt?: string, variants? }` (default 2 attempts, parse/validation retries included).
+  `orderSalt` is an author id (a replica, agent or session) mixed into the order keys of the nodes the
+  planner inserts, so planners writing concurrently into one experience get distinct keys in the
+  same gap; unset keeps the unsalted keys. Pass a factory to make the model calls AS the deciding
   execution, e.g. `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req, o)
   => inv.invokeTransient("llm.complete", req, o) }; }` (forward `o`: it carries the signal and, for
   a streamed turn, the delta sink); a plain model ignores the scope.
@@ -302,7 +306,8 @@ kind, unit, key, catalogId }`), the alternatives (the sorted variant ids) and th
 **propensity**, so `@loom/learning` can evaluate it off-policy from the log. Then the plan, keyed
 additionally on the variant (a plan made under one variant is not a plan for another). A variant is
 `{ containers?, guidance? }`: the container roles offered for the turn, and a bounded, control-free
-line of application-authored layout guidance appended to the system prompt.
+line of application-authored layout guidance (at most `MAX_GUIDANCE`, 400, characters) appended to the system
+prompt. Variant ids are `[A-Za-z0-9_.:-]{1,48}`.
 
 The turn needs `ComposeInput.unit` / `ReviseInput.unit`, an opaque `[A-Za-z0-9_.:-]{1,128}` id of
 the user, tenant or cohort (an email is refused). The host derives it SERVER-SIDE as a keyed HMAC

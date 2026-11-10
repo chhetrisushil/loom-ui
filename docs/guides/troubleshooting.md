@@ -27,6 +27,8 @@ message. Server-side findings name real node ids and handles, so do not send the
 
 ## Compile findings
 
+The full list of codes `validateExperience` can report, with the catalogue shapes behind them, is in the [catalogue reference](../reference/catalogue.md#validateexperience-and-its-findings).
+
 `compile` never throws on a bad experience. It returns `{ blueprint, findings, ok }`, and `ok` is
 false only if a finding is an error; a node it cannot resolve is omitted, never faked.
 
@@ -36,6 +38,7 @@ false only if a finding is an error; a node it cannot resolve is omitted, never 
 | `unresolvable-on-surface` | error | the entry has no resolution on this surface (add `surfaces.<surface>` or a `degradeTo`) |
 | `degrade-cycle` | error | a `degradeTo` chain loops |
 | `kind-without-contract` | error | the resolved kind has no contract in the derived catalogue; declare `kind`, `props` and `binding` on the surface resolution |
+| `undeclared-kind-contract` | error | a kind outside the base catalogue resolves on this surface without `props` and `binding` on its resolution (reported when the derived catalogue is built; the node then gets `kind-without-contract`) |
 | `undeclared-prop` | error | a node prop the entry does not list |
 | `prop-not-rendered` | warn | a degrade landed on a kind that cannot render a prop the node's own type declares |
 | `missing-binding` / `unexpected-binding` / `binding-conflict` | error | binding does not match the entry's `binding` rule, or a node binds both a handle and a projection |

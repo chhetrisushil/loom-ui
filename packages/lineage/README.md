@@ -305,7 +305,7 @@ consume the log live in [`@loom-ui/changes`](../changes/README.md).
 `foldProvenance`), derived from the recorded ops alone: no artifact is read and nothing is stored. A
 revert has the ledger of the version it restores; a branch starts from its source version's (depth
 bounded; beyond it the origin is unknown and the ledger says it was truncated). `lineage.explain(
-experienceId, nodeId, { viewer, versionHash?, projections? })` is core's `explainNode` over that
+experienceId, nodeId, { viewer, audience?, versionHash?, projections? })` is core's `explainNode` over that
 ledger, plus the notes the line holds: the creating version's `summary` / `summaryClass`, with the
 creating version's own class floor added (a class can be lowered between versions; a version that
 cannot be read counts as `secret`). Stamp the planner's decision on the ops with
@@ -335,7 +335,8 @@ is fetched. An identical consecutive view is not re-recorded.
 viewerId)` and carry no audience marker, so a wallboard recorded under a person's id would
 interleave with that person's personal views (and `read` would show them as one history). Give a
 `"broadcast"` surface a `viewerId` of its own (for example `wallboard:<surface>`), and pass the
-compile result's `viewer` (the no-clearance effective viewer) as `viewer`.
+compile result's `viewer` (the no-clearance effective viewer) as `viewer`
+(or `audience: "broadcast"`, which `record` and `read` take to act as a viewer with no clearance).
 
 *Why a separate log, and not the lineage stream or the hydration store.* A lineage line is the
 shared history of an experience with one compare-and-set tip that every writer contends for and

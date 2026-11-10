@@ -229,8 +229,8 @@ list, with defaults, is in the [theming reference](../reference/theming.md).
   renderer or register a widget for it.
 - `chrome: "host"` (terminal `terminalRegistry`, Lit `createLitRegistry`) drops the widget title
   for an app that draws its own frame; the accessible name keeps it.
-- Media, chat and input widgets are opt-in entries (`@loom-ui/renderer-lit/media`, `/chat`); the
-  default registry draws a fixed "not loaded" placeholder for media kinds.
+- Media, chat and input widgets are opt-in entries (`@loom-ui/renderer-lit/media`, `/chat`), and so is `Diagram` (`/diagram`); the
+  default registry draws a fixed "not loaded" placeholder for those kinds.
 - Fixed words are never inline literals; override with `configureI18n` (Lit) or `i18n` (terminal).
 - To check a renderer of your own, see [writing a renderer](writing-a-renderer.md).
 

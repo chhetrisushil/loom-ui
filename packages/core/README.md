@@ -43,7 +43,8 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   contract without one needs `HydrationCache.invalidate()` after a change.
 - **Operations.** An `Operation` is one of `insertNode`, `removeNode`, `moveNode`, `setProps`,
   `setLabel` (`label: null` clears), `setTitle`, `setRole`, `setPlacement`, `bindProvider`,
-  `unbindProvider`, `declassifyHandle`, `remapProvider`, `removeProvider`, `prompt`.
+  `bindProjection`, `unbindProvider`, `declassifyHandle`, `declassifyProjection`, `remapProvider`,
+  `removeProvider`, `prompt`.
   `apply`/`replay` are deterministic and never throw on bad input — every refusal is a typed
   `Finding` (the full code list is in the [composition
   reference](../../docs/reference/composition.md#op-refusal-codes)).
@@ -490,7 +491,9 @@ kind (one function backs the zod and the zod-free checker; its messages never ec
 { entries: ChatEntry[],            // oldest first, at most 500
   viewer?: { actor, tenant?, onBehalfOf? },   // "me": own turns are marked and are the only ones that can be edited
   older?: "0.12",                  // the cursor that loads the turns before the window (absent = start reached)
-  state?: "open" | "closed", running?: boolean }
+  state?: "open" | "closed", running?: boolean,
+  mode?: "owner" | "shared",       // what the source knows about whose turns these are (see below)
+  refMarkers?: boolean }           // the text may carry [[id]] markers (see "Reference markers")
 // ChatEntry
 { id: "t3.assistant",              // stable for the turn's slot: the streaming entry and its durable successor share it
   turn: 3, role: "user" | "assistant" | "system",
@@ -503,7 +506,8 @@ kind (one function backs the zod and the zod-free checker; its messages never ec
   tools?: { name, status }[],      // optional one-line tool activity
   reasoning?: { text, kind: "text" | "summary" | "redacted", streaming: boolean,
                 truncated?: boolean,   // only part is here
-                status?: "ok" | "erased" | "digest-mismatch" | "unloaded" | "loading" | "unavailable" } }
+                status?: "ok" | "erased" | "digest-mismatch" | "unloaded" | "loading" | "unavailable" },
+  refs?: { id }[] }                // ids an assistant entry may cite as [[id]]
 ```
 
 `reasoning` (loom ADR 0133) is the model's reasoning for an ASSISTANT reply and exists only when the
@@ -724,6 +728,15 @@ verdict and same finding message — pinned by a differential test against the z
 `hydrationPath`/`hydrationStatusPath` spellings, and the value types. The main entry's zod schemas
 cannot be tree-shaken (~60 kB minified in a page), so a bundle that imports the main entry pays for
 them; `@loom-ui/renderer-lit` imports this subpath and a bundle test holds it zod-free.
+
+### Document and messages entries
+
+- `@loom-ui/core/document` — the long-document parsers `parseMarkdownDocument` and `parseOrgDocument`
+  (markdown and a closed Org subset into the bounded AST chat draws, with each top-level block's
+  source range), plus `MD_DOC_MAX_NODES`, `MD_DOC_MAX_TABLE_ROWS`, `MD_DOC_MAX_TEXT`. Zod-free.
+- `@loom-ui/core/messages` — the fixed-words catalogue `LU_MESSAGES`, the typed key list
+  `LU_MESSAGE_KEYS` (`LuMessageKey`), `LuI18n`, `createSay`, `sayEnglish`, `fill`, `lookupMessage`,
+  `selectPlural`, `pluralForms`. Both renderers read it (see their READMEs).
 
 ### Content log (`@loom-ui/core/log`)
 

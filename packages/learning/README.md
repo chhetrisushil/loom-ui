@@ -74,8 +74,10 @@ reasons (`unknown-node`, `unexposed`, `unknown-outcome`...) are for your logs; e
 client probe what exists, what it may see and which names are registered.
 
 The viewer is the host's authenticated session, **keyed by tenant and id**; a `viewerId` in the
-payload is ignored. In order: **cost** (every call, accepted or refused, is charged to the viewer's
-rate budget before it is parsed; an over-budget call is refused whole and not remembered) ->
+payload is ignored. `ingest` also takes an optional `audience` (`"broadcast"` for a wallboard surface), passed
+to `visibleTo(viewer, audience)` and the exposure check. In order: **cost** (every call, accepted or refused, is charged to the viewer's
+rate budget before it is parsed, its claimed signal count, at least 1; `rateLimit` default 512 per
+`rateWindowMs` default 60 s; an over-budget call is refused whole and not remembered) ->
 **shape** (`validateSignalBatch`) -> **view** (registered for this tenant; a foreign tenant's view
 and an unregistered one answer alike) -> **node** (listed + visible; a `restricted` flag on a node
 the link lists is refused) -> **saw it** -> **outcome names** (only those registered with the
@@ -180,8 +182,8 @@ for a compacted execution pass `evidenceEvents(state, events)` from `@loom/learn
 tail), keeps the variant decisions and **only the outcomes this pipeline recorded** (key
 `ui:<rewardId>:` AND kernel-stamped; an unrelated CSAT outcome on the same decision is excluded:
 tested), and evaluates "always variant V" for each V with `evaluatePolicy` gated by `promotionGate`.
-The unit of an execution is its first variant decision's. It returns per-variant reports, best
-first, and a `winner` only if one passes the gate **and** the logging policy explored: if every
+The unit of an execution is its first variant decision's. It returns `rows` (per-variant
+reports, best first), `reasons`, and a `winner` only if one passes the gate **and** the logging policy explored: if every
 variant choice was logged with propensity 1 (UCB, a greedy policy) no estimate is unbiased and no
 winner is named unless `allowDeterministicLogging: true`. loom's default gate demands 1000 steps; a
 small trial passes its own thresholds.

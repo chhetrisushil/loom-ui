@@ -107,8 +107,12 @@ What each member means:
 | --- | --- |
 | `kinds` | the Blueprint kinds you **draw**; any other kind must be marked where a viewer can see it, never silently dropped |
 | `capabilities.update` | `update(next)` lands a revised blueprint incrementally and keeps live data |
-| `capabilities.invoke` | `invoke(widgetId, intent)` drives approvals, selects and text inputs |
+| `capabilities.invoke` | `invoke(widgetId, intent)` drives approvals, selects (`select`, `select-many`) and text inputs |
 | `capabilities.tokens` | a `Table` token cell is drawn as controls: `invoke(widgetId, { kind: "token", tokenId })` activates one and emits `TABLE_TOKEN` |
+| `capabilities.chatMarkdown` | you parse a `format: "markdown"` text part and draw its structure |
+| `capabilities.chatEntryAccessory` | you draw host content under a transcript entry (`MountOptions.chatAccessory`) |
+| `capabilities.timeAxisLabels` | you draw a TimeSeries time axis as text, labelled as its `timeFormat` says |
+| `capabilities.references` | source markers are controls: `invoke(widgetId, { kind: "ref", n })` emits `REF_OPEN`; `mount` honours `MountOptions.unattended` |
 | `capabilities.i18n` | `mount` honours the host's messages and locale |
 | `capabilities.interpretsControlCharacters` | your surface reads escape sequences or markup (terminal, speech), so the kit checks none reach it |
 | `mount(blueprint, { values, onAction, i18n })` | start drawing; `values` is keyed by hydration handle |
@@ -165,8 +169,10 @@ failure; both shipped renderers do.
 | `chat-entry-accessory` | with `capabilities.chatEntryAccessory`: host content (`MountOptions.chatAccessory`) is drawn with its entry, after the entry's text, kept across updates, re-asked when the status changes, never for a restricted entry. Without the capability (a surface with no such seam, like the terminal): only that the transcript is drawn |
 | `table-tokens` | every renderer that draws `Table`: a token cell's labels are on the surface as text (the terminal joins them with ", "), a markup-looking label is literal, a duplicate token id is the error state (the title, no label). With `capabilities.tokens` and `invoke`: activating a token emits exactly one `TABLE_TOKEN` for the widget, `{ rowKey, tokenId }` with `rowKeys` and `{ rowIndex, tokenId }` without. A surface that cannot be clicked leaves the capability off and owes only the text half. Build a cell's text with `tableCellText` |
 | `references` | every renderer that draws a kind that may cite sources (`Kpi`, `BarChart`, `TimeSeries`, `Table`, `StatusCard`, `Diagram`): a value with `refs` is accepted and drawn, each label on the surface (a terminal footnote counts) and a markup-looking label literal; a value with 17 refs, a bad or duplicate id or an over-long label is the error state (the title, no label). With `capabilities.references` and `invoke`: activating the nth marker emits exactly one `REF_OPEN { refId, n }` for the widget, and with `MountOptions.unattended` (no host listening) `invoke` must FAIL because a marker is then text, not a control. A surface that cannot be clicked (the terminal, speech) leaves the capability off and owes only the first two |
+| `select-current-value` | a `SelectInput` bound to its current value shows that option as chosen; an undeclared value chooses nothing and is never echoed |
+| `multi-select-current-value` | a `MultiSelectInput` bound to its chosen set reads differently for each set, and shows what is chosen |
 | `i18n` | the host's messages replace fixed words (`LU_MESSAGES` keys) and its locale formats numbers |
-| `actions` | controls emit the shared `WidgetAction` shapes, with a well-formed idempotency `key` for `SELECT` and `SUBMIT_TEXT` |
+| `actions` | controls emit the shared `WidgetAction` shapes, with a well-formed idempotency `key` for `SELECT`, `SELECT_MANY` and `SUBMIT_TEXT` |
 
 ## Security rules your renderer owns
 
