@@ -1,9 +1,11 @@
 import {
   type LuI18n,
+  type TableCell,
   chatTranscriptLines,
   checkKindValue,
   createSay,
   describeMedia,
+  tableCellText,
 } from "@loom-ui/core";
 import {
   SELECT_ACTION,
@@ -98,8 +100,8 @@ export const speechAdapter: RendererAdapter = {
         case "StatusCard":
           return `${title}: ${clean(o.level)}, ${clean(o.headline)}${stale}${sources(o)}`;
         case "Table": {
-          const rows = o.rows as unknown[][];
-          return `${title}: ${rows.length === 0 ? say("lu.empty.noData") : rows.map((r) => r.map(clean).join(" ")).join("; ")}${sources(o)}`;
+          const rows = o.rows as TableCell[][];
+          return `${title}: ${rows.length === 0 ? say("lu.empty.noData") : rows.map((r) => r.map((c) => clean(tableCellText(c))).join(" ")).join("; ")}${sources(o)}`;
         }
         case "Image":
           return `${title}: ${clean(describeMedia("Image", v as never, say))}`;

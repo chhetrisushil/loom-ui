@@ -76,7 +76,9 @@ export type InvokeIntent =
    * Where the widget has no such control (an unattended mount draws markers as text), the adapter must FAIL, never
    * pretend: the kit relies on it to know an inert marker is not a control.
    */
-  | { readonly kind: "ref"; readonly n: number };
+  | { readonly kind: "ref"; readonly n: number }
+  /** Activate the token chip with this id in a `Table` cell (the first match in the widget). Needs `capabilities.tokens`. */
+  | { readonly kind: "token"; readonly tokenId: string };
 
 export interface AdapterCapabilities {
   /** `update(next)` is incremental and keeps the view live. */
@@ -117,6 +119,12 @@ export interface AdapterCapabilities {
    * checked to accept and draw a value with refs, label text included, and to refuse a bad list.
    */
   readonly references?: boolean;
+  /**
+   * The renderer draws a `Table` token cell as controls a viewer can ACTIVATE (needs `invoke`): activating one emits
+   * `TABLE_TOKEN { rowKey, tokenId }` (`{ rowIndex, tokenId }` for a table without `rowKeys`). A surface that cannot be
+   * clicked leaves this off and is only checked to draw a token cell's labels as text.
+   */
+  readonly tokens?: boolean;
 }
 
 export interface RendererAdapter {

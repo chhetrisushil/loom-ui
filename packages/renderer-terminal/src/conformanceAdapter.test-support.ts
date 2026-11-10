@@ -91,6 +91,8 @@ export const terminalAdapter: RendererAdapter = {
           await term.send("\r");
         } else if (intent.kind === "ref") {
           throw new Error("the terminal prints source footnotes; there is nothing to activate");
+        } else if (intent.kind === "token") {
+          throw new Error("the terminal prints token labels as text; there is nothing to activate");
         } else {
           await term.send("\r");
           const options = (optionsOf(blueprint, id) as Array<{ value: string }>).map(

@@ -1,7 +1,9 @@
 import {
   TABLE_ROW_ACTION,
+  TABLE_TOKEN,
   type TableCell,
   type TableValue,
+  tableCellText,
   tableColumnFormat,
   tableColumnLabel,
 } from "@loom-ui/core/browser";
@@ -36,7 +38,8 @@ function compareCells(a: TableCell, b: TableCell): number {
   // numeric-aware, so "9" sorts before "10" instead of by character code, and a numeric-looking
   // string compares sanely against an actual number in the same column. The collation is the
   // FORMATTING locale's (the one the cells are drawn in), never the host's own.
-  return String(a).localeCompare(String(b), formattingLocale(), {
+  // A token cell is its joined labels (`tableCellText`), the same text the terminal prints.
+  return tableCellText(a).localeCompare(tableCellText(b), formattingLocale(), {
     numeric: true,
     sensitivity: "base",
   });
@@ -138,6 +141,47 @@ export class LuTable extends LuWidget {
       box-sizing: border-box;
       height: var(--lu-row-h);
       padding-block: 0;
+    }
+    /* A token cell: chips wrap inside the cell and never widen the table past its container. */
+    td.tokens {
+      white-space: normal;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    tbody.virtual .chips {
+      /* a windowed row is a fixed height: its chips stay on one line and are cut, never wrapped */
+      flex-wrap: nowrap;
+      overflow: hidden;
+    }
+    .chip {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      font: inherit;
+      min-width: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: 1px 8px;
+      border: 1px solid var(--lu-border, #30363d);
+      border-radius: 999px;
+      color: var(--lu-text, #e6edf3);
+      background: rgba(99, 102, 241, 0.12);
+    }
+    .chip:hover:not(:disabled) {
+      background: rgba(99, 102, 241, 0.22);
+    }
+    .chip:disabled {
+      color: var(--lu-text-dim, #8b949e);
+      cursor: default;
+    }
+    .chip:focus-visible {
+      outline: 2px solid var(--lu-accent, #6366f1);
+      outline-offset: 1px;
     }
     td.row-actions {
       white-space: nowrap;
@@ -264,7 +308,7 @@ export class LuTable extends LuWidget {
               const acts = Array.isArray(rawActs) ? rawActs : [];
               const c0 = at(r, 0);
               const shownFirst =
-                c0 === null ? "" : typeof c0 === "number" ? measure(c0, formats[0]) : c0;
+                typeof c0 === "number" ? measure(c0, formats[0]) : tableCellText(c0);
               const first = shownFirst.trim() === "" ? (key ?? String(ri + 1)) : shownFirst;
               const rowBusy = key !== undefined && this.busy.has(key);
               const primary = acts.find((a) => a.primary === true);
@@ -287,6 +331,20 @@ export class LuTable extends LuWidget {
               return html`<tr aria-rowindex=${win !== undefined ? win.start + i + 2 : nothing}>
               ${labels.map((_, ci) => {
                 const c = at(r, ci);
+                if (c !== null && typeof c === "object")
+                  return html`<td class="tokens">
+                    <div class="chips">
+                      ${c.tokens.map(
+                        (t) => html`<button
+                          type="button"
+                          class="chip"
+                          data-token=${t.id}
+                          ?disabled=${this.onAction === undefined}
+                          @click=${() => this.tokenAction(t.id, key, ri)}
+                        >${t.label}</button>`
+                      )}
+                    </div>
+                  </td>`;
                 const text = c === null ? "—" : typeof c === "number" ? measure(c, formats[ci]) : c;
                 return html`<td class=${numeric[ci] ? "num" : ""}>
                   ${
@@ -334,6 +392,17 @@ export class LuTable extends LuWidget {
     const left = new Set(this.busy);
     left.delete(rowKey);
     this.busy = left;
+    this.failure = result === "ok" ? null : result;
+  }
+
+  /** A chip click: `{ rowKey }` when the table has keys, else `{ rowIndex }` into `value.rows` as sent (not the displayed position). */
+  private async tokenAction(tokenId: string, rowKey: string | undefined, rowIndex: number) {
+    this.failure = null;
+    const result = await dispatch(this.onAction, {
+      type: TABLE_TOKEN,
+      widgetId: this.widget.id,
+      payload: rowKey === undefined ? { rowIndex, tokenId } : { rowKey, tokenId },
+    });
     this.failure = result === "ok" ? null : result;
   }
 

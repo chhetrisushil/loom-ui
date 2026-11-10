@@ -454,3 +454,33 @@ describe("terminal registry", () => {
     ).toBe("Errors: 3  0%");
   });
 });
+
+describe("Table token cells", () => {
+  it("prints a token cell as its labels joined with a comma", () => {
+    const out = createLoomUiTerminalRegistry().get("Table")?.(
+      customWidget$({
+        kind: "Table",
+        id: "t",
+        title: "Records",
+        binding: { projectionId: "p", path: "v" },
+        props: {},
+      }),
+      {
+        columns: ["name", "tags"],
+        rows: [
+          [
+            "a",
+            {
+              tokens: [
+                { id: "x", label: "alpha" },
+                { id: "y", label: "beta" },
+              ],
+            },
+          ],
+          ["b", { tokens: [] }],
+        ],
+      }
+    );
+    expect(out).toMatch(/\ba\s+alpha, beta$/m);
+  });
+});
