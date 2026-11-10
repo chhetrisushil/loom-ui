@@ -56,7 +56,7 @@ The Lit widgets keep loom-ui's per-kind value contracts, and the terminal plugs 
 loom's `check` seam.
 
 On the web the framework kinds are drawn by loom-ui's Lit widgets only (`LIT_ONLY_KINDS` in
-`@loom-ui/renderer-lit`): loom's React renderer has no renderer registered for any of them and shows
+`@loom-ui/renderer-lit` names the nine the default registry draws; the media, chat and diagram kinds are opt-in entries): loom's React renderer has no renderer registered for any of them and shows
 its `[No renderer for …]` placeholder.
 
 Node placement, section titles and container roles are specified in the

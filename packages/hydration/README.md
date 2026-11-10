@@ -30,8 +30,8 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
   (`@loom-ui/hydration/client`, `src/client.ts`) carries only what split hydration needs in a
   browser: the split controller, the loader contract, the store, and param checks — nothing that
   imports the sandbox, MCP, `@loom/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
-  the *built* client bundle to enforce this, and keeps it under a 64 KB size budget (about 34 KB
-  minified today). The client entry also carries the pure helpers other client-side packages need
+  the *built* client bundle to enforce this, and keeps it under a 56 KiB size budget (the
+  minified ESM bundle). The client entry also carries the pure helpers other client-side packages need
   (`terminalSteps`, `stepReferences`, `topoWaves`, `jsonPathSelect`, `outputShapeHashOf`, a
   client-safe mirror of the sandbox's shape hash, parity-tested). `@loom-ui/planner`,
   `renderer-terminal`, `renderer-lit` and `core` import ONLY `@loom-ui/hydration/client`;
@@ -81,11 +81,13 @@ import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/cli
 
 - `HydrationController` — in-process controller. Constructor takes `ControllerOptions` (`invoker`,
   `store`, `clock?`, `setTimer?`, `batchWindowMs?`, `concurrency?`, `maxConcurrentCalls?`,
-  `principal?`, `cache?`, `onDrift?`, `outputKinds?`, `defaultParams?`, `inputDrift?`,
+  `principal?`, `cache?`, `viewer?`, `audience?`, `readPolicy?`, `declaredToolClasses?`, `undeclared?`,
+  `onDrift?`, `outputKinds?`, `defaultParams?`, `inputDrift?`,
   `argumentHook?`, `contentRefArgs` (required), `acceptContentRefParam?`, `reshapers?`,
   `providers?`, `captureSample?`). Methods: `load(exp)`, `recompose(next)`, `markVisible(handle)`,
-  `setParams(params, scope?)`, `invalidate(handle?)`, `inFlight()`, `dispose()` — each returns `{
-  findings: Finding[] }` where relevant.
+  `setParams(params, scope?)`, `invalidate(handle?)`, `inFlight()`, `dispose()`, plus `setViewer(viewer)`,
+  `append(handle, chunk)` and `publishValue(handle, value, { state?, kind? })` — the ones that can
+  fail return `{ findings: Finding[] }` or a `{ ok: false, finding }` refusal.
 - **Content-reference arguments (U9b).** `contentRefArgs` is REQUIRED on `ControllerOptions` and
   `ServeOptions`: the table `contentRefArgsFrom(capabilities)` builds (persist it with the
   capability set; `parseContentRefTable` re-reads it), or the explicit opt-out `"none"` (an
@@ -197,13 +199,14 @@ tool.
 - `handleInventory(exp, opts: InventoryOptions): { inventory, findings }` — the client-safe
   inventory: per bound handle, its priority, the overridable param names, and an opaque, keyed
   revision.
-- `InventoryOptions` — `{ revisionOf: RevisionFn, viewer?, declaredToolClasses?, undeclared? }`.
+- `InventoryOptions` — `{ revisionOf: RevisionFn, viewer?, audience?, declaredToolClasses?, undeclared? }`.
 - `createServeSurface(policy?: ReadPolicy): ServeSurface` — `handleInventory` / `serveHandle` /
-  `serveHandles` with the read policy bound once (prefer it to the free functions).
+  `serveHandles` with the read policy bound once (prefer it to the free functions); it also
+  exposes the merged `policy`.
 - `RevisionFn` — `(handle: string, fingerprint: string) => string`. MUST be a keyed hash (e.g. an
   HMAC over a server secret) — never the provider's own content fingerprint, which a client could
   confirm a guessed provider against offline; `handleInventory` throws if it returns a non-string,
-  an empty string, or the fingerprint itself.
+  an empty string, or a string containing the fingerprint.
 - `serveHandle(exp, request, opts: ServeOptions)`, `serveHandles(exp, requests, opts: ServeOptions)`
   — answer one or many `HandleLoadRequest`s; every request is treated as untrusted and re-checked
   server-side. `ServeOptions` extends `ExecuteOptions` (minus `params`/`kinds`) with `maxBatch?`
@@ -217,7 +220,7 @@ tool.
 - `SplitHydrationController` — same scheduling as `HydrationController`, over a `HandleInventory`,
   loading through an injected `HandleLoader`. Methods: `load(inventory)`, `recompose(next)`,
   `markVisible(handle)`, `setParams(params, scope?)`, `invalidate(handle?)`, `inFlight()`,
-  `dispose()`.
+  `dispose()`, plus `publishValue(handle, value, { state?, kind })` (`kind` is required here).
 - `HandleLoader` — the app's transport: `load(request, signal)` and `loadMany(requests, signal)`
   (both required — loads the scheduler starts together go out as one `loadMany` round trip).
 - `HandleInventory`, `HandleRef`, `HandleLoadRequest`, `SplitControllerOptions` — the wire shapes.
@@ -317,7 +320,8 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   at least 250 ms (never 0), consecutive failures back off (the first wait is `reconnectMs`, 2 s,
   then doubling to 30 s; a stream that stayed up 5 s or more starts the streak afresh), and a failed
   first page is retried the same way instead of giving up. Failures are FIXED findings
-  (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`): no status code,
+  (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`, and
+  `reasoning-unavailable` for the reasoning fetch): no status code,
   response body or exception text is carried, and an `error` event's body is not read. Sending is
   NOT here: it is the host's authenticated write-back (`createWriteBack`, `@loom-ui/core` "Chat and
   inputs").

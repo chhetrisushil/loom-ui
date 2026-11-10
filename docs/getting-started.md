@@ -350,4 +350,4 @@ walkthrough and asserts the terminal frame contains the metric.
 - Worked, runnable apps live in the sibling
   [`loom-examples`](https://github.com/chhetrisushil/loom-examples) repository, in `examples/`:
   `experience-layout` (placement and titles), `experience-recompose` (revise in place),
-  `split-hydration` (the browser/server split) and `experience-kinds` (every framework kind).
+  `split-hydration` (the browser/server split) and `experience-kinds` (Kpi, Table, StatusCard, Note and TimeSeries on one board).

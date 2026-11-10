@@ -27,8 +27,9 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
   through the `check` seam loom leaves open — `kindValueCheck`.
 - **One registry, merged over loom's.** `terminalRegistry()` returns loom's
   `defaultTerminalRegistry` merged with this package's own renderers for the framework kinds
-  (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`) — a
-  fresh registry each call, since loom's default registries are shared singletons that must never be
+  (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `Diagram`, `A2UIView`,
+  `SandboxView`, the media kinds `Image`/`Audio`/`Video`/`File`/`MediaInput` and the chat kinds `Chat`,
+  `TextInput`, `FormInput`, `SelectInput`, `MultiSelectInput`) — a fresh registry each call, since loom's default registries are shared singletons that must never be
   mutated in place.
 - **`renderExperience` reads one well-known projection.** A `HydrationStore` always publishes under
   `HYDRATION_PROJECTION_ID`; `renderExperience` maps every OTHER projection id the Blueprint
@@ -67,7 +68,10 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
   over a series of numbers, used by the `TimeSeries` renderer and available standalone.
 - `kindValueCheck: WidgetValueCheck` — the framework's per-kind value contract, plugged into loom's
   `check` seam; exported so a caller assembling its own `renderBlueprintToString` call can reuse it.
-- `RenderExperienceOptions` — `{ registry?, chrome?, projectionState?, projectionSubscribe? }`.
+  `kindValueCheckFor(contracts)` is the same check that also validates a host's own kinds against the
+  catalogue's `valueContracts` (what `renderExperience` uses when given `contracts`).
+- `RenderExperienceOptions` — `{ registry?, contracts?, chrome?, media?, i18n?, projectionState?,
+  projectionSubscribe? }` (it extends `TerminalRegistryOptions`: `chrome`, `media`, `i18n`).
   `projectionState(id)` supplies the state of any NON-hydration projection the blueprint declares (a
   node bound through core's `SemanticNode.projection`), e.g. `(id) => runtime.getState(id,
   store.executionId)`; absent or throwing, its widgets render as loading.
@@ -210,6 +214,16 @@ The keys the terminal asks for (including the shared chat and media words from `
 | `lu.prose.cut` | `(document cut short)` |
 | `lu.prose.empty` | `(no text)` |
 | `lu.chat.who.userNamed` | `User "{name}"` |
+| `lu.approval.approve` | `Approve` |
+| `lu.approval.reject` | `Reject` |
+| `lu.chat.sending` | `Sending…` |
+| `lu.chat.typeFirst` | `Type a message first.` |
+| `lu.chat.dispatch.stale` | `The view changed. Review it and send again.` |
+| `lu.chat.dispatch.unavailable` | `Sending is not available here.` |
+| `lu.chat.dispatch.failed` | `Not sent. Try again.` |
+| `lu.input.sent` | `Sent` |
+| `lu.input.none` | `None` |
+| `lu.input.error.tooLong` | `This is too long.` |
 | `lu.chat.status.replying` | `replying` |
 | `lu.chat.status.interrupted` | `interrupted` |
 | `lu.chat.status.failed` | `failed` |
@@ -294,7 +308,7 @@ term.stop();
   (the rest is dropped), so a paste can never navigate to an approval and answer it. The session
   turns on bracketed paste (`ESC[?2004h`, off again on `stop`) and a pasted span is TEXT only: it is
   appended to an open draft (newlines kept), otherwise it is nothing. A consent key queued behind an
-  in-flight action is refused ("The view changed.") if the blueprint or a control's binding status
+  in-flight action is refused (`lu.chat.dispatch.stale`, "The view changed. Review it and send again.") if the blueprint or a control's binding status
   moved since it was pressed, and `viewedVersion` is stamped from that frame, not from whatever is
   current when the key finally runs. After an `APPROVE` / `REJECT` is dispatched for a pending
   approval, further `y` / `n` for it are ignored until the frame moves (the host answered, or a new

@@ -126,9 +126,11 @@ summary gains ", N sources". A value without refs draws exactly what it drew bef
   and, since Blueprint IR 2.4.0, by container layout id — a widget or container that keeps its id
   and kind keeps its element, subscription and any user-entered DOM state (typed text, caret,
   scroll, focus).
-- **Framework kinds are Lit-only.** `LIT_ONLY_KINDS` (= `FRAMEWORK_KINDS` from `@loom-ui/core`) are
-  drawn only by this package's widgets; loom's React renderer shows its `[No renderer for …]`
-  placeholder for them.
+- **Framework kinds are Lit-only.** `LIT_ONLY_KINDS` is the set of framework kinds the DEFAULT
+  registry draws (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `A2UIView`,
+  `SandboxView`); `Diagram`, the media kinds and the chat kinds are framework kinds too, drawn by the
+  opt-in `./diagram`, `./media` and `./chat` entries. loom's React renderer shows its
+  `[No renderer for …]` placeholder for all of them.
 
 ## API
 
@@ -220,7 +222,8 @@ listening to both would act twice); without `onAction` it still fires, **depreca
 - `renderBlueprintDom(host, blueprint, opts: DomRenderOptions): DomRenderHandle` — mounts a
   Blueprint into `host`; `opts` needs `projectionRuntime`, `executionId`, `registry`, and takes
   `containers?`, `onAction?`, `title?: "heading" | "none"`.
-- `DomRenderHandle` — `{ element, update(next): RecomposeReport, dispose() }`.
+- `DomRenderHandle` — `{ element, update(next): RecomposeReport, head(), dispose() }`; `head()` is the head
+  this renderer last committed (see the stale-view flow above).
 - `litRegistry: DomRegistry` — loom's built-in kinds plus every framework kind, mapped to `lu-*`
   elements via `elementRenderer`.
 - `createLitRegistry({ chrome?: "widget" | "host" }): DomRegistry` — a new registry; `chrome:
@@ -231,7 +234,7 @@ listening to both would act twice); without `onAction` it still fires, **depreca
   terminal renderer. `litRegistry` is `createLitRegistry()`.
 - `elementRenderer(tag, opts?): DomWidgetRenderer` — build a widget renderer that mounts a custom
   element and drives its properties; used to register a custom kind of your own.
-- `LIT_ONLY_KINDS`, `frameworkKindContracts` — the framework kinds this registry alone draws, and
+- `LIT_ONLY_KINDS`, `frameworkKindContracts` — the framework kinds the default registry draws, and
   the loom `CatalogEntry` contracts (`kind`, `props`, `binding`) to copy onto a semantic entry's
   `surfaces.web` when declaring one.
 - `placeholderFor(kind)`, `projectionPlaceholder(id)` — the DOM nodes shown for an unregistered kind
@@ -247,6 +250,9 @@ listening to both would act twice); without `onAction` it still fires, **depreca
   (`lu-bar-chart`), `LuKpi` (`lu-kpi`), `LuTable` (`lu-table`), `LuStatusCard`
   (`lu-status-card`), `LuNote` (`lu-note`), `LuAlert`/`LuApproval`/`LuList`/`LuProgress`/`LuText`
   (`lu-alert`/`lu-approval`/`lu-list`/`lu-progress`/`lu-text`).
+- `Prose` is drawn by `lu-prose` (class `LuProse`, not re-exported from the root entry: use
+  `@loom-ui/renderer-lit/elements/lu-prose` or `register`). The chat, media and diagram elements
+  come with their own opt-in entries (see above).
 - Embedded/sandboxed surfaces: `LuA2UIView` (`lu-a2ui-view`), `LuSandbox` (`lu-sandbox`),
   `LuA2UIWidget`/`LuSandboxWidget` (`lu-a2ui-widget`/`lu-sandbox-widget` — the widget-bound wrappers
   `litRegistry` mounts for the `A2UIView`/`SandboxView` kinds).
@@ -293,7 +299,9 @@ All opt-in; with none of it configured nothing changes.
 - `measure(value, format?): string`, `tick(value, format?): string` — the reader (accessible name)
   and the compact axis-tick form of a semantic number, both delegating to `@loom-ui/core`'s
   `formatSemanticNumber`/`effectiveFormat` so the DOM and terminal renderers never disagree.
-- `timeTick(iso, spanMs): string` — a compact time-axis tick label sized to the series' span.
+- `timeTick(iso, spanMs): string` — a compact time-axis tick label sized to the series' span: a
+  timestamp reads as a time of day within 3 days and as a date beyond; a date-only value (`2026`,
+  `2026-01`, `2026-01-31`) is a calendar date, read in UTC and always drawn as a date.
 - `describeValue(kind, value, title, props?)` — a spoken summary of a rendered value for a screen
   reader, reading the same `format`/`unit` precedence the widget itself renders with.
 

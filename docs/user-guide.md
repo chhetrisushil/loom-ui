@@ -57,8 +57,8 @@ blueprint reads the handle's value and status at `values.<handle>` and `status.<
 ### Operations and deterministic replay
 
 An `Operation` is one of `insertNode`, `removeNode`, `moveNode`, `setProps`, `setLabel`, `setTitle`,
-`setRole`, `setPlacement`, `bindProvider`, `unbindProvider`, `remapProvider`, `removeProvider`,
-`declassifyHandle` or `prompt`. `apply` and `replay` are deterministic and total: a refusal is a typed
+`setRole`, `setPlacement`, `bindProvider`, `unbindProvider`, `bindProjection`, `remapProvider`,
+`removeProvider`, `declassifyHandle`, `declassifyProjection` or `prompt`. `apply` and `replay` are deterministic and total: a refusal is a typed
 `Finding`, not a throw. A model call is *not* an operation; a planner turns a model reply into
 operations and records the call as a loom decision, so replay never calls the model again.
 → [Composing and revising](guides/composing.md).
@@ -125,8 +125,8 @@ A **semantic catalogue** is the closed vocabulary an experience may use: each en
 resolution: the loom widget **kind** that draws it there (with its contract), or a `degradeTo`
 another entry. A surface is an open string: `web` and `terminal` have first-party renderers; any
 other name is the host's own modality. A planner may only name catalogue entries. The framework's
-own kinds (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `A2UIView`, `SandboxView`,
-plus media, chat and input kinds) have value contracts declared once, in `@loom-ui/core`.
+own kinds (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `Diagram`, `A2UIView`,
+`SandboxView`, plus media, chat and input kinds; see the [catalogue and widget reference](reference/catalogue.md)) have value contracts declared once, in `@loom-ui/core`.
 
 ### Compile and findings
 
@@ -164,7 +164,7 @@ not see as a placeholder, a broadcast audience as a redacted widget, and the dat
 | Run providers (server) | `@loom-ui/hydration` |
 | Load handles from a browser | `@loom-ui/hydration/client` |
 | Terminal rendering | `@loom-ui/renderer-terminal` |
-| Web rendering (bundler only) | `@loom-ui/renderer-lit/dom`, `/register`, `/containers`, `/media`, `/chat` |
+| Web rendering (bundler only) | `@loom-ui/renderer-lit/dom`, `/register`, `/containers`, `/media`, `/chat`, `/diagram`, `/signals`, `/elements/<name>` |
 | Compose with a model | `@loom-ui/planner` (server) |
 | Head, versions, undo, seen log | `@loom-ui/lineage` (server) |
 | Change feed, unread counts | `@loom-ui/changes` (server) |
@@ -176,7 +176,8 @@ checkout beside it; see [getting started](getting-started.md#prerequisites).
 
 ## Reading order
 
-A one-page reference card is [the cheatsheet](cheatsheet.md).
+A one-page reference card is [the cheatsheet](cheatsheet.md); the shape of a catalogue and of every
+widget kind is in the [catalogue and widget reference](reference/catalogue.md).
 
 1. [Getting started](getting-started.md) and the concepts above.
 2. [Composing](guides/composing.md), then [Hydration](guides/hydration.md) and

@@ -33,7 +33,8 @@ import { seal } from "@loom-ui/core/log";
 An experience is data: `{ experienceId, versionHash, parents, intent, root, providers,
 vocabularyFloor, meta }`. You never mutate it. You apply **operations** (`insertNode`,
 `removeNode`, `moveNode`, `setProps`, `setLabel`, `setTitle`, `setRole`, `setPlacement`,
-`bindProvider`, `unbindProvider`, `remapProvider`, `removeProvider`, `declassifyHandle`, `prompt`)
+`bindProvider`, `unbindProvider`, `bindProjection`, `remapProvider`, `removeProvider`,
+`declassifyHandle`, `declassifyProjection`, `prompt`)
 and get a new experience. `apply` and `replay` are deterministic, so a list of operations is the
 authoritative record of how a screen came to be, and replaying it reproduces the same content
 address. Operations are not part of that address; [lineage](lineage-and-changes.md) is what checks

@@ -112,6 +112,8 @@ geometry. An absent role adds nothing to the hashed artifact.
 Beside loom's eight built-in kinds, `@loom-ui/core` declares kinds of its own in `FRAMEWORK_KINDS`,
 each with a zod value contract in `kindValueContracts`. The list is an open set that grows as
 vocabulary slices land: check that the kinds you render are present rather than pinning its length.
+The [catalogue and widget reference](catalogue.md) gives the full shape of a catalogue entry and, for
+every kind, its value fields and limits, props, actions and renderers; this section keeps the summary.
 
 The data kinds below carry the charts, tables and status shapes. They exist because these shapes
 conflict with loom's `MetricCard` (a number), `DataTable` (records) and `StatusBadge` (a string),
@@ -136,7 +138,9 @@ declared option. `MultiSelectInput` must bind its options and choice (`{ options
 change emits `SELECT_MANY`, checked against the host's `optionsOf`.
 
 An app declares a framework kind on a semantic entry's `surfaces.web` by copying its contract from
-`frameworkKindContracts`.
+`frameworkKindContracts` (`@loom-ui/renderer-lit`: the nine kinds of the default registry), or, for the
+opt-in kinds, from `mediaKindContracts`, `chatKindContracts` or `diagramKindContracts` (their entries). The
+full entry and value shape of every kind is in the [catalogue reference](catalogue.md).
 
 A catalogue entry's `textProps` names the props that carry display text; a `LocalizedText` there is
 resolved at compile through `resolveLabel`, exactly like a node label, so a Blueprint never carries

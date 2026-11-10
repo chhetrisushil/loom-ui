@@ -64,7 +64,7 @@ node** names a catalogue entry (`type`, `typeVersion`), carries `props`, `label`
 | `GRID_COLUMNS` · `MAX_TREE_DEPTH` | 12 · the depth cap |
 
 Entries: `@loom-ui/core` (everything above), `/log` (seal, Node), `/browser`, `/media`, `/chat`,
-`/chat-ui`, `/document`, `/signals`. → [composition reference](reference/composition.md#compose-seal-log-compile),
+`/chat-ui`, `/document`, `/signals`, `/messages`. → [composition reference](reference/composition.md#compose-seal-log-compile),
 [composing guide](guides/composing.md).
 
 ### Widgets and kinds
@@ -75,7 +75,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | Kind | Bound value | Notes |
 |---|---|---|
 | `Kpi` | `KpiValue` `{ value, unit?, format?, label?, deltaPct? }` | `deltaPct` is a fraction |
-| `Table` | `TableValue` `{ columns, rows }` | column = string or `{ label, format? }` |
+| `Table` | `TableValue` `{ columns, rows, rowKeys?, rowActions?, refs? }` | column = string or `{ label, format? }`; a cell is a string, number, `null` or a token cell `{ tokens }` |
 | `StatusCard` | `StatusCardValue` `{ level, headline, detail? }` | level: `ok` · `warning` · `critical` |
 | `Note` | none — static `text` prop | also what a redacted node becomes |
 | `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (registered by `defineAll` and `elements/lu-prose`; parsers in `@loom-ui/core/document`) |
@@ -97,7 +97,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `checkKindValue` | validate a value against its kind (renderers show a visible error) |
 | `frameworkKindContracts` | the entry a catalogue copies into `surfaces.web` — from `@loom-ui/renderer-lit` |
 
-→ [framework kinds](reference/composition.md#framework-kinds). Examples: `experience-kinds`,
+→ [catalogue and widget reference](reference/catalogue.md), [framework kinds](reference/composition.md#framework-kinds). Examples: `experience-kinds`,
 `media-gallery`, `incident-shared-chat`.
 
 ### Layout, containers, roles, placement
@@ -346,7 +346,7 @@ renderBlueprintDom(host, blueprint, {
   Blueprint is zero mutations. A throwing renderer falls back to the plain container.
 - Web: `import "@loom-ui/renderer-lit/register"` defines the `<lu-*>` elements — nothing registers
   on import. loom's React renderer shows `[No renderer for …]` for framework kinds.
-- Opt-in entries: `/media`, `/chat`, `/signals`.
+- Opt-in entries: `/media`, `/chat`, `/diagram`, `/signals`.
 
 ### Writing a renderer, and the conformance kit
 
@@ -370,7 +370,7 @@ Only `--lu-*` custom properties; never a consumer's prefix.
 
 | Group | Tokens |
 |---|---|
-| Colour, shape | `--lu-text` · `--lu-text-dim` · `--lu-text-caption` · `--lu-border` · `--lu-panel` · `--lu-panel-2` · `--lu-grid` · `--lu-accent` · `--lu-radius` |
+| Colour, shape | `--lu-text` · `--lu-text-dim` · `--lu-text-caption` · `--lu-border` · `--lu-panel` · `--lu-panel-2` · `--lu-grid` · `--lu-accent` · `--lu-radius` · `--lu-mono` · `--lu-bg` |
 | Deltas | `--lu-delta-up` · `--lu-delta-up-bg` · `--lu-delta-down` · `--lu-delta-down-bg` · `--lu-delta-flat` · `--lu-delta-flat-bg` |
 | Status | `--lu-status-ok` · `--lu-status-warning` · `--lu-status-critical` |
 | Sizing | `--lu-chart-aspect` · `--lu-chart-min-height` · `--lu-entry-h` (`--lu-row-h` is set by the table, not a hook) |
@@ -416,7 +416,7 @@ Only `--lu-*` custom properties; never a consumer's prefix.
 
 | Example | Teaches |
 |---|---|
-| `experience-kinds` | the framework kinds, compiled for web and terminal |
+| `experience-kinds` | Kpi, Table, StatusCard, Note and TimeSeries, compiled for web and terminal |
 | `experience-layout` | placement, section titles, a restyle without a remount |
 | `experience-stepped` | an app-registered container renderer for a role |
 | `experience-recompose` | a revision landing while the user types |

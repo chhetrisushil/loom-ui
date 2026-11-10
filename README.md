@@ -97,6 +97,8 @@ client-graph guards, the genericity rule, how to add a framework kind) are in [A
 - Reference pages, one per topic:
   - [Composition](docs/reference/composition.md): operations, placement, container roles, framework
     kinds, number semantics, refusal codes.
+  - [Catalogue and widget reference](docs/reference/catalogue.md): the shape of a semantic
+    catalogue, and every widget kind's value, props, actions and renderers.
   - [Hydration](docs/reference/hydration.md): options, params, empty upstream, split hydration, which
     entry to import.
   - [Rendering](docs/reference/rendering.md): React, Lit and terminal, recomposing a live tree,
