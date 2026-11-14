@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/lineage",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Experience lineage runtime for loom-ui: a head pointer per experience with compare-and-set advance, version walk, branch and revert as new versions, and the EXPERIENCE_COMPOSED/PROMOTED protocol with replay verification, over loom's ContentStore and an EventStore-shaped seam",
-  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -23,16 +22,42 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom/event-runtime": "*",
-    "@loom/plugin-content": "*",
+    "@loom-ui/core": "workspace:^",
+    "@loom/event-runtime": "^0.1.0",
+    "@loom/plugin-content": "^0.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@loom-ui/planner": "workspace:*",
-    "@loom/plugin-crypto": "*",
+    "@loom-ui/planner": "workspace:^",
+    "@loom/plugin-crypto": "^0.1.0",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/lineage"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

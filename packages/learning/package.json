@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/learning",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "The learning loop for loom-ui (U11), host side: validate and rate-limit untrusted interaction signals, re-check exposure, turn them into bounded rewards attributed to the planner decision that produced the surface, record them late through loom's recordOutcome, and compare planner variants off-policy with @loom/learning",
-  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -23,22 +22,48 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom/analytics": "*",
-    "@loom/core": "*",
-    "@loom/learning": "*"
+    "@loom-ui/core": "workspace:^",
+    "@loom/analytics": "^0.1.0",
+    "@loom/core": "^0.1.0",
+    "@loom/learning": "^0.1.0"
   },
   "devDependencies": {
-    "@loom-ui/lineage": "workspace:*",
-    "@loom-ui/planner": "workspace:*",
-    "@loom/effect-runtime": "*",
-    "@loom/event-runtime": "*",
-    "@loom/plugin-content": "*",
-    "@loom/snapshot-runtime": "*",
-    "@loom/workflow-runtime": "*",
+    "@loom-ui/lineage": "workspace:^",
+    "@loom-ui/planner": "workspace:^",
+    "@loom/effect-runtime": "^0.1.0",
+    "@loom/event-runtime": "^0.1.0",
+    "@loom/plugin-content": "^0.1.0",
+    "@loom/snapshot-runtime": "^0.1.0",
+    "@loom/workflow-runtime": "^0.1.0",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:",
     "zod": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/learning"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
