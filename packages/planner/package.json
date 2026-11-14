@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-planner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Planner SPI for loom-ui: intent + semantic catalogue + capabilities → operations, through ctx.decide; reference planner and conformance kit",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,11 +1,14 @@
 {
   "name": "@loomwork/ui-renderer-lit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "loom DOM renderer adapter + Lit widgets registered under loom kinds; the framework's web surface beside loom's React renderer",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "sideEffects": ["./dist/register.js", "./dist/elements/*.js"],
+  "sideEffects": [
+    "./dist/register.js",
+    "./dist/elements/*.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

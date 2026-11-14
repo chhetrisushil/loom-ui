@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Experience Model, operations + replay, semantic catalogue, and the compiler to loom's Blueprint",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -64,14 +64,30 @@
   },
   "typesVersions": {
     "*": {
-      "browser": ["./dist/browser.d.ts"],
-      "log": ["./dist/log.d.ts"],
-      "media": ["./dist/media.d.ts"],
-      "chat": ["./dist/chat.d.ts"],
-      "chat-ui": ["./dist/chatUi.d.ts"],
-      "document": ["./dist/document.d.ts"],
-      "signals": ["./dist/signals.d.ts"],
-      "messages": ["./dist/messages.d.ts"]
+      "browser": [
+        "./dist/browser.d.ts"
+      ],
+      "log": [
+        "./dist/log.d.ts"
+      ],
+      "media": [
+        "./dist/media.d.ts"
+      ],
+      "chat": [
+        "./dist/chat.d.ts"
+      ],
+      "chat-ui": [
+        "./dist/chatUi.d.ts"
+      ],
+      "document": [
+        "./dist/document.d.ts"
+      ],
+      "signals": [
+        "./dist/signals.d.ts"
+      ],
+      "messages": [
+        "./dist/messages.d.ts"
+      ]
     }
   },
   "scripts": {
