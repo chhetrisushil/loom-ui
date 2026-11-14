@@ -18,8 +18,8 @@
 //  - User and tool text is UNTRUSTED. It is data to draw as text; nothing in this contract (and no
 //    renderer) treats it as markup.
 //
-// Zod-free and DOM-free on purpose, like `mediaRef.ts`: it rides in `checkKindValue` on the browser
-// entry, and the rest of the chat surface is the opt-in `@loomwork/ui-core/chat`.
+// Zod-free and DOM-free on purpose, like `mediaRef.ts`: `useChatContracts()` loads it into the browser
+// entry's `checkKindValue`, and the rest of the chat surface is the opt-in `@loomwork/ui-core/chat`.
 
 import { MAX_CHAT_REFS } from "./chatRefs";
 import { type MediaRef, mediaValueIssues } from "./mediaRef";

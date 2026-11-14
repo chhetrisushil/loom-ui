@@ -66,8 +66,9 @@ entry 62,501 against 166,282 for `register`.
 
 `Diagram` (a tree, flow, timeline or network; contract and rules in `docs/reference/composition.md`) is an
 opt-in entry like `./media` and `./chat`, so a page with no diagram pays for neither the layout math nor
-the drawer (only the value contract rides in every page, and the default registry draws a fixed
-"not loaded" placeholder for the kind).
+the drawer (the value contract loads with `defineDiagram()`, and the default registry draws a fixed
+"not loaded" placeholder for the kind). The chat, media and diagram value contracts are deferred in
+core: a page that draws none of those kinds carries none of them (see core's README, "Deferred contracts").
 
 ```ts
 import { createDiagramLitRegistry } from "@loomwork/ui-renderer-lit/diagram";

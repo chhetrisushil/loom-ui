@@ -1,3 +1,4 @@
+import "./deferredContracts.test-support";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog, validateExperience } from "./catalog";
 import { genesis } from "./experience";

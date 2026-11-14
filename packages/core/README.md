@@ -719,15 +719,22 @@ summary use.
 
 ### Browser entry (`@loomwork/ui-core/browser`)
 
-The zod-free slice a browser renderer needs (the media CONTRACT rides in `checkKindValue`; the rest
-of the media surface is the separate `@loomwork/ui-core/media` subpath, so a page that draws no media
-does not carry it): number formatting (`formatSemanticNumber`, `effectiveFormat`, `unitSuffix`,
+The zod-free slice a browser renderer needs (the rest of the media surface is the separate
+`@loomwork/ui-core/media` subpath, so a page that draws no media does not carry it): number formatting (`formatSemanticNumber`, `effectiveFormat`, `unitSuffix`,
 `deltaDirection`, `DELTA_FORMAT`), `checkKindValue` (a hand-written twin of the main entry's, same
 verdict and same finding message — pinned by a differential test against the zod contracts),
-`FRAMEWORK_KINDS`, `tableColumnLabel`/`tableColumnFormat`, `isLocalizedText`, the
+`useChatContracts` / `useMediaContracts` / `useDiagramContracts` (see below), `FRAMEWORK_KINDS`, `tableColumnLabel`/`tableColumnFormat`, `isLocalizedText`, the
 `hydrationPath`/`hydrationStatusPath` spellings, and the value types. The main entry's zod schemas
 cannot be tree-shaken (~60 kB minified in a page), so a bundle that imports the main entry pays for
 them; `@loomwork/ui-renderer-lit` imports this subpath and a bundle test holds it zod-free.
+
+**Deferred contracts.** This `checkKindValue` loads the Chat / MultiSelectInput, media (Image, Audio,
+Video, File) and Diagram contracts only on request, so a page that draws none of those kinds does not
+carry them. Call `useChatContracts()`, `useMediaContracts()` or `useDiagramContracts()` before checking
+those kinds; renderer-lit's `defineChat` / `defineInputs` / `defineMedia` / `defineDiagram` (and so its
+`elements/*` and `register` entries) and hydration's `connectConversation` already do. Until then a value
+of such a kind is REFUSED with a fixed `value-contract` finding that names the call: a missing contract
+fails closed, never passes. The calls are idempotent. The main entry's zod `checkKindValue` needs none.
 
 ### Document and messages entries
 

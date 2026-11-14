@@ -99,6 +99,10 @@ export type {
   SurfaceResolution,
 } from "./catalog";
 export type { ContractRegistry, ValueContract } from "./kindValues";
+// The zod-free checker's deferred contracts (see kindValues.ts); the zod `checkKindValue` here needs no loading.
+export { useChatContracts } from "./contractsChat";
+export { useDiagramContracts } from "./contractsDiagram";
+export { useMediaContracts } from "./contractsMedia";
 export {
   ACCEPT_PATTERN,
   DEFAULT_MEDIA_MAX_BYTES,

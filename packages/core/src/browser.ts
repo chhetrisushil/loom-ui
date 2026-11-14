@@ -47,7 +47,12 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./kindValues";
-// The media surface (U9) is its own subpath, `@loomwork/ui-core/media`: only the CONTRACT rides here (inside
+// The chat, media and diagram contracts are DEFERRED (see kindValues.ts): until one of these loads
+// them, a value of those kinds is refused, never passed. renderer-lit's defineX() calls them.
+export { useChatContracts } from "./contractsChat";
+export { useDiagramContracts } from "./contractsDiagram";
+export { useMediaContracts } from "./contractsMedia";
+// The media surface (U9) is its own subpath, `@loomwork/ui-core/media`: only the CONTRACT rides here (deferred: inside
 // `checkKindValue`), so a page that draws no media does not carry the rest.
 export type { ContractRegistry, ValueContract } from "./kindValues";
 export {

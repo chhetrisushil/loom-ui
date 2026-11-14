@@ -11,11 +11,15 @@
 // AND the same finding message, which is the message a reader sees in an error state. Change a
 // contract in `values.ts` and that test fails until this file follows.
 
-import { CHAT_INPUT_KINDS, CHAT_KIND, chatValueIssues, multiSelectValueIssues } from "./chatValue";
-import { DIAGRAM_LAYOUTS, diagramProblems } from "./diagramStructure";
+//
+// The chat, media and diagram contracts are DEFERRED: they live in `contractsChat.ts`,
+// `contractsMedia.ts` and `contractsDiagram.ts`, and enter a bundle only when something calls
+// `useChatContracts()` / `useMediaContracts()` / `useDiagramContracts()` (renderer-lit's
+// `defineX()` does, for the widgets that draw those kinds). Until then a value of such a kind is
+// REFUSED with a fixed finding — never passed: a missing contract fails closed.
+
 import type { Finding } from "./experience";
 import { TIME_GRANULARITIES, TIME_ZONE_REFUSED, isTimeZone } from "./format";
-import { MEDIA_INPUT_KIND, MEDIA_KINDS, mediaValueIssues } from "./mediaRef";
 import { tableRowProblems } from "./tableRows";
 import type { SemanticFormat, TableColumn } from "./values";
 import { widgetRefProblems } from "./widgetRefs";
@@ -38,11 +42,19 @@ export const FRAMEWORK_KINDS = [
   "A2UIView",
   "SandboxView",
   // U9: media. Each Image/Audio/Video/File is bound to a MediaRef (never bytes); MediaInput is static.
-  ...MEDIA_KINDS,
-  MEDIA_INPUT_KIND,
-  // U8: a transcript (bound to a ChatValue) and three static input controls.
-  CHAT_KIND,
-  ...CHAT_INPUT_KINDS,
+  // Spelled out (not spread from mediaRef.ts / chatValue.ts) so this list never pulls those modules
+  // into a browser bundle; `kindValues.test.ts` pins them equal.
+  "Image",
+  "Audio",
+  "Video",
+  "File",
+  "MediaInput",
+  // U8: a transcript (bound to a ChatValue) and four input controls.
+  "Chat",
+  "TextInput",
+  "FormInput",
+  "SelectInput",
+  "MultiSelectInput",
 ] as const;
 
 /** A column's heading, whichever form it was written in. */
@@ -69,7 +81,8 @@ export function isLocalizedText(v: unknown): v is { key: string; fallback: strin
 // right type — it still parses) or `aborted` (wrong type). The distinction decides what a union
 // reports, exactly as zod's does: a dirty option's own issues win over "Invalid input".
 
-type Status = "valid" | "dirty" | "aborted";
+/** @internal */
+export type Status = "valid" | "dirty" | "aborted";
 interface Issue {
   readonly path: readonly (string | number)[];
   readonly message: string;
@@ -78,7 +91,7 @@ interface Issue {
  * The path to the value being checked: ONE mutable stack, pushed and popped around each child,
  * so a clean value allocates no per-node path. An issue copies it (`fail`); nothing else may keep it.
  */
-type Path = (string | number)[];
+export type Path = (string | number)[];
 
 /** zod's `getParsedType` names, as they appear in its messages. */
 function parsedType(v: unknown): string {
@@ -115,7 +128,10 @@ function parsedType(v: unknown): string {
 const invalidType = (expected: string, received: string): string =>
   received === "undefined" ? "Required" : `Expected ${expected}, received ${received}`;
 
-type Out = Issue[];
+/** @internal */
+export type Out = Issue[];
+/** @internal A contract: one value, the shared path stack, where its issues go. */
+export type Contract = (v: unknown, p: Path, out: Out) => Status;
 
 /**
  * A sink that records nothing. Validators take their `out` as a parameter, so a caller that needs
@@ -124,7 +140,7 @@ type Out = Issue[];
  */
 const SINK: Out = Object.freeze([]) as unknown as Out;
 /** Record an issue — copying the (shared, mutable) path stack only when the issue is kept. */
-function fail(out: Out, path: Path, message: string): void {
+export function fail(out: Out, path: Path, message: string): void {
   if (out !== SINK) out.push({ path: path.slice(), message });
 }
 type Opt = { optional?: boolean; nullable?: boolean };
@@ -135,7 +151,7 @@ function type(expected: string, v: unknown, path: Path, out: Out): Status {
   fail(out, path, invalidType(expected, got));
   return "aborted";
 }
-const string = (v: unknown, p: Path, out: Out): Status => type("string", v, p, out);
+export const string = (v: unknown, p: Path, out: Out): Status => type("string", v, p, out);
 const number = (v: unknown, p: Path, out: Out): Status => type("number", v, p, out);
 const worst = (a: Status, b: Status): Status =>
   a === "aborted" || b === "aborted"
@@ -145,7 +161,7 @@ const worst = (a: Status, b: Status): Status =>
       : "valid";
 
 /** An optional / nullable wrapper: `undefined` (and `null`, if nullable) pass without a look. */
-function opt(
+export function opt(
   v: unknown,
   path: Path,
   out: Out,
@@ -158,7 +174,7 @@ function opt(
 }
 
 /** `z.object` (non-strict): every key is visited in declaration order, extras ignored. */
-function object(
+export function object(
   v: unknown,
   path: Path,
   out: Out,
@@ -174,7 +190,7 @@ function object(
   return status;
 }
 
-function array(
+export function array(
   v: unknown,
   path: Path,
   out: Out,
@@ -191,7 +207,7 @@ function array(
   return status;
 }
 
-function enumOf(options: readonly string[]) {
+export function enumOf(options: readonly string[]) {
   const joined = options.map((o) => `'${o}'`).join(" | ");
   return (v: unknown, path: Path, out: Out): Status => {
     if (typeof v !== "string") {
@@ -311,12 +327,12 @@ function semanticFormat(v: unknown, path: Path, out: Out): Status {
 }
 const optionalFormat = (v: unknown, p: Path, out: Out): Status =>
   opt(v, p, out, { optional: true }, semanticFormat);
-const optionalString = (v: unknown, p: Path, out: Out): Status =>
+export const optionalString = (v: unknown, p: Path, out: Out): Status =>
   opt(v, p, out, { optional: true }, string);
 
 const GRANULARITIES = enumOf(TIME_GRANULARITIES);
 
-function timeFormat(v: unknown, path: Path, out: Out): Status {
+export function timeFormat(v: unknown, path: Path, out: Out): Status {
   const status = object(v, path, out, [
     ["granularity", GRANULARITIES],
     ["timeZone", optionalString],
@@ -348,7 +364,7 @@ function widgetRefs(v: unknown, path: Path, out: Out): Status {
   }
   return worst;
 }
-const optionalRefs = (v: unknown, p: Path, out: Out): Status =>
+export const optionalRefs = (v: unknown, p: Path, out: Out): Status =>
   opt(v, p, out, { optional: true }, widgetRefs);
 
 const timeSeries = (v: unknown, p: Path, out: Out): Status =>
@@ -508,58 +524,17 @@ const prose = (v: unknown, p: Path, out: Out): Status =>
     ["note", optionalString],
   ]);
 
-const diagram = (v: unknown, p: Path, out: Out): Status => {
-  const status = object(v, p, out, [
-    ["layout", enumOf(DIAGRAM_LAYOUTS)],
-    ["title", optionalString],
-    ["timeFormat", (x, xp, xo) => opt(x, xp, xo, { optional: true }, timeFormat)],
-    [
-      "nodes",
-      (x, xp, xo) =>
-        array(x, xp, xo, (n, np, no) =>
-          object(n, np, no, [
-            ["id", string],
-            ["label", string],
-            ["kind", optionalString],
-            ["group", optionalString],
-            ["at", optionalString],
-          ])
-        ),
-    ],
-    [
-      "edges",
-      (x, xp, xo) =>
-        array(x, xp, xo, (e, ep, eo) =>
-          object(e, ep, eo, [
-            ["from", string],
-            ["to", string],
-            ["label", optionalString],
-            ["kind", optionalString],
-          ])
-        ),
-    ],
-    ["refs", optionalRefs],
-  ]);
-  // Like zod's `superRefine`: the structural rules run unless a type error aborted the parse.
-  if (status === "aborted") return status;
-  let worst: Status = status;
-  for (const problem of diagramProblems(v as Record<string, unknown>)) {
-    for (const seg of problem.path) p.push(seg);
-    fail(out, p, problem.message);
-    p.length -= problem.path.length;
-    worst = "dirty";
-  }
-  return worst;
-};
-
 const any = (): Status => "valid";
 const record = (v: unknown, p: Path, out: Out): Status => type("object", v, p, out);
 
-/** A MediaRef contract: the shared issue list, recorded in order. Messages are value-free. */
-const mediaContract =
-  (kind: string) =>
+/**
+ * @internal An issue-list checker (chat, media) as a contract: its issues recorded in order. The
+ * shared checkers' messages are value-free.
+ */
+export const issuesContract =
+  (issuesOf: (v: unknown) => readonly { path: readonly (string | number)[]; message: string }[]) =>
   (v: unknown, p: Path, out: Out): Status => {
-    const issues = mediaValueIssues(kind, v);
+    const issues = issuesOf(v);
     if (issues.length === 0) return "valid";
     for (const i of issues) {
       for (const seg of i.path) p.push(seg);
@@ -569,31 +544,7 @@ const mediaContract =
     return "dirty";
   };
 
-/** The ChatValue contract: the shared issue list, recorded in order. Messages are value-free. */
-const chatContract = (v: unknown, p: Path, out: Out): Status => {
-  const issues = chatValueIssues(v);
-  if (issues.length === 0) return "valid";
-  for (const i of issues) {
-    for (const seg of i.path) p.push(seg);
-    fail(out, p, i.message);
-    p.length -= i.path.length;
-  }
-  return "dirty";
-};
-
-/** The MultiSelectValue contract: the shared issue list, recorded in order, like the transcript. */
-const multiSelectContract = (v: unknown, p: Path, out: Out): Status => {
-  const issues = multiSelectValueIssues(v);
-  if (issues.length === 0) return "valid";
-  for (const i of issues) {
-    for (const seg of i.path) p.push(seg);
-    fail(out, p, i.message);
-    p.length -= i.path.length;
-  }
-  return "dirty";
-};
-
-const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Status>> = {
+const CONTRACTS: Readonly<Record<string, Contract>> = {
   MetricCard: number,
   StatusBadge: string,
   ProgressBar: number,
@@ -609,23 +560,52 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
   StatusCard: statusCard,
   Note: (v, p, out) => type("undefined", v, p, out),
   Prose: prose,
-  Diagram: diagram,
   A2UIView: any,
   SandboxView: any,
-  // U9: the value is a MediaRef; ONE shared checker (`media.ts`) backs this and the zod contract.
-  Image: mediaContract("Image"),
-  Audio: mediaContract("Audio"),
-  Video: mediaContract("Video"),
-  File: mediaContract("File"),
   // An upload control is static (props only); a value reaching it is a defect, as for a Note.
   MediaInput: (v, p, out) => type("undefined", v, p, out),
   // U8: a transcript is a ChatValue; the input controls are static like a Note, except SelectInput, which may bind its current choice, and MultiSelectInput, which must bind its options and choice (checked here).
-  Chat: chatContract,
   TextInput: (v, p, out) => type("undefined", v, p, out),
   FormInput: (v, p, out) => type("undefined", v, p, out),
   SelectInput: optionalString,
-  MultiSelectInput: multiSelectContract,
 };
+
+/**
+ * The DEFERRED framework kinds, by the `use…Contracts()` call that loads each. They are framework
+ * kinds like any other (`hasKindContract` is true, a host cannot override them); only their
+ * checker is loaded on demand.
+ */
+const DEFERRED: Readonly<Record<string, string>> = {
+  Diagram: "useDiagramContracts",
+  Image: "useMediaContracts",
+  Audio: "useMediaContracts",
+  Video: "useMediaContracts",
+  File: "useMediaContracts",
+  Chat: "useChatContracts",
+  MultiSelectInput: "useChatContracts",
+};
+const loaded: Record<string, Contract> = Object.create(null);
+
+/**
+ * @internal Load deferred contracts. Called ONLY by `contractsChat.ts` / `contractsMedia.ts` /
+ * `contractsDiagram.ts` (this module is not a package entry, so a host cannot reach it): a kind
+ * that is not deferred is refused, so nothing here can replace an always-loaded contract.
+ */
+export function installDeferredContracts(contracts: Readonly<Record<string, Contract>>): void {
+  for (const [kind, contract] of Object.entries(contracts)) {
+    if (!Object.hasOwn(DEFERRED, kind)) throw new Error(`"${kind}" is not a deferred kind`);
+    loaded[kind] = contract;
+  }
+}
+
+/** The framework's contract for `kind`, "not-loaded" for a deferred one nobody loaded, or undefined. */
+function contractFor(kind: string): Contract | "not-loaded" | undefined {
+  if (Object.hasOwn(CONTRACTS, kind)) return CONTRACTS[kind];
+  if (Object.hasOwn(DEFERRED, kind)) return loaded[kind] ?? "not-loaded";
+  return undefined;
+}
+const notLoaded = (kind: string): string =>
+  `value for kind "${kind}" cannot be checked: its contract is not loaded (call ${DEFERRED[kind]}() from @loomwork/ui-core/browser)`;
 
 /**
  * Every issue (path, message, in order) the contract finds — what `checkKindValue` reports the
@@ -635,8 +615,9 @@ const CONTRACTS: Readonly<Record<string, (v: unknown, p: Path, out: Out) => Stat
  * @internal
  */
 export function checkKindValueIssues(kind: string, value: unknown): Out {
-  const contract = Object.hasOwn(CONTRACTS, kind) ? CONTRACTS[kind] : undefined;
+  const contract = contractFor(kind);
   if (contract === undefined || value === undefined) return [];
+  if (contract === "not-loaded") return [{ path: [], message: notLoaded(kind) }];
   const issues: Out = [];
   contract(value, [], issues);
   return issues;
@@ -685,7 +666,8 @@ export interface ValueContract {
 export type ContractRegistry = Readonly<Record<string, ValueContract>>;
 
 /** True iff `kind` is one the framework itself contracts (the framework's contracts cannot be overridden). */
-export const isFrameworkContractKind = (kind: string): boolean => Object.hasOwn(CONTRACTS, kind);
+export const isFrameworkContractKind = (kind: string): boolean =>
+  Object.hasOwn(CONTRACTS, kind) || Object.hasOwn(DEFERRED, kind);
 
 /**
  * Whether `kind` has a value contract: a framework one, or the host's in `contracts`. A kind with
@@ -694,7 +676,7 @@ export const isFrameworkContractKind = (kind: string): boolean => Object.hasOwn(
  */
 export function hasKindContract(kind: string, contracts?: ContractRegistry): boolean {
   return (
-    Object.hasOwn(CONTRACTS, kind) ||
+    isFrameworkContractKind(kind) ||
     (contracts !== undefined && Object.hasOwn(contracts, kind) && contracts[kind] !== undefined)
   );
 }
@@ -761,8 +743,14 @@ export function checkKindValue(
   contracts?: ContractRegistry
 ): { ok: true } | { ok: false; finding: Finding } {
   let issue: { path: readonly (string | number | symbol)[]; message: string } | undefined;
-  if (Object.hasOwn(CONTRACTS, kind)) issue = checkKindValueIssues(kind, value)[0];
-  else if (contracts !== undefined && Object.hasOwn(contracts, kind) && value !== undefined) {
+  if (isFrameworkContractKind(kind)) {
+    if (value !== undefined && contractFor(kind) === "not-loaded")
+      return {
+        ok: false,
+        finding: { code: "value-contract", severity: "error", message: notLoaded(kind) },
+      };
+    issue = checkKindValueIssues(kind, value)[0];
+  } else if (contracts !== undefined && Object.hasOwn(contracts, kind) && value !== undefined) {
     return checkHostContract(kind, contracts[kind] as ValueContract, value);
   }
   if (issue === undefined) return { ok: true };

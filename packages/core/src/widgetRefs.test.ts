@@ -1,3 +1,4 @@
+import "./deferredContracts.test-support";
 import { describe, expect, it } from "vitest";
 import { checkKindValueIssues as lite } from "./kindValues";
 import { kindValueContract } from "./values";
