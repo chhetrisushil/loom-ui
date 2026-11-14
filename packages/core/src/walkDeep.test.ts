@@ -1,4 +1,4 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 import { describe, expect, it } from "vitest";
 import { effectiveClasses, liveClasses } from "./classes";
 import type { Experience } from "./experience";

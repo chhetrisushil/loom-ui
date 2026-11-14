@@ -1,19 +1,19 @@
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 import {
   type Provenance,
   type RecordedOperation,
   type SemanticNode,
   genesis,
   snapshotSeen,
-} from "@loom-ui/core";
-import { SIGNAL_VERSION } from "@loom-ui/core/signals";
+} from "@loomwork/ui-core";
+import { SIGNAL_VERSION } from "@loomwork/ui-core/signals";
 import {
   InMemoryLineageStore,
   InMemorySeenKeyStore,
   Lineage,
   type LineageResult,
   SeenLog,
-} from "@loom-ui/lineage";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-lineage";
 import { describe, expect, it } from "vitest";
 import { allOf, seenLogExposure } from "./exposure";
 import { SignalIngestor } from "./ingest";

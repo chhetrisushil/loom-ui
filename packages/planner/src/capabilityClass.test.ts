@@ -1,4 +1,4 @@
-import { type Experience, type ReadPolicy, genesis, replay, toolKey } from "@loom-ui/core";
+import { type Experience, type ReadPolicy, genesis, replay, toolKey } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { declaredToolClassesFrom, requiredClass } from "./capabilityClass";
 import { checkPlannerConformance } from "./conformance";

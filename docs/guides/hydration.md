@@ -36,20 +36,20 @@ Both publish the same `HandleLoadResult` shape, so the two paths cannot disagree
 
 | Where | Import from | Why |
 | --- | --- | --- |
-| Node / server | `@loom-ui/hydration` | executes providers; its module graph reaches loom's sandbox (QuickJS WASM, worker threads) and the MCP plugin (`node:http`, `node:crypto`) |
-| Browser | `@loom-ui/hydration/client` | the split controller, the loader contract, `HydrationStore` and param checks only; fitness tests walk the built graph to keep it free of the sandbox, MCP, the effect runtime and node builtins |
+| Node / server | `@loomwork/ui-hydration` | executes providers; its module graph reaches loom's sandbox (QuickJS WASM, worker threads) and the MCP plugin (`node:http`, `node:crypto`) |
+| Browser | `@loomwork/ui-hydration/client` | the split controller, the loader contract, `HydrationStore` and param checks only; fitness tests walk the built graph to keep it free of the sandbox, MCP, the effect runtime and node builtins |
 
 Importing the root entry into a browser bundle grows it by megabytes and pulls node modules. If your
 bundler complains about `node:*` modules, or the bundle is far larger than expected, you imported
-the wrong entry. The same holds for `@loom-ui/lineage`, `@loom-ui/changes` and `@loom-ui/learning`:
+the wrong entry. The same holds for `@loomwork/ui-lineage`, `@loomwork/ui-changes` and `@loomwork/ui-learning`:
 they are server-side and must never enter a client graph.
 
 <!-- snippet: imports -->
 
 ```ts
 import { createHmac } from "node:crypto";
-import { type Experience, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+import { type Experience, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   DEFAULT_TIME_RANGE,
   type DriftReport,
@@ -61,14 +61,14 @@ import {
   handleInventory,
   remapOperation,
   serveHandles,
-} from "@loom-ui/hydration";
+} from "@loomwork/ui-hydration";
 import {
   type HandleLoader,
   HydrationStore,
   SplitHydrationController,
-} from "@loom-ui/hydration/client";
-import { TypedFailure } from "@loom/core";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration/client";
+import { TypedFailure } from "@loomwork/core";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 ```
 
 ## Split hydration, end to end
@@ -223,7 +223,7 @@ shape pin would call it drift. Pin a shape hash with `outputShapeHashOf`, nothin
 ## See also
 
 - Reference: [hydration](../reference/hydration.md).
-- Package: [`@loom-ui/hydration`](../../packages/hydration/README.md).
+- Package: [`@loomwork/ui-hydration`](../../packages/hydration/README.md).
 - Examples (in `loom-examples`): `split-hydration` (a weather board across a trust boundary, with
   drift and shared upstream calls).
 - Next: [rendering](rendering.md), [sensitivity and audiences](sensitivity-and-audiences.md).

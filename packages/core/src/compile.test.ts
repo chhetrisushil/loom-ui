@@ -9,7 +9,7 @@ import {
   blueprintLayoutIds,
   isLayoutId,
   validateBlueprint,
-} from "@loom/blueprint-runtime";
+} from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
 import {
@@ -485,7 +485,7 @@ describe("compile", () => {
 });
 
 describe("hydrationPath / hydrationStatusPath", () => {
-  // The value path's inverse is `handleOfPath` in `@loom-ui/hydration/client` (browser-safe; core
+  // The value path's inverse is `handleOfPath` in `@loomwork/ui-hydration/client` (browser-safe; core
   // is CommonJS). There is none for status: IR 2.0.0 puts the status channel on the artifact, so a
   // renderer reads `binding.status.path` rather than parsing a handle back out of it.
   it("names a handle's value and status channels under distinct prefixes", () => {

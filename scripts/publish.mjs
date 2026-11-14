@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Publishes every public @loom-ui/* package to npm under the `next` dist-tag. A DRY RUN unless
+// Publishes every public @loomwork/ui-* package to npm under the `next` dist-tag. A DRY RUN unless
 // `--yes` is passed. It refuses to run on a dirty tree, stale publish metadata or an unbuilt
 // package, and it audits each tarball's file list (no tests, test support, fixtures, tsconfig,
 // vitest config or build caches) before handing over to `pnpm -r publish`, which rewrites
@@ -8,7 +8,7 @@
 //   node scripts/publish.mjs          # checks + audit + `pnpm publish --dry-run`
 //   node scripts/publish.mjs --yes    # the same, then publishes for real (needs `npm login`)
 //
-// The `@loom/*` ranges name the published loom release (LOOM_RANGE in publish-metadata.mjs), so
+// The `@loomwork/*` ranges name the published loom release (LOOM_RANGE in publish-metadata.mjs), so
 // loom must be published first.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, rmSync } from "node:fs";

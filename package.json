@@ -2,7 +2,7 @@
   "name": "loom-ui",
   "version": "0.0.0",
   "private": true,
-  "description": "A semantic UI framework for loom: an Experience Model that compiles to loom's Blueprint. Consumes the sibling ../loom checkout's unpublished @loom/* packages via pnpm.overrides (link:). See AGENTS.md.",
+  "description": "A semantic UI framework for loom: an Experience Model that compiles to loom's Blueprint. Consumes the sibling ../loom checkout's unpublished @loomwork/* packages via pnpm.overrides (link:). See AGENTS.md.",
   "license": "Apache-2.0",
   "packageManager": "pnpm@9.14.4",
   "scripts": {
@@ -20,24 +20,24 @@
   },
   "pnpm": {
     "overrides": {
-      "@loom/agent": "link:../loom/packages/agent",
-      "@loom/analytics": "link:../loom/packages/analytics",
-      "@loom/blueprint-runtime": "link:../loom/packages/blueprint-runtime",
-      "@loom/classify": "link:../loom/packages/classify",
-      "@loom/core": "link:../loom/packages/core",
-      "@loom/effect-runtime": "link:../loom/packages/effect-runtime",
-      "@loom/event-runtime": "link:../loom/packages/event-runtime",
-      "@loom/learning": "link:../loom/packages/learning",
-      "@loom/plugin-content": "link:../loom/plugins/content",
-      "@loom/plugin-crypto": "link:../loom/plugins/crypto",
-      "@loom/plugin-mcp": "link:../loom/plugins/mcp",
-      "@loom/plugin-renderer-terminal": "link:../loom/plugins/renderer-terminal",
-      "@loom/plugin-sandbox": "link:../loom/plugins/sandbox",
-      "@loom/projection-runtime": "link:../loom/packages/projection-runtime",
-      "@loom/replay-vm": "link:../loom/packages/replay-vm",
-      "@loom/scheduler": "link:../loom/packages/scheduler",
-      "@loom/snapshot-runtime": "link:../loom/packages/snapshot-runtime",
-      "@loom/workflow-runtime": "link:../loom/packages/workflow-runtime"
+      "@loomwork/agent": "link:../loom/packages/agent",
+      "@loomwork/analytics": "link:../loom/packages/analytics",
+      "@loomwork/blueprint-runtime": "link:../loom/packages/blueprint-runtime",
+      "@loomwork/classify": "link:../loom/packages/classify",
+      "@loomwork/core": "link:../loom/packages/core",
+      "@loomwork/effect-runtime": "link:../loom/packages/effect-runtime",
+      "@loomwork/event-runtime": "link:../loom/packages/event-runtime",
+      "@loomwork/learning": "link:../loom/packages/learning",
+      "@loomwork/plugin-content": "link:../loom/plugins/content",
+      "@loomwork/plugin-crypto": "link:../loom/plugins/crypto",
+      "@loomwork/plugin-mcp": "link:../loom/plugins/mcp",
+      "@loomwork/plugin-renderer-terminal": "link:../loom/plugins/renderer-terminal",
+      "@loomwork/plugin-sandbox": "link:../loom/plugins/sandbox",
+      "@loomwork/projection-runtime": "link:../loom/packages/projection-runtime",
+      "@loomwork/replay-vm": "link:../loom/packages/replay-vm",
+      "@loomwork/scheduler": "link:../loom/packages/scheduler",
+      "@loomwork/snapshot-runtime": "link:../loom/packages/snapshot-runtime",
+      "@loomwork/workflow-runtime": "link:../loom/packages/workflow-runtime"
     }
   }
 }

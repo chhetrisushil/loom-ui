@@ -5,7 +5,7 @@ import type {
   RendererRegistry,
   Widget,
   WidgetAction,
-} from "@loom/blueprint-runtime";
+} from "@loomwork/blueprint-runtime";
 import { say } from "../say";
 
 // ── The DOM renderer contract ─────────────────────────────────────────────────
@@ -19,7 +19,7 @@ export interface DomWidgetProps {
   readonly value: unknown;
   readonly status?: BindingStatus;
   /**
-   * Emit an action. The host's handler MAY answer (a promise of) an `ActionOutcome` (`@loom-ui/core/browser`); an input
+   * Emit an action. The host's handler MAY answer (a promise of) an `ActionOutcome` (`@loomwork/ui-core/browser`); an input
    * widget (U8) keeps what the user typed until it hears `ok: true`. A handler that returns nothing
    * is read as success.
    */

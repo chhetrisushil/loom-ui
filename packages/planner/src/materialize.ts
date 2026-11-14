@@ -1,3 +1,5 @@
+import { strictest, unwrapTainted } from "@loomwork/classify";
+import { canonicalJson, fnv1a64 } from "@loomwork/core";
 import {
   type ContainerNode,
   type ContainerRoleSpec,
@@ -21,16 +23,14 @@ import {
   replay,
   toolKey,
   walk,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import {
   jsonPathSelect,
   outputShapeHashOf,
   stepReferences,
   terminalSteps,
   topoWaves,
-} from "@loom-ui/hydration/client";
-import { strictest, unwrapTainted } from "@loom/classify";
-import { canonicalJson, fnv1a64 } from "@loom/core";
+} from "@loomwork/ui-hydration/client";
 import { requiredClass } from "./capabilityClass";
 import {
   type DraftBinding,

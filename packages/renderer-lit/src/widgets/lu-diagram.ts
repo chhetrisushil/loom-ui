@@ -4,7 +4,7 @@ import {
   type TimeFormat,
   diagramOutline,
   isTimeFormat,
-} from "@loom-ui/core/browser";
+} from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { diagramSummary } from "../a11y";
 import {

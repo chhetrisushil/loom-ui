@@ -1,4 +1,4 @@
-import { defineSemanticCatalog } from "@loom-ui/core";
+import { defineSemanticCatalog } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { type DraftNode, entryFor, parseModelJson, planSchema } from "./contract";
 import { capabilitiesFixture, planningCatalog } from "./testing.test-support";
@@ -166,7 +166,7 @@ describe("planSchema", () => {
       expect(issue?.message).toContain("Metric");
     }
   });
-  it("refuses a sensitivity outside @loom/classify's vocabulary even where the model may set one", () => {
+  it("refuses a sensitivity outside @loomwork/classify's vocabulary even where the model may set one", () => {
     const r = schema.safeParse({
       summary: "s",
       nodes: [

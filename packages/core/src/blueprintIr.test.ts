@@ -1,4 +1,4 @@
-import { BLUEPRINT_IR_VERSION } from "@loom/blueprint-runtime";
+import { BLUEPRINT_IR_VERSION } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 
 // compile.ts emits a loom `Blueprint` field by field. loom's ADR 0096 makes that shape a

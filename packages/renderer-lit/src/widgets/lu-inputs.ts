@@ -1,4 +1,4 @@
-import { hasKindContract } from "@loom-ui/core/browser";
+import { hasKindContract } from "@loomwork/ui-core/browser";
 import {
   type FieldError,
   type FormField,
@@ -14,7 +14,7 @@ import {
   validateFormValues,
   validateSelectValue,
   validateTextValue,
-} from "@loom-ui/core/chat-ui";
+} from "@loomwork/ui-core/chat-ui";
 import { type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 

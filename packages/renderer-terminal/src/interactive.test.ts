@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
-import { SELECT_ACTION, SUBMIT_TEXT_ACTION, isSubmitKey } from "@loom-ui/core/chat";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, blueprint$, customWidget$, stack } from "@loom/blueprint-runtime";
-import type { Blueprint, Widget } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { MetricCard, blueprint$, customWidget$, stack } from "@loomwork/blueprint-runtime";
+import type { Blueprint, Widget } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { hydrationPath, hydrationStatusPath } from "@loomwork/ui-core";
+import { SELECT_ACTION, SUBMIT_TEXT_ACTION, isSubmitKey } from "@loomwork/ui-core/chat";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { describe, expect, it, vi } from "vitest";
 import {
   type PaintStats,

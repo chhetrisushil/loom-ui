@@ -1,5 +1,5 @@
-import type { ChatValue } from "@loom-ui/core/chat";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import type { ChatValue } from "@loomwork/ui-core/chat";
 import { html } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-chat";

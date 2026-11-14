@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 //    `dist/esm/**` behind the `import` condition, which a bundler targeting the browser resolves
 //    (it does not set `node`). `node` MUST come before `import`: Node sets both.
 //  - ESM-first packages (renderer-lit, renderer-conformance) are `"type": "module"` already.
-//  - One copy per runtime: a build may only name a sibling `@loom-ui/*` package through its `exports`
+//  - One copy per runtime: a build may only name a sibling `@loomwork/ui-*` package through its `exports`
 //    map (a deep `dist/...` path would bypass the conditions and load the OTHER build of it), and a
 //    relative import stays inside its own build (`dist/esm` never reaches `dist/*.js`, nor back).
 //    Otherwise a consumer holds a CJS and an ESM copy of the same package (two registries, two
@@ -110,7 +110,7 @@ describe("ESM packaging", () => {
     const stripComments = (src: string): string =>
       src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     const byName = new Map(pkgs.map((p) => [p.pkg.name, p]));
-    /** `@loom-ui/x/sub` -> [package, "./sub"]; `@loom-ui/x` -> [package, "."]. */
+    /** `@loomwork/ui-x/sub` -> [package, "./sub"]; `@loomwork/ui-x` -> [package, "."]. */
     const split = (spec: string): [string, string] => {
       const [scope, name, ...rest] = spec.split("/");
       return [`${scope}/${name}`, rest.length === 0 ? "." : `./${rest.join("/")}`];
@@ -149,17 +149,17 @@ describe("ESM packaging", () => {
       for (const b of builds) expect(b.files.length, b.label).toBeGreaterThan(0);
       const siblingImports = builds.flatMap((b) =>
         b.files.flatMap((f) =>
-          specifiers(readFileSync(f, "utf8")).filter((x) => x.startsWith("@loom-ui/"))
+          specifiers(readFileSync(f, "utf8")).filter((x) => x.startsWith("@loomwork/ui-"))
         )
       );
       expect(siblingImports.length).toBeGreaterThan(10);
     });
 
-    it("a sibling @loom-ui package is named only through an export that has this build's condition", () => {
+    it("a sibling @loomwork/ui-* package is named only through an export that has this build's condition", () => {
       for (const b of builds)
         for (const f of b.files)
           for (const spec of specifiers(readFileSync(f, "utf8"))) {
-            if (!spec.startsWith("@loom-ui/")) continue;
+            if (!spec.startsWith("@loomwork/ui-")) continue;
             const [name, sub] = split(spec);
             const target = byName.get(name);
             const where = `${b.label}: ${relative(PACKAGES, f)} -> ${spec}`;
@@ -194,7 +194,7 @@ describe("ESM packaging", () => {
   });
 
   it("renderer-lit keeps its element-registering modules listed as side-effectful", () => {
-    const lit = pkgs.find((p) => p.pkg.name === "@loom-ui/renderer-lit")?.pkg;
+    const lit = pkgs.find((p) => p.pkg.name === "@loomwork/ui-renderer-lit")?.pkg;
     expect(lit?.sideEffects).toEqual(["./dist/register.js", "./dist/elements/*.js"]);
   });
 });

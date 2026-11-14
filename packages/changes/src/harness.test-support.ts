@@ -1,3 +1,4 @@
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 import {
   type Experience,
   type Provenance,
@@ -5,11 +6,10 @@ import {
   type RecordedOperation,
   type SemanticNode,
   genesis,
-} from "@loom-ui/core";
-import type { HeadSignal } from "@loom-ui/core";
-import { Lineage, type LineageStore } from "@loom-ui/lineage";
-import { InMemoryLineageStore } from "@loom-ui/lineage";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
+import type { HeadSignal } from "@loomwork/ui-core";
+import { Lineage, type LineageStore } from "@loomwork/ui-lineage";
+import { InMemoryLineageStore } from "@loomwork/ui-lineage";
 import type { FeedHarness } from "./conformance";
 import { LineageChangeFeed } from "./feed";
 import { pollingHeadSignal } from "./signal";

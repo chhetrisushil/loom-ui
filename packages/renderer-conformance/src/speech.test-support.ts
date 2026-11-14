@@ -1,3 +1,4 @@
+import type { Blueprint, Layout, Widget, WidgetAction } from "@loomwork/blueprint-runtime";
 import {
   type LuI18n,
   type TableCell,
@@ -6,7 +7,7 @@ import {
   createSay,
   describeMedia,
   tableCellText,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import {
   SELECT_ACTION,
   SELECT_MANY_ACTION,
@@ -15,8 +16,7 @@ import {
   stripUnsafeChars,
   validateSelectValue,
   validateTextValue,
-} from "@loom-ui/core/chat-ui";
-import type { Blueprint, Layout, Widget, WidgetAction } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core/chat-ui";
 import type { HandleEntry, InvokeIntent, RendererAdapter } from "./adapter";
 
 // A THIRD-PARTY renderer in ~100 lines: a "voice" surface that speaks a Blueprint as sentences. It

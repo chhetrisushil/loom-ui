@@ -1,7 +1,7 @@
-import { isTainted, taintOf, unwrapTainted } from "@loom/classify";
-import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { isTainted, taintOf, unwrapTainted } from "@loomwork/classify";
+import { TypedFailure } from "@loomwork/core";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { SANDBOX_TOOL_ID } from "@loomwork/plugin-sandbox";
 import { describe, expect, it } from "vitest";
 import { executeProvider } from "./provider";
 import { outputShapeHashOf } from "./reshape";

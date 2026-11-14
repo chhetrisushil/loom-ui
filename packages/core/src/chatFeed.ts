@@ -1,11 +1,11 @@
 // ── ChatFeed: folding loom's conversation API into a ChatValue (U8) ─────────────────────────────
 //
-// `@loom/conversation` + `@loom/plugin-conversation-sse` (loom ADR 0122) emit three things a client
+// `@loomwork/conversation` + `@loomwork/plugin-conversation-sse` (loom ADR 0122) emit three things a client
 // folds into one transcript: HISTORY PAGES (bounded, cursor-addressed, backward or forward), the
 // DURABLE `message` events of the SSE stream, and the LIVE events (`partial`, `delta`, `reset`) that
 // are never journaled. This class is that fold. It is PURE: no network, no timers, no DOM, no loom
 // import. The host owns the transport (a `fetch` for history, an `EventSource` for events, see
-// `@loom-ui/hydration/client`'s `connectConversation`) and calls `applyHistory` / `applyEvent`.
+// `@loomwork/ui-hydration/client`'s `connectConversation`) and calls `applyHistory` / `applyEvent`.
 //
 // EVERYTHING THAT ARRIVES IS UNTRUSTED. The wire is parsed field by field into the contract's
 // shape; a field the contract does not name (`classes`, `executionId`, `turnExecutionId`) is

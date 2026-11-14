@@ -15,8 +15,8 @@ import {
   looksLikeLiteralRef,
   nodeIds,
   toolKey,
-} from "@loom-ui/core";
-import { terminalSteps } from "@loom-ui/hydration/client";
+} from "@loomwork/ui-core";
+import { terminalSteps } from "@loomwork/ui-hydration/client";
 import { MAX_DRAFT_CHILDREN, MAX_DRAFT_DEPTH, MAX_DRAFT_NODES, PLAIN_CONTAINERS } from "./contract";
 import type { CapabilityRef, ComposeInput, PlannerMessage, ReviseInput } from "./spi";
 

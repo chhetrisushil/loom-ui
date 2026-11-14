@@ -3,26 +3,26 @@
 loom-ui is a semantic UI framework for [loom](../loom). Its Experience Model **compiles to loom's
 `Blueprint`**, so loom's renderers draw what this framework composes. Design:
 `../loom/docs/requirements/2026-09-21-loom-ui-design.md`. The Blueprint contract it targets is
-versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.5.0 (loom ADRs 0096, 0097, 0098, 0099, 0100, 0101).
+versioned: `BLUEPRINT_IR_VERSION` in `@loomwork/blueprint-runtime`, today 2.5.0 (loom ADRs 0096, 0097, 0098, 0099, 0100, 0101).
 
 ## How loom is consumed
 
-loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For development every
-`@loom/*` dependency here is redirected by `pnpm.overrides` in `./package.json` to
+loom is a pnpm monorepo published to npm as `@loomwork/*` (dist-tag `next`). For development every
+`@loomwork/*` dependency here is redirected by `pnpm.overrides` in `./package.json` to
 `link:../loom/{packages,plugins}/<name>`; the root manifest is private, so the overrides never publish. So:
 
 - **`../loom` must be checked out next to this repo, installed and built** (`pnpm install && pnpm build`
   there), or nothing resolves.
-- Packages declare `"@loom/x": "^0.1.0"` (the published loom release, `LOOM_RANGE`); the override
+- Packages declare `"@loomwork/x": "^0.1.0"` (the published loom release, `LOOM_RANGE`); the override
   wins locally. Never `*` or `workspace:*` — there is no loom package in this workspace, and the
   range is what a consumer installs.
 - Publish metadata (version, `files` allowlist, `publishConfig`, `engines`, `workspace:^`, the
-  `@loom/*` range) is written by `node scripts/publish-metadata.mjs`, never by hand;
+  `@loomwork/*` range) is written by `node scripts/publish-metadata.mjs`, never by hand;
   `core/src/publishMetadata.test.ts` fails on drift. A package stays internal with `"private": true`.
   `node scripts/publish.mjs` dry-runs (refuses a dirty tree, stale metadata, an unbuilt package or a
   tarball carrying tests / test support / tsconfig) and publishes only with `--yes`, after loom.
-- Using a new `@loom/*` package? Add its `link:` line to `pnpm.overrides` **and** the `link:` lines of
-  any `@loom/*` packages it depends on (pnpm resolves transitive deps through the same map).
+- Using a new `@loomwork/*` package? Add its `link:` line to `pnpm.overrides` **and** the `link:` lines of
+  any `@loomwork/*` packages it depends on (pnpm resolves transitive deps through the same map).
 - Third-party versions live in `pnpm-workspace.yaml`'s `catalog:`; reference them as `"catalog:"`.
 - Package `tsconfig.json`s extend `../../tsconfig.base.json` and carry **no** TypeScript project
   `references` into `../loom` — types resolve from `node_modules`.
@@ -41,16 +41,16 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   excluded), so a fixture that only compiles because vitest never typechecks it fails the build.
 - Package `clean` scripts remove `dist` **and** `tsconfig.tsbuildinfo`; `rm -rf dist` alone lets
   `tsc --build` skip emit.
-- `@loom-ui/core` is pure and isomorphic. Anything needing Node (crypto, fs) lives behind the
-  `@loom-ui/core/log` subpath.
-- `@loom-ui/hydration` has two entries. The root entry is server-side: it imports loom's sandbox
-  (QuickJS WASM) and MCP plugin. `@loom-ui/hydration/client` (`src/client.ts`) is the browser entry
+- `@loomwork/ui-core` is pure and isomorphic. Anything needing Node (crypto, fs) lives behind the
+  `@loomwork/ui-core/log` subpath.
+- `@loomwork/ui-hydration` has two entries. The root entry is server-side: it imports loom's sandbox
+  (QuickJS WASM) and MCP plugin. `@loomwork/ui-hydration/client` (`src/client.ts`) is the browser entry
   for split hydration: the split controller, the loader contract, the store and param checks. Nothing it
-  imports may reach `@loom/plugin-sandbox`, `@loom/plugin-mcp`, `@loom/effect-runtime`, a node builtin
+  imports may reach `@loomwork/plugin-sandbox`, `@loomwork/plugin-mcp`, `@loomwork/effect-runtime`, a node builtin
   or a server module (`split/server.ts`, `provider.ts`, `controller.ts`, `invokers.ts`, `reshape.ts`,
   `cache.ts`, `repair.ts`). Code both halves share goes in `split/shared.ts`. `clientEntry.test.ts`
   walks the BUILT graph and fails on a violation.
-- `@loom-ui/lineage` (U6) is server-side and optional: head per experienceId advanced by compare-and-set
+- `@loomwork/ui-lineage` (U6) is server-side and optional: head per experienceId advanced by compare-and-set
   (`head-moved` is a typed result, never an overwrite), revert/undo/branch as NEW versions, and every
   version refused unless replaying its recorded ops from the parent reproduces its content address.
   Revert and branch fold the line's newest sticky classes in with core's `carryClasses` (never lower).
@@ -58,7 +58,7 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   it performs NO authorization (`by` is an unverified claim; `allowDeclassify` is a per-call host argument)
   and its streams sit in loom's reserved `__loom_` namespace (see its README). Hash goldens are
   untouched (a lineage event is not part of the artifact).
-- `@loom-ui/changes` (U7) is server-side and optional: a `ChangeFeed` over lineage events (cursor = the log's
+- `@loomwork/ui-changes` (U7) is server-side and optional: a `ChangeFeed` over lineage events (cursor = the log's
   dense sequence, ids `<experienceId>#<sequence>`, at-least-once), a per-viewer unread cursor seam, and
   polling / `EventStore`-push `HeadSignal`s. It must not enter a client graph (both hydration guards list it).
   The pure half lives in core: `describeChange(prev, next, { viewer })` is FAIL-CLOSED — anything the viewer may
@@ -66,7 +66,7 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   entry, no id/type/count, and the summary is dropped; the attention classifier only ever sees the redacted
   description. A planner/author summary is MODEL TEXT: `boundSummary` (bounded, controls and bidi stripped) on
   the way in and out, carried as `UntrustedText`, never an instruction. `HeadSignal` (core) is types only so a
-  browser can implement it with a `fetch` loop. loom's `@loom/live-query` does not fit (it folds an
+  browser can implement it with a `fetch` loop. loom's `@loomwork/live-query` does not fit (it folds an
   EXECUTION's state); the push impl uses `EventStore.subscribe` directly.
 - Opaque ids on restricted placeholders (U10c): node ids are lexical, so `compile` emits a restricted node (and a
   collapsed container) under a keyed alias (`placeholderKey`, HMAC of `(experienceId, nodeId)`; a missing key falls
@@ -84,20 +84,20 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
 - The learning loop (U11): the planner's variant choice is a `decideWithPolicy` decision (`plan-variant:*`, SHA-256 id,
   propensity in the log) made BEFORE the plan; the plan id is keyed on the variant; `Provenance.policyDecisionId` is the
   learnable decision (the model call stays `decisionId`). The planner `unit` is a server-derived HMAC alias
-  (`unitAlias`), never client-supplied. Signals (`@loom-ui/core/signals`, opt-in, no zod) are UNTRUSTED client input:
+  (`unitAlias`), never client-supplied. Signals (`@loomwork/ui-core/signals`, opt-in, no zod) are UNTRUSTED client input:
   four content-free facts, dwell sent once per sealed view, restricted nodes flagged under their alias
   (`CompileResult.fingerprint.placeholderNodes`) and COLLAPSED onto one version-level pseudo node by the host.
-  `@loom-ui/learning` is server-side (both hydration guards list it): the viewer is the session's, keyed by tenant+id;
+  `@loomwork/ui-learning` is server-side (both hydration guards list it): the viewer is the session's, keyed by tenant+id;
   `exposure` is REQUIRED (`seenLogExposure` over `SeenLog` is the authoritative check; `"client-claimed"` is the explicit
   opt-out); accepted signals go to an APPEND-ONLY per-decision `VoteLog` whose FOLD reduces each viewer to one bounded
   vote (no in-memory "once" ledger to evict; capacity refuses); `settleRewards` closes a decision with a CLAIM so every
   replica folds the same frozen summary, and records ONE pooled score `ui:<rewardId>:<closeId>:<specHash>` through
-  `recordOutcome` as a host-supplied reward-pipeline principal; evaluation is `@loom/learning`'s, filtered to this
+  `recordOutcome` as a host-supplied reward-pipeline principal; evaluation is `@loomwork/learning`'s, filtered to this
   pipeline's kernel-stamped outcomes, and names no winner under deterministic logging. Answer clients with a bare 204.
 - Provenance and "what was seen" (U12): the per-node ledger is DERIVED from lineage ops (ids and handles only,
   never content; not in the content address), and `explainNode` is fail-closed (unknown, restricted and unreadable all
   answer `{ available: false }`; model text is `UntrustedText`, gated by the class floor + `summaryClass`). What a
-  viewer SAW is `snapshotSeen` (core, pure) persisted by `@loom-ui/lineage`'s `SeenLog` in a per-(experience, viewer)
+  viewer SAW is `snapshotSeen` (core, pure) persisted by `@loomwork/ui-lineage`'s `SeenLog` in a per-(experience, viewer)
   reserved stream of manifests with value blobs in the ContentStore — NOT the lineage stream (shared CAS tip, folded
   by every reader) and NOT the hydration store (a latest-value cache). Reads redact against the recorded version's
   artifact BEFORE fetching a blob; a missing/unknown class stamp is withheld. Erasure = crypto-shredding: each entry's ref
@@ -132,7 +132,7 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   the grid item, never the heading. The web renderers (React, Lit) and the terminal agree on reading
   order only when a grid's cells are all placed or all unplaced; a partially placed grid falls to CSS
   grid auto-placement on the web and to row-then-column order in the terminal (loom's
-  `renderBlueprintToString`, which `@loom-ui/renderer-terminal` reaches by delegation; loom ADR 0098
+  `renderBlueprintToString`, which `@loomwork/ui-renderer-terminal` reaches by delegation; loom ADR 0098
   D4/D6).
 - A container's `role` (Blueprint IR 2.2.0, loom ADR 0099) is the open, app-defined key a container
   renderer is registered under — never an ARIA role, never display text, never localised. Its one
@@ -167,15 +167,15 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   `materialized` ops return, plus `declassify-in-prompt` when any of them (at any nesting) is a `declassifyHandle`. `applyAt` only: `stale-base-version` (the declared base is not the artifact). Note `not-container` (`setTitle` / `setRole` on a semantic node) is a different code
   from `not-a-container` (an `insertNode` / `moveNode` parent that is not a container). `validateExperience` still
   reports a binder with no provider as `unknown-handle` (an `insertNode` of a bound node is not checked by `apply`).
-- A kind's value shape is declared ONCE in `@loom-ui/core` (`kindValueContracts`). Renderers validate
+- A kind's value shape is declared ONCE in `@loomwork/ui-core` (`kindValueContracts`). Renderers validate
   with `checkKindValue` and render a visible error state; the planner pins `outputShapeHash` to values
   that pass.
-- A framework kind is added in all of these places in one change: its zod contract in `kindValueContracts` and its name in `FRAMEWORK_KINDS` (`@loom-ui/core`), its `lu-*` element, its `litRegistry` entry and its `frameworkKindContracts` entry (`@loom-ui/renderer-lit`), and its `loomUiTerminalRegistry` renderer (`@loom-ui/renderer-terminal`). The parity tests in `litRegistry.test.ts` and `registry.test.ts` fail when one is missing. loom's built-in contracts (`MetricCard`, `DataTable`, `StatusBadge`, …) are never widened: a different shape is a new framework kind.
-- Renderer conformance (U16): `@loom-ui/renderer-conformance` is the one set of renderer contract checks (kinds drawn or visibly refused, status matrix, restricted placeholders, untrusted text, media, chat, i18n, actions) driven through a small `RendererAdapter`. Both shipped renderers run it (`conformance.test.ts` + `conformanceAdapter.test-support.ts` in each) with `forbidSkips`, and `src/speech.test-support.ts` in the kit is the ~100-line reference third-party renderer. A new framework kind or contract clause goes into the kit's fixtures/checks in the same change, with a fault in `speech.test.ts` proving the kit fails without it. The kit is ESM and depends on vitest only through its `./vitest` subpath. `renderExperience` makes the whole frame inert (no ESC/C0/C1/bidi controls) and `interactiveTerminal` is the opt-in live session; the snapshot output must stay byte-identical.
+- A framework kind is added in all of these places in one change: its zod contract in `kindValueContracts` and its name in `FRAMEWORK_KINDS` (`@loomwork/ui-core`), its `lu-*` element, its `litRegistry` entry and its `frameworkKindContracts` entry (`@loomwork/ui-renderer-lit`), and its `loomUiTerminalRegistry` renderer (`@loomwork/ui-renderer-terminal`). The parity tests in `litRegistry.test.ts` and `registry.test.ts` fail when one is missing. loom's built-in contracts (`MetricCard`, `DataTable`, `StatusBadge`, …) are never widened: a different shape is a new framework kind.
+- Renderer conformance (U16): `@loomwork/ui-renderer-conformance` is the one set of renderer contract checks (kinds drawn or visibly refused, status matrix, restricted placeholders, untrusted text, media, chat, i18n, actions) driven through a small `RendererAdapter`. Both shipped renderers run it (`conformance.test.ts` + `conformanceAdapter.test-support.ts` in each) with `forbidSkips`, and `src/speech.test-support.ts` in the kit is the ~100-line reference third-party renderer. A new framework kind or contract clause goes into the kit's fixtures/checks in the same change, with a fault in `speech.test.ts` proving the kit fails without it. The kit is ESM and depends on vitest only through its `./vitest` subpath. `renderExperience` makes the whole frame inert (no ESC/C0/C1/bidi controls) and `interactiveTerminal` is the opt-in live session; the snapshot output must stay byte-identical.
 - Display text in a prop goes through the catalogue entry's `textProps`: a `LocalizedText` there resolves at compile via `resolveLabel`, like `label`. A renderer never looks a message key up.
-- `@loom-ui/renderer-lit` is ESM (Lit is ESM-only) and tests under happy-dom; the other packages are
+- `@loomwork/ui-renderer-lit` is ESM (Lit is ESM-only) and tests under happy-dom; the other packages are
   CommonJS.
-- Hydration is READ-ONLY and log-free: `@loom-ui/hydration` only ever calls `invokeTransient`. Drift is
+- Hydration is READ-ONLY and log-free: `@loomwork/ui-hydration` only ever calls `invokeTransient`. Drift is
   reported (`onDrift`), never repaired here; the app's durable execution applies `remapOperation`'s op and
   emits `SCHEMA_REPAIRED` (`inputDrift: "report-and-proceed"` still reports; it only lets a read-only
   viewer publish). Drift kinds: `input` (a step's schema pin moved — `remapOperation` repairs it) and
@@ -209,10 +209,10 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   `upstream-empty` is in the split server's public code vocabulary (`FIXED_CODES` + `publicText`). A new
   hydration finding code a client may see goes into BOTH, or it is served as `load-failed`/`load-warning`.
 - A planner returns OPERATIONS, never an Experience, and every model call runs inside `ctx.decide` so
-  replay never re-calls a model. `@loom-ui/planner` imports no invoker, effect runtime, projection
+  replay never re-calls a model. `@loomwork/ui-planner` imports no invoker, effect runtime, projection
   runtime or LLM provider (`noLookups.test.ts`); capabilities and context arrive resolved from the caller.
 - Anything tool-authored that will be shown to a model (samples, observed drift values) is wrapped with
-  `@loom/classify`'s `tainted` at the producer and fenced as DATA in a user message — never in `system`.
+  `@loomwork/classify`'s `tainted` at the producer and fenced as DATA in a user message — never in `system`.
 - An observed sample belongs to a HANDLE (one call: tool + arguments), never to a tool@version. Drift
   samples reach a planner on `ReviseInput.observed` (keyed by handle, built by `observedSamples`, never
   rendered into a prompt), and a rebuilt provider is pinned only against its own call's sample — with no
@@ -239,13 +239,13 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
 - `docs/snippets` backs the guides (getting-started, user-guide, `docs/guides/*`): its tests compile and run the code the docs show. A ```` ```ts ````/```` ```tsx ```` block in those pages needs a `<!-- snippet: NAME -->` marker (mirrored byte-for-byte from the `// #region NAME` in the page's test file, which is the source of truth) or a `<!-- illustrative: WHY -->` marker; a page with code blocks must be wired to `expectDocMirrors`. Covered by `pnpm test` and `pnpm typecheck:tests`.
 - loom-ui is a generic UI framework on top of loom, for ANY app; any consumer is never the design centre. No consumer names or prefixes anywhere in the repo (theme tokens are `--lu-*`, elements `lu-*`) — `packages/core/src/genericity.test.ts` enforces it over the packages, AGENTS.md, README and all of `docs/` except `docs/evaluations`; README's `## Consumers` section is the one place a consumer is named. State every capability as a consumer-neutral need; a contract describes the widget, not a consumer's payload (a consumer with an idiosyncratic shape adapts at its own boundary). Every capability ships with a reference example in loom-examples that is not a specific consumer's app. Review question for every change: would an unrelated app use this as-is?
 - Media (U9): `Image`/`Audio`/`Video`/`File` are bound to a `MediaRef` `{address, mediaType, size?, name?, alt?, origin?}` (the
-  `@loom-ui/core/media` subpath; the CONTRACT alone rides in `checkKindValue`, so the hydration client and renderer-lit
+  `@loomwork/ui-core/media` subpath; the CONTRACT alone rides in `checkKindValue`, so the hydration client and renderer-lit
   `index` budgets stay close to flat), `MediaInput` is the static upload control. An address is a CAPABILITY: it travels only
   as a hydrated value (never a node prop: `validateExperience` enforces a framework allow-list whatever the catalogue
   declares), a handle feeding media is always contract-checked by hydration, and loom-ui never fetches or builds a URL from
   one. The HOST supplies an authorising `MediaResolver` (viewer-scoped URL, re-checked by `checkMediaUrl`) and
   `MediaUploadHandler`; media is untrusted unless the resolver vouches. The web widgets are the opt-in
-  `@loom-ui/renderer-lit/media` entry. `core/src/mediaLeak.test.ts` is the viewer-leak property test.
+  `@loomwork/ui-renderer-lit/media` entry. `core/src/mediaLeak.test.ts` is the viewer-leak property test.
   Fix round 1: hydration (controller AND split server) contract-checks a media handle by node TYPE even with no `outputKinds`;
   untrusted active types (`isActiveMediaType`) and untrusted same-origin/`blob:` URLs are blocked; the host must run
   `acceptMediaAttach` on every `MEDIA_ATTACH`; the default lit registry draws a fixed "not loaded" placeholder for media kinds.
@@ -259,8 +259,8 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   `EDIT_TURN` / `LOAD_OLDER` stamped with `viewedVersion`, each with an idempotency `key`; the HOST runs `acceptChatSubmit`
   (re-validate against its own `inputSpecsOf`, freshness, `SubmitLedger`) via `createWriteBack` (targets: `conversationTarget`,
   `resumeTarget`, `paramsTarget`) and its answer (`{ ok }`) is what the widget waits for. An edit is a NEW turn, never a
-  mutation. Entries: `@loom-ui/core/chat` (host/folding) vs `@loom-ui/core/chat-ui` (what a widget needs: core is CommonJS, so
-  a barrel cannot be tree-shaken), widgets in the opt-in `@loom-ui/renderer-lit/chat`; a handle feeding `Chat` is
+  mutation. Entries: `@loomwork/ui-core/chat` (host/folding) vs `@loomwork/ui-core/chat-ui` (what a widget needs: core is CommonJS, so
+  a barrel cannot be tree-shaken), widgets in the opt-in `@loomwork/ui-renderer-lit/chat`; a handle feeding `Chat` is
   contract-checked and never a stream.
   Fix round 1 (review): a user entry is keyed by its log position (never the turn number: loom records REJECTED envelopes under
   the next turn number without consuming it), a missing `asker` is "You" only when the value says `mode: "owner"`, a person is
@@ -269,7 +269,7 @@ loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For dev
   all authority checks (principal, head) run on the SERVER (the browser only forwards the stamped action).
 
 - Fixed words (U14): every fixed, user-visible English string a renderer prints is a key in `LU_MESSAGES`
-  (`@loom-ui/core/messages`, also on the main entry), never an inline literal. Ask `say(key, vars)` in
+  (`@loomwork/ui-core/messages`, also on the main entry), never an inline literal. Ask `say(key, vars)` in
   renderer-lit (`src/say.ts`, over the `t` seam) or the registry's `x.say` in renderer-terminal; the host overrides
   with `configureI18n({ locale, messages, translate })` / `terminalRegistry({ i18n })`. The terminal's default locale
   stays `en-US` (deterministic bytes). `core/src/i18nFitness.test.ts` fails on a new inline literal (an AST scan of the

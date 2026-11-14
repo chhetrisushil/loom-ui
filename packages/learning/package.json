@@ -1,7 +1,7 @@
 {
-  "name": "@loom-ui/learning",
+  "name": "@loomwork/ui-learning",
   "version": "0.1.0",
-  "description": "The learning loop for loom-ui (U11), host side: validate and rate-limit untrusted interaction signals, re-check exposure, turn them into bounded rewards attributed to the planner decision that produced the surface, record them late through loom's recordOutcome, and compare planner variants off-policy with @loom/learning",
+  "description": "The learning loop for loom-ui (U11), host side: validate and rate-limit untrusted interaction signals, re-check exposure, turn them into bounded rewards attributed to the planner decision that produced the surface, record them late through loom's recordOutcome, and compare planner variants off-policy with @loomwork/learning",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -22,19 +22,19 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:^",
-    "@loom/analytics": "^0.1.0",
-    "@loom/core": "^0.1.0",
-    "@loom/learning": "^0.1.0"
+    "@loomwork/ui-core": "workspace:^",
+    "@loomwork/analytics": "^0.1.0",
+    "@loomwork/core": "^0.1.0",
+    "@loomwork/learning": "^0.1.0"
   },
   "devDependencies": {
-    "@loom-ui/lineage": "workspace:^",
-    "@loom-ui/planner": "workspace:^",
-    "@loom/effect-runtime": "^0.1.0",
-    "@loom/event-runtime": "^0.1.0",
-    "@loom/plugin-content": "^0.1.0",
-    "@loom/snapshot-runtime": "^0.1.0",
-    "@loom/workflow-runtime": "^0.1.0",
+    "@loomwork/ui-lineage": "workspace:^",
+    "@loomwork/ui-planner": "workspace:^",
+    "@loomwork/effect-runtime": "^0.1.0",
+    "@loomwork/event-runtime": "^0.1.0",
+    "@loomwork/plugin-content": "^0.1.0",
+    "@loomwork/snapshot-runtime": "^0.1.0",
+    "@loomwork/workflow-runtime": "^0.1.0",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:",

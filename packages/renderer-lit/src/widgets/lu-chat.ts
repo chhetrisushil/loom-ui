@@ -22,7 +22,7 @@ import {
   sanitizeChatText,
   splitRefMarkers,
   validateTextValue,
-} from "@loom-ui/core/chat-ui";
+} from "@loomwork/ui-core/chat-ui";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -630,7 +630,7 @@ export class LuChat extends LuWidget {
   ): TemplateResult {
     const kind = mediaKindOf(part.ref.mediaType);
     const tag = TAG_OF[kind] as string;
-    // The media elements are the opt-in `@loom-ui/renderer-lit/media` entry. Without it the part is
+    // The media elements are the opt-in `@loomwork/ui-renderer-lit/media` entry. Without it the part is
     // DESCRIBED (type, name, size) and nothing is loaded; no address is ever printed.
     if (typeof customElements === "undefined" || customElements.get(tag) === undefined)
       return html`<p class="fixed" data-media-state="not-loaded">${describeMedia(kind, part.ref, say)}</p>`;

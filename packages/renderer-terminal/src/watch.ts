@@ -1,5 +1,5 @@
-import type { HydrationStore } from "@loom-ui/hydration/client";
-import type { Blueprint } from "@loom/blueprint-runtime";
+import type { Blueprint } from "@loomwork/blueprint-runtime";
+import type { HydrationStore } from "@loomwork/ui-hydration/client";
 import { type RenderExperienceOptions, renderExperience } from "./status";
 
 /**

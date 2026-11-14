@@ -1,4 +1,4 @@
-import { type InteractionSignal, SIGNAL_VERSION } from "@loom-ui/core/signals";
+import { type InteractionSignal, SIGNAL_VERSION } from "@loomwork/ui-core/signals";
 import { describe, expect, it } from "vitest";
 import type { ExposureCheck } from "./exposure";
 import { SignalIngestor, type SignalRejection, type Viewer } from "./ingest";

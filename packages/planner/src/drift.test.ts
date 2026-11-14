@@ -1,20 +1,20 @@
-import { type ProviderSpec, genesis, isContainer, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+// The ONLY imports of loom runtime plugins in this package, and only in a test: the point of the
+// fixtures below is that the drift record comes from hydration's REAL producer, which dispatches
+// on loom's own tool id and classifies loom's own sandbox channels. `noLookups.test.ts` excludes
+// test files for exactly this.
+import { tainted, unwrapTainted } from "@loomwork/classify";
+import { TypedFailure } from "@loomwork/core";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { SANDBOX_ERRORS } from "@loomwork/plugin-sandbox";
+import { type ProviderSpec, genesis, isContainer, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   type DriftRecord,
   type TransientInvoker,
   defineReshapers,
   executeProvider,
   outputShapeHashOf,
-} from "@loom-ui/hydration";
-// The ONLY imports of loom runtime plugins in this package, and only in a test: the point of the
-// fixtures below is that the drift record comes from hydration's REAL producer, which dispatches
-// on loom's own tool id and classifies loom's own sandbox channels. `noLookups.test.ts` excludes
-// test files for exactly this.
-import { tainted, unwrapTainted } from "@loom/classify";
-import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_ERRORS } from "@loom/plugin-sandbox";
+} from "@loomwork/ui-hydration";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   driftCapabilities,

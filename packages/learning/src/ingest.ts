@@ -1,5 +1,5 @@
-import type { Audience } from "@loom-ui/core";
-import { type InteractionSignal, validateSignalBatch } from "@loom-ui/core/signals";
+import type { Audience } from "@loomwork/ui-core";
+import { type InteractionSignal, validateSignalBatch } from "@loomwork/ui-core/signals";
 import type { ExposureCheck } from "./exposure";
 import {
   RESTRICTED_NODE,

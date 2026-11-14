@@ -2,7 +2,7 @@
 
 How an experience is built, edited, sealed and compiled. This page holds the detail that the
 [README](../../README.md) only summarises; the API surface lives in
-[`@loom-ui/core`](../../packages/core/README.md).
+[`@loomwork/ui-core`](../../packages/core/README.md).
 
 ## Compose, seal, log, compile
 
@@ -10,9 +10,9 @@ A worked sequence. It is a sketch rather than a compiling snippet: it elides the
 `contentStore` and `catalog` a real caller supplies.
 
 ```ts
-import { apply, compile, genesis } from "@loom-ui/core";
-import { EXPERIENCE_COMPOSED, putExperience } from "@loom-ui/core/log";
-import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loom-ui/hydration";
+import { apply, compile, genesis } from "@loomwork/ui-core";
+import { EXPERIENCE_COMPOSED, putExperience } from "@loomwork/ui-core/log";
+import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loomwork/ui-hydration";
 
 const exp = genesis({
   experienceId: "checkout-triage",
@@ -96,7 +96,7 @@ a container renderer is registered under — for containers what a widget's `kin
 vocabulary). It is never an ARIA role and never display text, so it is not localised: `compile`
 copies it onto the compiled layout as-is. A role must be well-formed by loom's `isLayoutRole` — a
 lowercase letter, then lowercase letters, digits or hyphens, at most 64 characters (`LayoutRole` in
-`@loom-ui/core`). The node schema refuses anything else, so `insertNode` and `setRole` do; a
+`@loomwork/ui-core`). The node schema refuses anything else, so `insertNode` and `setRole` do; a
 malformed role in pre-existing data is `validateExperience`'s `role-invalid` — a WARN against the
 container, loom's code and severity, since nothing is lost but the custom rendering — and `compile`
 leaves it off (every renderer draws the plain container).
@@ -109,7 +109,7 @@ geometry. An absent role adds nothing to the hashed artifact.
 
 ## Framework kinds
 
-Beside loom's eight built-in kinds, `@loom-ui/core` declares kinds of its own in `FRAMEWORK_KINDS`,
+Beside loom's eight built-in kinds, `@loomwork/ui-core` declares kinds of its own in `FRAMEWORK_KINDS`,
 each with a zod value contract in `kindValueContracts`. The list is an open set that grows as
 vocabulary slices land: check that the kinds you render are present rather than pinning its length.
 The [catalogue and widget reference](catalogue.md) gives the full shape of a catalogue entry and, for
@@ -127,18 +127,18 @@ whose contracts loom's React renderers depend on and which are never widened.
 | `Table` | `TableValue`: `{ columns: TableColumn[], rows: TableCell[][] }`. A `TableColumn` is a string or `{ label, format? }`, read through `tableColumnLabel` and `tableColumnFormat`; a `TableCell` is a string, number, `null` or a token cell `{ tokens: { id, label }[] }` (at most 20 tokens, short unique ids, a plain-text label of 1 to 80 characters), drawn as wrapping chips that are real buttons named by their label, read as text through `tableCellText` (the labels joined with ", "). A chip emits `TABLE_TOKEN { rowKey, tokenId }` through `onAction`, or `{ rowIndex, tokenId }` for a table without `rowKeys` (the index into `rows` as sent, not the sorted position; never both). Text sorts in the formatting locale. Optional `rowKeys` (one stable key per row) and `rowActions` (at most 4 per row: `{ id, label, primary?, destructive? }`; needs `rowKeys`) draw a trailing actions cell, one named button per action, and the `primary` one in the first cell; each emits `TABLE_ROW_ACTION { action, rowKey }` through `onAction` (buttons are disabled with no handler). A value that breaks a rule is refused by `checkKindValue`. |
 | `StatusCard` | `StatusCardValue`: `{ level: StatusLevel, headline, detail? }`, where `StatusLevel` is `"ok"`, `"warning"` or `"critical"`. Announced through `role="status" aria-live="polite"`. |
 | `Note` | Static text from its `text` prop; never bound. |
-| `Diagram` | `DiagramValue`: a tree, flow, timeline or network as nodes and edges. See [Diagrams](#diagrams). Drawn by the opt-in `@loom-ui/renderer-lit/diagram` entry; the default registry draws a fixed placeholder. |
+| `Diagram` | `DiagramValue`: a tree, flow, timeline or network as nodes and edges. See [Diagrams](#diagrams). Drawn by the opt-in `@loomwork/ui-renderer-lit/diagram` entry; the default registry draws a fixed placeholder. |
 | `A2UIView`, `SandboxView` | Mount `lu-a2ui-view` / `lu-sandbox` with the declared `view` / `code` prop and the bound value as data. |
 
 The media and conversation kinds (`Image`, `Audio`, `Video`, `File`, `MediaInput`, `Chat`,
 `TextInput`, `FormInput`, `SelectInput`, `MultiSelectInput`) are also in `FRAMEWORK_KINDS`; their value contracts are
-described in the [`@loom-ui/core` README](../../packages/core/README.md) under "Media" and "Chat and
+described in the [`@loomwork/ui-core` README](../../packages/core/README.md) under "Media" and "Chat and
 inputs". `SelectInput` may bind (optionally): the bound value is its current choice, shown only when it is a
 declared option. `MultiSelectInput` must bind its options and choice (`{ options, selected, note? }`); its
 change emits `SELECT_MANY`, checked against the host's `optionsOf`.
 
 An app declares a framework kind on a semantic entry's `surfaces.web` by copying its contract from
-`frameworkKindContracts` (`@loom-ui/renderer-lit`: the nine kinds of the default registry), or, for the
+`frameworkKindContracts` (`@loomwork/ui-renderer-lit`: the nine kinds of the default registry), or, for the
 opt-in kinds, from `mediaKindContracts`, `chatKindContracts` or `diagramKindContracts` (their entries). The
 full entry and value shape of every kind is in the [catalogue reference](catalogue.md).
 
@@ -239,7 +239,7 @@ hidden list, the terminal's lines and the conformance check all read this one fu
 layers come from `diagramGraph`, which also supplies the web drawing, so the order a listener hears
 is the order a sighted reader sees.
 
-**What each renderer draws.** `lu-diagram` (opt-in entry `@loom-ui/renderer-lit/diagram`,
+**What each renderer draws.** `lu-diagram` (opt-in entry `@loomwork/ui-renderer-lit/diagram`,
 `createDiagramLitRegistry` / `registerDiagramWidgets`, `diagramKindContracts`) draws SVG at its natural
 size inside a scroll container (no zoom): a tidy top-down tree, a layered left-to-right flow
 (longest-path layers, barycenter ordering, back-edges dashed), a timeline with time-proportional x

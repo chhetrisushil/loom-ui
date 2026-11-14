@@ -3,7 +3,7 @@ import {
   type WidgetCatalog,
   builtinCatalog,
   defineWidgetCatalog,
-} from "@loom/blueprint-runtime";
+} from "@loomwork/blueprint-runtime";
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
 import type { Finding } from "./experience";
 

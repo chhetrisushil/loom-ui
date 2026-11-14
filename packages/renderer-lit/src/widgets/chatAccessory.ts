@@ -1,4 +1,4 @@
-import type { ChatEntry } from "@loom-ui/core/chat-ui";
+import type { ChatEntry } from "@loomwork/ui-core/chat-ui";
 import type { TemplateResult } from "lit";
 
 // ── Chat entry accessories: host content drawn under one transcript entry ─────────────────────

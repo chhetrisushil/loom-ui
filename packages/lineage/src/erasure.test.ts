@@ -1,17 +1,26 @@
-import { type Provenance, type RecordedOperation, type SemanticNode, genesis } from "@loom-ui/core";
-import { InMemoryAsyncEventStore, isKeyUnavailable, isPayloadShredded } from "@loom/event-runtime";
+import {
+  InMemoryAsyncEventStore,
+  isKeyUnavailable,
+  isPayloadShredded,
+} from "@loomwork/event-runtime";
 import {
   type ContentAccess,
   type ContentRef,
   type ContentStore,
   InMemoryContentStore,
   sweepUnpinnedContent,
-} from "@loom/plugin-content";
+} from "@loomwork/plugin-content";
 import {
   EncryptingContentStore,
   EncryptingEventStore,
   InMemoryKeyStore,
-} from "@loom/plugin-crypto";
+} from "@loomwork/plugin-crypto";
+import {
+  type Provenance,
+  type RecordedOperation,
+  type SemanticNode,
+  genesis,
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { LINEAGE_SENSITIVE_PATHS, registerLineageSensitivePaths } from "./events";
 import { LineErasedError, LineUnreadableError, Lineage, type LineageResult } from "./lineage";

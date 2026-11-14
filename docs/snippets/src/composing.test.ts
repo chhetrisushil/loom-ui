@@ -14,8 +14,8 @@ import {
   preservesNodes,
   replay,
   validateExperience,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 // #endregion imports
 
 describe("docs/guides/composing.md", () => {

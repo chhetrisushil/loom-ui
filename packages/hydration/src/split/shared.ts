@@ -1,4 +1,4 @@
-import type { Finding } from "@loom-ui/core";
+import type { Finding } from "@loomwork/ui-core";
 import type { HandleLoadResult } from "../scheduler";
 
 // What both halves of split hydration mint: kept free of any server import, so the client half

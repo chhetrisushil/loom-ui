@@ -1,5 +1,5 @@
-import { type ContainerNode, type Experience, findNode, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+import { type ContainerNode, type Experience, findNode, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import { describe, expect, it } from "vitest";
 import { branchArtifact, revertArtifact } from "./derive";
 

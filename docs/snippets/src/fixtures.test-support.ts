@@ -6,14 +6,14 @@ import {
   defineSemanticCatalog,
   genesis,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   HYDRATION_PROJECTION_ID,
   HYDRATION_PROJECTION_VERSION,
   HydrationStore,
-} from "@loom-ui/hydration/client";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration/client";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 
 // A small board shared by the snippet tests whose doc text starts from "the experience and
 // blueprint from the walkthrough" rather than re-deriving them. Not mirrored into any doc.

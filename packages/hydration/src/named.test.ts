@@ -1,4 +1,4 @@
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
 import { describe, expect, it } from "vitest";
 import { executeProvider } from "./provider";
 import { defineReshapers, reshape } from "./reshape";

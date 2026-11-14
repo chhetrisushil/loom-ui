@@ -1,9 +1,9 @@
-# @loom-ui/renderer-terminal
+# @loomwork/ui-renderer-terminal
 
 String renderers for every framework kind, merged over loom's own kind-aware terminal registry,
 plus `renderExperience` and `watch` — the terminal rendering surface for the `Blueprint`
-`@loom-ui/core` compiles and the projection state `@loom-ui/hydration` publishes. Where
-`@loom-ui/renderer-lit` mounts DOM elements, this package renders one plain-text frame; status
+`@loomwork/ui-core` compiles and the projection state `@loomwork/ui-hydration` publishes. Where
+`@loomwork/ui-renderer-lit` mounts DOM elements, this package renders one plain-text frame; status
 (loading/empty/stale/error) comes entirely from loom's own Blueprint traversal — this package
 contributes only the per-kind value check.
 
@@ -11,11 +11,11 @@ contributes only the per-kind value check.
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/renderer-terminal": "link:../loom-ui/packages/renderer-terminal"
+"@loomwork/ui-renderer-terminal": "link:../loom-ui/packages/renderer-terminal"
 ```
 
 ```ts
-import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-terminal";
+import { renderExperience, watch, terminalRegistry } from "@loomwork/ui-renderer-terminal";
 ```
 
 ## Key concepts
@@ -36,8 +36,8 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
   declares to `undefined` state, so a binding under a different id renders as its honest loading row
   rather than an error.
 - **Numeric parity with the web.** Every framework-kind renderer here formats a number exactly as
-  `@loom-ui/renderer-lit`'s `measure()` would for the same value, format and unit — same rounding,
-  grouping, currency symbol and unit suffix — via `@loom-ui/core`'s `formatSemanticNumber` and
+  `@loomwork/ui-renderer-lit`'s `measure()` would for the same value, format and unit — same rounding,
+  grouping, currency symbol and unit suffix — via `@loomwork/ui-core`'s `formatSemanticNumber` and
   `effectiveFormat`, at one fixed locale (`en-US` by default) so the terminal output does not vary
   with the host's own locale; a host opts into another with `i18n.locale` (see "Localising the
   renderer").
@@ -82,7 +82,7 @@ import { renderExperience, watch, terminalRegistry } from "@loom-ui/renderer-ter
 Rendering once, and re-rendering on every change (illustrative — not a compiling snippet):
 
 ```ts
-import { renderExperience, watch } from "@loom-ui/renderer-terminal";
+import { renderExperience, watch } from "@loomwork/ui-renderer-terminal";
 
 // One frame, right now:
 process.stdout.write(renderExperience(blueprint, store));
@@ -95,8 +95,8 @@ const stop = watch(blueprint, store, (frame) => process.stdout.write(`\x1Bc${fra
 Composing your own registry (illustrative):
 
 ```ts
-import { loomUiTerminalRegistry } from "@loom-ui/renderer-terminal";
-import { defaultTerminalRegistry } from "@loom/plugin-renderer-terminal";
+import { loomUiTerminalRegistry } from "@loomwork/ui-renderer-terminal";
+import { defaultTerminalRegistry } from "@loomwork/plugin-renderer-terminal";
 
 const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(myOwnKinds);
 ```
@@ -166,11 +166,11 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
 ## Localising the renderer
 
 Every fixed word the terminal prints is a key in the catalogue `LU_MESSAGES` (and the typed key list
-`LU_MESSAGE_KEYS`) exported by `@loom-ui/core`; English is the default. Pass a host override as
+`LU_MESSAGE_KEYS`) exported by `@loomwork/ui-core`; English is the default. Pass a host override as
 `i18n` to `terminalRegistry`, `createLoomUiTerminalRegistry` or `renderExperience`:
 
 ```ts
-import { renderExperience } from "@loom-ui/renderer-terminal";
+import { renderExperience } from "@loomwork/ui-renderer-terminal";
 
 renderExperience(blueprint, store, {
   i18n: {
@@ -192,7 +192,7 @@ renderExperience(blueprint, store, {
   the `✗`/`○`/`~`/`⋯` status lines loom's traversal writes (loom's renderers), and developer
   diagnostics.
 
-The keys the terminal asks for (including the shared chat and media words from `@loom-ui/core`):
+The keys the terminal asks for (including the shared chat and media words from `@loomwork/ui-core`):
 
 | Key | English default |
 | --- | --- |
@@ -282,7 +282,7 @@ Its frame is that snapshot followed by a controls footer when the Blueprint has 
 with none, the frame IS the snapshot.
 
 ```ts
-import { interactiveTerminal } from "@loom-ui/renderer-terminal";
+import { interactiveTerminal } from "@loomwork/ui-renderer-terminal";
 
 const term = interactiveTerminal(blueprint, {
   store,                       // the HydrationStore; changes repaint
@@ -356,7 +356,7 @@ can be model- or user-authored, and an ESC would otherwise reach the terminal as
 may remain visible. They are harmless text. A typed `Key.char` must be exactly one printable code
 point or it is ignored.
 
-The renderer runs the shared conformance kit (`@loom-ui/renderer-conformance`) in
+The renderer runs the shared conformance kit (`@loomwork/ui-renderer-conformance`) in
 `src/conformance.test.ts`.
 
 ## See also

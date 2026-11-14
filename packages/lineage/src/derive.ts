@@ -1,4 +1,4 @@
-import { type Experience, type Provenance, carryClasses } from "@loom-ui/core";
+import { type Experience, type Provenance, carryClasses } from "@loomwork/ui-core";
 
 // ── Versions that are not "ops on a parent" ───────────────────────────────────
 // A revert and a branch adopt an OLDER artifact's content, so they are not expressible as ops

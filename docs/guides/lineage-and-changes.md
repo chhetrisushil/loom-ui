@@ -5,8 +5,8 @@
 changes at the right volume without leaking content they may not see.
 
 **Prerequisites.** [Composing](composing.md). Both packages are **server-side and optional**: an app
-using only `@loom-ui/core` keeps working, and neither may enter a browser bundle
-(`@loom-ui/lineage`, `@loom-ui/changes` are on the client-graph deny list). Snippets are mirrored
+using only `@loomwork/ui-core` keeps working, and neither may enter a browser bundle
+(`@loomwork/ui-lineage`, `@loomwork/ui-changes` are on the client-graph deny list). Snippets are mirrored
 from [`lineage.test.ts`](../snippets/src/lineage.test.ts).
 
 <!-- snippet: imports -->
@@ -18,15 +18,15 @@ import {
   markRead,
   pollingHeadSignal,
   unreadChanges,
-} from "@loom-ui/changes";
-import type { Provenance } from "@loom-ui/core";
-import { InMemoryLineageStore, Lineage } from "@loom-ui/lineage";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-changes";
+import type { Provenance } from "@loomwork/ui-core";
+import { InMemoryLineageStore, Lineage } from "@loomwork/ui-lineage";
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 ```
 
 ## What lineage adds
 
-`@loom-ui/core` can fold operations onto an artifact and hash it. It cannot say which artifact is the
+`@loomwork/ui-core` can fold operations onto an artifact and hash it. It cannot say which artifact is the
 head, refuse a stale author, undo, or notice that a stored operation list disagrees with the artifact
 it claims to produce (operations are not part of the content address). `Lineage` is that memory:
 
@@ -160,7 +160,7 @@ unknown, restricted and unreadable all answer `{ available: false }`. What a vie
 operations with `plannerProvenance(result)` so a node links back to the recorded model call. See the
 [lineage README](../../packages/lineage/README.md).
 
-## The change feed (`@loom-ui/changes`)
+## The change feed (`@loomwork/ui-changes`)
 
 A change event says **that** something changed, never **what**: `{ id, experienceId, sequence, at,
 kind, versionHash, base }`. What a change *means* is per viewer, so it is computed on demand.
@@ -234,13 +234,13 @@ Back your own store with `checkUnreadStoreConformance(make)`.
   re-author, or [merge](composing.md#merge-two-forks).
 - `verify` replays from the genesis, so reclaiming old versions makes it report them.
 - `read` folds the whole line each call (O(log length)); cache above the seam.
-- `@loom/live-query` does not fit a lineage stream (it folds an execution's state), which is why
+- `@loomwork/live-query` does not fit a lineage stream (it folds an execution's state), which is why
   the push signal uses `EventStore.subscribe` directly.
 
 ## See also
 
-- Packages: [`@loom-ui/lineage`](../../packages/lineage/README.md),
-  [`@loom-ui/changes`](../../packages/changes/README.md).
+- Packages: [`@loomwork/ui-lineage`](../../packages/lineage/README.md),
+  [`@loomwork/ui-changes`](../../packages/changes/README.md).
 - Examples (in `loom-examples`): `provenance-explain` (lineage, `explain`, seen log, erasure, GC),
   `experience-merge`, `experience-recompose`.
 - Next: [planners and learning](planners-and-learning.md).

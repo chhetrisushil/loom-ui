@@ -1,5 +1,5 @@
-import type { Finding, MCPToolNode, ProviderSpec } from "@loom-ui/core";
-import { canonicalJson, fnv1a64 } from "@loom/core";
+import { canonicalJson, fnv1a64 } from "@loomwork/core";
+import type { Finding, MCPToolNode, ProviderSpec } from "@loomwork/ui-core";
 import { resolveArguments } from "./plan";
 
 // ── Per-load params and relative time ─────────────────────────────────────────

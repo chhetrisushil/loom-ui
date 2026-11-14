@@ -1,4 +1,4 @@
-import { defineSemanticCatalog, mediaCatalogEntries } from "@loom-ui/core";
+import { defineSemanticCatalog, mediaCatalogEntries } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { describeCatalog } from "./prompt";

@@ -1,5 +1,5 @@
 {
-  "name": "@loom-ui/docs-snippets",
+  "name": "@loomwork/ui-docs-snippets",
   "version": "0.0.1",
   "description": "The compiling, asserted code behind docs/getting-started.md and docs/guides/*.md. Tests only; nothing here is published or imported.",
   "private": true,
@@ -11,19 +11,19 @@
     "clean": "rm -rf tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/changes": "workspace:*",
-    "@loom-ui/core": "workspace:*",
-    "@loom-ui/hydration": "workspace:*",
-    "@loom-ui/learning": "workspace:*",
-    "@loom-ui/lineage": "workspace:*",
-    "@loom-ui/planner": "workspace:*",
-    "@loom-ui/renderer-conformance": "workspace:*",
-    "@loom-ui/renderer-lit": "workspace:*",
-    "@loom-ui/renderer-terminal": "workspace:*",
-    "@loom/blueprint-runtime": "*",
-    "@loom/projection-runtime": "*",
-    "@loom/core": "*",
-    "@loom/plugin-content": "*"
+    "@loomwork/ui-changes": "workspace:*",
+    "@loomwork/ui-core": "workspace:*",
+    "@loomwork/ui-hydration": "workspace:*",
+    "@loomwork/ui-learning": "workspace:*",
+    "@loomwork/ui-lineage": "workspace:*",
+    "@loomwork/ui-planner": "workspace:*",
+    "@loomwork/ui-renderer-conformance": "workspace:*",
+    "@loomwork/ui-renderer-lit": "workspace:*",
+    "@loomwork/ui-renderer-terminal": "workspace:*",
+    "@loomwork/blueprint-runtime": "*",
+    "@loomwork/projection-runtime": "*",
+    "@loomwork/core": "*",
+    "@loomwork/plugin-content": "*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

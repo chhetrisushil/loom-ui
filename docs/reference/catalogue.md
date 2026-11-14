@@ -34,7 +34,7 @@ data, and, per surface, which loom widget kind draws it there. Nothing outside i
 a node naming an unknown entry is an `unknown-type` finding. The catalogue is extensible when you
 build it and closed at run time.
 
-`defineSemanticCatalog` (`@loom-ui/core`) returns its argument unchanged and only types it. The
+`defineSemanticCatalog` (`@loomwork/ui-core`) returns its argument unchanged and only types it. The
 example below is a complete minimal catalogue: a `Metric` drawn as a `Kpi`, a `Gauge` that degrades
 to `Metric` on the terminal, and a `Remark` drawn as a `Note`.
 
@@ -48,8 +48,8 @@ import {
   genesis,
   resolveSurface,
   validateExperience,
-} from "@loom-ui/core";
-import { frameworkKindContracts } from "@loom-ui/renderer-lit/dom";
+} from "@loomwork/ui-core";
+import { frameworkKindContracts } from "@loomwork/ui-renderer-lit/dom";
 ```
 
 <!-- snippet: catalogue in catalogue.test.ts -->
@@ -119,11 +119,11 @@ A semantic NODE carries `type` and `typeVersion`; the catalogue entry it names c
 | `surfaces` | `Partial<Record<Surface, SurfaceResolution>>` | yes | Per surface, how the entry is drawn. May be empty, but then every node of the type is `unresolvable-on-surface`. |
 
 A `Surface` is any non-empty string. `WELL_KNOWN_SURFACES` is `["web", "terminal"]`: the two with
-first-party renderers (`@loom-ui/renderer-lit`, `@loom-ui/renderer-terminal`). Any other name
+first-party renderers (`@loomwork/ui-renderer-lit`, `@loomwork/ui-renderer-terminal`). Any other name
 (`"voice"`, `"native"`) is the host's own modality; the framework only uses it as the key
 `resolveSurface` looks up.
 
-`chatCatalogEntries()` (`@loom-ui/core/chat`) and `mediaCatalogEntries()` (`@loom-ui/core/media`)
+`chatCatalogEntries()` (`@loomwork/ui-core/chat`) and `mediaCatalogEntries()` (`@loomwork/ui-core/media`)
 return ready-made entries for the chat, input and media kinds (versions `1.1.0` and `1.0.0`), each
 resolving to the framework kind on `web` and `terminal` by default; splice them into `entries`.
 A planner is offered those kinds only if they are in the catalogue.
@@ -250,10 +250,10 @@ it:
 
 | Export | Entry | Kinds |
 | --- | --- | --- |
-| `frameworkKindContracts` | `@loom-ui/renderer-lit` (and `/dom`) | `TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `A2UIView`, `SandboxView` |
-| `diagramKindContracts` | `@loom-ui/renderer-lit/diagram` | `Diagram` |
-| `mediaKindContracts` | `@loom-ui/renderer-lit/media` | `Image`, `Audio`, `Video`, `File`, `MediaInput` |
-| `chatKindContracts` | `@loom-ui/renderer-lit/chat` | `Chat`, `TextInput`, `FormInput`, `SelectInput`, `MultiSelectInput` |
+| `frameworkKindContracts` | `@loomwork/ui-renderer-lit` (and `/dom`) | `TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `A2UIView`, `SandboxView` |
+| `diagramKindContracts` | `@loomwork/ui-renderer-lit/diagram` | `Diagram` |
+| `mediaKindContracts` | `@loomwork/ui-renderer-lit/media` | `Image`, `Audio`, `Video`, `File`, `MediaInput` |
+| `chatKindContracts` | `@loomwork/ui-renderer-lit/chat` | `Chat`, `TextInput`, `FormInput`, `SelectInput`, `MultiSelectInput` |
 
 Each item is `{ kind, props, binding }`, exactly the `KindContract` an entry's `surfaces.web` takes
 (see `contractOf` above). The `props` are what loom lets reach the widget, so a prop a kind reads
@@ -266,7 +266,7 @@ characters). A framework kind keeps its own contract.
 
 ## Kinds at a glance
 
-`FRAMEWORK_KINDS` (`@loom-ui/core`) lists the kinds loom-ui adds to loom's. It is an open set that
+`FRAMEWORK_KINDS` (`@loomwork/ui-core`) lists the kinds loom-ui adds to loom's. It is an open set that
 grows: check that the kinds you draw are present rather than pinning its length. Today: `TimeSeries`,
 `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `Diagram`, `A2UIView`, `SandboxView`, the
 media kinds `Image`, `Audio`, `Video`, `File` and `MediaInput`, and the chat kinds `Chat`,
@@ -281,22 +281,22 @@ media kinds `Image`, `Audio`, `Video`, `File` and `MediaInput`, and the chat kin
 | `StatusCard` | bound | `StatusCardValue` | `lu-status-card` | default registry |
 | `Note` | static | none | `lu-note` | default registry |
 | `Prose` | bound | `ProseValue` | `lu-prose` | default registry |
-| `Diagram` | bound | `DiagramValue` | `lu-diagram` | `@loom-ui/renderer-lit/diagram` |
+| `Diagram` | bound | `DiagramValue` | `lu-diagram` | `@loomwork/ui-renderer-lit/diagram` |
 | `A2UIView` | bound | any JSON | `lu-a2ui-widget` | default registry |
 | `SandboxView` | bound | any JSON | `lu-sandbox-widget` | default registry |
-| `Image`, `Audio`, `Video`, `File` | bound | `MediaRef` | `lu-image`, `lu-audio`, `lu-video`, `lu-file` | `@loom-ui/renderer-lit/media` |
-| `MediaInput` | static | none | `lu-media-input` | `@loom-ui/renderer-lit/media` |
-| `Chat` | bound | `ChatValue` | `lu-chat` | `@loom-ui/renderer-lit/chat` |
-| `TextInput`, `FormInput` | static | none | `lu-text-input`, `lu-form-input` | `@loom-ui/renderer-lit/chat` |
-| `SelectInput` | optional | `string` | `lu-select-input` | `@loom-ui/renderer-lit/chat` |
-| `MultiSelectInput` | bound | `MultiSelectValue` | `lu-multi-select-input` | `@loom-ui/renderer-lit/chat` |
+| `Image`, `Audio`, `Video`, `File` | bound | `MediaRef` | `lu-image`, `lu-audio`, `lu-video`, `lu-file` | `@loomwork/ui-renderer-lit/media` |
+| `MediaInput` | static | none | `lu-media-input` | `@loomwork/ui-renderer-lit/media` |
+| `Chat` | bound | `ChatValue` | `lu-chat` | `@loomwork/ui-renderer-lit/chat` |
+| `TextInput`, `FormInput` | static | none | `lu-text-input`, `lu-form-input` | `@loomwork/ui-renderer-lit/chat` |
+| `SelectInput` | optional | `string` | `lu-select-input` | `@loomwork/ui-renderer-lit/chat` |
+| `MultiSelectInput` | bound | `MultiSelectValue` | `lu-multi-select-input` | `@loomwork/ui-renderer-lit/chat` |
 
 "Default registry" is `litRegistry` / `createLitRegistry()`. For a kind with an opt-in entry the
 default registry draws a fixed placeholder (`lu-media-missing`, `lu-chat-missing`,
 `lu-diagram-missing`) until you use `createMediaLitRegistry()`, `createChatLitRegistry()` or
 `createDiagramLitRegistry()` (or the matching `register...Widgets(registry)`). Defining the elements
-is separate: `import "@loom-ui/renderer-lit/register"` defines every one, or import
-`@loom-ui/renderer-lit/elements/<module>` for just yours (`lu-kpi`, `lu-table`, `lu-media`,
+is separate: `import "@loomwork/ui-renderer-lit/register"` defines every one, or import
+`@loomwork/ui-renderer-lit/elements/<module>` for just yours (`lu-kpi`, `lu-table`, `lu-media`,
 `lu-chat`, `lu-inputs`, `lu-diagram`, ...). The opt-in entries define their own elements when
 registered.
 
@@ -413,7 +413,7 @@ Terminal: `Title: [ok] headline — detail` (the level word is a catalogue messa
 
 ### Diagram
 
-Bound, `DiagramValue`, drawn only by the opt-in entry (`@loom-ui/renderer-lit/diagram`; without it
+Bound, `DiagramValue`, drawn only by the opt-in entry (`@loomwork/ui-renderer-lit/diagram`; without it
 `lu-diagram-missing` is drawn). Full rules and the reshaping advice are in
 [Diagrams](composition.md#diagrams).
 
@@ -452,7 +452,7 @@ Bound, `ProseValue`: a long document drawn block by block.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `format` | `"markdown"` \| `"org"` \| `"plain"`, required | Markdown and org go through the parsers in `@loom-ui/core/document`; HTML is never interpreted. |
+| `format` | `"markdown"` \| `"org"` \| `"plain"`, required | Markdown and org go through the parsers in `@loomwork/ui-core/document`; HTML is never interpreted. |
 | `text` | string, required | Over `MD_DOC_MAX_TEXT` (1,048,576 characters) it is cut and says so. |
 | `truncated` | boolean | The source already cut the text; the widget says so. |
 | `focus` | `{ from, to }` | Non-negative integer character offsets into `text`; that range is marked and scrolled into view. |
@@ -485,9 +485,9 @@ emits `SANDBOX_ACTION`. Terminal: a fixed line saying the component is a web sur
 ## Media kinds
 
 Media is claim-checked by ADDRESS: the value is a `MediaRef`, never bytes, and a host-supplied
-resolver turns it into a viewer-scoped URL. Opt-in entry `@loom-ui/renderer-lit/media`. The full
+resolver turns it into a viewer-scoped URL. Opt-in entry `@loomwork/ui-renderer-lit/media`. The full
 host seams (`MediaResolver`, `MediaPolicy`, upload) are in the
-[`@loom-ui/core` README](../../packages/core/README.md).
+[`@loomwork/ui-core` README](../../packages/core/README.md).
 
 ### Image, Audio, Video, File
 
@@ -523,7 +523,7 @@ file to the host's `upload` handler; on success it emits `MEDIA_ATTACH` with the
 
 ## Conversation and input kinds
 
-Opt-in entry `@loom-ui/renderer-lit/chat`. Entries come from `chatCatalogEntries()`. Props are an
+Opt-in entry `@loomwork/ui-renderer-lit/chat`. Entries come from `chatCatalogEntries()`. Props are an
 allow-list: a composer can never author transcript content or a value "entered" by a user, so any
 other prop (`entries`, `value`, `defaultValue`, `text`, ...) is `chat-prop-forbidden`.
 `submitLabel`-style text props are short text (1 to 200 characters, or a `LocalizedText`).
@@ -654,7 +654,7 @@ emits `REF_OPEN`. Details: [Source references](composition.md#source-references)
 `Diagram`. Precedence is the value's own, then the widget prop, then a legacy `unit`.
 
 **When a value breaks its contract.** `checkKindValue(kind, value, contracts?)` (from
-`@loom-ui/core`, or zod-free from `@loom-ui/core/browser`) returns `{ ok: true }` or
+`@loomwork/ui-core`, or zod-free from `@loomwork/ui-core/browser`) returns `{ ok: true }` or
 `{ ok: false, finding }`, where the finding is `{ code: "value-contract", severity: "error",
 message }` and the message reads `value for kind "Table" does not match its contract at rows.0.1:
 <reason>` (the path of the first issue, or `<root>`). An `undefined` value ("not hydrated yet") and an

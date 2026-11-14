@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { canonicalJson, fnv1a64 } from "@loom/core";
+import { canonicalJson, fnv1a64 } from "@loomwork/core";
 import type { DecisionRef } from "./links";
 
 // ── The vote ledger (U11) ─────────────────────────────────────────────────────
@@ -7,7 +7,7 @@ import type { DecisionRef } from "./links";
 // deterministic FOLD of it. That one choice buys the properties the reward path needs:
 //
 //   - DURABLE and CAS-safe across replicas: the log's append refuses a taken sequence slot (the
-//     same seam as `@loom-ui/lineage`'s `LineageStore`; `eventStoreLineageStore(eventStore)` over
+//     same seam as `@loomwork/ui-lineage`'s `LineageStore`; `eventStoreLineageStore(eventStore)` over
 //     SQLite/Postgres satisfies `VoteLog` as is). Two replicas ingesting at once just interleave;
 //   - ONE BOUNDED VOTE PER VIEWER: the fold aggregates a viewer's signals first (capped counts, max
 //     dwell bucket, latest rating, outcomes by host-registered name, a bounded set of nodes), then
@@ -34,7 +34,7 @@ export type VoteAppend =
   | { readonly ok: true; readonly sequence: number }
   | { readonly ok: false; readonly tip: number };
 
-/** Structurally `@loom-ui/lineage`'s `LineageStore` (append-if-tip + read). */
+/** Structurally `@loomwork/ui-lineage`'s `LineageStore` (append-if-tip + read). */
 export interface VoteLog {
   /** Append as `expectedSequence + 1` iff the tip is exactly `expectedSequence`; never overwrite. */
   append(stream: string, expectedSequence: number, record: VoteLogRecord): Promise<VoteAppend>;

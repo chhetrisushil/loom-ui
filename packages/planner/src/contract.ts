@@ -1,3 +1,4 @@
+import type { DataClass } from "@loomwork/classify";
 import {
   type ContainerRoleSpec,
   type RoleChild,
@@ -7,8 +8,7 @@ import {
   compareVersions,
   findEntry,
   roleChildProblems,
-} from "@loom-ui/core";
-import type { DataClass } from "@loom/classify";
+} from "@loomwork/ui-core";
 import { z } from "zod";
 import type { CapabilityRef } from "./spi";
 

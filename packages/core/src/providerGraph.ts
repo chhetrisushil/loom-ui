@@ -1,7 +1,7 @@
 import type { Finding } from "./experience";
 
 // Provider-graph integrity, as pure findings. ZERO runtime imports: this module rides the
-// zod-free `@loom-ui/core/browser` entry (`browserEntry.test.ts` fails on a byte of zod), so a
+// zod-free `@loomwork/ui-core/browser` entry (`browserEntry.test.ts` fails on a byte of zod), so a
 // client can preview the same verdict the server's `validateExperience` reaches.
 //
 // What is checked, per provider (iterated in sorted handle order, so the output is deterministic):
@@ -36,7 +36,7 @@ export interface GraphProvider {
   readonly executionGraph: readonly GraphStep[];
 }
 
-// The grammar hydration resolves (`STEP_TEMPLATE` in `@loom-ui/hydration`): a WHOLE string.
+// The grammar hydration resolves (`STEP_TEMPLATE` in `@loomwork/ui-hydration`): a WHOLE string.
 const STEP_TEMPLATE = /^\{\{steps\.([A-Za-z0-9_-]+)\.output(?:\.(.+))?\}\}$/;
 
 /** Names listed in a message; the count is always exact, the list is capped. */

@@ -1,4 +1,4 @@
-import { canonicalJson } from "@loom/core";
+import { canonicalJson } from "@loomwork/core";
 import { describe, expect, it } from "vitest";
 import { declareHandle } from "./declareHandle.test-support";
 import { genesis } from "./experience";

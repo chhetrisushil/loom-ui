@@ -1,4 +1,4 @@
-import type { Finding, MCPToolNode } from "@loom-ui/core";
+import type { Finding, MCPToolNode } from "@loomwork/ui-core";
 
 // ── Graph scheduling and argument templating ──────────────────────────────────
 // A ProviderSpec's executionGraph is a DAG of MCP steps. Steps run in topological WAVES (every

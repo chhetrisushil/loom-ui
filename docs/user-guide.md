@@ -73,9 +73,12 @@ reproduce it.
 <!-- snippet: imports -->
 
 ```ts
-import { type Operation, compile, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loom-ui/hydration/client";
+import { type Operation, compile, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import {
+  HYDRATION_PROJECTION_ID,
+  HYDRATION_PROJECTION_VERSION,
+} from "@loomwork/ui-hydration/client";
 ```
 
 <!-- snippet: address -->
@@ -126,7 +129,7 @@ resolution: the loom widget **kind** that draws it there (with its contract), or
 another entry. A surface is an open string: `web` and `terminal` have first-party renderers; any
 other name is the host's own modality. A planner may only name catalogue entries. The framework's
 own kinds (`TimeSeries`, `BarChart`, `Kpi`, `Table`, `StatusCard`, `Note`, `Prose`, `Diagram`, `A2UIView`,
-`SandboxView`, plus media, chat and input kinds; see the [catalogue and widget reference](reference/catalogue.md)) have value contracts declared once, in `@loom-ui/core`.
+`SandboxView`, plus media, chat and input kinds; see the [catalogue and widget reference](reference/catalogue.md)) have value contracts declared once, in `@loomwork/ui-core`.
 
 ### Compile and findings
 
@@ -158,18 +161,18 @@ not see as a placeholder, a broadcast audience as a redacted widget, and the dat
 
 | Need | Import |
 | --- | --- |
-| Build, edit, replay, compile (Node or browser) | `@loom-ui/core` (zod-free browser slice: `@loom-ui/core/browser`) |
-| Seal, store and read artifacts (Node: touches hashing) | `@loom-ui/core/log` |
-| Media, chat, signals, i18n words | `@loom-ui/core/media`, `/chat`, `/chat-ui`, `/signals`, `/messages` |
-| Run providers (server) | `@loom-ui/hydration` |
-| Load handles from a browser | `@loom-ui/hydration/client` |
-| Terminal rendering | `@loom-ui/renderer-terminal` |
-| Web rendering (bundler only) | `@loom-ui/renderer-lit/dom`, `/register`, `/containers`, `/media`, `/chat`, `/diagram`, `/signals`, `/elements/<name>` |
-| Compose with a model | `@loom-ui/planner` (server) |
-| Head, versions, undo, seen log | `@loom-ui/lineage` (server) |
-| Change feed, unread counts | `@loom-ui/changes` (server) |
-| Interaction signals to rewards | `@loom-ui/learning` (server) |
-| Prove a renderer | `@loom-ui/renderer-conformance`, `/vitest` |
+| Build, edit, replay, compile (Node or browser) | `@loomwork/ui-core` (zod-free browser slice: `@loomwork/ui-core/browser`) |
+| Seal, store and read artifacts (Node: touches hashing) | `@loomwork/ui-core/log` |
+| Media, chat, signals, i18n words | `@loomwork/ui-core/media`, `/chat`, `/chat-ui`, `/signals`, `/messages` |
+| Run providers (server) | `@loomwork/ui-hydration` |
+| Load handles from a browser | `@loomwork/ui-hydration/client` |
+| Terminal rendering | `@loomwork/ui-renderer-terminal` |
+| Web rendering (bundler only) | `@loomwork/ui-renderer-lit/dom`, `/register`, `/containers`, `/media`, `/chat`, `/diagram`, `/signals`, `/elements/<name>` |
+| Compose with a model | `@loomwork/ui-planner` (server) |
+| Head, versions, undo, seen log | `@loomwork/ui-lineage` (server) |
+| Change feed, unread counts | `@loomwork/ui-changes` (server) |
+| Interaction signals to rewards | `@loomwork/ui-learning` (server) |
+| Prove a renderer | `@loomwork/ui-renderer-conformance`, `/vitest` |
 
 Per-package detail is in each [package README](../packages). loom-ui consumes the unpublished loom
 checkout beside it; see [getting started](getting-started.md#prerequisites).
@@ -195,5 +198,5 @@ Every ` ```ts ` block here and in the guides is either mirrored from a test unde
 [`docs/snippets`](snippets) (it type-checks under `pnpm typecheck:tests` and
 runs under `pnpm test`, and a test fails if the doc and the code differ) or carries an
 `<!-- illustrative: reason -->` marker saying why it is not compiled. Imports are checked against the
-built `.d.ts` of the entry point they name, including subpaths such as `@loom-ui/core/log` and
-`@loom-ui/hydration/client`.
+built `.d.ts` of the entry point they name, including subpaths such as `@loomwork/ui-core/log` and
+`@loomwork/ui-hydration/client`.

@@ -1,21 +1,21 @@
 import { createHash } from "node:crypto";
+import { isTainted, unwrapTainted } from "@loomwork/classify";
+import { EffectRuntime } from "@loomwork/effect-runtime";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import {
+  SANDBOX_TOOL_ID,
+  type SandboxLimits,
+  type ScriptReader,
+  registerSandboxEval,
+} from "@loomwork/plugin-sandbox";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type Experience,
   type Finding,
   type ProviderSpec,
   genesis,
-} from "@loom-ui/core";
-import { isTainted, unwrapTainted } from "@loom/classify";
-import { EffectRuntime } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import {
-  SANDBOX_TOOL_ID,
-  type SandboxLimits,
-  type ScriptReader,
-  registerSandboxEval,
-} from "@loom/plugin-sandbox";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
 import { afterEach, describe, expect, it } from "vitest";
 import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";

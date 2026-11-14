@@ -1,4 +1,3 @@
-import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loom-ui/core/browser";
 import {
   type Blueprint,
   type IdentityReport,
@@ -6,8 +5,9 @@ import {
   type WidgetAction,
   preservesBlueprintNodes,
   resolveWidgetStatus,
-} from "@loom/blueprint-runtime";
-import type { ProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/blueprint-runtime";
+import type { ProjectionRuntime } from "@loomwork/projection-runtime";
+import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loomwork/ui-core/browser";
 import { type Accumulator, reconcileRoot, remountedOf } from "./reconcile";
 import {
   type DomContainerRegistry,
@@ -48,7 +48,7 @@ export interface DomRenderOptions {
   readonly onAction?: (action: StampedAction & WidgetAction) => unknown;
   /**
    * The compile fingerprint of THIS view (`compileFingerprint({ clearance, locale,
-   * ...result.fingerprint })` from `@loom-ui/core`): what the Blueprint depends on besides the Experience. Stamped
+   * ...result.fingerprint })` from `@loomwork/ui-core`): what the Blueprint depends on besides the Experience. Stamped
    * on every action as `viewedVersion.compile`, so a host that serves the viewer a different
    * redaction/locale can refuse an action taken on the other one. Optional; the renderer cannot
    * derive it (it never sees the compile options).
@@ -72,7 +72,7 @@ export interface DomRenderOptions {
    * onVisible: (w) => { const h = w.binding && handleOfPath(w.binding.path); if (h) controller.markVisible(h); }
    * ```
    *
-   * (`handleOfPath` is `@loom-ui/hydration/client`'s; the renderer itself knows nothing of hydration.)
+   * (`handleOfPath` is `@loomwork/ui-hydration/client`'s; the renderer itself knows nothing of hydration.)
    * Without an `IntersectionObserver` every bound widget is reported at once (fail open). Absent
    * `onVisible`, nothing is observed. Fixed for the handle's lifetime.
    */

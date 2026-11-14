@@ -4,7 +4,7 @@
 the nodes users are looking at, detect a stale author, and merge two lines of edits.
 
 **Prerequisites.** You have done the [getting-started](../getting-started.md) walkthrough. Imports
-come from `@loom-ui/core` (pure and isomorphic) and, for sealing, `@loom-ui/core/log`.
+come from `@loomwork/ui-core` (pure and isomorphic) and, for sealing, `@loomwork/ui-core/log`.
 
 The snippets here are mirrored from
 [`composing.test.ts`](../snippets/src/composing.test.ts) and start from the sealed
@@ -24,8 +24,8 @@ import {
   preservesNodes,
   replay,
   validateExperience,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 ```
 
 ## The model in one paragraph
@@ -198,7 +198,7 @@ const errors = v.findings.filter((f) => f.severity === "error");
 ## See also
 
 - Reference: [composition](../reference/composition.md).
-- Package: [`@loom-ui/core`](../../packages/core/README.md).
+- Package: [`@loomwork/ui-core`](../../packages/core/README.md).
 - Examples (in `loom-examples`): `experience-merge` (the merge conflicts above, with a rota board),
   `experience-recompose` (revise a live board in place), `experience-layout` (placement and titles).
 - Next: [hydration](hydration.md), [rendering](rendering.md).

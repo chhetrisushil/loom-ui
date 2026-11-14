@@ -1,4 +1,4 @@
-import type { Audience, ProvenanceLedger } from "@loom-ui/core";
+import type { Audience, ProvenanceLedger } from "@loomwork/ui-core";
 
 // ── Decision linkage (U11) ────────────────────────────────────────────────────
 // A reward is attributed to a loom DECISION of a loom EXECUTION. The surface a viewer saw is a

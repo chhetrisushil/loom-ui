@@ -8,12 +8,12 @@ import {
   formatTimeLabel,
   semanticNumberFormatOptions,
   unitSuffix,
-} from "@loom-ui/core/browser";
+} from "@loomwork/ui-core/browser";
 import { formattingLocale } from "./i18n";
 import { say } from "./say";
 
 // One declaration of what a number means, and of the semantics→format-options mapping it
-// implies, in `@loom-ui/core` beside the value contracts that carry it; both this DOM renderer
+// implies, in `@loomwork/ui-core` beside the value contracts that carry it; both this DOM renderer
 // and the terminal renderer (which cannot import this ESM/lit package) read the same source
 // instead of each re-deriving it, so a KPI badge and its terminal line never drift apart.
 export type { SemanticFormat };
@@ -22,7 +22,7 @@ export { DELTA_FORMAT, deltaDirection, effectiveFormat, formatFromUnit, unitSuff
 /** An em dash, not "∞" and not "NaN": a missing figure, never an infinite one. */
 const NOT_A_NUMBER = "—";
 
-// The semantics→Intl.NumberFormat-options mapping lives once, in @loom-ui/core, so this DOM
+// The semantics→Intl.NumberFormat-options mapping lives once, in @loomwork/ui-core, so this DOM
 // renderer and the terminal renderer (which cannot import this ESM/lit package) apply identical
 // rounding/grouping/currency rules instead of each re-deriving them from the contract.
 function numberFormat(f: SemanticFormat, locale: string): Intl.NumberFormat {

@@ -1,4 +1,4 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 import { type SemanticCatalog, type Surface, resolveSurface } from "./catalog";
 import { isChatKind } from "./chatValue";
 import { type DeclaredToolClasses, type UndeclaredToolPolicy, effectiveClasses } from "./classes";

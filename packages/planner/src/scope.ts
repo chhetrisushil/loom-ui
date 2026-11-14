@@ -1,4 +1,4 @@
-import type { TransientInvoker } from "@loom-ui/hydration/client";
+import type { TransientInvoker } from "@loomwork/ui-hydration/client";
 import type { DecideScope, PlannerDeltaSink } from "./spi";
 
 /** A {@link TransientInvoker} that also forwards a per-call delta sink to the scope. */

@@ -1,27 +1,27 @@
-# @loom-ui/renderer-conformance
+# @loomwork/ui-renderer-conformance
 
-One set of contract checks that **any** loom-ui renderer runs: `@loom-ui/renderer-lit`,
-`@loom-ui/renderer-terminal`, and a third party's React / native / voice surface. A renderer is
+One set of contract checks that **any** loom-ui renderer runs: `@loomwork/ui-renderer-lit`,
+`@loomwork/ui-renderer-terminal`, and a third party's React / native / voice surface. A renderer is
 anything that takes loom's `Blueprint` plus the values bound to it and shows them. This kit is how
 you prove yours honours the contract without forking loom-ui.
 
-ESM, like `@loom-ui/renderer-lit`; its consumer is a bundler or vitest, not a plain Node `import()`.
+ESM, like `@loomwork/ui-renderer-lit`; its consumer is a bundler or vitest, not a plain Node `import()`.
 
 ## Install / import
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/renderer-conformance": "link:../loom-ui/packages/renderer-conformance"
+"@loomwork/ui-renderer-conformance": "link:../loom-ui/packages/renderer-conformance"
 ```
 
-Entry points: `@loom-ui/renderer-conformance` (the checks and report) and
-`@loom-ui/renderer-conformance/vitest` (a vitest harness).
+Entry points: `@loomwork/ui-renderer-conformance` (the checks and report) and
+`@loomwork/ui-renderer-conformance/vitest` (a vitest harness).
 
 ## Run it
 
 ```ts
 // my-renderer/src/conformance.test.ts
-import { describeRendererConformance } from "@loom-ui/renderer-conformance/vitest";
+import { describeRendererConformance } from "@loomwork/ui-renderer-conformance/vitest";
 import { myAdapter } from "./myAdapter";
 
 describeRendererConformance(myAdapter, { forbidSkips: true }); // one `it` per check
@@ -102,12 +102,12 @@ requires the kit to name that clause.
 
 You need three things, none of them loom-ui internals:
 
-1. **Read the Blueprint.** It is loom's own IR (`@loom/blueprint-runtime`): a `layout` tree of
+1. **Read the Blueprint.** It is loom's own IR (`@loomwork/blueprint-runtime`): a `layout` tree of
    `grid` / `flex` / `stack` containers (a grid child is a `GridCell { node }`) and `Widget`s with a
    `kind`, `title`, `props` and an optional `binding`. Walk it; look the widget's kind up in your
    own table.
 2. **Honour the status matrix and the contract.** A bound widget's value and status live in the
-   projection state at `binding.path` / `binding.status.path`. Use `@loom-ui/core`'s
+   projection state at `binding.path` / `binding.status.path`. Use `@loomwork/ui-core`'s
    `checkKindValue(kind, value)` to validate a value against the kind's contract, `createSay(i18n)`
    for every fixed word (never hard-code English), and `chatTranscriptLines`, `describeMedia`,
    `formatSemanticNumber` and the `validate*Value` helpers so your words and numbers agree with the
@@ -117,9 +117,9 @@ You need three things, none of them loom-ui internals:
 
 Then write the adapter and run the kit. `src/speech.test-support.ts` is a complete, working
 "voice" renderer in about 180 lines that speaks a Blueprint as sentences and passes every check,
-with nothing skipped; copy it as a starting point. `@loom-ui/renderer-lit/src/conformance.test.ts`
-and `@loom-ui/renderer-terminal/src/conformance.test.ts` show the same kit against a DOM and a
-terminal renderer. The lit adapter must `import "@loom-ui/renderer-lit/register"` (inside that
+with nothing skipped; copy it as a starting point. `@loomwork/ui-renderer-lit/src/conformance.test.ts`
+and `@loomwork/ui-renderer-terminal/src/conformance.test.ts` show the same kit against a DOM and a
+terminal renderer. The lit adapter must `import "@loomwork/ui-renderer-lit/register"` (inside that
 package, `./register`) first: importing the renderer no longer defines its custom elements.
 
 Container roles: a role your renderer does not know is the plain container (loom ADR 0099). If you

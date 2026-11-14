@@ -1,7 +1,7 @@
-import type { MCPToolNode, ProviderSpec } from "@loom-ui/core";
-import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { TypedFailure } from "@loomwork/core";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { SANDBOX_TOOL_ID } from "@loomwork/plugin-sandbox";
+import type { MCPToolNode, ProviderSpec } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { checkDataProviderConformance, defineDataProviders, mcpProvider } from "./dataProvider";

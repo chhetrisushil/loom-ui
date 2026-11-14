@@ -1,18 +1,18 @@
-import type { ContainerRoleSpec } from "@loom-ui/core";
-import { canonicalJson, fnv1a64 } from "@loom/core";
+import { canonicalJson, fnv1a64 } from "@loomwork/core";
 import type {
   Policy,
   PolicyChoice,
   PolicyContext,
   PolicyResolver,
   RolloutSource,
-} from "@loom/learning";
+} from "@loomwork/learning";
+import type { ContainerRoleSpec } from "@loomwork/ui-core";
 
 // ── Planner variants (U11) ────────────────────────────────────────────────────
 // A variant is a named way of asking the SAME planner for the SAME surface: which container roles it
 // may draw with, and an application-authored line of layout guidance. Choosing among variants is a
 // loom DECISION made through `decideWithPolicy`, so it is recorded with its context, the alternatives
-// and the policy's PROPENSITY — which is what lets `@loom/learning` evaluate a variant off-policy
+// and the policy's PROPENSITY — which is what lets `@loomwork/learning` evaluate a variant off-policy
 // from the log (SNIPS) and what makes a late reward attributable to the choice that earned it.
 //
 // The choice is made BEFORE the model is called and is part of the plan decision's id (a plan made
@@ -68,7 +68,7 @@ export type PlanVariants = PlanVariantSet &
         /**
          * Chooses a variant id from the variant ids. Its context is `{ kind, unit, key, catalogId }`.
          * `stableBucketPolicy`, `epsilonGreedyPolicy` and `ucbPolicy` below are the shipped shapes; any
-         * `@loom/learning` `Policy<string>` works (a learned one included).
+         * `@loomwork/learning` `Policy<string>` works (a learned one included).
          */
         readonly policy: Policy<string>;
         readonly rollout?: undefined;

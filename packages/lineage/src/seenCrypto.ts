@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from "node:crypto";
-import type { Finding } from "@loom-ui/core";
+import type { Finding } from "@loomwork/ui-core";
 
 // ── Per-viewer data keys for the record of what a viewer saw (U12) ─────────────────────────────
-// WHY THIS IS HERE AND NOT `@loom/plugin-crypto`'s `shredSubject`: loom's shredder refuses the
+// WHY THIS IS HERE AND NOT `@loomwork/plugin-crypto`'s `shredSubject`: loom's shredder refuses the
 // reserved `__loom_*` streams (a logged loom follow-up), and a seen log has to live in one. What IS
 // reused is the SHAPE of loom's `KeyStore` (getOrCreate / get / destroy, destroy = the erasure
 // primitive, never resurrected): a host's existing KMS-backed `KeyStore` satisfies `SeenKeyStore`

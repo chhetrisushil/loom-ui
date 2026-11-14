@@ -1,5 +1,5 @@
 {
-  "name": "@loom-ui/renderer-lit",
+  "name": "@loomwork/ui-renderer-lit",
   "version": "0.1.0",
   "description": "loom DOM renderer adapter + Lit widgets registered under loom kinds; the framework's web surface beside loom's React renderer",
   "type": "module",
@@ -52,14 +52,14 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:^",
-    "@loom/blueprint-runtime": "^0.1.0",
-    "@loom/projection-runtime": "^0.1.0",
+    "@loomwork/ui-core": "workspace:^",
+    "@loomwork/blueprint-runtime": "^0.1.0",
+    "@loomwork/projection-runtime": "^0.1.0",
     "lit": "catalog:"
   },
   "devDependencies": {
-    "@loom-ui/hydration": "workspace:^",
-    "@loom-ui/renderer-conformance": "workspace:^",
+    "@loomwork/ui-hydration": "workspace:^",
+    "@loomwork/ui-renderer-conformance": "workspace:^",
     "@types/node": "catalog:",
     "esbuild": "0.21.5",
     "happy-dom": "catalog:",

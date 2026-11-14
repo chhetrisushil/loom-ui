@@ -1,4 +1,4 @@
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { createLoomUiTerminalRegistry, loomUiTerminalRegistry, terminalRegistry } from "./registry";
 

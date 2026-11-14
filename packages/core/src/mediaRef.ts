@@ -14,8 +14,8 @@
 // that composes a tree cannot author one: see {@link mediaPropFindings}), never part of a Blueprint,
 // and never in a finding or an error message (every message here is value-free).
 //
-// Zod-free and DOM-free on purpose: a browser renderer gets the contract from `@loom-ui/core/browser` (it is part of `checkKindValue`),
-// and the rest of the media surface from `@loom-ui/core/media`.
+// Zod-free and DOM-free on purpose: a browser renderer gets the contract from `@loomwork/ui-core/browser` (it is part of `checkKindValue`),
+// and the rest of the media surface from `@loomwork/ui-core/media`.
 
 /** The kinds that DISPLAY a content ref. The widget kinds are framework-owned; an app catalogue names them. */
 export const MEDIA_KINDS = ["Image", "Audio", "Video", "File"] as const;

@@ -1,10 +1,10 @@
+import { tainted } from "@loomwork/classify";
 import {
   type Experience,
   type Intent,
   type SemanticCatalog,
   defineSemanticCatalog,
-} from "@loom-ui/core";
-import { tainted } from "@loom/classify";
+} from "@loomwork/ui-core";
 import type {
   CapabilityRef,
   DecideContext,

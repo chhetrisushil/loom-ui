@@ -1,23 +1,23 @@
-# @loom-ui/core
+# @loomwork/ui-core
 
 The Experience Model: the composed node tree, the operations that edit it with deterministic
 replay, the semantic catalogue a planner is allowed to name, the compiler that turns a composed
 Experience into a loom `Blueprint`, and a `./log` subpath for content-addressed persistence. It
-sits at the root of the loom-ui pipeline — an app (or a planner, via `@loom-ui/planner`) composes
-an Experience here; `@loom-ui/hydration` resolves the handles it binds; `@loom-ui/renderer-lit`
-and `@loom-ui/renderer-terminal` draw the `Blueprint` this package compiles. `@loom-ui/core` is
+sits at the root of the loom-ui pipeline — an app (or a planner, via `@loomwork/ui-planner`) composes
+an Experience here; `@loomwork/ui-hydration` resolves the handles it binds; `@loomwork/ui-renderer-lit`
+and `@loomwork/ui-renderer-terminal` draw the `Blueprint` this package compiles. `@loomwork/ui-core` is
 pure and isomorphic (no Node APIs) except for `./log`, which touches content hashing.
 
 ## Install / import
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/core": "link:../loom-ui/packages/core"
+"@loomwork/ui-core": "link:../loom-ui/packages/core"
 ```
 
 ```ts
-import { genesis, apply, compile } from "@loom-ui/core";
-import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
+import { genesis, apply, compile } from "@loomwork/ui-core";
+import { putExperience, EXPERIENCE_COMPOSED } from "@loomwork/ui-core/log";
 ```
 
 ## Key concepts
@@ -176,11 +176,11 @@ import { putExperience, EXPERIENCE_COMPOSED } from "@loom-ui/core/log";
   its fallback text); `opts.baseCatalog` is the loom catalogue built-in kinds resolve against
   (default `builtinCatalog`).
 - `Viewer` (`{ clearance?: DataClass }`), `mayView(viewer, sensitivity)`, `strictestClass` — who may
-  see which `Sensitivity` class (`@loom/classify`'s `secret > sensitive > internal`).
+  see which `Sensitivity` class (`@loomwork/classify`'s `secret > sensitive > internal`).
   `Intent.sensitivity` classifies the objective text itself.
 - `hydrationPath`, `hydrationStatusPath`, `HYDRATION_VALUES_PREFIX`, `HYDRATION_STATUS_PREFIX` — the
   compiled projection paths a binding's `values.<handle>` / `status.<handle>` live at. A browser
-  client maps `values.<handle>` back with `handleOfPath` from `@loom-ui/hydration/client`.
+  client maps `values.<handle>` back with `handleOfPath` from `@loomwork/ui-hydration/client`.
 - `experienceHandles(exp): HandleUse[]` — every bound handle, once, with its highest-priority use
   and the node ids that want it.
 - `handleKinds(exp, catalog, surface): Map<string, string[]>` — the widget kinds each bound handle
@@ -293,7 +293,7 @@ never forward them to the viewer.
   `day` / `datetime`, and an optional zone; UTC by default for a period) and the one formatter
   every renderer labels it with. See `docs/reference/composition.md` (Time semantics).
 
-### Media (U9, `@loom-ui/core/media`)
+### Media (U9, `@loomwork/ui-core/media`)
 
 Media is never bytes in an Experience, a Blueprint, a seen log or a change feed. Four DISPLAY kinds
 (`Image`, `Audio`, `Video`, `File`) are bound like any data widget; the bound value is a
@@ -457,7 +457,7 @@ placeholder.
 separators); `formatBytes` / `describeMedia` are the one description both surfaces use;
 `MEDIA_ATTACH_ACTION` (`"MEDIA_ATTACH"`, payload `{ ref }`) is what an upload emits.
 
-### Chat and inputs (U8, `@loom-ui/core/chat`)
+### Chat and inputs (U8, `@loomwork/ui-core/chat`)
 
 A conversation is five kinds. **`Chat`** is a transcript, bound like any data widget;
 **`TextInput`** and **`FormInput`** collect input and are static (props only; a value reaching one is a
@@ -479,7 +479,7 @@ or returns anything else (a custom `ReadonlySet` is refused), every choice is re
 must be distinct, at most `maxSelected`; the empty set is a valid choice.
 
 Core names no loom type: the transcript contract below is what loom's conversation
-layer (`@loom/conversation`, ADR 0122) emits once a client has folded it, but any source that can
+layer (`@loomwork/conversation`, ADR 0122) emits once a client has folded it, but any source that can
 say this much can feed the widget. `chatCatalogEntries()` returns the five semantic entries
 (`@1.1.0`) to splice into a catalogue; a catalogue without them cannot compose a chat node, so a
 planner is offered chat only if the host chose to.
@@ -564,7 +564,7 @@ Off by default: with it off the events are ignored (no finding) and no entry eve
 server sends reasoning only to the viewers allowed to see it (in a shared conversation the turn's asker AND
 the owner), the client never decides the audience (it renders every reasoning event it receives, restricted
 turns excepted), and the
-conversation server must opt in (`reasoning` on `@loom/plugin-conversation-sse`); the client renders what
+conversation server must opt in (`reasoning` on `@loomwork/plugin-conversation-sse`); the client renders what
 it gets and never assumes any. The live events do not say whether the text is the model's own reasoning or
 a provider summary, so the live label defaults to `summary` (never present a summary as the full chain of
 thought); `reasoning: { liveKind: "text" }` is for a provider that streams the raw reasoning.
@@ -591,7 +591,7 @@ restricted turn, or for another asker when the viewer is known, are not rendered
 sends them to the asker alone; this is the second line), the live reply is bounded like any stream
 (`appendChunk`, 64 K), the window is bounded (default and ceiling 500; a full window offers no "load
 earlier" that could not fit), the server's `error` event text is never read. The browser transport
-is `connectConversation` in `@loom-ui/hydration/client`. On the SERVER, `chatValueFromHistory(page,
+is `connectConversation` in `@loomwork/ui-hydration/client`. On the SERVER, `chatValueFromHistory(page,
 { viewer })` is the same fold over one history page (fetch it with `GET
 .../history?direction=backward`, the newest page: loom's route defaults to `forward` when
 `direction` is omitted, and `direction` here must match how the page was fetched): a host effect
@@ -673,7 +673,7 @@ cursor is the feed's own). Routed to a `conversationTarget` anyway it is refused
 unique, assistant entries only, refused on a restricted entry). Only when the value says `refMarkers: true` (set by
 `ChatFeed({ refMarkers: true })`, which also folds a wire `refs: string[]` into `refs`) does the widget process
 markers; otherwise text is drawn exactly as sent. `splitRefMarkers(text, known, { hideAll })` (zod-free, in
-`@loom-ui/core/chat-ui`) turns a listed marker into a `ref` segment numbered by first appearance of the id, removes
+`@loomwork/ui-core/chat-ui`) turns a listed marker into a `ref` segment numbered by first appearance of the id, removes
 every other marker with the one space before it, and with `hideAll` (a streaming reply) removes every marker and a
 half-written `[[...`. The widget draws each `ref` segment as a button it builds itself (chat stays text-only) and
 emits `CHAT_REF_OPEN { entryId, refId, n }`. It is a read: it carries no key, and routed to a `conversationTarget`
@@ -711,34 +711,34 @@ expressions, no defaults) and a bad one is `chat-prop-shape`; an unbound `Chat` 
 planner shapes WHERE a conversation goes and what its inputs are called, never what is said in one
 or what a person "entered".
 
-**Entries.** `@loom-ui/core/chat` is the host/folding surface; `@loom-ui/core/chat-ui` is the narrow
+**Entries.** `@loomwork/ui-core/chat` is the host/folding surface; `@loomwork/ui-core/chat-ui` is the narrow
 part a browser WIDGET needs (contract, text cleaner, validators, action vocabulary, shared words),
 because core is CommonJS and a bundler cannot drop an unused module behind a barrel.
 `chatTranscriptLines(value)` is the one-line-per-turn text both the terminal and a screen-reader
 summary use.
 
-### Browser entry (`@loom-ui/core/browser`)
+### Browser entry (`@loomwork/ui-core/browser`)
 
 The zod-free slice a browser renderer needs (the media CONTRACT rides in `checkKindValue`; the rest
-of the media surface is the separate `@loom-ui/core/media` subpath, so a page that draws no media
+of the media surface is the separate `@loomwork/ui-core/media` subpath, so a page that draws no media
 does not carry it): number formatting (`formatSemanticNumber`, `effectiveFormat`, `unitSuffix`,
 `deltaDirection`, `DELTA_FORMAT`), `checkKindValue` (a hand-written twin of the main entry's, same
 verdict and same finding message — pinned by a differential test against the zod contracts),
 `FRAMEWORK_KINDS`, `tableColumnLabel`/`tableColumnFormat`, `isLocalizedText`, the
 `hydrationPath`/`hydrationStatusPath` spellings, and the value types. The main entry's zod schemas
 cannot be tree-shaken (~60 kB minified in a page), so a bundle that imports the main entry pays for
-them; `@loom-ui/renderer-lit` imports this subpath and a bundle test holds it zod-free.
+them; `@loomwork/ui-renderer-lit` imports this subpath and a bundle test holds it zod-free.
 
 ### Document and messages entries
 
-- `@loom-ui/core/document` — the long-document parsers `parseMarkdownDocument` and `parseOrgDocument`
+- `@loomwork/ui-core/document` — the long-document parsers `parseMarkdownDocument` and `parseOrgDocument`
   (markdown and a closed Org subset into the bounded AST chat draws, with each top-level block's
   source range), plus `MD_DOC_MAX_NODES`, `MD_DOC_MAX_TABLE_ROWS`, `MD_DOC_MAX_TEXT`. Zod-free.
-- `@loom-ui/core/messages` — the fixed-words catalogue `LU_MESSAGES`, the typed key list
+- `@loomwork/ui-core/messages` — the fixed-words catalogue `LU_MESSAGES`, the typed key list
   `LU_MESSAGE_KEYS` (`LuMessageKey`), `LuI18n`, `createSay`, `sayEnglish`, `fill`, `lookupMessage`,
   `selectPlural`, `pluralForms`. Both renderers read it (see their READMEs).
 
-### Content log (`@loom-ui/core/log`)
+### Content log (`@loomwork/ui-core/log`)
 
 - `mintVersionHash(exp)`, `seal(exp)` — the content address (parse, then canonicalise) and the
   sealed Experience carrying it.
@@ -768,7 +768,7 @@ drifted version pin HIDES the node (fail-closed). Fail-closed for the viewer: an
 see, in either version, collapses into one bare `{ kind: "restricted-changed" }` (no id, type or
 count); no viewer = no clearance. `boundSummary` bounds and strips model text. `HeadChange` /
 `HeadSignal` are the types of a "this experience has a new head" signal (implementations:
-`@loom-ui/changes`). See [`@loom-ui/changes`](../changes/README.md).
+`@loomwork/ui-changes`). See [`@loomwork/ui-changes`](../changes/README.md).
 
 ### Provenance and "why is this here" (U12)
 
@@ -799,7 +799,7 @@ never called for a source the viewer may not see; the snapshot says only that so
 class from the artifact the record names, takes the stricter of that and the stamp, restamps, and
 withholds a missing or unknown stamp (no artifact = everything withheld). `seenToState` rebuilds the
 `values.<handle>` / `status.<handle>` store shape so a surface can be replayed as it was shown.
-Persistence is `@loom-ui/lineage`'s `SeenLog`: refs are sealed under a per-viewer key (erase a
+Persistence is `@loomwork/ui-lineage`'s `SeenLog`: refs are sealed under a per-viewer key (erase a
 viewer by destroying it), blobs are reclaimed by a mark-and-sweep collector, and old views roll off
 by retention.
 
@@ -861,7 +861,7 @@ their own ids (a refine addresses a node by `data-widget-id`).
   follow-up.
 - **Leak model.** Viewer-facing, and covered by the `opaqueIds` property test (random experiences x
   sensitivities x viewers; no hidden node's id or handle anywhere): the Blueprint (widget ids,
-  container ids, cells), `CompileResult.fingerprint`, `describeChange` / the `@loom-ui/changes` feed
+  container ids, cells), `CompileResult.fingerprint`, `describeChange` / the `@loomwork/ui-changes` feed
   (a restricted change is a bare `restricted-changed`; `identity` lists visible nodes only),
   `explainNode` / `Lineage.explain` (a hidden node is `{ available: false }`), `snapshotSeen` /
   `SeenLog` (`nodeIds` of viewable nodes only), the hydration findings and handle inventory (raised
@@ -882,11 +882,11 @@ user saw; a host compares it with the head before acting. `CurrentHead` is
 `{ experienceId, versionHash, bindingSeq?(widgetId), compile? }`: with `bindingSeq` a bound
 widget's stamped seq must equal the current one (else `data-moved`; unknown is `unverifiable`), with
 `compile` the view fingerprint must match. The renderer's `handle.head()` fills all of it. Also on
-`@loom-ui/core/browser` (no zod). See the renderer-lit README for the flow.
+`@loomwork/ui-core/browser` (no zod). See the renderer-lit README for the flow.
 
 ## Interaction signals (U11)
 
-`@loom-ui/core/signals` (opt-in subpath, no zod, no DOM) is the client half of the learning loop: a
+`@loomwork/ui-core/signals` (opt-in subpath, no zod, no DOM) is the client half of the learning loop: a
 `SignalCollector` that turns what a viewer did with a surface into bounded, content-free
 `InteractionSignal`s, and `validateSignalBatch`, the shared total validator a host runs on untrusted
 batches. Four facts only: `exposure` (a node was rendered and visible), `engagement` (a click/expand
@@ -900,7 +900,7 @@ is reported `restricted: true` under the alias it already has
 (`CompileResult.fingerprint.placeholderNodes`, new in U11 — the aliases of the placeholders that
 survived into the Blueprint). The collector is bounded (512 tracked nodes per view, 64 signals per
 batch, 16 queued batches; a bound drops and counts) and re-sends a failed batch under the same
-`batchId`. See `@loom-ui/learning` for the host half and `@loom-ui/renderer-lit/signals` for the DOM
+`batchId`. See `@loomwork/ui-learning` for the host half and `@loomwork/ui-renderer-lit/signals` for the DOM
 driver.
 
 `Provenance.policyDecisionId` (U11, optional, outside the content address) names the *learnable*
@@ -913,7 +913,7 @@ Composing and compiling an Experience (illustrative — not a compiling snippet:
 catalogue):
 
 ```ts
-import { apply, compile, genesis } from "@loom-ui/core";
+import { apply, compile, genesis } from "@loomwork/ui-core";
 
 let exp = genesis({
   experienceId: "checkout-triage",
@@ -949,7 +949,7 @@ const { blueprint, findings, ok } = compile(exp, {
 Persisting the sealed artifact (illustrative — inside a loom execution):
 
 ```ts
-import { EXPERIENCE_COMPOSED, putExperience } from "@loom-ui/core/log";
+import { EXPERIENCE_COMPOSED, putExperience } from "@loomwork/ui-core/log";
 
 const put = await putExperience(contentStore, exp);
 if (!put.ok) throw new Error(put.finding.message);
@@ -963,7 +963,7 @@ ctx.emit(EXPERIENCE_COMPOSED, {
 ## Notable behaviours and guarantees
 
 - **Sensitivity is enforced (at the output boundaries), fail-closed.** A binding's `sensitivity` is
-  checked against a `Viewer` in two places: `compile` (here) and hydration (`@loom-ui/hydration`). A
+  checked against a `Viewer` in two places: `compile` (here) and hydration (`@loomwork/ui-hydration`). A
   viewer's `clearance` is the strictest class it may see; one with none sees only unclassified
   bindings, and **no viewer at all is a viewer with no clearance**. Unclassified bindings are never
   affected, so an experience that classifies nothing compiles byte-identically. A handle carries one
@@ -1004,7 +1004,7 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   sticks, a bound `projections` catalogue is not replaced; when NO `projections` /
   `hydrationProjectionId` is bound, a per-call one may still supply it (the original behaviour) —
   bind it to prevent that). Build the table from the SAME `CapabilityRef`s the planner uses, so host
-  and planner cannot disagree: `declaredToolClassesFrom(capabilities)` (`@loom-ui/planner`).
+  and planner cannot disagree: `declaredToolClassesFrom(capabilities)` (`@loomwork/ui-planner`).
   **`undeclared: "allow" | "deny"`** (default `"allow"`): with `"deny"`, a handle whose provider
   calls any tool the table (when one is present) does NOT list reads as a class no clearance ranks
   (`UNDECLARED_TOOL_CLASS`), on every read path — a new tool fails closed until it is declared.
@@ -1041,7 +1041,7 @@ ctx.emit(EXPERIENCE_COMPOSED, {
   `Lineage.explain` answer `{ available: false }` for it. A seeded property test
   (`containerAgreement.test.ts`) asserts that compile's collapsed containers and the readers' hidden
   ones are the same set over randomised trees and viewers. The reference planner also applies a
-  capability's class to the nodes it writes (see `@loom-ui/planner`), so this floor is the backstop
+  capability's class to the nodes it writes (see `@loomwork/ui-planner`), so this floor is the backstop
   for nodes it did not write (an older planner, a raw op). Limits: a class follows MCP tool NAMES
   only — a provider whose execution graph calls no tool takes no tool class (it fetches nothing),
   and a different name for the same data (an alias, a renamed tool, a different server's tool name)

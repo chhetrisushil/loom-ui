@@ -4,7 +4,7 @@
 // release `version`, `license`, `repository` (with the package's `directory`), the `files` allowlist
 // (built output + sources for the sourcemaps, never tests, test support, fixtures, tsconfig or build
 // caches), `publishConfig` (public access, the `next` dist-tag), `engines`, `workspace:^` for every
-// sibling dependency (pnpm publish rewrites it to `^<version>`), and a real `@loom/*` range in
+// sibling dependency (pnpm publish rewrites it to `^<version>`), and a real `@loomwork/*` range in
 // place of `*` (the root `pnpm.overrides` `link:` entries redirect it to ../loom for local dev and
 // are never published, so the range is what a consumer installs).
 //
@@ -54,8 +54,9 @@ export function filesFor(dir) {
 function rewriteSpecifiers(deps) {
   const out = {};
   for (const [name, spec] of Object.entries(deps)) {
-    if (spec === "workspace:*") out[name] = "workspace:^";
-    else if (name.startsWith("@loom/")) out[name] = LOOM_RANGE;
+    if (spec.startsWith("workspace:")) out[name] = "workspace:^";
+    // a loom package (@loomwork/*, never this repo's own @loomwork/ui-*, which are workspace:)
+    else if (name.startsWith("@loomwork/")) out[name] = LOOM_RANGE;
     else out[name] = spec;
   }
   return out;

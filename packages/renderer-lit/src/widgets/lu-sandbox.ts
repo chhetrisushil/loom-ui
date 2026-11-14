@@ -1,4 +1,4 @@
-import type { WidgetAction } from "@loom/blueprint-runtime";
+import type { WidgetAction } from "@loomwork/blueprint-runtime";
 import { LitElement, css, html } from "lit";
 import { property, query, state } from "lit/decorators.js";
 import { cssomStyle } from "../cssomStyle";

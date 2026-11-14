@@ -29,9 +29,9 @@ draws that. Hydration fills the handles with data on the way.
 | --- | --- | --- |
 | Node.js | 22 (CI uses 22; loom declares `>=20`) | runs the build and the tests |
 | pnpm | 9.14.4 (pinned by `packageManager`; use `corepack enable`) | the workspace manager |
-| A sibling `loom` checkout | any commit that builds; CI pins `LOOM_REF` in `.github/workflows/ci.yml` | loom-ui compiles to loom's `Blueprint` and imports its `@loom/*` packages |
+| A sibling `loom` checkout | any commit that builds; CI pins `LOOM_REF` in `.github/workflows/ci.yml` | loom-ui compiles to loom's `Blueprint` and imports its `@loomwork/*` packages |
 
-loom is **unpublished**, so loom-ui does not install it from a registry. Every `@loom/*` dependency
+loom is **unpublished**, so loom-ui does not install it from a registry. Every `@loomwork/*` dependency
 is redirected by `pnpm.overrides` in the root `package.json` to `link:../loom/...`. That makes the
 two repositories siblings:
 
@@ -42,7 +42,7 @@ workspace/
 ```
 
 If `../loom` is missing, or is not built, nothing resolves: the first symptom is
-`Cannot find module '@loom/...'` from an install or a build. loom-ui's tests read loom's **built
+`Cannot find module '@loomwork/...'` from an install or a build. loom-ui's tests read loom's **built
 `dist`**, so after you change loom, rebuild it before re-running anything here.
 
 ## Install and build
@@ -59,14 +59,14 @@ pnpm typecheck:tests # tests included - this is what compiles the snippets
 pnpm lint            # biome
 ```
 
-Packages are workspace-private (`@loom-ui/*` is not published yet): you use them from inside this
+Packages are workspace-private (`@loomwork/ui-*` is not published yet): you use them from inside this
 workspace, or from a sibling repository that links them the way
 [`loom-examples`](https://github.com/chhetrisushil/loom-examples) does (a `link:` override, as for
 loom itself).
 
 ## 1. Compose an experience
 
-Everything below runs in the `@loom-ui/docs-snippets` package. Start with the imports every later
+Everything below runs in the `@loomwork/ui-docs-snippets` package. Start with the imports every later
 step uses.
 
 <!-- snippet: imports -->
@@ -79,8 +79,8 @@ import {
   defineSemanticCatalog,
   genesis,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   HYDRATION_PROJECTION_ID,
   HYDRATION_PROJECTION_VERSION,
@@ -88,9 +88,9 @@ import {
   HydrationStore,
   type TransientInvoker,
   defineReshapers,
-} from "@loom-ui/hydration";
-import { renderExperience, watch } from "@loom-ui/renderer-terminal";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration";
+import { renderExperience, watch } from "@loomwork/ui-renderer-terminal";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 ```
 
 A **catalogue** is the closed vocabulary an experience may use. Each entry says what props a node
@@ -285,14 +285,14 @@ console.log(renderExperience(blueprint, store));
 ## 5. Render on the web
 
 The same blueprint is drawn by loom's React renderer, or by loom-ui's Lit adapter. This is the Lit
-version; it needs a DOM and a bundler (Vite, webpack, ...), because `@loom-ui/renderer-lit` is
+version; it needs a DOM and a bundler (Vite, webpack, ...), because `@loomwork/ui-renderer-lit` is
 ESM-only and not importable from plain Node.
 
 <!-- snippet: lit in gettingStartedWeb.test.ts -->
 
 ```ts
-import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
-import "@loom-ui/renderer-lit/register"; // defines the <lu-*> elements; nothing registers on import
+import { litRegistry, renderBlueprintDom } from "@loomwork/ui-renderer-lit/dom";
+import "@loomwork/ui-renderer-lit/register"; // defines the <lu-*> elements; nothing registers on import
 ```
 
 Compile for the `web` surface (this page compiled for `terminal`; the catalogue resolves both),
@@ -316,7 +316,7 @@ this repository does not depend on React:
 <!-- illustrative: React is not a dependency of this repo; the call is loom's BlueprintRenderer -->
 
 ```tsx
-import { BlueprintRenderer, defaultRegistry } from "@loom/plugin-renderer-react";
+import { BlueprintRenderer, defaultRegistry } from "@loomwork/plugin-renderer-react";
 
 <BlueprintRenderer
   blueprint={blueprint}
@@ -338,7 +338,7 @@ and
 [`gettingStartedWeb.test.ts`](snippets/src/gettingStartedWeb.test.ts). Each block
 is preceded by an HTML comment naming its `// #region`; a test compares the block to the region
 byte for byte, and fails if a fenced `ts` block has no marker. Change the code in the test, run
-`pnpm --filter @loom-ui/docs-snippets test`, and copy the region back. The test also runs the
+`pnpm --filter @loomwork/ui-docs-snippets test`, and copy the region back. The test also runs the
 walkthrough and asserts the terminal frame contains the metric.
 
 ## Where next

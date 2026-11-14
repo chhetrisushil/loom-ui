@@ -1,3 +1,5 @@
+import { InMemoryAsyncEventStore, isReservedStream } from "@loomwork/event-runtime";
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 import {
   type Experience,
   type Provenance,
@@ -6,11 +8,9 @@ import {
   experienceHandles,
   genesis,
   replay,
-} from "@loom-ui/core";
-import { putExperience, seal } from "@loom-ui/core/log";
-import { EXPERIENCE_PROMOTED as PLANNER_PROMOTED } from "@loom-ui/planner";
-import { InMemoryAsyncEventStore, isReservedStream } from "@loom/event-runtime";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
+import { putExperience, seal } from "@loomwork/ui-core/log";
+import { EXPERIENCE_PROMOTED as PLANNER_PROMOTED } from "@loomwork/ui-planner";
 import { describe, expect, it } from "vitest";
 import {
   EXPERIENCE_BRANCHED,

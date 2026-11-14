@@ -1,4 +1,4 @@
-import { isLocalizedText } from "@loom-ui/core/browser";
+import { isLocalizedText } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { titleText } from "../title";
 import { LuWidget } from "./base";

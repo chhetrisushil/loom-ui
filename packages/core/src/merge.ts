@@ -1,5 +1,5 @@
-import type { DataClass } from "@loom/classify";
-import { canonicalJson } from "@loom/core";
+import type { DataClass } from "@loomwork/classify";
+import { canonicalJson } from "@loomwork/core";
 import { carryClasses, liveClasses, liveProjectionClasses, ownClass } from "./classes";
 import type { Experience, Intent, ProviderSpec } from "./experience";
 import {

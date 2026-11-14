@@ -1,5 +1,5 @@
-import { FRAMEWORK_KINDS, type SemanticFormat, formatSemanticNumber } from "@loom-ui/core";
-import { builtinCatalog, catalogCoverage, customWidget$ } from "@loom/blueprint-runtime";
+import { builtinCatalog, catalogCoverage, customWidget$ } from "@loomwork/blueprint-runtime";
+import { FRAMEWORK_KINDS, type SemanticFormat, formatSemanticNumber } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { createLoomUiTerminalRegistry, loomUiTerminalRegistry, terminalRegistry } from "./registry";
 
@@ -140,7 +140,7 @@ describe("terminal registry", () => {
     })?.split("\n");
     expect(out?.[2]).toBe("    1,234,567.891");
   });
-  it("Table cells match @loom-ui/core's formatSemanticNumber exactly, for every SemanticFormat", () => {
+  it("Table cells match @loomwork/ui-core's formatSemanticNumber exactly, for every SemanticFormat", () => {
     const r = loomUiTerminalRegistry.get("Table");
     const w = customWidget$({ kind: "Table", title: "Mixed", binding: b });
     const cases: ReadonlyArray<{ value: number; format?: SemanticFormat }> = [

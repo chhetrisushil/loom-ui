@@ -1,4 +1,4 @@
-import { Operation, Provenance, Sensitivity } from "@loom-ui/core";
+import { Operation, Provenance, Sensitivity } from "@loomwork/ui-core";
 import { z } from "zod";
 
 // ── The lineage event protocol ────────────────────────────────────────────────
@@ -14,7 +14,7 @@ import { z } from "zod";
 // `EXPERIENCE_COMPOSED` is the same name and `{ ref, parents, ops }` core's `log.ts` declared as a
 // userspace convention; here it gains a producer, a consumer and a validator. The extra fields
 // (`experienceId`, `versionHash`, `by`) are additive. `EXPERIENCE_PROMOTED` is redeclared (not
-// imported) because importing it from `@loom-ui/planner` would put the planner's whole graph —
+// imported) because importing it from `@loomwork/ui-planner` would put the planner's whole graph —
 // hydration, the sandbox — into a server-side store package; `lineage.test.ts` asserts the two
 // spellings never drift.
 

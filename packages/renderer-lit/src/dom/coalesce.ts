@@ -1,4 +1,4 @@
-import type { Blueprint } from "@loom/blueprint-runtime";
+import type { Blueprint } from "@loomwork/blueprint-runtime";
 import type { RecomposeReport } from "./registry";
 import type { DomRenderHandle } from "./renderBlueprintDom";
 

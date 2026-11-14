@@ -12,10 +12,10 @@ packages are **server-side** (neither may enter a client graph). Snippets are mi
 <!-- snippet: imports -->
 
 ```ts
-import { defineSemanticCatalog, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { executeProvider } from "@loom-ui/hydration";
-import type { DriftRecord, TransientInvoker } from "@loom-ui/hydration";
+import { defineSemanticCatalog, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import { executeProvider } from "@loomwork/ui-hydration";
+import type { DriftRecord, TransientInvoker } from "@loomwork/ui-hydration";
 import {
   type CapabilityRef,
   type DecideContext,
@@ -25,7 +25,7 @@ import {
   declaredToolClassesFrom,
   plannerProvenance,
   reviseForDrift,
-} from "@loom-ui/planner";
+} from "@loomwork/ui-planner";
 ```
 
 ## The contract in five rules
@@ -81,7 +81,7 @@ const capabilities: CapabilityRef[] = [
 <!-- snippet: compose -->
 
 ```ts
-// Any `@loom/llm` provider is a PlannerModel; `ctx` is your loom flow's ExecutionContext.
+// Any `@loomwork/llm` provider is a PlannerModel; `ctx` is your loom flow's ExecutionContext.
 const planner = new ReferencePlanner({ model, modelId: "my-model" });
 
 const plan = await planner.compose({ intent, catalog, capabilities }, ctx);
@@ -146,7 +146,7 @@ const declaredToolClasses = declaredToolClassesFrom(capabilities);
 The reply is a flat list; a group is an entry with a `container` (`section`, `row`, `grid`, or a role
 the host offered) and members name it with `parent`. Offer roles through `ComposeInput.containers`,
 for example `REFERENCE_CONTAINER_ROLES` for the `tabs` and `stepper` that
-`@loom-ui/renderer-lit/containers` draws ([rendering](rendering.md#containers-roles-and-placement)).
+`@loomwork/ui-renderer-lit/containers` draws ([rendering](rendering.md#containers-roles-and-placement)).
 A reply naming a role you did not offer is refused. Bounds are counts the contract checks (depth 4, 24
 entries per container, 64 in all).
 
@@ -182,7 +182,7 @@ reproduces the artifact (`prompt-replay-mismatch`), that `firstAttemptValid` agr
 that `usage` is replay-stable, and (with `modelCalls`) that a second `compose` replays. Opt in to more
 by supplying probes: `scopeProbe` (decides through the scope as the deciding execution, makes no call
 on replay), `denialProbe` (a denial propagates and records nothing), `streamProbe`, `readPolicy`,
-`containers`, and `checkReach` (the planner declares what it reaches for `@loom/verify`). **Omitting a
+`containers`, and `checkReach` (the planner declares what it reaches for `@loomwork/verify`). **Omitting a
 probe means that contract is not checked.** `fx.ctx` must be fresh.
 
 ## Re-author after drift
@@ -258,14 +258,14 @@ evaluation says which choice was better.
 <!-- snippet: imports in learning.test.ts -->
 
 ```ts
-import { SIGNAL_VERSION } from "@loom-ui/core/signals";
+import { SIGNAL_VERSION } from "@loomwork/ui-core/signals";
 import {
   DecisionLinks,
   InMemoryVoteLog,
   SignalIngestor,
   VoteLedger,
   defaultReward,
-} from "@loom-ui/learning";
+} from "@loomwork/ui-learning";
 ```
 
 <!-- snippet: ingest in learning.test.ts -->
@@ -337,12 +337,12 @@ execution log, so they are not compiled here; the full flow is the `planner-lear
   attribution: pass a factory, `model: (scope) => ...`, and forward `signal` and `onDelta`.
 - When the invoker is a `scopeInvoker`, do not configure `principal` on hydration: the scope already
   carries it, and the call is refused otherwise.
-- Declare reach (`reach: { transient: ["llm.complete"] }`) if the flow is checked by `@loom/verify`.
+- Declare reach (`reach: { transient: ["llm.complete"] }`) if the flow is checked by `@loomwork/verify`.
 
 ## See also
 
-- Packages: [`@loom-ui/planner`](../../packages/planner/README.md),
-  [`@loom-ui/learning`](../../packages/learning/README.md).
+- Packages: [`@loomwork/ui-planner`](../../packages/planner/README.md),
+  [`@loomwork/ui-learning`](../../packages/learning/README.md).
 - Reference: [planning](../reference/planning.md).
 - Examples (in `loom-examples`): `experience-tabs-planner` (nested tabs composed by the reference
   planner, minimal-diff revise), `planner-decide-scope` (the model call authorised as the deciding

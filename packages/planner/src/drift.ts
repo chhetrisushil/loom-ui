@@ -1,17 +1,17 @@
+import { type TaintedValue, unwrapTainted } from "@loomwork/classify";
+import { canonicalJson } from "@loomwork/core";
 import {
   type Experience,
   type Finding,
   type MCPToolNode,
   experienceHandles,
   toolKey,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import {
   type DriftRecord,
   type ReshapeFailureKind,
   terminalSteps,
-} from "@loom-ui/hydration/client";
-import { type TaintedValue, unwrapTainted } from "@loom/classify";
-import { canonicalJson } from "@loom/core";
+} from "@loomwork/ui-hydration/client";
 import type { CapabilityRef, DecideContext, PlanResult, ReviseInput } from "./spi";
 
 // `remapOperation` (hydration's repair.ts) repairs INPUT drift mechanically — a new schema pin,

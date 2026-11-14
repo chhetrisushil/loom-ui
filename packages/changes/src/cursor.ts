@@ -1,4 +1,4 @@
-import type { Finding } from "@loom-ui/core";
+import type { Finding } from "@loomwork/ui-core";
 import type { ChangeEvent, ChangeFeed } from "./feed";
 
 // ── Unread: what a viewer has not yet seen ────────────────────────────────────

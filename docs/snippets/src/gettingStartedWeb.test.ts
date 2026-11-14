@@ -4,8 +4,8 @@
 import { describe, expect, it } from "vitest";
 import { boardBlueprint, boardStore } from "./fixtures.test-support";
 // #region lit
-import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
-import "@loom-ui/renderer-lit/register"; // defines the <lu-*> elements; nothing registers on import
+import { litRegistry, renderBlueprintDom } from "@loomwork/ui-renderer-lit/dom";
+import "@loomwork/ui-renderer-lit/register"; // defines the <lu-*> elements; nothing registers on import
 // #endregion lit
 
 describe("docs/getting-started.md, web", () => {

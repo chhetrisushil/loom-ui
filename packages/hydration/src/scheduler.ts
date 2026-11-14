@@ -1,4 +1,4 @@
-import type { Finding, Priority } from "@loom-ui/core";
+import type { Finding, Priority } from "@loomwork/ui-core";
 import type { HydrationStore } from "./projection";
 
 // ── Handle scheduling, independent of WHERE a handle is loaded ────────────────

@@ -1,4 +1,4 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 import type { Experience, ProviderSpec } from "./experience";
 import { type ExperienceNode, walk } from "./node";
 import type { ProjectionCatalog } from "./projections";

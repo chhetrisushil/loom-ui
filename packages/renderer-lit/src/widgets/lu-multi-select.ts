@@ -6,7 +6,7 @@ import {
   multiSelectValueIssues,
   newSubmitKey,
   oneLineChatText,
-} from "@loom-ui/core/chat-ui";
+} from "@loomwork/ui-core/chat-ui";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";

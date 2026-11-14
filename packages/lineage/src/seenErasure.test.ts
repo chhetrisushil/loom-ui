@@ -1,3 +1,10 @@
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import {
+  type ContentStore,
+  InMemoryContentStore,
+  contentAddress,
+  encodeValue,
+} from "@loomwork/plugin-content";
 import {
   MAX_SEEN_VALUE_BYTES,
   type Provenance,
@@ -5,14 +12,7 @@ import {
   type SemanticNode,
   genesis,
   snapshotSeen,
-} from "@loom-ui/core";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
-import {
-  type ContentStore,
-  InMemoryContentStore,
-  contentAddress,
-  encodeValue,
-} from "@loom/plugin-content";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import {

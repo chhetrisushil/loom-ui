@@ -1,4 +1,4 @@
-import { canonicalJson } from "@loom/core";
+import { canonicalJson } from "@loomwork/core";
 import { describe, expect, it } from "vitest";
 import { genesis } from "./experience";
 import { mintVersionHash, seal } from "./log";

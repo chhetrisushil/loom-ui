@@ -1,5 +1,5 @@
-import type { ActionOutcome } from "@loom-ui/core/browser";
-import type { WidgetAction } from "@loom/blueprint-runtime";
+import type { WidgetAction } from "@loomwork/blueprint-runtime";
+import type { ActionOutcome } from "@loomwork/ui-core/browser";
 import { css } from "lit";
 import { say } from "../say";
 

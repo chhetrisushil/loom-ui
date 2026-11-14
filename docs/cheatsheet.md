@@ -24,15 +24,15 @@
 
 | Package | Side | Gives you |
 |---|---|---|
-| `@loom-ui/core` | both | the model, operations, catalogue, `compile`, merge, provenance, seen snapshots |
-| `@loom-ui/hydration` | server (`/client` for the browser) | resolve handles into one projection, in-process or split |
-| `@loom-ui/planner` | server | `Planner` SPI, `ReferencePlanner`, drift repair, `interpretAction`, conformance |
-| `@loom-ui/lineage` | server, optional | head by compare-and-set, revert / undo / branch, `SeenLog` |
-| `@loom-ui/changes` | server, optional | `ChangeFeed`, unread cursors, head signals |
-| `@loom-ui/learning` | server, optional | signals to votes to rewards, variant comparison |
-| `@loom-ui/renderer-lit` | browser (ESM only) | DOM adapter, `lu-*` elements, container renderers |
-| `@loom-ui/renderer-terminal` | any | string renderers, `watch`, interactive session |
-| `@loom-ui/renderer-conformance` | tests | one set of renderer contract checks |
+| `@loomwork/ui-core` | both | the model, operations, catalogue, `compile`, merge, provenance, seen snapshots |
+| `@loomwork/ui-hydration` | server (`/client` for the browser) | resolve handles into one projection, in-process or split |
+| `@loomwork/ui-planner` | server | `Planner` SPI, `ReferencePlanner`, drift repair, `interpretAction`, conformance |
+| `@loomwork/ui-lineage` | server, optional | head by compare-and-set, revert / undo / branch, `SeenLog` |
+| `@loomwork/ui-changes` | server, optional | `ChangeFeed`, unread cursors, head signals |
+| `@loomwork/ui-learning` | server, optional | signals to votes to rewards, variant comparison |
+| `@loomwork/ui-renderer-lit` | browser (ESM only) | DOM adapter, `lu-*` elements, container renderers |
+| `@loomwork/ui-renderer-terminal` | any | string renderers, `watch`, interactive session |
+| `@loomwork/ui-renderer-conformance` | tests | one set of renderer contract checks |
 
 Guides: [composing](guides/composing.md) · [hydration](guides/hydration.md) ·
 [rendering](guides/rendering.md) · [sensitivity](guides/sensitivity-and-audiences.md) ·
@@ -40,7 +40,7 @@ Guides: [composing](guides/composing.md) · [hydration](guides/hydration.md) ·
 [writing a renderer](guides/writing-a-renderer.md) · [troubleshooting](guides/troubleshooting.md).
 Examples are in the sibling `loom-examples` repo (`examples/<name>`).
 
-## The model — `@loom-ui/core`
+## The model — `@loomwork/ui-core`
 
 An **Experience** is `{ experienceId, versionHash, parents, intent, root, providers,
 vocabularyFloor, meta }`. Never mutated: every change is a new one. A **container** has
@@ -55,7 +55,7 @@ node** names a catalogue entry (`type`, `typeVersion`), carries `props`, `label`
 | `apply` | one `Operation` → `{ ok, value }` or `{ ok: false, finding }`. Never throws |
 | `applyAt` | `apply` against a declared base; a stale base is `stale-base-version` |
 | `replay` | fold an op list; stops at the FIRST refusal |
-| `seal` | mint `versionHash` — from `@loom-ui/core/log` (Node-only) |
+| `seal` | mint `versionHash` — from `@loomwork/ui-core/log` (Node-only) |
 | `defineSemanticCatalog` | the closed vocabulary: entries, props, per-surface kind |
 | `validateExperience` | check an experience against a catalogue; reports, never repairs |
 | `findNode` · `walk` · `isContainer` | tree helpers |
@@ -63,7 +63,7 @@ node** names a catalogue entry (`type`, `typeVersion`), carries `props`, `label`
 | `preservesNodes` | did a revision keep every node id? |
 | `GRID_COLUMNS` · `MAX_TREE_DEPTH` | 12 · the depth cap |
 
-Entries: `@loom-ui/core` (everything above), `/log` (seal, Node), `/browser`, `/media`, `/chat`,
+Entries: `@loomwork/ui-core` (everything above), `/log` (seal, Node), `/browser`, `/media`, `/chat`,
 `/chat-ui`, `/document`, `/signals`, `/messages`. → [composition reference](reference/composition.md#compose-seal-log-compile),
 [composing guide](guides/composing.md).
 
@@ -78,9 +78,9 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `Table` | `TableValue` `{ columns, rows, rowKeys?, rowActions?, refs? }` | column = string or `{ label, format? }`; a cell is a string, number, `null` or a token cell `{ tokens }` |
 | `StatusCard` | `StatusCardValue` `{ level, headline, detail? }` | level: `ok` · `warning` · `critical` |
 | `Note` | none — static `text` prop | also what a redacted node becomes |
-| `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (registered by `defineAll` and `elements/lu-prose`; parsers in `@loom-ui/core/document`) |
+| `Prose` | `ProseValue` `{ format, text, truncated?, focus?, note? }` | a long document: format `markdown` · `org` · `plain`; drawn block by block by `lu-prose` (registered by `defineAll` and `elements/lu-prose`; parsers in `@loomwork/ui-core/document`) |
 | `Kpi` · `BarChart` · `TimeSeries` · `Table` · `StatusCard` · `Diagram` — source refs | optional `refs?: { id, label? }[]` on the value | at most 16; id a short identifier, unique; label at most 200 characters; widget-level only; a marker emits `REF_OPEN { refId, n }` (buttons only with an `onAction`; the terminal prints `[n] label` footnotes) |
-| `Diagram` | `DiagramValue` `{ layout, title?, timeFormat?, nodes, edges }` | layout `tree` · `flow` · `timeline` · `network`; at most 200 nodes and 400 edges (over the cap is refused, never cut); a tree is one rooted tree, a timeline's nodes carry `at`; drawn by `lu-diagram` from the opt-in `@loom-ui/renderer-lit/diagram` (`createDiagramLitRegistry`) |
+| `Diagram` | `DiagramValue` `{ layout, title?, timeFormat?, nodes, edges }` | layout `tree` · `flow` · `timeline` · `network`; at most 200 nodes and 400 edges (over the cap is refused, never cut); a tree is one rooted tree, a timeline's nodes carry `at`; drawn by `lu-diagram` from the opt-in `@loomwork/ui-renderer-lit/diagram` (`createDiagramLitRegistry`) |
 | `TimeSeries` | `TimeSeriesValue` | series may sit on a `left` / `right` axis |
 | `BarChart` | `BarChartValue` | |
 | `A2UIView` · `SandboxView` | the bound value as data | mount `lu-a2ui-view` / `lu-sandbox` |
@@ -95,7 +95,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `FRAMEWORK_KINDS` | the list; assert members are present, never its length |
 | `kindValueContracts` | one zod contract per kind, declared once |
 | `checkKindValue` | validate a value against its kind (renderers show a visible error) |
-| `frameworkKindContracts` | the entry a catalogue copies into `surfaces.web` — from `@loom-ui/renderer-lit` |
+| `frameworkKindContracts` | the entry a catalogue copies into `surfaces.web` — from `@loomwork/ui-renderer-lit` |
 
 → [catalogue and widget reference](reference/catalogue.md), [framework kinds](reference/composition.md#framework-kinds). Examples: `experience-kinds`,
 `media-gallery`, `incident-shared-chat`.
@@ -137,7 +137,7 @@ own, `FRAMEWORK_KINDS` declares loom-ui's, each with a value contract in `kindVa
 | `declassifyHandle` | lowers a sticky class; trusted caller only (`{ allowDeclassify: true }`) |
 | `prompt` | a planner's op, carries `materialized` ops; never interactive |
 
-Widget clicks come in as `experience.op` actions. `interpretAction` (from `@loom-ui/planner`)
+Widget clicks come in as `experience.op` actions. `interpretAction` (from `@loomwork/ui-planner`)
 returns `experience` · `business` · `refused`; it admits `setPlacement` and `setTitle` on non-root
 nodes and refuses both provider ops, `setRole`, `prompt` and root edits.
 
@@ -182,7 +182,7 @@ Options you will reach for: `surface`, `catalog`, `viewer`, `audience`, `title`,
 `placeholderKey` / `requirePlaceholderKey`, `restrictedLabel`, `memo`. → [rendering reference: what
 compile targets](reference/rendering.md#what-compile-targets). Example: `blueprint-status`.
 
-## Hydration — `@loom-ui/hydration`
+## Hydration — `@loomwork/ui-hydration`
 
 Resolves each handle through loom's TRANSIENT effects and publishes one projection
 (`HYDRATION_PROJECTION_ID`). **Read-only and log-free**: drift is reported (`onDrift`), repaired by
@@ -209,7 +209,7 @@ your durable execution. A handle is `pending` · `ready` · `stale` · `error` �
 Examples: `split-hydration`, `order-lines` (the `empty` state). → [hydration guide](guides/hydration.md),
 [reference](reference/hydration.md#which-entry).
 
-## Planner — `@loom-ui/planner`
+## Planner — `@loomwork/ui-planner`
 
 A planner returns OPERATIONS, never an Experience, and every model call runs inside `ctx.decide`, so
 a replay serves the recorded decision and calls no model.
@@ -233,7 +233,7 @@ Examples: `experience-tabs-planner`, `planner-decide-scope`, `planner-learning`.
 [planners and learning](guides/planners-and-learning.md),
 [planning reference](reference/planning.md#compose-and-revise).
 
-## Lineage, explain, seen log — `@loom-ui/lineage`
+## Lineage, explain, seen log — `@loomwork/ui-lineage`
 
 | Export | What |
 |---|---|
@@ -271,9 +271,9 @@ Merge conflict kinds: `move/move` · `remove/edit` · `edit/edit` · `add/add` �
 wins; the result is **unsealed with no parents** — you pick parents (normally both heads) and `seal`.
 
 → [merge two forks](guides/composing.md#merge-two-forks),
-[the change feed](guides/lineage-and-changes.md#the-change-feed-loom-uichanges). Example: `experience-merge`.
+[the change feed](guides/lineage-and-changes.md#the-change-feed-loomworkui-changes). Example: `experience-merge`.
 
-## Learning — `@loom-ui/learning`
+## Learning — `@loomwork/ui-learning`
 
 Signals are UNTRUSTED client input: four content-free facts, dwell once per sealed view, restricted
 nodes flagged under their alias. A viewer reduces to ONE bounded vote per decision.
@@ -344,7 +344,7 @@ renderBlueprintDom(host, blueprint, {
 
 - A container renderer owns CHROME and child visibility only; `update` is required and an identical
   Blueprint is zero mutations. A throwing renderer falls back to the plain container.
-- Web: `import "@loom-ui/renderer-lit/register"` defines the `<lu-*>` elements — nothing registers
+- Web: `import "@loomwork/ui-renderer-lit/register"` defines the `<lu-*>` elements — nothing registers
   on import. loom's React renderer shows `[No renderer for …]` for framework kinds.
 - Opt-in entries: `/media`, `/chat`, `/diagram`, `/signals`.
 

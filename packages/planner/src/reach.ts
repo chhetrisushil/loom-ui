@@ -1,10 +1,10 @@
 // Declared reach (loom L32). Code a flow hands its `ctx` to — a planner's `compose`/`revise` —
 // runs tools the verifier's static analysis cannot see. The code DECLARES them structurally under
 // `Symbol.for("loom.verify.reach")`; the app maps the callee to the object via
-// `defineConfig({ checks: { verify: { reach: { planner } } } })` and @loom/verify reads it.
-// No dependency on @loom/verify: the key and shape are the whole contract.
+// `defineConfig({ checks: { verify: { reach: { planner } } } })` and @loomwork/verify reads it.
+// No dependency on @loomwork/verify: the key and shape are the whole contract.
 
-/** The well-known key. Equal to `@loom/verify`'s `REACH_DECLARATION`. */
+/** The well-known key. Equal to `@loomwork/verify`'s `REACH_DECLARATION`. */
 export const REACH_DECLARATION: unique symbol = Symbol.for("loom.verify.reach") as never;
 
 /** What code run with a flow's `ctx` reaches. A CLAIM about the code, checked by conformance. */
@@ -41,7 +41,7 @@ export function readPlannerReach(value: unknown): PlannerReach | undefined {
   const { run, transient } = d as { run?: unknown; transient?: unknown };
   if ((run !== undefined && !isList(run)) || (transient !== undefined && !isList(transient)))
     return undefined;
-  // `{}` is UNDECLARED, exactly as @loom/verify reads it; `{ run: [], transient: [] }` is the
+  // `{}` is UNDECLARED, exactly as @loomwork/verify reads it; `{ run: [], transient: [] }` is the
   // explicit "reaches nothing".
   if (run === undefined && transient === undefined) return undefined;
   return d as PlannerReach;

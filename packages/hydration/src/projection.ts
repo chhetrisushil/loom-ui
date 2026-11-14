@@ -1,7 +1,7 @@
-import type { Audience, Finding } from "@loom-ui/core";
-import { type StreamedText, appendChunk, isBroadcast } from "@loom-ui/core/browser";
-import type { EventEnvelope } from "@loom/core";
-import type { Projection, ProjectionRuntime } from "@loom/projection-runtime";
+import type { EventEnvelope } from "@loomwork/core";
+import type { Projection, ProjectionRuntime } from "@loomwork/projection-runtime";
+import type { Audience, Finding } from "@loomwork/ui-core";
+import { type StreamedText, appendChunk, isBroadcast } from "@loomwork/ui-core/browser";
 
 // ── One projection, keyed by handle ───────────────────────────────────────────
 // Compiled widgets bind to `values.<handle>` and declare `status.<handle>` as their status
@@ -103,7 +103,7 @@ export interface HydrationScope {
   readonly experienceId: string;
   readonly principalId?: string;
   /**
-   * The audience the store's surface is drawn for (`@loom-ui/core` `Audience`). A broadcast
+   * The audience the store's surface is drawn for (`@loomwork/ui-core` `Audience`). A broadcast
    * surface and a viewer surface of the same principal are DIFFERENT scopes: a broadcast bind
    * removes the handles it withholds, and that must never erase the personal surface's values.
    * The controller refuses a store whose audience differs from its own ({@link HydrationAudienceMismatchError}).

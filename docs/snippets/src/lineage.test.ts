@@ -9,10 +9,10 @@ import {
   markRead,
   pollingHeadSignal,
   unreadChanges,
-} from "@loom-ui/changes";
-import type { Provenance } from "@loom-ui/core";
-import { InMemoryLineageStore, Lineage } from "@loom-ui/lineage";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-changes";
+import type { Provenance } from "@loomwork/ui-core";
+import { InMemoryLineageStore, Lineage } from "@loomwork/ui-lineage";
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 // #endregion imports
 
 describe("docs/guides/lineage-and-changes.md", () => {

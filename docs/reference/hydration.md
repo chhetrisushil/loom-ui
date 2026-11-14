@@ -3,7 +3,7 @@
 Hydration resolves an experience's provider handles through loom's transient effects and publishes
 the results as one loom projection. This page covers the options, the split (server / browser)
 arrangement and the per-feature rules. The package overview is in
-[`@loom-ui/hydration`](../../packages/hydration/README.md).
+[`@loomwork/ui-hydration`](../../packages/hydration/README.md).
 
 ## Hydrate and repair
 
@@ -12,13 +12,13 @@ snippet: `projectionRuntime`, `effectRuntime`, `viewer`, `durableRepair` and `ct
 app.
 
 ```ts
-import { apply } from "@loom-ui/core";
+import { apply } from "@loomwork/ui-core";
 import {
   HydrationController,
   HydrationStore,
   SCHEMA_REPAIRED,
   remapOperation,
-} from "@loom-ui/hydration";
+} from "@loomwork/ui-hydration";
 
 const store = new HydrationStore(projectionRuntime, {
   experienceId: experience.experienceId,
@@ -53,9 +53,9 @@ import {
   defineReshapers,
   handleInventory,
   serveHandles,
-} from "@loom-ui/hydration";
+} from "@loomwork/ui-hydration";
 // Browser: the client entry, never the root entry (see "Which entry" below).
-import { HydrationStore, SplitHydrationController } from "@loom-ui/hydration/client";
+import { HydrationStore, SplitHydrationController } from "@loomwork/ui-hydration/client";
 
 // A provider may be checked by what its widgets can render instead of an exact output shape:
 const provider: ProviderSpec = { ...spec, outputCheck: "contract" }; // an empty list or a null cell is healthy
@@ -219,11 +219,11 @@ request still carrying the previous `versionHash` (in flight across the recompos
 
 ## Which entry
 
-`@loom-ui/hydration` (the root entry) is the SERVER side: it executes providers, so it imports
+`@loomwork/ui-hydration` (the root entry) is the SERVER side: it executes providers, so it imports
 loom's sandbox (QuickJS WASM, worker threads) and MCP plugin (`node:http`, `node:crypto`), and a
 browser bundle that imports it grows by megabytes and pulls node modules.
 
-A browser imports `@loom-ui/hydration/client`, which carries only what split hydration needs on the
+A browser imports `@loomwork/ui-hydration/client`, which carries only what split hydration needs on the
 client: `SplitHydrationController` (`load`/`recompose`, `markVisible`, `setParams`, `invalidate`,
 `dispose`), `HydrationStore`, `hydrationProjection` and its `HYDRATION_PROJECTION_ID` /
 `HYDRATION_PROJECTION_VERSION` / `HYDRATION_SET_EVENT`, `isReservedHandle`, `checkParams`,

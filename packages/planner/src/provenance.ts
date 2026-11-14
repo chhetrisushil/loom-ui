@@ -1,4 +1,4 @@
-import type { Provenance } from "@loom-ui/core";
+import type { Provenance } from "@loomwork/ui-core";
 import type { PlanResult } from "./spi";
 
 /**

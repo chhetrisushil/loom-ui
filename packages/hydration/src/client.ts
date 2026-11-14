@@ -1,8 +1,8 @@
-// ── @loom-ui/hydration/client: the browser entry ─────────────────────────────────
+// ── @loomwork/ui-hydration/client: the browser entry ─────────────────────────────────
 // Everything a browser needs for SPLIT hydration and nothing that executes a provider: the split
 // controller, the loader contract it calls, the store it publishes to, and param checks. The
 // server half (`handleInventory`, `serveHandles`, `executeProvider`, the invokers and reshapers)
-// stays on the root entry, `@loom-ui/hydration`, which imports the sandbox and the MCP plugin.
+// stays on the root entry, `@loomwork/ui-hydration`, which imports the sandbox and the MCP plugin.
 // `clientEntry.test.ts` fails the build if this entry's module graph ever reaches them.
 export {
   HYDRATION_PROJECTION_ID,

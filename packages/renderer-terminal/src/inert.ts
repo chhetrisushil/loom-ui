@@ -1,4 +1,4 @@
-import { stripUnsafeChars } from "@loom-ui/core/chat-ui";
+import { stripUnsafeChars } from "@loomwork/ui-core/chat-ui";
 
 /**
  * Make text inert for a terminal: core's ONE unsafe set (`stripUnsafeChars` — the same class

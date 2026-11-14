@@ -1,4 +1,4 @@
-import type { DiagramValue } from "@loom-ui/core/browser";
+import type { DiagramValue } from "@loomwork/ui-core/browser";
 import { describe, expect, it } from "vitest";
 import {
   type DiagramGeometry,

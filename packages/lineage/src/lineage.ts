@@ -1,3 +1,5 @@
+import { isKeyUnavailable, isPayloadShredded } from "@loomwork/event-runtime";
+import type { ContentAccess, ContentRef, ContentStore } from "@loomwork/plugin-content";
 import {
   type ApplyOptions,
   type Audience,
@@ -25,10 +27,8 @@ import {
   foldProvenance,
   mergeReadPolicy,
   replay,
-} from "@loom-ui/core";
-import { getExperience, putExperience, seal } from "@loom-ui/core/log";
-import { isKeyUnavailable, isPayloadShredded } from "@loom/event-runtime";
-import type { ContentAccess, ContentRef, ContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
+import { getExperience, putExperience, seal } from "@loomwork/ui-core/log";
 import { authorOf, branchArtifact, revertArtifact } from "./derive";
 import {
   EXPERIENCE_BRANCHED,

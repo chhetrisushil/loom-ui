@@ -1,4 +1,4 @@
-import type { SemanticCatalog } from "@loom-ui/core";
+import type { SemanticCatalog } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { planDecisionId } from "./decision";
 import { capabilitiesFixture, intentFixture, planningCatalog } from "./testing.test-support";

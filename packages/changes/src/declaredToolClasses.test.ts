@@ -1,4 +1,4 @@
-import type { HeadSignal, Operation, ProviderSpec } from "@loom-ui/core";
+import type { HeadSignal, Operation, ProviderSpec } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { LineageChangeFeed } from "./feed";
 import { by, g, ins, makeLineage, manualTimer, node } from "./harness.test-support";

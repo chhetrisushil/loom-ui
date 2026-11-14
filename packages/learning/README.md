@@ -1,10 +1,10 @@
-# @loom-ui/learning
+# @loomwork/ui-learning
 
 **The learning loop, host side (U11).** A planner chooses; viewers react; the reactions become ONE
 bounded reward on the decision that produced what they saw; and the log says which choice was
 better. loom-ui adds no learner and no estimator: the choice is a loom decision (`decideWithPolicy`,
 ADRs 0078-0080), the reward is a late `runtime.recordOutcome` (ADR 0116), the comparison is
-`@loom/learning`'s `evaluatePolicy` (SNIPS) and `promotionGate`. This package is the glue that has
+`@loomwork/learning`'s `evaluatePolicy` (SNIPS) and `promotionGate`. This package is the glue that has
 to distrust the browser. It is **server-side and optional**; `hydration`'s client guards name it
 among the packages a client graph must not reach.
 
@@ -12,10 +12,10 @@ among the packages a client graph must not reach.
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/learning": "link:../loom-ui/packages/learning"
+"@loomwork/ui-learning": "link:../loom-ui/packages/learning"
 ```
 
-Entry point: `@loom-ui/learning` (server-side only; Node, CommonJS and ESM).
+Entry point: `@loomwork/ui-learning` (server-side only; Node, CommonJS and ESM).
 
 ## How it fits together
 
@@ -31,7 +31,7 @@ ReferencePlanner variants ────────┘ DecisionLinks: (tenant, ve
 
 ## The signal model
 
-`@loom-ui/core/signals` (see core's README): `exposure`, `engagement` (click/expand counts, dwell
+`@loomwork/ui-core/signals` (see core's README): `exposure`, `engagement` (click/expand counts, dwell
 buckets sent once per view), `feedback` (1-5), `outcome` (token + boolean), batched per surface
 version, `v: 1`, at most 64 per batch. No text, no PII, no raw timing. A restricted node is reported
 `restricted: true` under its opaque alias (U10c); the host collapses **every** restricted signal of
@@ -97,7 +97,7 @@ engagement on a node the client never claimed to show, and nothing more.
 ## One bounded vote per viewer (the vote ledger)
 
 Accepted signals are appended to an **append-only log per decision** (`VoteLog`: `append` iff the
-tip is `n`, `read`; structurally `@loom-ui/lineage`'s `LineageStore`, so
+tip is `n`, `read`; structurally `@loomwork/ui-lineage`'s `LineageStore`, so
 `eventStoreLineageStore(eventStore)` over SQLite/Postgres is the durable reference and
 `InMemoryVoteLog` the single-process one). The score is a **fold** of the log, and the fold reduces
 each viewer to one vote: engagement = engaged nodes / exposed nodes (a click, an expand or dwell >=
@@ -178,7 +178,7 @@ a decision ONE `rewardId`/`closeId` for life.
 ## UI evaluation
 
 `evaluateVariants(events, { rewardId, thresholds })` takes exported events (any `EventStore.read`;
-for a compacted execution pass `evidenceEvents(state, events)` from `@loom/learning`, not the raw
+for a compacted execution pass `evidenceEvents(state, events)` from `@loomwork/learning`, not the raw
 tail), keeps the variant decisions and **only the outcomes this pipeline recorded** (key
 `ui:<rewardId>:` AND kernel-stamped; an unrelated CSAT outcome on the same decision is excluded:
 tested), and evaluates "always variant V" for each V with `evaluatePolicy` gated by `promotionGate`.
@@ -220,5 +220,5 @@ offline:
 - [../planner/README.md](../planner/README.md) — the planner variants this package evaluates.
 - [../lineage/README.md](../lineage/README.md) — the `SeenLog` and event stores the vote log builds
   on.
-- [../core/README.md](../core/README.md) — the `@loom-ui/core/signals` vocabulary.
+- [../core/README.md](../core/README.md) — the `@loomwork/ui-core/signals` vocabulary.
 - [../../README.md](../../README.md) — root overview.

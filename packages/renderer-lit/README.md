@@ -1,30 +1,30 @@
-# @loom-ui/renderer-lit
+# @loomwork/ui-renderer-lit
 
 A loom DOM renderer adapter (`renderBlueprintDom`, subpath `./dom`) plus Lit custom elements
 registered under loom's widget kinds and this framework's own kinds (`litRegistry`). It is a web
-rendering surface for the `Blueprint` `@loom-ui/core` compiles, reading the projection state
-`@loom-ui/hydration` publishes — an alternative to loom's React renderer for apps built on Lit or
+rendering surface for the `Blueprint` `@loomwork/ui-core` compiles, reading the projection state
+`@loomwork/ui-hydration` publishes — an alternative to loom's React renderer for apps built on Lit or
 plain custom elements, and the only web surface for the framework kinds loom's React renderer has
-no widget for. `@loom-ui/renderer-lit` is ESM (Lit is ESM-only); its consumer is a bundler (Vite,
+no widget for. `@loomwork/ui-renderer-lit` is ESM (Lit is ESM-only); its consumer is a bundler (Vite,
 webpack, …), not a plain Node `import()`.
 
 ## Install / import
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/renderer-lit": "link:../loom-ui/packages/renderer-lit"
+"@loomwork/ui-renderer-lit": "link:../loom-ui/packages/renderer-lit"
 ```
 
 ```ts
 // The root entry carries both the element CLASSES and the DOM adapter — `index.ts` re-exports
 // everything `./dom` does, plus the classes, formatting, i18n and a11y helpers. Importing it
 // registers NOTHING (see "Registering elements" below).
-import { renderBlueprintDom, litRegistry, LuKpi, LuTimeRangePicker, measure } from "@loom-ui/renderer-lit";
+import { renderBlueprintDom, litRegistry, LuKpi, LuTimeRangePicker, measure } from "@loomwork/ui-renderer-lit";
 
 // `./dom` is the same adapter (`renderBlueprintDom`, `litRegistry`, …) through a narrower
 // subpath — no `LuKpi`/`measure`/i18n/a11y re-exports, just the adapter and its types. It carries
 // no widget class at all (a tree-shaking test pins that).
-import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loom-ui/renderer-lit/dom";
+import { renderBlueprintDom as renderBlueprintDomNarrow } from "@loomwork/ui-renderer-lit/dom";
 ```
 
 ### Registering elements (U20 — a breaking change)
@@ -37,9 +37,9 @@ warning naming the fix and draws an inert element.
 **Migrating an existing host: add one line**, anywhere before the first render.
 
 ```ts
-import "@loom-ui/renderer-lit/register"; // defines every lu-* element (the old behaviour)
+import "@loomwork/ui-renderer-lit/register"; // defines every lu-* element (the old behaviour)
 // or, to choose the moment:
-import { defineAll } from "@loom-ui/renderer-lit/register"; defineAll();
+import { defineAll } from "@loomwork/ui-renderer-lit/register"; defineAll();
 ```
 
 **To take only what you draw**, import the per-module entries (each defines its own elements and
@@ -47,8 +47,8 @@ nothing else; `package.json` marks only these and `register` as side-effectful, 
 the rest):
 
 ```ts
-import "@loom-ui/renderer-lit/elements/lu-kpi";   // <lu-kpi> only
-import "@loom-ui/renderer-lit/elements/lu-simple"; // lu-progress, lu-alert, lu-text, lu-list, lu-approval
+import "@loomwork/ui-renderer-lit/elements/lu-kpi";   // <lu-kpi> only
+import "@loomwork/ui-renderer-lit/elements/lu-simple"; // lu-progress, lu-alert, lu-text, lu-list, lu-approval
 ```
 
 Entries are named after the widget module: `lu-a2ui-view`, `lu-bar-chart`, `lu-chat`,
@@ -70,7 +70,7 @@ the drawer (only the value contract rides in every page, and the default registr
 "not loaded" placeholder for the kind).
 
 ```ts
-import { createDiagramLitRegistry } from "@loom-ui/renderer-lit/diagram";
+import { createDiagramLitRegistry } from "@loomwork/ui-renderer-lit/diagram";
 renderBlueprintDom(host, blueprint, { registry: createDiagramLitRegistry() });
 // or, on a registry you already built:  registerDiagramWidgets(registerChatWidgets(createLitRegistry()))
 ```
@@ -100,7 +100,7 @@ summary gains ", N sources". A value without refs draws exactly what it drew bef
 - **One surface, two entry points.** The root entry (`index.ts`) exports every `lu-*` element class
   (a `LitElement` subclass per kind; registered explicitly, see above), the formatting/i18n/a11y
   helpers, and re-exports everything the `./dom` subpath exports — so `renderBlueprintDom`,
-  `litRegistry` and the DOM adapter's types are all importable from `@loom-ui/renderer-lit`
+  `litRegistry` and the DOM adapter's types are all importable from `@loomwork/ui-renderer-lit`
   directly. The `./dom` subpath is the same adapter alone, for a narrower import when you don't need
   the elements' classes or the formatting/i18n/a11y helpers by name — `litRegistry` is a
   `RendererRegistry` of element-mounting functions, pre-wired to the `lu-*` elements.
@@ -115,7 +115,7 @@ summary gains ", N sources". A value without refs draws exactly what it drew bef
   owns only its chrome and its children's *visibility*; the adapter still owns mounting, keyed
   reconciliation, reordering, grid placement, subscriptions and the focus pin. Register one per role
   in a `DomContainerRegistry` and pass it as `DomRenderOptions.containers` — there is no default
-  registry. `referenceContainers()` — from the `@loom-ui/renderer-lit/containers` subpath, so the
+  registry. `referenceContainers()` — from the `@loomwork/ui-renderer-lit/containers` subpath, so the
   core bundle does not carry it — is an opt-in one for the two roles the reference planner composes
   (`tabs`: a roving-tabindex tablist whose buttons are reused across updates so focus survives, with
   `aria-controls` and a tabbable visible panel; `stepper`: Back/Next and a position line), also
@@ -137,7 +137,7 @@ summary gains ", N sources". A value without refs draws exactly what it drew bef
 ### The action contract and the stale-view flow
 
 Every action a widget emits reaches `onAction` as loom's `WidgetAction` (`type`, `widgetId`,
-`payload`) plus an additive `viewedVersion` (`StampedAction`, from `@loom-ui/core`):
+`payload`) plus an additive `viewedVersion` (`StampedAction`, from `@loomwork/ui-core`):
 `blueprintId` / `experienceId` / `versionHash` of the view the user was looking at; for a bound
 widget `binding: { state, seq }` — the status the widget was last DELIVERED (not a mount-time
 snapshot); and `compile`, the fingerprint you declared (`DomRenderOptions.compile`). The version
@@ -162,7 +162,7 @@ The host flow, executable as written — compare against the head THIS renderer 
 is still on the previous head):
 
 ```ts
-import { actionFreshness, compileFingerprint, isStaleAction } from "@loom-ui/core";
+import { actionFreshness, compileFingerprint, isStaleAction } from "@loomwork/ui-core";
 const compile = compileFingerprint({ clearance, locale, ...result.fingerprint }); // what you compiled with (result = compile(…); `fingerprint` is the OPAQUE form of the restricted lists)
 const handle = renderBlueprintDom(host, blueprint, { /* … */, compile, onAction });
 // in onAction(action):
@@ -215,9 +215,9 @@ A2UI Buttons emit `{ type: "A2UI_ACTION", payload: { action, context } }` and sa
 `{ type: "SANDBOX_ACTION", payload: { action, context } }` through the same `onAction`. When
 `onAction` is wired, the DOM `a2ui-action` event is NOT fired (it carries no provenance, and a host
 listening to both would act twice); without `onAction` it still fires, **deprecated**.
-`@loom-ui/renderer-terminal` is read-only (no interactive actions), so it emits none.
+`@loomwork/ui-renderer-terminal` is read-only (no interactive actions), so it emits none.
 
-### The DOM adapter (`@loom-ui/renderer-lit/dom`)
+### The DOM adapter (`@loomwork/ui-renderer-lit/dom`)
 
 - `renderBlueprintDom(host, blueprint, opts: DomRenderOptions): DomRenderHandle` — mounts a
   Blueprint into `host`; `opts` needs `projectionRuntime`, `executionId`, `registry`, and takes
@@ -251,7 +251,7 @@ listening to both would act twice); without `onAction` it still fires, **depreca
   (`lu-status-card`), `LuNote` (`lu-note`), `LuAlert`/`LuApproval`/`LuList`/`LuProgress`/`LuText`
   (`lu-alert`/`lu-approval`/`lu-list`/`lu-progress`/`lu-text`).
 - `Prose` is drawn by `lu-prose` (class `LuProse`, not re-exported from the root entry: use
-  `@loom-ui/renderer-lit/elements/lu-prose` or `register`). The chat, media and diagram elements
+  `@loomwork/ui-renderer-lit/elements/lu-prose` or `register`). The chat, media and diagram elements
   come with their own opt-in entries (see above).
 - Embedded/sandboxed surfaces: `LuA2UIView` (`lu-a2ui-view`), `LuSandbox` (`lu-sandbox`),
   `LuA2UIWidget`/`LuSandboxWidget` (`lu-a2ui-widget`/`lu-sandbox-widget` — the widget-bound wrappers
@@ -268,7 +268,7 @@ All opt-in; with none of it configured nothing changes.
   `visibilityRootMargin`, default `"100px"`) and calls `onVisible(widget)` on entry into view, on
   each re-entry, and when a binding changes while on screen. This is what fetches a P2 hydration
   handle: `onVisible: (w) => { const h = w.binding && handleOfPath(w.binding.path); if (h)
-  controller.markVisible(h); }` (`handleOfPath` from `@loom-ui/hydration/client`; the renderer knows
+  controller.markVisible(h); }` (`handleOfPath` from `@loomwork/ui-hydration/client`; the renderer knows
   nothing of hydration). With no `IntersectionObserver` every bound widget is reported at mount
   (fail open: a P2 handle that never loads is worse than one that loads early).
 - **Update coalescing.** `coalesceUpdates(handle, { schedule? })` wraps a render handle: any number
@@ -297,7 +297,7 @@ All opt-in; with none of it configured nothing changes.
 ### Number and value formatting
 
 - `measure(value, format?): string`, `tick(value, format?): string` — the reader (accessible name)
-  and the compact axis-tick form of a semantic number, both delegating to `@loom-ui/core`'s
+  and the compact axis-tick form of a semantic number, both delegating to `@loomwork/ui-core`'s
   `formatSemanticNumber`/`effectiveFormat` so the DOM and terminal renderers never disagree.
 - `timeTick(iso, spanMs): string` — a compact time-axis tick label sized to the series' span: a
   timestamp reads as a time of day within 3 days and as a date beyond; a date-only value (`2026`,
@@ -316,13 +316,13 @@ All opt-in; with none of it configured nothing changes.
 ### Localising the renderer
 
 Every fixed, user-visible English string this package draws (empty states, aria-labels,
-placeholders, buttons, status lines) is a key in ONE catalogue, `LU_MESSAGES` in `@loom-ui/core`,
+placeholders, buttons, status lines) is a key in ONE catalogue, `LU_MESSAGES` in `@loomwork/ui-core`,
 re-exported here with the typed key list `LU_MESSAGE_KEYS` and the `LuMessageKey` / `LuI18n` types.
 English is the default, so with no override the output is unchanged. A host installs its words once,
 before mounting:
 
 ```ts
-import { configureI18n, LU_MESSAGE_KEYS } from "@loom-ui/renderer-lit";
+import { configureI18n, LU_MESSAGE_KEYS } from "@loomwork/ui-renderer-lit";
 
 configureI18n({
   locale: "de-DE", // numbers, dates, plural categories
@@ -346,7 +346,7 @@ configureI18n({
   `configureI18n(undefined)` removes it. The locale also changes through `setLocale`.
 - Text that is DATA (titles, labels, headlines, cells, chat messages) is the experience's own words
   and is never touched. Developer diagnostics (`onFail` findings, thrown errors) stay English.
-- Defaults live in `@loom-ui/core`'s `LU_MESSAGES`; a test (`i18nFitness.test.ts`) fails on any new
+- Defaults live in `@loomwork/ui-core`'s `LU_MESSAGES`; a test (`i18nFitness.test.ts`) fails on any new
   inline English literal in a renderer source and on any key no renderer uses.
 
 The keys this renderer asks for (the English default beside each; `{x}` is a placeholder):
@@ -542,10 +542,10 @@ The keys this renderer asks for (the English default beside each; `{x}` is a pla
 
 ## Interaction signals (U11)
 
-`@loom-ui/renderer-lit/signals` (opt-in entry; not in `index`/`dom`, so the bundle budgets are
+`@loomwork/ui-renderer-lit/signals` (opt-in entry; not in `index`/`dom`, so the bundle budgets are
 untouched) is `observeSignals(handle, collector, { placeholders, compile })`: one
 IntersectionObserver, one click listener and one `toggle` listener over the handle's element,
-driving a `@loom-ui/core/signals` `SignalCollector`. Exposure = a widget at least half visible while
+driving a `@loomwork/ui-core/signals` `SignalCollector`. Exposure = a widget at least half visible while
 the page is visible (no IntersectionObserver means no exposure is claimed); dwell is accumulated and
 sent as a bucket; a click anywhere in a widget, or a `<details>` opening, is an engagement on it. It
 reads only `data-widget-id` — never text or values. Call `refresh()` after `handle.update(next)`: a
@@ -558,7 +558,7 @@ rating }`) and `outcome` (`{ name, success }`) and never copies the rest of the 
 Mounting a compiled Blueprint (illustrative — not a compiling snippet):
 
 ```ts
-import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
+import { litRegistry, renderBlueprintDom } from "@loomwork/ui-renderer-lit/dom";
 
 const handle = renderBlueprintDom(document.getElementById("app")!, blueprint, {
   projectionRuntime: runtime,
@@ -573,7 +573,7 @@ handle.update(nextBlueprint);
 Declaring a framework kind on a semantic entry (illustrative):
 
 ```ts
-import { frameworkKindContracts } from "@loom-ui/renderer-lit/dom";
+import { frameworkKindContracts } from "@loomwork/ui-renderer-lit/dom";
 
 const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 // copy `kpiContract` onto a SemanticEntry's `surfaces.web` to resolve that entry to a Kpi widget
@@ -581,7 +581,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 
 ## Notable behaviours and guarantees
 
-- **Chat is an opt-in entry (U8): `@loom-ui/renderer-lit/chat`.** `createChatLitRegistry({ media })`
+- **Chat is an opt-in entry (U8): `@loomwork/ui-renderer-lit/chat`.** `createChatLitRegistry({ media })`
   is the default registry plus `Chat`, `TextInput`, `FormInput`, `SelectInput` and `MultiSelectInput`
   (`registerChatWidgets(registry, opts)` adds them to one you built; `chatKindContracts` is what a
   catalogue's `surfaces.web` carries). The default registry draws one fixed "Chat renderer not
@@ -645,7 +645,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
     (the button is `aria-disabled` while it is in flight). Style with `--lu-accent`, `--lu-panel-2`. With `editable`, the viewer's own complete turns get an Edit button: an inline
     editor takes focus, Ctrl/Cmd+Enter sends `EDIT_TURN`, Escape cancels back onto the button, a
     failed send keeps the text and the key. Media parts are drawn by the media widgets and the
-    host's resolver when `@loom-ui/renderer-lit/media` is loaded, and DESCRIBED (type, name, size;
+    host's resolver when `@loomwork/ui-renderer-lit/media` is loaded, and DESCRIBED (type, name, size;
     never an address) when it is not.
   - **The inputs** are native controls with labels, `aria-describedby`, `aria-invalid` and a status
     region that is always one line high (no layout shift). The field is read-only (not disabled)
@@ -656,7 +656,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
     passes the return value through).
   `SelectInput` may be bound to its current choice (a string; shown only if it is a declared option, never echoed) and takes `size: "compact"` (host attribute `compact`, `::part(select)`) to fit its content inline.
   `MultiSelectInput` is bound to `{ options, selected, note? }`: the chosen options draw as chips (each with a labelled remove button) plus an Add button that opens a search over the unchosen ones. Every change sends ONE `SELECT_MANY { values, key }` with the whole new choice; the control is busy until the host answers and the chips are always the bound value. Labels, hints and the note are untrusted one-line text. DOM hooks: `[data-multi-select][data-phase]`, `[data-chip="<value>"]` with a `button`, `[data-empty]`, `[data-add]`, `input[data-search]`, `[data-option="<value>"]`, `[data-note]`, `#status`.
-- **Media is an opt-in entry (U9): `@loom-ui/renderer-lit/media`.** `createMediaLitRegistry({ media
+- **Media is an opt-in entry (U9): `@loomwork/ui-renderer-lit/media`.** `createMediaLitRegistry({ media
   })` is the default registry plus `Image`, `Audio`, `Video`, `File` and `MediaInput`
   (`registerMediaWidgets(registry, opts)` adds them to one you built; `mediaKindContracts` is what a
   catalogue's `surfaces.web` carries). It is its own entry so a page with no media does not pay for
@@ -687,7 +687,7 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
   - **The default registry draws a fixed "Media renderer not loaded" placeholder** for the media
     kinds (and warns once on the console) instead of an empty hole; `createMediaLitRegistry`
     replaces it with the real widgets.
-  - `MEDIA_ATTACH` is client input: the host MUST run `acceptMediaAttach` (`@loom-ui/core/media`) on
+  - `MEDIA_ATTACH` is client input: the host MUST run `acceptMediaAttach` (`@loomwork/ui-core/media`) on
     it. The widget's checks and the `origin: "user"` stamp are courtesy; ownership of the address,
     freshness and the strict re-parse are the host's.
   - `MediaInput` hands the chosen file to `upload` (a `MediaUploadHandler`), validates the ref it
@@ -738,11 +738,11 @@ const kpiContract = frameworkKindContracts.find((c) => c.kind === "Kpi")!;
 - **`update` is never re-entrant.** Calling `handle.update` from inside a widget or container
   renderer's own `patch`/`update` during a pass is refused (a `re-entrant update` finding) and
   changes nothing.
-- **`@loom-ui/renderer-lit/dom` is bundler-only.** It has `moduleResolution: "Bundler"` output
+- **`@loomwork/ui-renderer-lit/dom` is bundler-only.** It has `moduleResolution: "Bundler"` output
   (extensionless relative specifiers); running it under plain Node ESM resolution fails — the
   supported path is a bundler like Vite or webpack.
 - **Value contracts are enforced, not assumed.** The shared `LuWidget` base every bound widget
-  extends checks its value with `@loom-ui/core`'s `checkKindValue` before drawing it and shows a
+  extends checks its value with `@loomwork/ui-core`'s `checkKindValue` before drawing it and shows a
   visible error state on a mismatch — the built-in kinds (`LuMetricCard`, `LuStatusBadge`,
   `LuDataTable`, …) get this as much as the framework kinds, not only the latter. A host kind (your
   own Lit element extending `LuWidget`) is checked against `el.contracts` — `createLitRegistry({
@@ -775,7 +775,7 @@ string is always plain text, markup is passed as a Node.
 
 ## Conformance
 
-`src/conformance.test.ts` runs `@loom-ui/renderer-conformance` against this renderer (with the chat
+`src/conformance.test.ts` runs `@loomwork/ui-renderer-conformance` against this renderer (with the chat
 and media entries registered); `src/conformanceAdapter.test-support.ts` is the adapter. A
 third-party renderer does the same: see
 [../renderer-conformance/README.md](../renderer-conformance/README.md).

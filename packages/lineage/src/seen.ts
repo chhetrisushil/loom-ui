@@ -1,4 +1,11 @@
 import {
+  type ContentRef,
+  type ContentStore,
+  contentAddress,
+  decodeValue,
+  encodeValue,
+} from "@loomwork/plugin-content";
+import {
   type Audience,
   type DeclaredToolClasses,
   type Experience,
@@ -15,14 +22,7 @@ import {
   effectiveViewer,
   mergeReadPolicy,
   redactSeen,
-} from "@loom-ui/core";
-import {
-  type ContentRef,
-  type ContentStore,
-  contentAddress,
-  decodeValue,
-  encodeValue,
-} from "@loom/plugin-content";
+} from "@loomwork/ui-core";
 import { z } from "zod";
 import type { Lineage, LineageResult, Refusal, Refused } from "./lineage";
 import {

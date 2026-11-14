@@ -1,5 +1,5 @@
-import { REFERENCE_CONTAINER_ROLES, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+import { REFERENCE_CONTAINER_ROLES, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import { describe, expect, it } from "vitest";
 import { planDecisionId } from "./decision";
 import { plannerProvenance } from "./provenance";

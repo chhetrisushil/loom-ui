@@ -1,4 +1,4 @@
-import { HYDRATION_VALUES_PREFIX as CORE_PREFIX, hydrationPath } from "@loom-ui/core";
+import { HYDRATION_VALUES_PREFIX as CORE_PREFIX, hydrationPath } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { HYDRATION_VALUES_PREFIX, handleOfPath } from "./path";
 

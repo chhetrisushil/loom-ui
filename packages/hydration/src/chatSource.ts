@@ -1,9 +1,9 @@
-import type { Finding } from "@loom-ui/core/browser";
-import type { ChatFeed } from "@loom-ui/core/chat";
+import type { Finding } from "@loomwork/ui-core/browser";
+import type { ChatFeed } from "@loomwork/ui-core/chat";
 
 // ── The browser's connection to loom's conversation API (U8) ─────────────────────────────────────
 //
-// `@loom/plugin-conversation-sse` (ADR 0122) serves a conversation over two routes this connects:
+// `@loomwork/plugin-conversation-sse` (ADR 0122) serves a conversation over two routes this connects:
 //
 //     GET {baseUrl}/history?direction=backward&limit=N[&cursor=C]    a bounded page, newest first
 //     GET {baseUrl}/events[?cursor=C]                                text/event-stream (SSE)

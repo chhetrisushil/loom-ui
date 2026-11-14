@@ -3,7 +3,7 @@
 // what this returns; `diagramGraph` (core) supplies the cycle breaking and layering the text outline
 // reads too, so the drawn flow and the spoken one agree.
 
-import { type DiagramValue, diagramGraph } from "@loom-ui/core/browser";
+import { type DiagramValue, diagramGraph } from "@loomwork/ui-core/browser";
 
 export interface Point {
   readonly x: number;

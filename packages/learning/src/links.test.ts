@@ -1,4 +1,4 @@
-import { type ProvenanceLedger, emptyLedger, foldProvenance } from "@loom-ui/core";
+import { type ProvenanceLedger, emptyLedger, foldProvenance } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { DecisionLinks, linkFromLedger } from "./links";
 

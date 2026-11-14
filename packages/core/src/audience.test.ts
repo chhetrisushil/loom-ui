@@ -1,4 +1,4 @@
-import { type Layout, type Widget, validateBlueprint } from "@loom/blueprint-runtime";
+import { type Layout, type Widget, validateBlueprint } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { compileFingerprint } from "./action";
 import { defineSemanticCatalog } from "./catalog";

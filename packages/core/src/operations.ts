@@ -1,4 +1,4 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 import { z } from "zod";
 import { inheritedClass, liveClasses, ownClass, toolsOf } from "./classes";
 import { type Experience, type Finding, ProviderSpec } from "./experience";

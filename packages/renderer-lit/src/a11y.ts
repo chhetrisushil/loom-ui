@@ -5,7 +5,7 @@ import {
   deltaDirection,
   unitSuffix,
   widgetRefsOf,
-} from "@loom-ui/core/browser";
+} from "@loomwork/ui-core/browser";
 import type {
   BarChartValue,
   DiagramValue,
@@ -13,8 +13,8 @@ import type {
   StatusCardValue,
   TableValue,
   TimeSeriesValue,
-} from "@loom-ui/core/browser";
-import { type LuMessageKey, pluralForms } from "@loom-ui/core/messages";
+} from "@loomwork/ui-core/browser";
+import { type LuMessageKey, pluralForms } from "@loomwork/ui-core/messages";
 import { type SemanticFormat, effectiveFormat, measure } from "./format";
 import { tPlural } from "./plural";
 import { LEVEL_KEY, say } from "./say";

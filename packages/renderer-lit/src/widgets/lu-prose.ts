@@ -1,11 +1,11 @@
-import type { ProseValue } from "@loom-ui/core/browser";
-import { sanitizeChatText, stripUnsafeChars } from "@loom-ui/core/chat-ui";
+import type { ProseValue } from "@loomwork/ui-core/browser";
+import { sanitizeChatText, stripUnsafeChars } from "@loomwork/ui-core/chat-ui";
 import {
   MD_DOC_MAX_TEXT,
   type MdDocument,
   parseMarkdownDocument,
   parseOrgDocument,
-} from "@loom-ui/core/document";
+} from "@loomwork/ui-core/document";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { say } from "../say";

@@ -1,7 +1,7 @@
 # Planning reference
 
 How the reference planner composes and revises an experience, and how drift repair works. The SPI
-and conformance kit are in [`@loom-ui/planner`](../../packages/planner/README.md); the operations a
+and conformance kit are in [`@loomwork/ui-planner`](../../packages/planner/README.md); the operations a
 planner emits, and every refusal code, are in the [composition reference](composition.md).
 
 ## Compose and revise
@@ -10,12 +10,12 @@ A sketch, not a compiling snippet: `intent`, `catalog`, `capabilities`, `ctx`, `
 model options are the app's.
 
 ```ts
-import { genesis, replay } from "@loom-ui/core";
-import { putExperience } from "@loom-ui/core/log";
-import { ReferencePlanner, interpretAction } from "@loom-ui/planner";
-import { AnthropicProvider } from "@loom/llm";
+import { genesis, replay } from "@loomwork/ui-core";
+import { putExperience } from "@loomwork/ui-core/log";
+import { ReferencePlanner, interpretAction } from "@loomwork/ui-planner";
+import { AnthropicProvider } from "@loomwork/llm";
 
-// Any `@loom/llm` provider (e.g. `AnthropicProvider`) is a PlannerModel.
+// Any `@loomwork/llm` provider (e.g. `AnthropicProvider`) is a PlannerModel.
 const planner = new ReferencePlanner({
   model: new AnthropicProvider({ /* credentials */ }),
   modelId: "claude-…",
@@ -41,7 +41,7 @@ block in the user message — samples, caller context, the current experience's 
 capability's tool-server-authored `description`/`inputSchema` (the CAPABILITIES summary line carries
 only handle, tool@version, schema pin and whether it is bindable).
 
-`ReferencePlanner` fences its own prompts: it does NOT go through `@loom/llm`'s
+`ReferencePlanner` fences its own prompts: it does NOT go through `@loomwork/llm`'s
 `buildRequest`/`guardRequest`.
 
 The caller hands it a provider whose `complete` it calls directly, so the untrusted-content
@@ -59,7 +59,7 @@ not described at all; a draft naming a node inside one is refused as `nested-nod
 
 ## Usage accounting
 
-`PlannerModel.complete` may return `usage: { inputTokens, outputTokens }` (the shape `@loom/llm`
+`PlannerModel.complete` may return `usage: { inputTokens, outputTokens }` (the shape `@loomwork/llm`
 providers already report).
 
 The reference planner records it per attempt and sums it on `PlanReport.usage` — inside the plan's
@@ -71,7 +71,7 @@ not free; a value that is not two non-negative integers is dropped with a `usage
 
 A custom `Planner` need not re-derive any of this: `readReportedUsage` (a reply → `{ usage? }` or `{
 problem? }`, defensive and side-effect-free) and `addUsage` (fold one usage into a running total,
-refusing rather than overflowing `Number.MAX_SAFE_INTEGER`) are exported from `@loom-ui/planner` and
+refusing rather than overflowing `Number.MAX_SAFE_INTEGER`) are exported from `@loomwork/ui-planner` and
 are exactly what the reference planner itself calls.
 
 ## Drift repair

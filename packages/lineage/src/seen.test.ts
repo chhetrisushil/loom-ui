@@ -1,3 +1,5 @@
+import { InMemoryAsyncEventStore, isReservedStream } from "@loomwork/event-runtime";
+import { InMemoryContentStore, contentAddress, encodeValue } from "@loomwork/plugin-content";
 import {
   MAX_SEEN_VALUE_BYTES,
   type Provenance,
@@ -6,9 +8,7 @@ import {
   genesis,
   seenToState,
   snapshotSeen,
-} from "@loom-ui/core";
-import { InMemoryAsyncEventStore, isReservedStream } from "@loom/event-runtime";
-import { InMemoryContentStore, contentAddress, encodeValue } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import {

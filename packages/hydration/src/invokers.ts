@@ -1,6 +1,6 @@
-import { canonicalJson } from "@loom/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { canonicalJson } from "@loomwork/core";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
 import type { TransientInvoker } from "./invoker";
 
 // ── Invoker wrappers: a call cap, an owner's lifetime signal, an in-pass step memo ─

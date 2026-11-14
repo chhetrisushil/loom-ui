@@ -61,7 +61,7 @@ describe("explicit registration", () => {
     render(host, props);
     render(host, props);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain("@loom-ui/renderer-lit/register");
+    expect(String(warn.mock.calls[0]?.[0])).toContain("@loomwork/ui-renderer-lit/register");
     warn.mockRestore();
   });
 

@@ -7,8 +7,8 @@ message. Server-side findings name real node ids and handles, so do not send the
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `Cannot find module '@loom/...'` on install, build or test | `../loom` is missing, not installed or not built. Every `@loom/*` dependency is a `link:../loom/...` override. Run `pnpm install && pnpm build` in loom first. |
-| A new `@loom/*` import does not resolve | Add its `link:` line to `pnpm.overrides` in the root `package.json`, and the lines of any `@loom/*` packages it depends on. Packages declare `"@loom/x": "*"`, never `workspace:*`. |
+| `Cannot find module '@loomwork/...'` on install, build or test | `../loom` is missing, not installed or not built. Every `@loomwork/*` dependency is a `link:../loom/...` override. Run `pnpm install && pnpm build` in loom first. |
+| A new `@loomwork/*` import does not resolve | Add its `link:` line to `pnpm.overrides` in the root `package.json`, and the lines of any `@loomwork/*` packages it depends on. Packages declare `"@loomwork/x": "*"`, never `workspace:*`. |
 | A test fails after you edited loom, with a stack trace pointing at the wrong line | Tests read loom's **built `dist`**; the source maps point at pre-edit `src`. Rebuild loom, then re-run. |
 | `pnpm typecheck` is green but a test file does not compile | `pnpm typecheck` covers `src` only. Run `pnpm typecheck:tests`. CI runs both. |
 | `tsc --build` skips emit after `rm -rf dist` | Use the package's `clean` script, which also removes `tsconfig.tsbuildinfo`. |
@@ -18,11 +18,11 @@ message. Server-side findings name real node ids and handles, so do not send the
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `node -e "import('@loom-ui/renderer-lit/dom')"` fails with a module-not-found error | Expected. `@loom-ui/renderer-lit` is ESM-only and browser code. No other package declares it as a dependency, so pnpm never links it for bare-specifier resolution, and its build emits extensionless relative specifiers (`./litRegistry`) that only a bundler completes. Use Vite, webpack or esbuild, or test under happy-dom. |
-| A browser bundle is megabytes larger than expected, or the bundler complains about `node:crypto`, `node:http` or worker threads | You imported `@loom-ui/hydration` (the root entry) in the browser. It executes providers and reaches loom's sandbox (QuickJS WASM) and MCP plugin. Import `@loom-ui/hydration/client`. |
+| `node -e "import('@loomwork/ui-renderer-lit/dom')"` fails with a module-not-found error | Expected. `@loomwork/ui-renderer-lit` is ESM-only and browser code. No other package declares it as a dependency, so pnpm never links it for bare-specifier resolution, and its build emits extensionless relative specifiers (`./litRegistry`) that only a bundler completes. Use Vite, webpack or esbuild, or test under happy-dom. |
+| A browser bundle is megabytes larger than expected, or the bundler complains about `node:crypto`, `node:http` or worker threads | You imported `@loomwork/ui-hydration` (the root entry) in the browser. It executes providers and reaches loom's sandbox (QuickJS WASM) and MCP plugin. Import `@loomwork/ui-hydration/client`. |
 | The same, but about lineage, changes or learning | Those three packages are server-side and must never enter a client graph. Keep them behind your API. |
-| A browser bundle carries tens of kB of zod | You imported `@loom-ui/core` (the main entry). Use `@loom-ui/core/browser` for the zod-free slice a renderer needs (`checkKindValue`, number formatting, hydration path spellings). |
-| Custom elements are undefined; widgets draw as inert boxes with one console warning | Importing `@loom-ui/renderer-lit` defines nothing. Add `import "@loom-ui/renderer-lit/register"`, or the per-element entries. |
+| A browser bundle carries tens of kB of zod | You imported `@loomwork/ui-core` (the main entry). Use `@loomwork/ui-core/browser` for the zod-free slice a renderer needs (`checkKindValue`, number formatting, hydration path spellings). |
+| Custom elements are undefined; widgets draw as inert boxes with one console warning | Importing `@loomwork/ui-renderer-lit` defines nothing. Add `import "@loomwork/ui-renderer-lit/register"`, or the per-element entries. |
 | `[No renderer for Kpi]` (or `TimeSeries`, `Table`, ...) in React | Framework kinds have no React widget in loom's renderer. Use the Lit or terminal renderer, or register widgets for them. |
 
 ## Compile findings

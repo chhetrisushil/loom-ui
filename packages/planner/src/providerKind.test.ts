@@ -1,4 +1,4 @@
-import { toolKey } from "@loom-ui/core";
+import { toolKey } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { planDecisionId } from "./decision";
 import { buildProviderSpec, providerHandle } from "./materialize";

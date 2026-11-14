@@ -1,11 +1,11 @@
+import { InMemoryContentStore, sweepUnpinnedContent } from "@loomwork/plugin-content";
 import {
   type Provenance,
   type RecordedOperation,
   type SemanticNode,
   genesis,
   snapshotSeen,
-} from "@loom-ui/core";
-import { InMemoryContentStore, sweepUnpinnedContent } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import { rootsFor } from "./rootsFor";

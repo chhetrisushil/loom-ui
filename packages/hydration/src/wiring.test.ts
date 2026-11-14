@@ -1,3 +1,4 @@
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type Experience,
@@ -7,8 +8,7 @@ import {
   genesis,
   hydrationPath,
   hydrationStatusPath,
-} from "@loom-ui/core";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import {
   HYDRATION_PROJECTION_ID,
@@ -22,7 +22,7 @@ import { mcpStep, providerSpec } from "./testing.test-support";
 // the CALLER hands it. This package owns both constants, and nothing in either package's own
 // tests makes the two halves meet: a blueprint pinned to "hydration"/"1.0.0" while the store
 // registers "loom-ui.hydration" is two green suites and a surface that renders nothing.
-// `@loom-ui/core` cannot depend on `@loom-ui/hydration` (the dependency runs the other way), so
+// `@loomwork/ui-core` cannot depend on `@loomwork/ui-hydration` (the dependency runs the other way), so
 // the seam is asserted from here.
 
 // `testCatalog` lives in core's `*.test-support.ts`, which is excluded from core's build and so
@@ -105,7 +105,7 @@ describe("compiler pin ↔ registered projection", () => {
       hydrationProjectionId: HYDRATION_PROJECTION_ID,
       hydrationProjectionVersion: HYDRATION_PROJECTION_VERSION,
     });
-    // Structural, to avoid a dependency on @loom/blueprint-runtime this package does not declare.
+    // Structural, to avoid a dependency on @loomwork/blueprint-runtime this package does not declare.
     // The root is genesis' default 12-column `grid`, so its children are `GridCell`s: unwrap the
     // widget from each cell (`{ span, node }`) before reading its binding.
     const children = (r.blueprint.layout as { children: readonly unknown[] }).children;

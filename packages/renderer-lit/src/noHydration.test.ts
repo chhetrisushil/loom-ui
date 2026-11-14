@@ -3,12 +3,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // A widget's status is a Blueprint concern (`binding.status.path`, ADR 0097 D2), resolved by
-// loom's traversal before a renderer ever runs. `@loom-ui/hydration` is how the APP fetches and
+// loom's traversal before a renderer ever runs. `@loomwork/ui-hydration` is how the APP fetches and
 // publishes the values behind that projection; an adapter that reached for it would be reading
 // the projection directly again — the exact coupling IR 2.0.0 removed — and would also bind the
 // browser bundle to a package that speaks to loom's invoker. It stays a devDependency here,
 // which the test files may (and do) drive; the adapter path may not touch it.
-const FORBIDDEN = ["@loom-ui/hydration"];
+const FORBIDDEN = ["@loomwork/ui-hydration"];
 
 /** Every non-test `.ts` under `src`, recursively — the adapter has subdirectories, unlike the planner. */
 function sources(dir: string): string[] {

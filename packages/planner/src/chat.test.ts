@@ -1,4 +1,4 @@
-import { chatCatalogEntries, defineSemanticCatalog } from "@loom-ui/core";
+import { chatCatalogEntries, defineSemanticCatalog } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { describeCatalog } from "./prompt";

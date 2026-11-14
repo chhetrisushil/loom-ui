@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as main from "./index";
 
-// `@loom-ui/core/browser` is the entry a browser renderer bundles. It must stay zod-free: walk
+// `@loomwork/ui-core/browser` is the entry a browser renderer bundles. It must stay zod-free: walk
 // the `require` graph of the BUILT `dist/browser.js` (needs `pnpm build`, like every consumer).
 const DIST = resolve(__dirname, "../dist");
 
@@ -42,7 +42,7 @@ function reachEsm(entry: string): Set<string> {
   return seen;
 }
 
-describe("@loom-ui/core/browser", () => {
+describe("@loomwork/ui-core/browser", () => {
   it("the ESM build reaches the same zod-free modules and no package", () => {
     const esm = resolve(DIST, "esm");
     const graph = [...reachEsm(resolve(esm, "browser.js"))];
@@ -82,7 +82,7 @@ describe("@loom-ui/core/browser", () => {
     ]);
   });
 
-  it("@loom-ui/core/signals (U11, opt-in) reaches no package and no other core module", () => {
+  it("@loomwork/ui-core/signals (U11, opt-in) reaches no package and no other core module", () => {
     const graph = [...reach(resolve(DIST, "signals.js"))];
     expect(graph.filter((g) => g.startsWith("pkg:"))).toEqual([]);
     expect(graph.map((g) => g.replace(`${DIST}/`, "")).sort()).toEqual(["signals.js"]);

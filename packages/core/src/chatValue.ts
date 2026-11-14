@@ -2,7 +2,7 @@
 //
 // A `Chat` widget is bound (like any data widget) to a handle whose hydrated VALUE is a
 // {@link ChatValue}: a bounded window of turns, oldest first, plus the cursor to load earlier ones.
-// It is the shape loom's conversation layer (`@loom/conversation`, ADR 0122) emits once a client has
+// It is the shape loom's conversation layer (`@loomwork/conversation`, ADR 0122) emits once a client has
 // folded it (`ChatFeed` in `chatFeed.ts`), but it names no loom type and imports nothing from loom:
 // any transcript source that can say this much can feed the widget.
 //
@@ -19,7 +19,7 @@
 //    renderer) treats it as markup.
 //
 // Zod-free and DOM-free on purpose, like `mediaRef.ts`: it rides in `checkKindValue` on the browser
-// entry, and the rest of the chat surface is the opt-in `@loom-ui/core/chat`.
+// entry, and the rest of the chat surface is the opt-in `@loomwork/ui-core/chat`.
 
 import { MAX_CHAT_REFS } from "./chatRefs";
 import { type MediaRef, mediaValueIssues } from "./mediaRef";

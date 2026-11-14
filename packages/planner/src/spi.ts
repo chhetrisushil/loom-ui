@@ -1,3 +1,5 @@
+import { type DataClass, type TaintedValue, isTainted } from "@loomwork/classify";
+import type { RolloutStamp } from "@loomwork/learning";
 import type {
   ContainerRoleSpec,
   Experience,
@@ -6,9 +8,7 @@ import type {
   Operation,
   SemanticCatalog,
   Surface,
-} from "@loom-ui/core";
-import { type DataClass, type TaintedValue, isTainted } from "@loom/classify";
-import type { RolloutStamp } from "@loom/learning";
+} from "@loomwork/ui-core";
 
 /**
  * A tool the planner MAY bind a node to. The framework fetches nothing (spec §7.1: context is an
@@ -84,16 +84,16 @@ export interface DecideContext {
   ): Promise<T>;
 }
 
-/** Where a media part's bytes are — structurally `@loom/llm`'s `LlmBinarySource`. */
+/** Where a media part's bytes are — structurally `@loomwork/llm`'s `LlmBinarySource`. */
 export type PlannerBinarySource =
   | { readonly kind: "ref"; readonly ref: { readonly address: string; readonly size?: number } }
   | { readonly kind: "data"; readonly data: string };
-/** A text part — structurally `@loom/llm`'s `LlmTextPart`. */
+/** A text part — structurally `@loomwork/llm`'s `LlmTextPart`. */
 export interface PlannerTextPart {
   readonly type: "text";
   readonly text: string;
 }
-/** An image / audio / file part — structurally `@loom/llm`'s media parts. */
+/** An image / audio / file part — structurally `@loomwork/llm`'s media parts. */
 export interface PlannerMediaPart {
   readonly type: "image" | "audio" | "file";
   readonly mediaType: string;
@@ -102,8 +102,8 @@ export interface PlannerMediaPart {
   readonly untrusted?: { readonly origin: string };
 }
 /**
- * One content part — structurally `@loom/llm`'s `LlmContentPart` (text, media, `tool_use`,
- * `tool_result`; ADR 0120). `@loom-ui/planner` does not depend on `@loom/llm`, so the shape is
+ * One content part — structurally `@loomwork/llm`'s `LlmContentPart` (text, media, `tool_use`,
+ * `tool_result`; ADR 0120). `@loomwork/ui-planner` does not depend on `@loomwork/llm`, so the shape is
  * mirrored. A loom `LlmMessage` is assignable to a `PlannerMessage` as is. The other direction needs a
  * shallow copy (`[...parts]`): the arrays here are `readonly` DELIBERATELY (a planner never mutates a
  * message), and a `readonly` array does not assign to loom's mutable `LlmContentPart[]`.
@@ -123,17 +123,17 @@ export type PlannerContentPart =
       readonly content: string | readonly (PlannerTextPart | PlannerMediaPart)[];
       readonly isError?: boolean;
     };
-/** Structurally `@loom/llm`'s `LlmMessageContent`: text, or parts. */
+/** Structurally `@loomwork/llm`'s `LlmMessageContent`: text, or parts. */
 export type PlannerMessageContent = string | readonly PlannerContentPart[];
 
-/** Structural subset of `@loom/llm`'s `LlmProvider.complete` message (content is text OR parts). */
+/** Structural subset of `@loomwork/llm`'s `LlmProvider.complete` message (content is text OR parts). */
 export interface PlannerMessage {
   readonly role: "system" | "user" | "assistant";
   readonly content: PlannerMessageContent;
 }
 
 /**
- * The text of a message's content — the local equivalent of `@loom/llm`'s `textOf`. A string is
+ * The text of a message's content — the local equivalent of `@loomwork/llm`'s `textOf`. A string is
  * itself; parts contribute their `text` parts and a `tool_result`'s text, in order, and media and
  * `tool_use` parts contribute nothing. Never `[object Object]`. A `tainted()` wrapper (untrusted
  * data, not message text) is refused with a throw rather than flattened: unwrap it on purpose.
@@ -170,7 +170,7 @@ const plain = (text: unknown): string => {
   return text as string;
 };
 /**
- * Token accounting for one model call — the same shape as `@loom/llm`'s `LlmResponse.usage`,
+ * Token accounting for one model call — the same shape as `@loomwork/llm`'s `LlmResponse.usage`,
  * so a loom provider's usage flows through with no adapter.
  */
 export interface PlannerUsage {
@@ -179,7 +179,7 @@ export interface PlannerUsage {
 }
 /**
  * One live chunk of a model reply — structurally loom's `EffectDelta` (ADR 0119,
- * `@loom/effect-runtime`), so a scope's chunk flows through with no adapter. `delta` is a TAINTED
+ * `@loomwork/effect-runtime`), so a scope's chunk flows through with no adapter. `delta` is a TAINTED
  * string (the model's text is untrusted): unwrap it explicitly to display it. A `reset` chunk
  * (empty `delta`) means the call is retrying and the text so far is void; the terminal `done`
  * chunk carries the provider's `usage`. Live-only: never recorded, and it may never arrive at all
@@ -275,7 +275,7 @@ export interface ComposeInput {
   /**
    * The stable UNIT a planner with `variants` assigns a variant by (U11): an opaque id of a user,
    * tenant or cohort, `[A-Za-z0-9_.:-]{1,128}`. The HOST derives it server-side as a keyed HMAC alias
-   * (`unitAlias(key, userId)` in `@loom-ui/learning`) — never client-supplied, never a name or an
+   * (`unitAlias(key, userId)` in `@loomwork/ui-learning`) — never client-supplied, never a name or an
    * email. It is a PSEUDONYM, recorded in the decision log for good: destroying the key severs it
    * from the person, but the log still ties one alias's decisions together. Not part of the plan
    * decision's id. Required when the planner has

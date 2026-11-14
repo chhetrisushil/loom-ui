@@ -1,4 +1,4 @@
-// The long-document parsers (`@loom-ui/core/document`): markdown and a closed Org subset into the same bounded AST
+// The long-document parsers (`@loomwork/ui-core/document`): markdown and a closed Org subset into the same bounded AST
 // chat draws, with the source range of each top-level block. Their own entry, so a page that only draws chat does not
 // carry them. Zod-free, like every module a browser widget bundles.
 export {

@@ -1,3 +1,4 @@
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type SemanticNode,
@@ -5,9 +6,8 @@ import {
   defineSemanticCatalog,
   genesis,
   mediaCatalogEntries,
-} from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMediaLitRegistry } from "../media";
 import { renderBlueprintDom } from "./index";

@@ -1,4 +1,3 @@
-import { type StampedAction, viewedVersionOf } from "@loom-ui/core/browser";
 import {
   type BindingStatus,
   type Layout,
@@ -11,8 +10,9 @@ import {
   isWidget,
   resolveWidgetStatus,
   resolveWidgetValue,
-} from "@loom/blueprint-runtime";
-import type { ProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/blueprint-runtime";
+import type { ProjectionRuntime } from "@loomwork/projection-runtime";
+import { type StampedAction, viewedVersionOf } from "@loomwork/ui-core/browser";
 import { titleText } from "../title";
 import { deepEqual } from "./deepEqual";
 import {

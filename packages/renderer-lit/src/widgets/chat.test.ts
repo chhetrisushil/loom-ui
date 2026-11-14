@@ -1,6 +1,6 @@
-import type { ChatValue } from "@loom-ui/core/chat";
-import { EDIT_TURN_ACTION, LOAD_OLDER_ACTION, isSubmitKey } from "@loom-ui/core/chat";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import type { ChatValue } from "@loomwork/ui-core/chat";
+import { EDIT_TURN_ACTION, LOAD_OLDER_ACTION, isSubmitKey } from "@loomwork/ui-core/chat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-chat";
 
@@ -514,7 +514,7 @@ describe("lu-chat: edit a previous turn (a NEW turn, never a mutation)", () => {
 
 describe("parity with the terminal surface", () => {
   it("the web and the terminal speak the same words for the same transcript (shared speaker, note and fixed sentences)", async () => {
-    const { chatTranscriptLines } = await import("@loom-ui/core/chat");
+    const { chatTranscriptLines } = await import("@loomwork/ui-core/chat");
     const v = value(
       [
         e(1, "user"),

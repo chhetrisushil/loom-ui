@@ -1,5 +1,3 @@
-import { REFERENCE_CONTAINER_ROLES, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
 import {
   type EvalReport,
   InMemoryPolicyKv,
@@ -8,7 +6,9 @@ import {
   type PolicyResolver,
   contentHash,
   rolloutBucket,
-} from "@loom/learning";
+} from "@loomwork/learning";
+import { REFERENCE_CONTAINER_ROLES, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { plannerProvenance } from "./provenance";

@@ -1,5 +1,5 @@
 {
-  "name": "@loom-ui/core",
+  "name": "@loomwork/ui-core",
   "version": "0.1.0",
   "description": "Experience Model, operations + replay, semantic catalogue, and the compiler to loom's Blueprint",
   "main": "./dist/index.js",
@@ -82,10 +82,10 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom/blueprint-runtime": "^0.1.0",
-    "@loom/classify": "^0.1.0",
-    "@loom/core": "^0.1.0",
-    "@loom/plugin-content": "^0.1.0",
+    "@loomwork/blueprint-runtime": "^0.1.0",
+    "@loomwork/classify": "^0.1.0",
+    "@loomwork/core": "^0.1.0",
+    "@loomwork/plugin-content": "^0.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {

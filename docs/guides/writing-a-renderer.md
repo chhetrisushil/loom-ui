@@ -4,8 +4,8 @@
 interface, a PDF, a different web framework) and prove it honours the same contract as the Lit and
 terminal renderers.
 
-**Prerequisites.** [Rendering](rendering.md). `@loom-ui/renderer-conformance` is ESM, like
-`@loom-ui/renderer-lit`: its consumer is a bundler or vitest, not a plain Node `import()`. Snippets
+**Prerequisites.** [Rendering](rendering.md). `@loomwork/ui-renderer-conformance` is ESM, like
+`@loomwork/ui-renderer-lit`: its consumer is a bundler or vitest, not a plain Node `import()`. Snippets
 are mirrored from
 [`renderer.test.ts`](../snippets/src/renderer.test.ts).
 
@@ -14,13 +14,13 @@ are mirrored from
 Anything that takes a loom `Blueprint` plus the values bound to it and shows them. You do not need
 loom-ui internals, only three things:
 
-1. **Read the Blueprint.** It is loom's IR (`@loom/blueprint-runtime`): a `layout` tree of `grid`,
+1. **Read the Blueprint.** It is loom's IR (`@loomwork/blueprint-runtime`): a `layout` tree of `grid`,
    `flex` and `stack` containers (a grid child is a `GridCell { node }`) and `Widget`s with a `kind`,
    `title`, `props` and an optional `binding`. Walk it and look each widget's `kind` up in your own
    table. Refuse, visibly, any kind you do not draw.
 2. **Honour the status matrix and the value contract.** A bound widget's value and status live in
    the projection state at `binding.path` (`values.<handle>`) and `binding.status.path`
-   (`status.<handle>`). Validate a value with `checkKindValue(kind, value)` from `@loom-ui/core`
+   (`status.<handle>`). Validate a value with `checkKindValue(kind, value)` from `@loomwork/ui-core`
    (and its `browser` subpath, which has no zod) and show a visible error rather than a blank. The
    states are loading (no value), ready, stale (keeps the last value), error (the finding, no value)
    and empty.
@@ -30,7 +30,7 @@ loom-ui internals, only three things:
 Use the shared helpers so your words and numbers agree with the other surfaces:
 `createSay(i18n)` for every fixed word (never hard-code English), `chatTranscriptLines`,
 `describeMedia`, `formatSemanticNumber`, and `stripUnsafeChars` / the `validate*Value` helpers from
-`@loom-ui/core/chat-ui`.
+`@loomwork/ui-core/chat-ui`.
 
 ## The adapter
 
@@ -39,15 +39,15 @@ The kit drives your renderer through a small `RendererAdapter`. Nothing in it na
 <!-- snippet: imports -->
 
 ```ts
-import { HydrationStore } from "@loom-ui/hydration/client";
+import { HydrationStore } from "@loomwork/ui-hydration/client";
 import {
   type HandleEntry,
   type RendererAdapter,
   checkRendererConformance,
-} from "@loom-ui/renderer-conformance";
-import { describeRendererConformance } from "@loom-ui/renderer-conformance/vitest";
-import { renderExperience } from "@loom-ui/renderer-terminal";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-renderer-conformance";
+import { describeRendererConformance } from "@loomwork/ui-renderer-conformance/vitest";
+import { renderExperience } from "@loomwork/ui-renderer-terminal";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 ```
 
 <!-- snippet: adapter -->
@@ -205,13 +205,13 @@ failure; both shipped renderers do.
 ## Gotchas
 
 - Importing a renderer package no longer defines its custom elements; a Lit-based adapter must
-  `import "@loom-ui/renderer-lit/register"` first.
+  `import "@loomwork/ui-renderer-lit/register"` first.
 - `text()` must settle before it returns. A kit that has to sleep means the adapter is wrong.
 - `forbidSkips` on a renderer that declares no capabilities proves little; declare what you do.
 
 ## See also
 
-- Package: [`@loom-ui/renderer-conformance`](../../packages/renderer-conformance/README.md).
+- Package: [`@loomwork/ui-renderer-conformance`](../../packages/renderer-conformance/README.md).
 - Reference: [rendering](../reference/rendering.md).
 - Examples (in `loom-examples`): `media-gallery`, `incident-shared-chat` (chat and media surfaces
   that exercise the clauses above).

@@ -10,8 +10,8 @@ import {
   defineSemanticCatalog,
   genesis,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   HYDRATION_PROJECTION_ID,
   HYDRATION_PROJECTION_VERSION,
@@ -19,9 +19,9 @@ import {
   HydrationStore,
   type TransientInvoker,
   defineReshapers,
-} from "@loom-ui/hydration";
-import { renderExperience, watch } from "@loom-ui/renderer-terminal";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration";
+import { renderExperience, watch } from "@loomwork/ui-renderer-terminal";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 // #endregion imports
 
 describe("docs/getting-started.md", () => {

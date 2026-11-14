@@ -1,5 +1,5 @@
-import type { Audience, Finding, Priority } from "@loom-ui/core";
-import { checkKindValue, hasKindContract, isBroadcast } from "@loom-ui/core/browser";
+import type { Audience, Finding, Priority } from "@loomwork/ui-core";
+import { checkKindValue, hasKindContract, isBroadcast } from "@loomwork/ui-core/browser";
 import { type LoadParams, checkParams, paramsKey, pickParams } from "../params";
 import {
   HydrationAudienceMismatchError,
@@ -37,7 +37,7 @@ import { errorMessage, refuse, reservedFinding } from "./shared";
 // never reaches an argument the provider did not declare overridable.
 //
 // This file is the CLIENT half: browser-safe by construction (no provider execution, no sandbox,
-// no MCP runtime, no node builtin). `@loom-ui/hydration/client` exports it; the fitness test
+// no MCP runtime, no node builtin). `@loomwork/ui-hydration/client` exports it; the fitness test
 // `clientEntry.test.ts` walks the built graph to keep it that way.
 
 export interface HandleRef {

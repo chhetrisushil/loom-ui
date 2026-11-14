@@ -1,4 +1,4 @@
-import { stripUnsafeChars } from "@loom-ui/core/chat-ui";
+import { stripUnsafeChars } from "@loomwork/ui-core/chat-ui";
 import { describe, expect, it } from "vitest";
 import type { MountedRenderer, RendererAdapter } from "./adapter";
 import { checkRendererConformance } from "./run";

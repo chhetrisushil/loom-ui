@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { tainted } from "@loomwork/classify";
+import { canonicalJson } from "@loomwork/core";
 import {
   type ContainerNode,
   type MCPToolNode,
@@ -9,10 +11,8 @@ import {
   isContainer,
   replay,
   validateExperience,
-} from "@loom-ui/core";
-import { outputShapeHashOf } from "@loom-ui/hydration";
-import { tainted } from "@loom/classify";
-import { canonicalJson } from "@loom/core";
+} from "@loomwork/ui-core";
+import { outputShapeHashOf } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import type { DraftNode, PlanDraft } from "./contract";
 import {

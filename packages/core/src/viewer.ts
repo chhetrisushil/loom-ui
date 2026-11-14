@@ -1,8 +1,8 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 
 // ── Who may see what ──────────────────────────────────────────────────────────
 // A VIEWER is whoever the produced output is for. Its `clearance` is the strictest data class it
-// may see, in `@loom/classify`'s ordering (secret > sensitive > internal): a viewer cleared to
+// may see, in `@loomwork/classify`'s ordering (secret > sensitive > internal): a viewer cleared to
 // "sensitive" sees "sensitive" and "internal" bindings and not "secret" ones; one with no
 // clearance sees only UNCLASSIFIED bindings (a binding with no `sensitivity`). Clearance is a
 // plain fact the host derives from its own authorization (loom's `ExecutionAuthorizer`, a role

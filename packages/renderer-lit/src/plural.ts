@@ -1,7 +1,7 @@
 // Counted nouns: `n row` / `n rows` in the active locale's plural categories. Kept apart from
 // `i18n.ts` so it reaches `t` through the module boundary — the one seam a host (or a test)
-// replaces. The category logic lives once, in `@loom-ui/core`, beside the terminal's use of it.
-import { type PluralForms, selectPlural } from "@loom-ui/core/messages";
+// replaces. The category logic lives once, in `@loomwork/ui-core`, beside the terminal's use of it.
+import { type PluralForms, selectPlural } from "@loomwork/ui-core/messages";
 import { formattingLocale, t } from "./i18n";
 
 export type { PluralForms };

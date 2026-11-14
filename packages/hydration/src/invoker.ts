@@ -1,4 +1,4 @@
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
 
 /**
  * The one thing hydration needs from loom's runtime: a one-shot, non-durable effect call.

@@ -1,5 +1,10 @@
-import { type Provenance, type RecordedOperation, type SemanticNode, genesis } from "@loom-ui/core";
-import { InMemoryContentStore, sweepUnpinnedContent } from "@loom/plugin-content";
+import { InMemoryContentStore, sweepUnpinnedContent } from "@loomwork/plugin-content";
+import {
+  type Provenance,
+  type RecordedOperation,
+  type SemanticNode,
+  genesis,
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import { DEFAULT_KEEP_LAST, retainedVersions } from "./retention";

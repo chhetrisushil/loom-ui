@@ -1,7 +1,7 @@
-import type { Finding } from "@loom-ui/core";
+import type { Finding } from "@loomwork/ui-core";
 import { resolvePath } from "./plan";
 
-// Pure reshaping pieces (no sandbox, no MCP): `@loom-ui/hydration/client` exports them so a planner
+// Pure reshaping pieces (no sandbox, no MCP): `@loomwork/ui-hydration/client` exports them so a planner
 // can dry-run a JSONPath binding without the server plane. `reshape.ts` re-exports them.
 
 /**

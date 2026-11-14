@@ -1,3 +1,4 @@
+import { builtinCatalog, catalogCoverage, customWidget$ } from "@loomwork/blueprint-runtime";
 import {
   type ContainerNode,
   type SemanticNode,
@@ -5,8 +6,7 @@ import {
   compile,
   defineSemanticCatalog,
   genesis,
-} from "@loom-ui/core";
-import { builtinCatalog, catalogCoverage, customWidget$ } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it, vi } from "vitest";
 import { chatKindContracts, createChatLitRegistry, registerChatWidgets } from "./chat";
 import { createLitRegistry } from "./dom/litRegistry";

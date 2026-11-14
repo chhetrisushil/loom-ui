@@ -1,4 +1,4 @@
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import { describe, expect, it } from "vitest";
 import {
   HYDRATION_PROJECTION_ID,

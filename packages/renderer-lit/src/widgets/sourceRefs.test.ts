@@ -1,5 +1,5 @@
-import { REF_OPEN_ACTION } from "@loom-ui/core/browser";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import { REF_OPEN_ACTION } from "@loomwork/ui-core/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { describeValue } from "../a11y";
 import { configureI18n, setLocale } from "../i18n";

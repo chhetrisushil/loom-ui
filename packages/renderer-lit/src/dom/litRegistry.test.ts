@@ -1,3 +1,4 @@
+import { MetricCard, builtinCatalog, catalogCoverage } from "@loomwork/blueprint-runtime";
 import {
   type ContainerNode,
   FRAMEWORK_KINDS,
@@ -5,8 +6,7 @@ import {
   compile,
   defineSemanticCatalog,
   genesis,
-} from "@loom-ui/core";
-import { MetricCard, builtinCatalog, catalogCoverage } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import {
   LIT_ONLY_KINDS,
@@ -16,7 +16,7 @@ import {
 } from "./litRegistry";
 import "../register";
 
-// The opt-in entries' kinds (`@loom-ui/renderer-lit/media`, `/chat`, `/diagram`): the default registry draws a fixed placeholder for them.
+// The opt-in entries' kinds (`@loomwork/ui-renderer-lit/media`, `/chat`, `/diagram`): the default registry draws a fixed placeholder for them.
 const MEDIA = new Set<string>([
   "Image",
   "Audio",
@@ -38,7 +38,7 @@ describe("litRegistry parity", () => {
     expect(report.ok).toBe(true);
   });
   it("names the Lit-only kinds explicitly and declares their loom contracts", () => {
-    // The media kinds are framework kinds too, drawn by the opt-in `@loom-ui/renderer-lit/media`
+    // The media kinds are framework kinds too, drawn by the opt-in `@loomwork/ui-renderer-lit/media`
     // entry (see media.test.ts for their registry parity), so the DEFAULT registry omits them.
     const defaultKinds = FRAMEWORK_KINDS.filter((k) => !MEDIA.has(k));
     expect([...LIT_ONLY_KINDS].sort()).toEqual([...defaultKinds].sort());

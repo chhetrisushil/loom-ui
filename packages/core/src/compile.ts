@@ -13,8 +13,8 @@ import {
   grid,
   isLayoutRole,
   validateBlueprint,
-} from "@loom/blueprint-runtime";
-import type { DataClass } from "@loom/classify";
+} from "@loomwork/blueprint-runtime";
+import type { DataClass } from "@loomwork/classify";
 import {
   type SemanticCatalog,
   type Surface,
@@ -235,7 +235,7 @@ export interface CompileResult {
     /**
      * The ids (aliases) of every node drawn as a bare restricted placeholder, sorted. The viewer
      * already holds them (they are the placeholders' ids in the Blueprint); a signal collector
-     * (`@loom-ui/core/signals`) takes them so it reports such a node as restricted, never by content.
+     * (`@loomwork/ui-core/signals`) takes them so it reports such a node as restricted, never by content.
      */
     readonly placeholderNodes: readonly string[];
   };

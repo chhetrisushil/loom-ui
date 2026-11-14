@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "@loom/core";
+import type { EventEnvelope } from "@loomwork/core";
 import {
   type EvalReport,
   type EvaluateOptions,
@@ -9,11 +9,11 @@ import {
   evaluatePolicy,
   promotionGate,
   trajectories,
-} from "@loom/learning";
+} from "@loomwork/learning";
 
 // ── UI evaluation (U11) ───────────────────────────────────────────────────────
 // Which planner variant is better, from the log alone? Each variant is a CANDIDATE policy that
-// "always chooses this variant"; `@loom/learning`'s `evaluatePolicy` estimates its value from the
+// "always chooses this variant"; `@loomwork/learning`'s `evaluatePolicy` estimates its value from the
 // logged variant decisions (their recorded propensity, the late rewards `settleRewards` attached)
 // with SNIPS. loom-ui adds NO estimator: it selects the variant decisions and the reward outcomes,
 // names the candidates and reads the verdict from loom's `promotionGate`.
@@ -22,7 +22,7 @@ import {
 // one (a CSAT score, a flow's own `recordOutcome`). So only outcomes this pipeline recorded count:
 // key `ui:<rewardId>:` AND kernel-stamped (a userspace `ctx.emit` cannot carry that metadata).
 //
-// For an execution whose log was compacted, pass `evidenceEvents(state, events)` from `@loom/learning`,
+// For an execution whose log was compacted, pass `evidenceEvents(state, events)` from `@loomwork/learning`,
 // not the raw tail, or the compacted decisions are missing.
 
 /** The id prefix of a variant-choice decision (`ReferencePlanner`). */

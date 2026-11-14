@@ -1,3 +1,6 @@
+import { TypedFailure } from "@loomwork/core";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type ContentRefTable,
@@ -6,10 +9,7 @@ import {
   STEP_TEMPLATE_SOURCE,
   type SemanticNode,
   genesis,
-} from "@loom-ui/core";
-import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { HydrationCache } from "./cache";
 import { checkContentRefs, contentRefEnv } from "./contentRefs";

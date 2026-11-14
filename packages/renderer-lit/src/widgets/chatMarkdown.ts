@@ -5,7 +5,7 @@ import {
   mdDestination,
   mdLabelIsSite,
   mdPlainText,
-} from "@loom-ui/core/chat-ui";
+} from "@loomwork/ui-core/chat-ui";
 import { type CSSResult, type TemplateResult, css, html, nothing } from "lit";
 import { say } from "../say";
 

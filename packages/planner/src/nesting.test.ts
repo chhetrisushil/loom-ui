@@ -13,8 +13,8 @@ import {
   nodeIds,
   replay,
   validateExperience,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import {

@@ -1,5 +1,5 @@
-import type { LuI18n } from "@loom-ui/core";
-import type { BindingState, Blueprint, WidgetAction } from "@loom/blueprint-runtime";
+import type { BindingState, Blueprint, WidgetAction } from "@loomwork/blueprint-runtime";
+import type { LuI18n } from "@loomwork/ui-core";
 
 /**
  * What a renderer must implement for the kit to drive it. The kit hands it a loom `Blueprint` plus

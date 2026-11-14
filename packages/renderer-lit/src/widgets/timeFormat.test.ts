@@ -1,4 +1,4 @@
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureI18n, setLocale } from "../i18n";
 import "../register";

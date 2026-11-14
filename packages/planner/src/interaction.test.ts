@@ -1,4 +1,4 @@
-import { apply, genesis, replay } from "@loom-ui/core";
+import { apply, genesis, replay } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { EXPERIENCE_OP_ACTION, EXPERIENCE_PROMOTED, interpretAction } from "./interaction";
 import { materialize } from "./materialize";

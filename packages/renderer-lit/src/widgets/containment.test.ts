@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../register";
 import "../elements/lu-chat";

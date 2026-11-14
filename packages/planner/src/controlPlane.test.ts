@@ -1,7 +1,7 @@
-import { genesis } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { limitInvoker } from "@loom-ui/hydration";
-import { TypedFailure } from "@loom/core";
+import { TypedFailure } from "@loomwork/core";
+import { genesis } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import { limitInvoker } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import * as pkg from "./index";
@@ -100,7 +100,7 @@ describe("control-plane errors propagate out of the decider", () => {
     expect(ctx.decisions.size).toBe(1);
   });
 
-  // `@loom-ui/hydration` resolves to its BUILT dist here (as a consumer gets it), so this proves
+  // `@loomwork/ui-hydration` resolves to its BUILT dist here (as a consumer gets it), so this proves
   // the composed behaviour after a build; the AbortError naming itself is pinned at source by
   // hydration's own invokers.test.ts.
   it("limitInvoker over the scope with an already-aborted signal propagates: scope never reached, nothing recorded", async () => {

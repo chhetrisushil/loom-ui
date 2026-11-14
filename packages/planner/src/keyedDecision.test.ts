@@ -1,6 +1,6 @@
 import { inspect } from "node:util";
-import { genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+import { genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import { describe, expect, it } from "vitest";
 import { MIN_DECISION_KEY_BYTES, planDecisionId } from "./decision";
 import { ReferencePlanner } from "./reference";

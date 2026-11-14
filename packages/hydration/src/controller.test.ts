@@ -1,8 +1,8 @@
-import { type ContainerNode, type Experience, type SemanticNode, genesis } from "@loom-ui/core";
-import { TypedFailure } from "@loom/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { TypedFailure } from "@loomwork/core";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { type ContainerNode, type Experience, type SemanticNode, genesis } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { HydrationCache } from "./cache";
 import { type ControllerOptions, HydrationController, loadFingerprint } from "./controller";

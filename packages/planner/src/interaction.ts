@@ -1,6 +1,12 @@
-import { type Experience, type Finding, Operation, type Provenance, findNode } from "@loom-ui/core";
-import type { WidgetAction } from "@loom/blueprint-runtime";
-import type { ContentRef } from "@loom/plugin-content";
+import type { WidgetAction } from "@loomwork/blueprint-runtime";
+import type { ContentRef } from "@loomwork/plugin-content";
+import {
+  type Experience,
+  type Finding,
+  Operation,
+  type Provenance,
+  findNode,
+} from "@loomwork/ui-core";
 
 /** The one action type the framework interprets as an EXPERIENCE operation (spec §7.2). */
 export const EXPERIENCE_OP_ACTION = "experience.op";

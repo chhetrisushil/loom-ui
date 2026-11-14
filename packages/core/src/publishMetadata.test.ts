@@ -5,8 +5,8 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // Every public package's npm publish metadata (version, files allowlist, publishConfig, real
-// `@loom/*` ranges, `workspace:^`) is written by scripts/publish-metadata.mjs. This guard re-runs
-// it in `--check` mode so a hand edit, a new package or a new `@loom/*` dependency that skipped the
+// `@loomwork/*` ranges, `workspace:^`) is written by scripts/publish-metadata.mjs. This guard re-runs
+// it in `--check` mode so a hand edit, a new package or a new `@loomwork/*` dependency that skipped the
 // generator fails here instead of shipping a manifest that cannot install.
 const ROOT = resolve(__dirname, "../../..");
 const SCRIPT = join(ROOT, "scripts/publish-metadata.mjs");
@@ -39,9 +39,9 @@ describe("npm publish metadata", () => {
     expect(r.status).toBe(0);
   });
 
-  it("fails on a `*` @loom range (non-vacuity)", () => {
+  it("fails on a `*` @loomwork range (non-vacuity)", () => {
     const root = fixture((pkg) => {
-      (pkg.dependencies as Record<string, string>)["@loom/core"] = "*";
+      (pkg.dependencies as Record<string, string>)["@loomwork/core"] = "*";
     });
     try {
       const r = check(root);
@@ -55,14 +55,14 @@ describe("npm publish metadata", () => {
   it("fails on a public package that depends on a private one", () => {
     const root = fixture(
       (pkg) => {
-        (pkg.dependencies as Record<string, string>)["@loom-ui/internal"] = "workspace:^";
+        (pkg.dependencies as Record<string, string>)["@loomwork/ui-internal"] = "workspace:^";
       },
-      { name: "@loom-ui/internal", private: true }
+      { name: "@loomwork/ui-internal", private: true }
     );
     try {
       const r = check(root);
       expect(r.status).toBe(1);
-      expect(r.stderr).toContain("depends on private @loom-ui/internal");
+      expect(r.stderr).toContain("depends on private @loomwork/ui-internal");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
