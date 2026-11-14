@@ -117,10 +117,10 @@ importers:
   packages/changes:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom-ui/lineage':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../lineage
       '@loom/classify':
         specifier: link:../../../loom/packages/classify
@@ -176,7 +176,7 @@ importers:
   packages/hydration:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom/agent':
         specifier: link:../../../loom/packages/agent
@@ -219,7 +219,7 @@ importers:
   packages/learning:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom/analytics':
         specifier: link:../../../loom/packages/analytics
@@ -232,10 +232,10 @@ importers:
         version: link:../../../loom/packages/learning
     devDependencies:
       '@loom-ui/lineage':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../lineage
       '@loom-ui/planner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../planner
       '@loom/effect-runtime':
         specifier: link:../../../loom/packages/effect-runtime
@@ -268,7 +268,7 @@ importers:
   packages/lineage:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom/event-runtime':
         specifier: link:../../../loom/packages/event-runtime
@@ -281,7 +281,7 @@ importers:
         version: 3.25.76
     devDependencies:
       '@loom-ui/planner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../planner
       '@loom/plugin-crypto':
         specifier: link:../../../loom/plugins/crypto
@@ -299,10 +299,10 @@ importers:
   packages/planner:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom-ui/hydration':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../hydration
       '@loom/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
@@ -324,7 +324,7 @@ importers:
         version: 3.25.76
     devDependencies:
       '@loom-ui/renderer-terminal':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../renderer-terminal
       '@loom/plugin-mcp':
         specifier: link:../../../loom/plugins/mcp
@@ -351,10 +351,10 @@ importers:
   packages/renderer-conformance:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom-ui/hydration':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../hydration
       '@loom/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
@@ -373,7 +373,7 @@ importers:
   packages/renderer-lit:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
@@ -386,10 +386,10 @@ importers:
         version: 3.3.3
     devDependencies:
       '@loom-ui/hydration':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../hydration
       '@loom-ui/renderer-conformance':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../renderer-conformance
       '@types/node':
         specifier: 'catalog:'
@@ -410,10 +410,10 @@ importers:
   packages/renderer-terminal:
     dependencies:
       '@loom-ui/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@loom-ui/hydration':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../hydration
       '@loom/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
@@ -426,7 +426,7 @@ importers:
         version: link:../../../loom/packages/projection-runtime
     devDependencies:
       '@loom-ui/renderer-conformance':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../renderer-conformance
       '@types/node':
         specifier: 'catalog:'

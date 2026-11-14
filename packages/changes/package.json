@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/changes",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Ambient change delivery for loom-ui: a ChangeFeed over lineage events (resume from a cursor, at-least-once, idempotent ids), viewer-safe change descriptions, a per-viewer unread cursor seam, and polling / push head signals",
-  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -23,16 +22,42 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom-ui/lineage": "workspace:*",
-    "@loom/classify": "*",
-    "@loom/event-runtime": "*"
+    "@loom-ui/core": "workspace:^",
+    "@loom-ui/lineage": "workspace:^",
+    "@loom/classify": "^0.1.0",
+    "@loom/event-runtime": "^0.1.0"
   },
   "devDependencies": {
-    "@loom/plugin-content": "*",
-    "@loom/plugin-crypto": "*",
+    "@loom/plugin-content": "^0.1.0",
+    "@loom/plugin-crypto": "^0.1.0",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/changes"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

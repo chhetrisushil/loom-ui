@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/planner",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Planner SPI for loom-ui: intent + semantic catalogue + capabilities → operations, through ctx.decide; reference planner and conformance kit",
-  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -23,23 +22,49 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom-ui/hydration": "workspace:*",
-    "@loom/blueprint-runtime": "*",
-    "@loom/classify": "*",
-    "@loom/core": "*",
-    "@loom/learning": "*",
-    "@loom/plugin-content": "*",
+    "@loom-ui/core": "workspace:^",
+    "@loom-ui/hydration": "workspace:^",
+    "@loom/blueprint-runtime": "^0.1.0",
+    "@loom/classify": "^0.1.0",
+    "@loom/core": "^0.1.0",
+    "@loom/learning": "^0.1.0",
+    "@loom/plugin-content": "^0.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@loom-ui/renderer-terminal": "workspace:*",
-    "@loom/plugin-mcp": "*",
-    "@loom/plugin-renderer-terminal": "*",
-    "@loom/plugin-sandbox": "*",
-    "@loom/projection-runtime": "*",
+    "@loom-ui/renderer-terminal": "workspace:^",
+    "@loom/plugin-mcp": "^0.1.0",
+    "@loom/plugin-renderer-terminal": "^0.1.0",
+    "@loom/plugin-sandbox": "^0.1.0",
+    "@loom/projection-runtime": "^0.1.0",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/planner"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

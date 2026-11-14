@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/renderer-terminal",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Terminal renderers for the framework's kinds, merged over loom's kind-aware terminal registry, with hydration status",
-  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -23,16 +22,42 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom-ui/hydration": "workspace:*",
-    "@loom/blueprint-runtime": "*",
-    "@loom/plugin-renderer-terminal": "*",
-    "@loom/projection-runtime": "*"
+    "@loom-ui/core": "workspace:^",
+    "@loom-ui/hydration": "workspace:^",
+    "@loom/blueprint-runtime": "^0.1.0",
+    "@loom/plugin-renderer-terminal": "^0.1.0",
+    "@loom/projection-runtime": "^0.1.0"
   },
   "devDependencies": {
-    "@loom-ui/renderer-conformance": "workspace:*",
+    "@loom-ui/renderer-conformance": "workspace:^",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/renderer-terminal"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

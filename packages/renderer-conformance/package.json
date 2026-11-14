@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/renderer-conformance",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Renderer conformance kit for loom-ui: one set of contract checks any renderer (Lit, terminal, a third party's React / native / voice) runs through a small adapter",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,9 +29,9 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom-ui/hydration": "workspace:*",
-    "@loom/blueprint-runtime": "*"
+    "@loom-ui/core": "workspace:^",
+    "@loom-ui/hydration": "workspace:^",
+    "@loom/blueprint-runtime": "^0.1.0"
   },
   "peerDependencies": {
     "vitest": "*"
@@ -46,5 +45,31 @@
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/renderer-conformance"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

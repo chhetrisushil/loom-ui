@@ -1,8 +1,7 @@
 {
   "name": "@loom-ui/hydration",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Provider-plane execution for loom-ui: resolves an Experience's handles through loom's transient effects and publishes them as one loom projection",
-  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "module": "./dist/esm/index.js",
@@ -34,14 +33,14 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:*",
-    "@loom/agent": "*",
-    "@loom/classify": "*",
-    "@loom/core": "*",
-    "@loom/effect-runtime": "*",
-    "@loom/plugin-mcp": "*",
-    "@loom/plugin-sandbox": "*",
-    "@loom/projection-runtime": "*"
+    "@loom-ui/core": "workspace:^",
+    "@loom/agent": "^0.1.0",
+    "@loom/classify": "^0.1.0",
+    "@loom/core": "^0.1.0",
+    "@loom/effect-runtime": "^0.1.0",
+    "@loom/plugin-mcp": "^0.1.0",
+    "@loom/plugin-sandbox": "^0.1.0",
+    "@loom/projection-runtime": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
@@ -49,5 +48,31 @@
     "typescript": "^5.6.3",
     "vitest": "catalog:",
     "zod": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chhetrisushil/loom-ui.git",
+    "directory": "packages/hydration"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.test-support.ts",
+    "!src/**/__tests__",
+    "!src/**/__fixtures__",
+    "!src/**/__snapshots__",
+    "!src/**/__golden__",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
