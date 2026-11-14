@@ -10,6 +10,11 @@
 //
 // The `@loomwork/*` ranges name the published loom release (LOOM_RANGE in publish-metadata.mjs), so
 // loom must be published first.
+//
+// Publishing is not the last step: promote the release to `latest` with
+// `node ../loom/scripts/promote-latest.mjs --yes` (dry run without `--yes`). `latest` was set on each
+// package's first publish and `^0.1.x` resolves through it, so a release left on `next` alone is
+// installed at the old version.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

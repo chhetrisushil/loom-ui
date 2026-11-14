@@ -7,7 +7,7 @@ versioned: `BLUEPRINT_IR_VERSION` in `@loomwork/blueprint-runtime`, today 2.5.0 
 
 ## How loom is consumed
 
-loom is a pnpm monorepo published to npm as `@loomwork/*` (dist-tag `next`). For development every
+loom is a pnpm monorepo published to npm as `@loomwork/*` (dist-tags `next` and `latest`, kept equal). For development every
 `@loomwork/*` dependency here is redirected by `pnpm.overrides` in `./package.json` to
 `link:../loom/{packages,plugins}/<name>`; the root manifest is private, so the overrides never publish. So:
 
@@ -21,6 +21,11 @@ loom is a pnpm monorepo published to npm as `@loomwork/*` (dist-tag `next`). For
   `core/src/publishMetadata.test.ts` fails on drift. A package stays internal with `"private": true`.
   `node scripts/publish.mjs` dry-runs (refuses a dirty tree, stale metadata, an unbuilt package or a
   tarball carrying tests / test support / tsconfig) and publishes only with `--yes`, after loom.
+- Every release is then PROMOTED to `latest`: `node ../loom/scripts/promote-latest.mjs` (dry run; `--yes` moves the
+  tags, skips packages already promoted; `NPM_TOKEN=<2FA-bypass token>` avoids a passkey prompt per package). npm set
+  `latest` on each package's first publish (0.1.0) and a `^0.1.x` range resolves through `latest`, so a release left on
+  `next` alone is installed at the OLD version transitively. A release is done only when `latest` = `next` for every
+  package (`npm dist-tag ls @loomwork/ui-<name>`).
 - Using a new `@loomwork/*` package? Add its `link:` line to `pnpm.overrides` **and** the `link:` lines of
   any `@loomwork/*` packages it depends on (pnpm resolves transitive deps through the same map).
 - Third-party versions live in `pnpm-workspace.yaml`'s `catalog:`; reference them as `"catalog:"`.

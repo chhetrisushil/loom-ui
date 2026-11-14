@@ -3,7 +3,8 @@
 // `"private": true` is never published and is left alone). One source of truth for: the shared
 // release `version`, `license`, `repository` (with the package's `directory`), the `files` allowlist
 // (built output + sources for the sourcemaps, never tests, test support, fixtures, tsconfig or build
-// caches), `publishConfig` (public access, the `next` dist-tag), `engines`, `workspace:^` for every
+// caches), `publishConfig` (public access, the `next` dist-tag; `latest` is moved after publishing by
+// loom's `scripts/promote-latest.mjs`, see publish.mjs), `engines`, `workspace:^` for every
 // sibling dependency (pnpm publish rewrites it to `^<version>`), and a real `@loomwork/*` range in
 // place of `*` (the root `pnpm.overrides` `link:` entries redirect it to ../loom for local dev and
 // are never published, so the range is what a consumer installs).
