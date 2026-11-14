@@ -14,7 +14,8 @@ import { repeat } from "lit/directives/repeat.js";
 import { say } from "../say.js";
 import { titleText } from "../title.js";
 import { LuWidget } from "./base.js";
-import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared.js";
+import { inputStyles } from "./chatShared.js";
+import { type DispatchResult, dispatch, failureText } from "./dispatch.js";
 
 // ── MultiSelectInput (U8): a set of choices, bound ────────────────────────────────────────────────
 //

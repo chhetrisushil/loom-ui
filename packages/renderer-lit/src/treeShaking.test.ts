@@ -52,10 +52,12 @@ describe("per-element entries", () => {
       const { modules } = await widgetsIn(`elements/${m}.js`);
       expect(modules).toContain(m);
       // `base` is the shared LuWidget, `virtual` the windowing helper the tables and chat share; `lu-embedded` draws the two elements it nests.
+      // `dispatch` emits an action and waits for the host; `chatShared` (input styles) is the chat and input controls' only.
       const allowed = new Set([
         "base",
-        "chatShared",
+        "dispatch",
         "virtual",
+        ...(m === "lu-chat" || m === "lu-inputs" ? ["chatShared"] : []),
         ...(m === "lu-chat" || m === "lu-prose" ? ["chatMarkdown"] : []),
         // `<lu-multi-select-input>` has its own module but registers with the other inputs.
         ...(m === "lu-inputs" ? ["lu-multi-select"] : []),
@@ -77,6 +79,74 @@ describe("per-element entries", () => {
   it("the plain DOM entry (renderBlueprintDom + registry) carries NO widget class at all", async () => {
     const { modules } = await widgetsIn("dom/index.js");
     expect(modules).toEqual([]);
+  });
+});
+
+// ── Deferred value contracts: a page pays only for the kinds it draws ────────────────────────────
+// core's zod-free checker loads the chat, media and diagram contracts only when defineChat() /
+// defineInputs() / defineMedia() / defineDiagram() asks for them. A page drawing other kinds must
+// not carry them, nor chatShared's input styles. The SAME bundle with lu-chat added must, which
+// proves the module names below are the real ones (the guard is not vacuous).
+const DEFERRED_MODULES = [
+  "core:chatValue.js",
+  "core:contractsChat.js",
+  "core:contractsDiagram.js",
+  "core:contractsMedia.js",
+  "core:diagramStructure.js",
+  "core:mediaRef.js",
+  "lit:widgets/chatShared.js",
+];
+const CORE_DIST = realpathSync(resolve(__dirname, "../../core/dist/esm"));
+async function deferredIn(elements: readonly string[]): Promise<string[]> {
+  const out = await build({
+    stdin: {
+      contents: elements.map((e) => `import "./elements/${e}.js";`).join("\n"),
+      resolveDir: DIST,
+      loader: "js",
+    },
+    bundle: true,
+    minify: true,
+    platform: "browser",
+    format: "esm",
+    conditions: ["browser", "import"],
+    write: false,
+    logLevel: "silent",
+    metafile: true,
+  });
+  // The OUTPUT's inputs with bytes in it: `metafile.inputs` also lists modules parsed and then shaken out.
+  const emitted = Object.values(out.metafile.outputs)[0]?.inputs ?? {};
+  const names = Object.entries(emitted)
+    .filter(([f, i]) => !f.startsWith("<stdin>") && i.bytesInOutput > 0)
+    .map(([f]) => f)
+    .map((f) => realpathSync(resolve(f)))
+    .map((f) =>
+      f.startsWith(`${CORE_DIST}/`)
+        ? `core:${f.slice(CORE_DIST.length + 1)}`
+        : f.startsWith(`${DIST}/`)
+          ? `lit:${f.slice(DIST.length + 1)}`
+          : f
+    );
+  return DEFERRED_MODULES.filter((m) => names.includes(m));
+}
+
+describe("deferred value contracts", () => {
+  const DASHBOARD = [
+    "lu-table",
+    "lu-timeseries",
+    "lu-bar-chart",
+    "lu-kpi",
+    "lu-status-card",
+    "lu-time-range-picker",
+    "lu-note",
+  ];
+  it("a page drawing no chat, media or diagram carries none of their contracts", async () => {
+    expect(await deferredIn(DASHBOARD)).toEqual([]);
+  });
+
+  it("adding the chat, media and diagram elements brings them in (the guard is not vacuous)", async () => {
+    expect(await deferredIn([...DASHBOARD, "lu-chat", "lu-media", "lu-diagram"])).toEqual(
+      DEFERRED_MODULES
+    );
   });
 });
 

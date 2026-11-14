@@ -21,7 +21,8 @@ import { property, state } from "lit/decorators.js";
 import { say } from "../say.js";
 import { titleText } from "../title.js";
 import { LuWidget } from "./base.js";
-import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared.js";
+import { inputStyles } from "./chatShared.js";
+import { type DispatchResult, dispatch, failureText } from "./dispatch.js";
 
 // ── The input widgets (U8): TextInput, FormInput, SelectInput ────────────────────────────────────
 //

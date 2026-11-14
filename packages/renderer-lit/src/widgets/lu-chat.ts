@@ -31,7 +31,8 @@ import { say } from "../say.js";
 import { LuWidget } from "./base.js";
 import type { ChatAccessoryContent, ChatEntryAccessories } from "./chatAccessory.js";
 import { drawMarkdown, markdownStyles } from "./chatMarkdown.js";
-import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared.js";
+import { inputStyles } from "./chatShared.js";
+import { type DispatchResult, dispatch, failureText } from "./dispatch.js";
 import type { MediaHostOptions } from "./lu-media.js";
 import { type VirtualizeOptions, resolveVirtualize } from "./virtual.js";
 

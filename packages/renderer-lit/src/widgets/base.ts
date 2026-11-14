@@ -18,7 +18,7 @@ import {
 import { localized } from "../i18n.js";
 import { say } from "../say.js";
 import { titleText } from "../title.js";
-import { type DispatchResult, dispatch, failureText } from "./chatShared.js";
+import { type DispatchResult, dispatch, failureText } from "./dispatch.js";
 
 /**
  * Who draws the widget's title. `"widget"` (default) — the widget prints its own title in its

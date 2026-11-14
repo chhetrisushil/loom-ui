@@ -1,3 +1,4 @@
+import "./deferredContracts.test-support";
 import { describe, expect, it } from "vitest";
 import {
   FRAMEWORK_KINDS as LITE_KINDS,

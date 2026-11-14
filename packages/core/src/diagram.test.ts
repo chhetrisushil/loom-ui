@@ -1,3 +1,4 @@
+import "./deferredContracts.test-support";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { diagramGraph } from "./diagramGraph";
 import { MAX_DIAGRAM_EDGES, MAX_DIAGRAM_NODES, diagramProblems } from "./diagramStructure";

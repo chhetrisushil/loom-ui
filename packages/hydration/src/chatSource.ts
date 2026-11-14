@@ -1,4 +1,4 @@
-import type { Finding } from "@loomwork/ui-core/browser";
+import { type Finding, useChatContracts } from "@loomwork/ui-core/browser";
 import type { ChatFeed } from "@loomwork/ui-core/chat";
 
 // ── The browser's connection to loom's conversation API (U8) ─────────────────────────────────────
@@ -147,6 +147,8 @@ const defaultTimer = (fn: () => void, ms: number): (() => void) => {
 export function connectConversation(
   options: ConversationConnectionOptions
 ): ConversationConnection {
+  // The transcript this feeds is published as a Chat value; its contract is deferred in core.
+  useChatContracts();
   const { feed, baseUrl } = options;
   const pageLimit = Math.max(1, Math.min(options.pageLimit ?? 50, 500));
   const maxFrame = options.maxFrameBytes ?? 256 * 1024;

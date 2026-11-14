@@ -44,7 +44,10 @@ const CORE_BROWSER_MODULES: ReadonlySet<string> = new Set([
   "chatValue.js",
   "chatWords.js",
   "containerRoles.js",
-  // The Diagram kind: its structural rules ride in `checkKindValue` for every page; the graph helpers and the
+  "contractsChat.js",
+  "contractsDiagram.js",
+  "contractsMedia.js",
+  // The Diagram kind: its structural rules load with `useDiagramContracts()` (deferred); the graph helpers and the
   // text outline are reached only by the opt-in `diagram.js` entry (and tree-shaken out of the others).
   "diagramGraph.js",
   "diagramStructure.js",
@@ -122,7 +125,10 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // chat 132 stays (129_513 -> 130_381), diagram 84 -> 85 kB (83_341 -> 84_209); dom/index and containers unchanged. Cause: the
     // token-cell rules in `tableRowProblems` and the zod-free cell checker (`checkKindValue`), `tableCellText`, and the chip
     // markup, styles and click handler in lu-table.
-    ["index.js", 153 * 1000],
+    // Deferred value contracts: 153 -> 139 kB (measured 152_114 -> 136_339), media 84 -> 72 kB (69_326), diagram 85 -> 74 kB
+    // (71_263); chat stays (127_929). Cause: the chat, media and diagram contracts load only through core's use…Contracts(),
+    // called by the defineX() of the widgets that draw them, and chat's input styles left the shared dispatch path.
+    ["index.js", 139 * 1000],
     ["dom/index.js", 34 * 1000],
     // The opt-in reference containers (tabs, stepper): their own entry (the size is mostly the shared registry/i18n it imports), so a page that draws
     // plain containers does not pay for chrome it never registers.
@@ -140,7 +146,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Prose kind (2026-10-24): 72 -> 73 kB (measured 72_502): the Prose value contract and its three fixed words.
     // TimeFormat: 73 -> 74 kB (measured 72_571 -> 73_255): the TimeFormat contract in `checkKindValue` and its three words.
     // Diagram kind: 74 -> 78 kB (measured 73_255 -> 76_628): the DiagramValue contract and the placeholder (as index.js).
-    ["media.js", 84 * 1000],
+    ["media.js", 72 * 1000],
     // U8: the opt-in chat widgets (transcript, text / form / select inputs) and the default registry they extend.
     // Chat reference markers (176b): 91 -> 94 kB (measured 93_126 after the fix round): `splitRefMarkers`, the ref button (24 px hit area, hover) and its status line.
     // Chat markdown (176i): 94 -> 110 kB (measured 93_391 -> 107_720): core's bounded parser (chatMarkdown, chatMdBlock,
@@ -158,7 +164,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // The opt-in diagram widget (`@loomwork/ui-renderer-lit/diagram`): lu-diagram, the layout math and core's outline and graph
     // helpers, on top of the default registry it extends. Measured 76_859; budget = measured + ~10%.
     // Table token cells: 84 -> 85 kB (measured 83_341 -> 84_209), the same cause as index.js.
-    ["diagram.js", 85 * 1000],
+    ["diagram.js", 74 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);

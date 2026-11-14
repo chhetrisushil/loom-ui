@@ -12,8 +12,8 @@ import {
 } from "./mediaRef";
 
 // The rest of the media surface: text, the host seams, limits, URL safety, the composition guard and
-// the catalogue entries. The CONTRACT itself lives in `mediaRef.ts` (it is part of `checkKindValue`,
-// so it rides in every client bundle); everything here is imported from `@loomwork/ui-core/media` only by
+// the catalogue entries. The CONTRACT itself lives in `mediaRef.ts` (loaded into the zod-free
+// `checkKindValue` by `useMediaContracts()`); everything here is imported from `@loomwork/ui-core/media` only by
 // the code that needs it, so the hydration client does not pay for it.
 export * from "./mediaRef";
 import { cleanMediaText, describeMedia, formatBytes, safeFileName } from "./mediaText";

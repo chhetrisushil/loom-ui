@@ -19,7 +19,7 @@ import { tPlural } from "../plural.js";
 import { refStyles } from "../refStyles.js";
 import { say } from "../say.js";
 import { LuWidget } from "./base.js";
-import { type DispatchResult, dispatch, failureText } from "./chatShared.js";
+import { type DispatchResult, dispatch, failureText } from "./dispatch.js";
 import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual.js";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */

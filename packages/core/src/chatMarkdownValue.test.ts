@@ -1,3 +1,4 @@
+import "./deferredContracts.test-support";
 import { describe, expect, it } from "vitest";
 import { checkKindValue } from "./browser";
 import * as chat from "./chat";
