@@ -7,13 +7,20 @@ versioned: `BLUEPRINT_IR_VERSION` in `@loom/blueprint-runtime`, today 2.5.0 (loo
 
 ## How loom is consumed
 
-loom is an unpublished pnpm monorepo. Every `@loom/*` dependency here is redirected by
-`pnpm.overrides` in `./package.json` to `link:../loom/{packages,plugins}/<name>`. So:
+loom is a pnpm monorepo published to npm as `@loom/*` (dist-tag `next`). For development every
+`@loom/*` dependency here is redirected by `pnpm.overrides` in `./package.json` to
+`link:../loom/{packages,plugins}/<name>`; the root manifest is private, so the overrides never publish. So:
 
 - **`../loom` must be checked out next to this repo, installed and built** (`pnpm install && pnpm build`
   there), or nothing resolves.
-- Packages declare `"@loom/x": "*"`; the override wins. Never `workspace:*` — there is no loom
-  package in this workspace.
+- Packages declare `"@loom/x": "^0.1.0"` (the published loom release, `LOOM_RANGE`); the override
+  wins locally. Never `*` or `workspace:*` — there is no loom package in this workspace, and the
+  range is what a consumer installs.
+- Publish metadata (version, `files` allowlist, `publishConfig`, `engines`, `workspace:^`, the
+  `@loom/*` range) is written by `node scripts/publish-metadata.mjs`, never by hand;
+  `core/src/publishMetadata.test.ts` fails on drift. A package stays internal with `"private": true`.
+  `node scripts/publish.mjs` dry-runs (refuses a dirty tree, stale metadata, an unbuilt package or a
+  tarball carrying tests / test support / tsconfig) and publishes only with `--yes`, after loom.
 - Using a new `@loom/*` package? Add its `link:` line to `pnpm.overrides` **and** the `link:` lines of
   any `@loom/*` packages it depends on (pnpm resolves transitive deps through the same map).
 - Third-party versions live in `pnpm-workspace.yaml`'s `catalog:`; reference them as `"catalog:"`.
