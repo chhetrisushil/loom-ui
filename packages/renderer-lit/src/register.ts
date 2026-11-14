@@ -8,7 +8,7 @@
 //
 // (or `import { defineAll } from "@loomwork/ui-renderer-lit/register"` and calls it, e.g. to defer it). A host that wants ONE widget imports its element
 // entry instead, e.g. `import "@loomwork/ui-renderer-lit/elements/lu-kpi"`.
-import { defineAll } from "./defineAll";
+import { defineAll } from "./defineAll.js";
 
 defineAll();
 

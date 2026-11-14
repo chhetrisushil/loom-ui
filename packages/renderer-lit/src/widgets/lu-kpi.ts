@@ -1,8 +1,8 @@
 import { DELTA_FORMAT, type KpiValue, deltaDirection, unitSuffix } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { type SemanticFormat, effectiveFormat, measure } from "../format";
-import { refStyles } from "../refStyles";
-import { LuWidget } from "./base";
+import { type SemanticFormat, effectiveFormat, measure } from "../format.js";
+import { refStyles } from "../refStyles.js";
+import { LuWidget } from "./base.js";
 
 // A value in its own semantics, a ▲/▼ change badge (none when flat), and the widget title with
 // the value's own label as a caption beside it — richer than loom's MetricCard, which stays a

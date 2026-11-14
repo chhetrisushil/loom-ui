@@ -1,5 +1,5 @@
-import type { CheckResult, ConformanceReport, RendererAdapter } from "./adapter";
-import { CHECKS, type Check, ConformanceFailure, ConformanceSkip } from "./checks";
+import type { CheckResult, ConformanceReport, RendererAdapter } from "./adapter.js";
+import { CHECKS, type Check, ConformanceFailure, ConformanceSkip } from "./checks.js";
 
 export interface RunOptions {
   /** Run only these check ids. Default: all. */

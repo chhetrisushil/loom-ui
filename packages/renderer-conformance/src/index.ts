@@ -8,10 +8,10 @@ export type {
   MountOptions,
   MountedRenderer,
   RendererAdapter,
-} from "./adapter";
-export { CHECKS, ConformanceFailure, ConformanceSkip } from "./checks";
-export type { Check } from "./checks";
-export { KIND_FIXTURES } from "./fixtures";
-export type { KindFixture } from "./fixtures";
-export { checkRendererConformance, runCheck } from "./run";
-export type { RunOptions } from "./run";
+} from "./adapter.js";
+export { CHECKS, ConformanceFailure, ConformanceSkip } from "./checks.js";
+export type { Check } from "./checks.js";
+export { KIND_FIXTURES } from "./fixtures.js";
+export type { KindFixture } from "./fixtures.js";
+export { checkRendererConformance, runCheck } from "./run.js";
+export type { RunOptions } from "./run.js";

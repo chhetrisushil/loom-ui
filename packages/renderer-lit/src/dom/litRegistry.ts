@@ -4,12 +4,12 @@ import {
   RendererRegistry,
 } from "@loomwork/blueprint-runtime";
 import type { ContractRegistry } from "@loomwork/ui-core/browser";
-import type { TitleChrome } from "../widgets/base";
-import type { ChatEntryAccessories } from "../widgets/chatAccessory";
-import type { MediaHostOptions } from "../widgets/lu-media";
-import type { VirtualizeOptions } from "../widgets/virtual";
-import type { FrameScheduler } from "./coalesce";
-import type { DomRegistry, DomWidgetRenderer } from "./registry";
+import type { TitleChrome } from "../widgets/base.js";
+import type { ChatEntryAccessories } from "../widgets/chatAccessory.js";
+import type { MediaHostOptions } from "../widgets/lu-media.js";
+import type { VirtualizeOptions } from "../widgets/virtual.js";
+import type { FrameScheduler } from "./coalesce.js";
+import type { DomRegistry, DomWidgetRenderer } from "./registry.js";
 
 const warned = new Set<string>();
 /** Say ONCE per tag that an element was mounted before it was defined (U20: registration is explicit). */

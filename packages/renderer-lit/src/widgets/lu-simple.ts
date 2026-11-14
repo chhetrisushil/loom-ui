@@ -1,9 +1,9 @@
 // Five compact built-in elements: the loom kinds with no bespoke Lit widget, matching loom's
 // React renderers' semantics (`plugins/renderer-react/src/renderers/*.tsx` in loom).
 import { type TemplateResult, css, html, nothing } from "lit";
-import { measure } from "../format";
-import { say } from "../say";
-import { LuWidget } from "./base";
+import { measure } from "../format.js";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
 
 /** loom's `TimelineRenderer` entry shape: `{ timestamp?, message?, level? }`. */
 interface TimelineEntry {

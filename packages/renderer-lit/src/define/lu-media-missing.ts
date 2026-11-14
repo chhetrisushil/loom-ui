@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuMediaMissing } from "../widgets/lu-media-missing";
+import { defineElement } from "../define.js";
+import { LuMediaMissing } from "../widgets/lu-media-missing.js";
 
 /** Register `<lu-media-missing>`. Idempotent. */
 export function defineMediaMissing(): void {

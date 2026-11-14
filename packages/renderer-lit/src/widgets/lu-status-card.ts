@@ -1,10 +1,10 @@
 import type { StatusCardValue } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { describeValue } from "../a11y";
+import { describeValue } from "../a11y.js";
 
-import { refStyles } from "../refStyles";
-import { LEVEL_KEY, say } from "../say";
-import { LuWidget } from "./base";
+import { refStyles } from "../refStyles.js";
+import { LEVEL_KEY, say } from "../say.js";
+import { LuWidget } from "./base.js";
 
 // A level dot, a headline and optional detail. The description also lives in a visually-hidden
 // `role="status" aria-live="polite"` region, so a CHANGE of status is announced without

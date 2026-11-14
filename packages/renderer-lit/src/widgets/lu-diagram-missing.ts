@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { property } from "lit/decorators.js";
-import { say } from "../say";
+import { say } from "../say.js";
 
 // The DEFAULT registry's stand-in for the `Diagram` kind. The real widget is the opt-in entry
 // `@loomwork/ui-renderer-lit/diagram`; a page that composed a diagram without registering it sees ONE

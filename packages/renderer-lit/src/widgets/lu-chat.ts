@@ -27,13 +27,13 @@ import { type PropertyValues, type TemplateResult, css, html, nothing } from "li
 import { property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 
-import { say } from "../say";
-import { LuWidget } from "./base";
-import type { ChatAccessoryContent, ChatEntryAccessories } from "./chatAccessory";
-import { drawMarkdown, markdownStyles } from "./chatMarkdown";
-import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
-import type { MediaHostOptions } from "./lu-media";
-import { type VirtualizeOptions, resolveVirtualize } from "./virtual";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
+import type { ChatAccessoryContent, ChatEntryAccessories } from "./chatAccessory.js";
+import { drawMarkdown, markdownStyles } from "./chatMarkdown.js";
+import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared.js";
+import type { MediaHostOptions } from "./lu-media.js";
+import { type VirtualizeOptions, resolveVirtualize } from "./virtual.js";
 
 // ── Chat (U8): a transcript ──────────────────────────────────────────────────────────────────────
 //

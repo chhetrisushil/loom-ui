@@ -1,6 +1,6 @@
 import type { Blueprint } from "@loomwork/blueprint-runtime";
-import type { RecomposeReport } from "./registry";
-import type { DomRenderHandle } from "./renderBlueprintDom";
+import type { RecomposeReport } from "./registry.js";
+import type { DomRenderHandle } from "./renderBlueprintDom.js";
 
 // ── Update coalescing (U17) ───────────────────────────────────────────────────────────────────
 // `DomRenderHandle.update` is synchronous and walks the whole tree, so an agent that revises the

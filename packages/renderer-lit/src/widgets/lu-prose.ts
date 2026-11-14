@@ -8,9 +8,9 @@ import {
 } from "@loomwork/ui-core/document";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
-import { say } from "../say";
-import { LuWidget } from "./base";
-import { drawMarkdown, markdownStyles } from "./chatMarkdown";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
+import { drawMarkdown, markdownStyles } from "./chatMarkdown.js";
 
 // Long formatted text (a whole document): markdown and org are parsed by core's document parsers and drawn by the
 // same hardened `drawMarkdown` as chat, one call per top-level block (drawMarkdown caps the nodes of ONE call), each

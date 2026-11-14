@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuTimeRangePicker } from "../widgets/lu-time-range-picker";
+import { defineElement } from "../define.js";
+import { LuTimeRangePicker } from "../widgets/lu-time-range-picker.js";
 
 /** Register `<lu-time-range-picker>`. Idempotent. */
 export function defineTimeRangePicker(): void {

@@ -1,7 +1,7 @@
 import type { WidgetAction } from "@loomwork/blueprint-runtime";
 import type { ActionOutcome } from "@loomwork/ui-core/browser";
 import { css } from "lit";
-import { say } from "../say";
+import { say } from "../say.js";
 
 // Shared by the chat and input widgets (U8).
 

@@ -7,7 +7,7 @@ import {
   type LuMessageVars,
   fill,
 } from "@loomwork/ui-core/messages";
-import { t } from "./i18n";
+import { t } from "./i18n.js";
 
 /** A StatusCard level's word key. */
 export const LEVEL_KEY = {

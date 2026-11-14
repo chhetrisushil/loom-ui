@@ -6,7 +6,7 @@ import type {
   Widget,
   WidgetAction,
 } from "@loomwork/blueprint-runtime";
-import { say } from "../say";
+import { say } from "../say.js";
 
 // ── The DOM renderer contract ─────────────────────────────────────────────────
 // loom's `RendererRegistry<T>` is generic over the renderer type; this is the DOM shape its own

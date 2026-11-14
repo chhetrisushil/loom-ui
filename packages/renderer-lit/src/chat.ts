@@ -18,19 +18,19 @@
 
 import type { CatalogEntry } from "@loomwork/blueprint-runtime";
 import { CHAT_INPUT_KINDS, CHAT_KIND } from "@loomwork/ui-core/chat-ui";
-import { defineChat } from "./define/lu-chat";
-import { defineInputs } from "./define/lu-inputs";
-import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";
-import type { DomRegistry } from "./dom/registry";
+import { defineChat } from "./define/lu-chat.js";
+import { defineInputs } from "./define/lu-inputs.js";
+import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry.js";
+import type { DomRegistry } from "./dom/registry.js";
 
-export { LuChat } from "./widgets/lu-chat";
+export { LuChat } from "./widgets/lu-chat.js";
 export type {
   ChatAccessoryContent,
   ChatEntryAccessories,
   ChatEntryRef,
-} from "./widgets/chatAccessory";
-export { LuFormInput, LuSelectInput, LuTextInput } from "./widgets/lu-inputs";
-export { LuMultiSelectInput } from "./widgets/lu-multi-select";
+} from "./widgets/chatAccessory.js";
+export { LuFormInput, LuSelectInput, LuTextInput } from "./widgets/lu-inputs.js";
+export { LuMultiSelectInput } from "./widgets/lu-multi-select.js";
 
 /** The loom contracts the chat kinds declare (what a catalogue's `surfaces.web` carries for them). */
 export const chatKindContracts: readonly CatalogEntry[] = [

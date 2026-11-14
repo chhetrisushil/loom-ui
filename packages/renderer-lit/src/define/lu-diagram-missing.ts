@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuDiagramMissing } from "../widgets/lu-diagram-missing";
+import { defineElement } from "../define.js";
+import { LuDiagramMissing } from "../widgets/lu-diagram-missing.js";
 
 /** Register `<lu-diagram-missing>`. Idempotent. */
 export function defineDiagramMissing(): void {

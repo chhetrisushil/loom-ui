@@ -1,13 +1,13 @@
 import type { WidgetAction } from "@loomwork/blueprint-runtime";
 import { LitElement, css, html } from "lit";
 import { property, query, state } from "lit/decorators.js";
-import { cssomStyle } from "../cssomStyle";
+import { cssomStyle } from "../cssomStyle.js";
 import {
   SANDBOX_ALLOW,
   buildSandboxSrcdoc,
   hostMessage,
   parseFrameMessage,
-} from "../sandbox/protocol";
+} from "../sandbox/protocol.js";
 
 // ── The user-component sandbox ────────────────────────────────────────────────
 //

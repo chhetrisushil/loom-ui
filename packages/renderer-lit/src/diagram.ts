@@ -13,17 +13,17 @@
 // `registerDiagramWidgets(registerChatWidgets(createLitRegistry()))`.
 
 import type { CatalogEntry } from "@loomwork/blueprint-runtime";
-import { defineDiagram } from "./define/lu-diagram";
-import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";
-import type { DomRegistry } from "./dom/registry";
+import { defineDiagram } from "./define/lu-diagram.js";
+import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry.js";
+import type { DomRegistry } from "./dom/registry.js";
 
-export { LuDiagram } from "./widgets/lu-diagram";
+export { LuDiagram } from "./widgets/lu-diagram.js";
 export {
   type DiagramGeometry,
   type PlacedEdge,
   type PlacedNode,
   layoutDiagram,
-} from "./charts/diagramLayout";
+} from "./charts/diagramLayout.js";
 
 /** The loom contract the Diagram kind declares (what a catalogue's `surfaces.web` carries for it). */
 export const diagramKindContracts: readonly CatalogEntry[] = [

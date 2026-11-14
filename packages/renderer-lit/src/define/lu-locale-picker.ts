@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuLocalePicker } from "../widgets/lu-locale-picker";
+import { defineElement } from "../define.js";
+import { LuLocalePicker } from "../widgets/lu-locale-picker.js";
 
 /** Register `<lu-locale-picker>`. Idempotent. */
 export function defineLocalePicker(): void {

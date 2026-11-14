@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuProse } from "../widgets/lu-prose";
+import { defineElement } from "../define.js";
+import { LuProse } from "../widgets/lu-prose.js";
 
 /** Register `<lu-prose>`. Idempotent. */
 export function defineProse(): void {

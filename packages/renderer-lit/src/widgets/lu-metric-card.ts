@@ -1,6 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
-import { type SemanticFormat, effectiveFormat, measure, unitSuffix } from "../format";
-import { LuWidget } from "./base";
+import { type SemanticFormat, effectiveFormat, measure, unitSuffix } from "../format.js";
+import { LuWidget } from "./base.js";
 
 export class LuMetricCard extends LuWidget {
   readonly kind = "MetricCard";

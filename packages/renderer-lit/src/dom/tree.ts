@@ -13,8 +13,8 @@ import {
 } from "@loomwork/blueprint-runtime";
 import type { ProjectionRuntime } from "@loomwork/projection-runtime";
 import { type StampedAction, viewedVersionOf } from "@loomwork/ui-core/browser";
-import { titleText } from "../title";
-import { deepEqual } from "./deepEqual";
+import { titleText } from "../title.js";
+import { deepEqual } from "./deepEqual.js";
 import {
   type DomContainerChild,
   type DomContainerHandle,
@@ -22,8 +22,8 @@ import {
   type DomRegistry,
   type DomWidgetHandle,
   placeholderFor,
-} from "./registry";
-import type { Observed, VisibilityTracker } from "./visibility";
+} from "./registry.js";
+import type { Observed, VisibilityTracker } from "./visibility.js";
 
 // ── The entry tree ────────────────────────────────────────────────────────────
 // The adapter mounts a blueprint into a tree of ENTRIES that mirrors the DOM one-for-one: a

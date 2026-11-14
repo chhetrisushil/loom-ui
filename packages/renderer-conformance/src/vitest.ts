@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { RendererAdapter } from "./adapter";
-import { CHECKS } from "./checks";
-import { runCheck } from "./run";
+import type { RendererAdapter } from "./adapter.js";
+import { CHECKS } from "./checks.js";
+import { runCheck } from "./run.js";
 
 /**
  * One `it` per check, under `describe("renderer conformance: <name>")`. A check the adapter does

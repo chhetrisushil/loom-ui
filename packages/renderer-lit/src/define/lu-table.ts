@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuTable } from "../widgets/lu-table";
+import { defineElement } from "../define.js";
+import { LuTable } from "../widgets/lu-table.js";
 
 /** Register `<lu-table>`. Idempotent. */
 export function defineTable(): void {
