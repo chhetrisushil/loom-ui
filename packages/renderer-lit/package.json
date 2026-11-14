@@ -5,10 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "sideEffects": [
-    "./dist/register.js",
-    "./dist/elements/*.js"
-  ],
+  "sideEffects": ["./dist/register.js", "./dist/elements/*.js"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
