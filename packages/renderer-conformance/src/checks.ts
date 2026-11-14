@@ -17,7 +17,7 @@ import type {
   MountOptions,
   MountedRenderer,
   RendererAdapter,
-} from "./adapter";
+} from "./adapter.js";
 import {
   GARBAGE,
   KIND_FIXTURES,
@@ -26,7 +26,7 @@ import {
   roleLayout,
   unbound,
   viewOf,
-} from "./fixtures";
+} from "./fixtures.js";
 
 /** Thrown by a check to say the renderer broke the contract. */
 export class ConformanceFailure extends Error {}

@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuStatusBadge } from "../widgets/lu-status-badge";
+import { defineElement } from "../define.js";
+import { LuStatusBadge } from "../widgets/lu-status-badge.js";
 
 /** Register `<lu-status-badge>`. Idempotent. */
 export function defineStatusBadge(): void {

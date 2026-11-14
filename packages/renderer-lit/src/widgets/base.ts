@@ -14,11 +14,11 @@ import {
   errorStateText,
   loadingStateText,
   staleStateText,
-} from "../a11y";
-import { localized } from "../i18n";
-import { say } from "../say";
-import { titleText } from "../title";
-import { type DispatchResult, dispatch, failureText } from "./chatShared";
+} from "../a11y.js";
+import { localized } from "../i18n.js";
+import { say } from "../say.js";
+import { titleText } from "../title.js";
+import { type DispatchResult, dispatch, failureText } from "./chatShared.js";
 
 /**
  * Who draws the widget's title. `"widget"` (default) — the widget prints its own title in its

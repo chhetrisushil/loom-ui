@@ -1,8 +1,8 @@
 import { type TemplateResult, css, html, type nothing } from "lit";
-import type { A2UIView } from "../a2ui/plan";
+import type { A2UIView } from "../a2ui/plan.js";
 
-import { say } from "../say";
-import { LuWidget } from "./base";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
 
 // ── Registry kinds for the two embedded surfaces ─────────────────────────────
 // `lu-a2ui-view` (a declarative agent-authored component tree) and `lu-sandbox` (untrusted

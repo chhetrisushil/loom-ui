@@ -13,12 +13,12 @@
 
 import type { CatalogEntry } from "@loomwork/blueprint-runtime";
 import { MEDIA_INPUT_KIND, MEDIA_KINDS } from "@loomwork/ui-core/media";
-import { defineMedia } from "./define/lu-media";
-import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";
-import type { DomRegistry } from "./dom/registry";
+import { defineMedia } from "./define/lu-media.js";
+import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry.js";
+import type { DomRegistry } from "./dom/registry.js";
 
-export { LuAudio, LuFile, LuImage, LuMediaInput, LuVideo } from "./widgets/lu-media";
-export type { MediaHostOptions } from "./widgets/lu-media";
+export { LuAudio, LuFile, LuImage, LuMediaInput, LuVideo } from "./widgets/lu-media.js";
+export type { MediaHostOptions } from "./widgets/lu-media.js";
 
 /** The loom contracts the media kinds declare (what a catalogue's `surfaces.web` carries for them). */
 export const mediaKindContracts: readonly CatalogEntry[] = [

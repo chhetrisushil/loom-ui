@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuNote } from "../widgets/lu-note";
+import { defineElement } from "../define.js";
+import { LuNote } from "../widgets/lu-note.js";
 
 /** Register `<lu-note>`. Idempotent. */
 export function defineNote(): void {

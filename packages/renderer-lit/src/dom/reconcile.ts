@@ -7,8 +7,8 @@ import {
   resolveWidgetStatus,
   resolveWidgetValue,
 } from "@loomwork/blueprint-runtime";
-import { deepEqual } from "./deepEqual";
-import type { RecomposeFinding } from "./registry";
+import { deepEqual } from "./deepEqual.js";
+import type { RecomposeFinding } from "./registry.js";
 import {
   type ContainerEntry,
   type Entry,
@@ -31,7 +31,7 @@ import {
   subscribeEntry,
   updateChrome,
   widgetIdsOf,
-} from "./tree";
+} from "./tree.js";
 
 // ── The keyed reconcile ───────────────────────────────────────────────────────
 // Landing a revised Blueprint on the live entry tree. Widgets are keyed by id; containers by

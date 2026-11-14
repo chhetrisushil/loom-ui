@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuAudio, LuFile, LuImage, LuMediaInput, LuVideo } from "../widgets/lu-media";
+import { defineElement } from "../define.js";
+import { LuAudio, LuFile, LuImage, LuMediaInput, LuVideo } from "../widgets/lu-media.js";
 
 /** Register `<lu-image>`, `<lu-audio>`, `<lu-video>`, `<lu-file>`, `<lu-media-input>`. Idempotent. */
 export function defineMedia(): void {

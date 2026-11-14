@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuChatMissing } from "../widgets/lu-chat-missing";
+import { defineElement } from "../define.js";
+import { LuChatMissing } from "../widgets/lu-chat-missing.js";
 
 /** Register `<lu-chat-missing>`. Idempotent. */
 export function defineChatMissing(): void {

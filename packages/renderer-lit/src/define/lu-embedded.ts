@@ -1,7 +1,7 @@
-import { defineElement } from "../define";
-import { LuA2UIWidget, LuSandboxWidget } from "../widgets/lu-embedded";
-import { defineA2uiView } from "./lu-a2ui-view";
-import { defineSandbox } from "./lu-sandbox";
+import { defineElement } from "../define.js";
+import { LuA2UIWidget, LuSandboxWidget } from "../widgets/lu-embedded.js";
+import { defineA2uiView } from "./lu-a2ui-view.js";
+import { defineSandbox } from "./lu-sandbox.js";
 
 /** Register `<lu-a2ui-widget>`, `<lu-sandbox-widget>` (and the elements it draws). Idempotent. */
 export function defineEmbedded(): void {

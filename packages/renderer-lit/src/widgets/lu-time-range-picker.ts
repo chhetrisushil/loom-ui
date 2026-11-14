@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
-import { localized } from "../i18n";
-import { say } from "../say";
+import { localized } from "../i18n.js";
+import { say } from "../say.js";
 
 export type TimeRangePreset = "24h" | "7d" | "30d" | "90d" | "12m";
 export interface TimeRange {

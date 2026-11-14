@@ -1,18 +1,18 @@
 import { type BarChartValue, widgetRefsOf } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { state } from "lit/decorators.js";
-import { chartHostStyles } from "../charts/frame";
-import { SERIES_COLORS, linearScale, niceTicks } from "../charts/svg";
+import { chartHostStyles } from "../charts/frame.js";
+import { SERIES_COLORS, linearScale, niceTicks } from "../charts/svg.js";
 import {
   type SemanticFormat,
   effectiveFormat,
   tick as formatTick,
   measure,
   unitSuffix,
-} from "../format";
-import { REF_STRIP_HEIGHT, refOverlayStyles, refStyles } from "../refStyles";
-import { dirFor } from "../rtl";
-import { LuWidget } from "./base";
+} from "../format.js";
+import { REF_STRIP_HEIGHT, refOverlayStyles, refStyles } from "../refStyles.js";
+import { dirFor } from "../rtl.js";
+import { LuWidget } from "./base.js";
 
 const M = { top: 10, right: 12, bottom: 24, left: 46 };
 

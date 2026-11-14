@@ -1,13 +1,13 @@
 import { RendererRegistry } from "@loomwork/blueprint-runtime";
 import { STEPPER_ROLE, TABS_ROLE } from "@loomwork/ui-core/browser";
 
-import { say } from "../say";
+import { say } from "../say.js";
 import type {
   DomContainerHandle,
   DomContainerProps,
   DomContainerRegistry,
   DomContainerRenderer,
-} from "./registry";
+} from "./registry.js";
 
 // ── Reference container renderers (U15) ───────────────────────────────────────────────────────
 // The two roles `@loomwork/ui-core`'s `REFERENCE_CONTAINER_ROLES` names, drawn through the container

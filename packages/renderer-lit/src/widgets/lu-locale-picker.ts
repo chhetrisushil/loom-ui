@@ -1,7 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { property } from "lit/decorators.js";
-import { currentLocale, localeLabel, localized, setLocale } from "../i18n";
-import { say } from "../say";
+import { currentLocale, localeLabel, localized, setLocale } from "../i18n.js";
+import { say } from "../say.js";
 
 /**
  * Language picker. Shared by every surface that offers a language choice, so all read the

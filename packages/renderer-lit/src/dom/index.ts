@@ -4,17 +4,17 @@ export {
   elementRenderer,
   frameworkKindContracts,
   litRegistry,
-} from "./litRegistry";
-export type { LitRegistryOptions } from "./litRegistry";
+} from "./litRegistry.js";
+export type { LitRegistryOptions } from "./litRegistry.js";
 export {
   FRAME_FALLBACK_MS,
   animationFrameScheduler,
   coalesceUpdates,
-} from "./coalesce";
-export type { CoalesceOptions, CoalescedUpdates, FrameScheduler } from "./coalesce";
-export { renderBlueprintDom } from "./renderBlueprintDom";
-export type { DomRenderHandle, DomRenderOptions } from "./renderBlueprintDom";
-export { placeholderFor, projectionPlaceholder } from "./registry";
+} from "./coalesce.js";
+export type { CoalesceOptions, CoalescedUpdates, FrameScheduler } from "./coalesce.js";
+export { renderBlueprintDom } from "./renderBlueprintDom.js";
+export type { DomRenderHandle, DomRenderOptions } from "./renderBlueprintDom.js";
+export { placeholderFor, projectionPlaceholder } from "./registry.js";
 export type {
   DomContainerChild,
   DomContainerHandle,
@@ -27,4 +27,4 @@ export type {
   DomWidgetRenderer,
   RecomposeFinding,
   RecomposeReport,
-} from "./registry";
+} from "./registry.js";

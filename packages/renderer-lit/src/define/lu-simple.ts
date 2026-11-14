@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuAlert, LuApproval, LuList, LuProgress, LuText } from "../widgets/lu-simple";
+import { defineElement } from "../define.js";
+import { LuAlert, LuApproval, LuList, LuProgress, LuText } from "../widgets/lu-simple.js";
 
 /** Register `<lu-progress>`, `<lu-alert>`, `<lu-text>`, `<lu-list>`, `<lu-approval>`. Idempotent. */
 export function defineSimple(): void {

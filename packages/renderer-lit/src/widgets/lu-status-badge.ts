@@ -1,6 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
-import { titleText } from "../title";
-import { LuWidget } from "./base";
+import { titleText } from "../title.js";
+import { LuWidget } from "./base.js";
 
 export class LuStatusBadge extends LuWidget {
   readonly kind = "StatusBadge";

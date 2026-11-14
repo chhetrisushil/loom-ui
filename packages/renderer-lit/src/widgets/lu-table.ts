@@ -11,16 +11,16 @@ import { pluralForms } from "@loomwork/ui-core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import { describeValue } from "../a11y";
-import { cssomStyle } from "../cssomStyle";
-import { measure } from "../format";
-import { formattingLocale } from "../i18n";
-import { tPlural } from "../plural";
-import { refStyles } from "../refStyles";
-import { say } from "../say";
-import { LuWidget } from "./base";
-import { type DispatchResult, dispatch, failureText } from "./chatShared";
-import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual";
+import { describeValue } from "../a11y.js";
+import { cssomStyle } from "../cssomStyle.js";
+import { measure } from "../format.js";
+import { formattingLocale } from "../i18n.js";
+import { tPlural } from "../plural.js";
+import { refStyles } from "../refStyles.js";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
+import { type DispatchResult, dispatch, failureText } from "./chatShared.js";
+import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual.js";
 
 /** Same DOM window as lu-data-table: the full set is sorted, only the DOM is capped. */
 const INITIAL_ROWS = 200;

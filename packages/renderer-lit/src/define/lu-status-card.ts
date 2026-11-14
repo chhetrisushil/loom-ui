@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuStatusCard } from "../widgets/lu-status-card";
+import { defineElement } from "../define.js";
+import { LuStatusCard } from "../widgets/lu-status-card.js";
 
 /** Register `<lu-status-card>`. Idempotent. */
 export function defineStatusCard(): void {

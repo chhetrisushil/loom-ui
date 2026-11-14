@@ -19,9 +19,9 @@ import {
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 
-import { say } from "../say";
-import { titleText } from "../title";
-import { LuWidget } from "./base";
+import { say } from "../say.js";
+import { titleText } from "../title.js";
+import { LuWidget } from "./base.js";
 
 // ── Media widgets (U9): Image, Audio, Video, File, and the MediaInput upload control ─────────────
 //

@@ -1,9 +1,9 @@
 import type { WidgetAction } from "@loomwork/blueprint-runtime";
 import { LitElement, type TemplateResult, css, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
-import { type A2UIRender, type A2UIView, type SelectMeta, planView } from "../a2ui/plan";
-import { localized } from "../i18n";
-import { say } from "../say";
+import { type A2UIRender, type A2UIView, type SelectMeta, planView } from "../a2ui/plan.js";
+import { localized } from "../i18n.js";
+import { say } from "../say.js";
 
 // ── The A2UI declarative interpreter ──────────────────────────────────────────
 //

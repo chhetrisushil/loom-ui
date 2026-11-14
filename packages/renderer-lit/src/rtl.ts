@@ -1,4 +1,4 @@
-import { formattingLocale, isRtl as isRtlLanguage } from "./i18n";
+import { formattingLocale, isRtl as isRtlLanguage } from "./i18n.js";
 
 // ── Which way a widget faces ─────────────────────────────────────────────────
 //

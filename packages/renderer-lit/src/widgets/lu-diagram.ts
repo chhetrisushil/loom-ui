@@ -6,7 +6,7 @@ import {
   isTimeFormat,
 } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
-import { diagramSummary } from "../a11y";
+import { diagramSummary } from "../a11y.js";
 import {
   type DiagramGeometry,
   type PlacedNode,
@@ -14,15 +14,15 @@ import {
   edgeMidpoint,
   edgePath,
   layoutDiagram,
-} from "../charts/diagramLayout";
-import { SERIES_COLORS } from "../charts/svg";
-import { cssomStyle } from "../cssomStyle";
-import { timeLabel } from "../format";
-import { formattingLocale } from "../i18n";
-import { refStyles } from "../refStyles";
-import { dirFor } from "../rtl";
-import { say } from "../say";
-import { LuWidget } from "./base";
+} from "../charts/diagramLayout.js";
+import { SERIES_COLORS } from "../charts/svg.js";
+import { cssomStyle } from "../cssomStyle.js";
+import { timeLabel } from "../format.js";
+import { formattingLocale } from "../i18n.js";
+import { refStyles } from "../refStyles.js";
+import { dirFor } from "../rtl.js";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
 
 // A diagram bound to data (tree, flow, timeline or network), drawn as SVG in the shadow root at its
 // NATURAL size inside a scroll container (no zoom). The layout math is `charts/diagramLayout.ts`

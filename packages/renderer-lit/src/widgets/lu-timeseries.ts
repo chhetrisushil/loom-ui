@@ -7,7 +7,7 @@ import {
 } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { state } from "lit/decorators.js";
-import { chartHostStyles } from "../charts/frame";
+import { chartHostStyles } from "../charts/frame.js";
 import {
   SERIES_COLORS,
   type Scale,
@@ -18,15 +18,15 @@ import {
   padDomain,
   periodTickIndices,
   timeTickIndices,
-} from "../charts/svg";
-import { cssomStyle } from "../cssomStyle";
-import { effectiveFormat, tick as formatTick, measure, timeLabel, unitSuffix } from "../format";
+} from "../charts/svg.js";
+import { cssomStyle } from "../cssomStyle.js";
+import { effectiveFormat, tick as formatTick, measure, timeLabel, unitSuffix } from "../format.js";
 
-import { REF_STRIP_HEIGHT, refOverlayStyles, refStyles } from "../refStyles";
-import { dirFor } from "../rtl";
-import { say } from "../say";
-import { hideTooltip, showTooltip } from "../tooltip";
-import { LuWidget } from "./base";
+import { REF_STRIP_HEIGHT, refOverlayStyles, refStyles } from "../refStyles.js";
+import { dirFor } from "../rtl.js";
+import { say } from "../say.js";
+import { hideTooltip, showTooltip } from "../tooltip.js";
+import { LuWidget } from "./base.js";
 
 // Multi-series line chart, hand-rolled SVG inside the shadow root; resizes via ResizeObserver;
 // crosshair tooltip on hover. A series marked `axis: "right"` is scaled against its own domain

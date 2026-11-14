@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuA2UIView } from "../widgets/lu-a2ui-view";
+import { defineElement } from "../define.js";
+import { LuA2UIView } from "../widgets/lu-a2ui-view.js";
 
 /** Register `<lu-a2ui-view>`. Idempotent. */
 export function defineA2uiView(): void {

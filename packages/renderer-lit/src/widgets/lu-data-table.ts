@@ -2,14 +2,14 @@ import type { Widget } from "@loomwork/blueprint-runtime";
 import { pluralForms } from "@loomwork/ui-core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
-import { describeValue } from "../a11y";
-import { cssomStyle } from "../cssomStyle";
-import { measure } from "../format";
+import { describeValue } from "../a11y.js";
+import { cssomStyle } from "../cssomStyle.js";
+import { measure } from "../format.js";
 
-import { tPlural } from "../plural";
-import { say } from "../say";
-import { LuWidget } from "./base";
-import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual";
+import { tPlural } from "../plural.js";
+import { say } from "../say.js";
+import { LuWidget } from "./base.js";
+import { VirtualRows, type VirtualizeOptions, padRow, resolveVirtualize } from "./virtual.js";
 
 /** Cap DOM rows so a tool returning tens of thousands of rows can't build hundreds of
  * thousands of cells and jank the main thread. The full set is still sorted; only the DOM is

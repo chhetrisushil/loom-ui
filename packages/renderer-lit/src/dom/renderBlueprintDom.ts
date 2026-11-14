@@ -8,13 +8,13 @@ import {
 } from "@loomwork/blueprint-runtime";
 import type { ProjectionRuntime } from "@loomwork/projection-runtime";
 import { type CurrentHead, type StampedAction, parseBlueprintId } from "@loomwork/ui-core/browser";
-import { type Accumulator, reconcileRoot, remountedOf } from "./reconcile";
+import { type Accumulator, reconcileRoot, remountedOf } from "./reconcile.js";
 import {
   type DomContainerRegistry,
   type DomRegistry,
   type RecomposeReport,
   projectionPlaceholder,
-} from "./registry";
+} from "./registry.js";
 import {
   type ContainerEntry,
   type MountContext,
@@ -23,8 +23,8 @@ import {
   malformedNodes,
   mountContainer,
   widgetEntriesOf,
-} from "./tree";
-import { createVisibilityTracker } from "./visibility";
+} from "./tree.js";
+import { createVisibilityTracker } from "./visibility.js";
 
 export interface DomRenderOptions {
   readonly projectionRuntime: ProjectionRuntime;

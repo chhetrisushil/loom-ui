@@ -9,8 +9,8 @@ import {
   semanticNumberFormatOptions,
   unitSuffix,
 } from "@loomwork/ui-core/browser";
-import { formattingLocale } from "./i18n";
-import { say } from "./say";
+import { formattingLocale } from "./i18n.js";
+import { say } from "./say.js";
 
 // One declaration of what a number means, and of the semantics→format-options mapping it
 // implies, in `@loomwork/ui-core` beside the value contracts that carry it; both this DOM renderer

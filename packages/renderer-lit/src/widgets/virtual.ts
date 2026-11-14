@@ -4,7 +4,7 @@ import {
   type TemplateResult,
   html,
 } from "lit";
-import { cssomStyle } from "../cssomStyle";
+import { cssomStyle } from "../cssomStyle.js";
 
 // ── Windowed rendering for large row sets (U17) ───────────────────────────────────────────────
 // `lu-table` / `lu-data-table` used to cap the DOM at 200 rows behind a "show more" button, which is

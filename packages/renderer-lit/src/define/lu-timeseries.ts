@@ -1,5 +1,5 @@
-import { defineElement } from "../define";
-import { LuTimeseries } from "../widgets/lu-timeseries";
+import { defineElement } from "../define.js";
+import { LuTimeseries } from "../widgets/lu-timeseries.js";
 
 /** Register `<lu-timeseries>`. Idempotent. */
 export function defineTimeseries(): void {

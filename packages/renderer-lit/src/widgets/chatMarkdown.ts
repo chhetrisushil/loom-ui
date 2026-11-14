@@ -7,7 +7,7 @@ import {
   mdPlainText,
 } from "@loomwork/ui-core/chat-ui";
 import { type CSSResult, type TemplateResult, css, html, nothing } from "lit";
-import { say } from "../say";
+import { say } from "../say.js";
 
 // ── Markdown parts of a transcript, drawn (U8c) ─────────────────────────────────────────────────────
 //

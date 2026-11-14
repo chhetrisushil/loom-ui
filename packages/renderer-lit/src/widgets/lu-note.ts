@@ -1,7 +1,7 @@
 import { isLocalizedText } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
-import { titleText } from "../title";
-import { LuWidget } from "./base";
+import { titleText } from "../title.js";
+import { LuWidget } from "./base.js";
 
 /** Compile resolves a text prop to a string; an uncompiled `LocalizedText` shows its fallback, never its key. */
 function noteText(value: unknown): string {

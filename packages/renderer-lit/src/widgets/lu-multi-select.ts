@@ -11,10 +11,10 @@ import { type TemplateResult, css, html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 
-import { say } from "../say";
-import { titleText } from "../title";
-import { LuWidget } from "./base";
-import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared";
+import { say } from "../say.js";
+import { titleText } from "../title.js";
+import { LuWidget } from "./base.js";
+import { type DispatchResult, dispatch, failureText, inputStyles } from "./chatShared.js";
 
 // ── MultiSelectInput (U8): a set of choices, bound ────────────────────────────────────────────────
 //

@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { property } from "lit/decorators.js";
-import { say } from "../say";
+import { say } from "../say.js";
 
 // The DEFAULT registry's stand-in for the media kinds (U9). The real widgets are the opt-in entry
 // `@loomwork/ui-renderer-lit/media`; a page that composed media without registering them sees ONE fixed
