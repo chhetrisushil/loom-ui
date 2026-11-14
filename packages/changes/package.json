@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-changes",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Ambient change delivery for loom-ui: a ChangeFeed over lineage events (resume from a cursor, at-least-once, idempotent ids), viewer-safe change descriptions, a per-viewer unread cursor seam, and polling / push head signals",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

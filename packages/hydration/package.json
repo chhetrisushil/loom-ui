@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-hydration",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Provider-plane execution for loom-ui: resolves an Experience's handles through loom's transient effects and publishes them as one loom projection",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,7 +22,9 @@
   },
   "typesVersions": {
     "*": {
-      "client": ["./dist/client.d.ts"]
+      "client": [
+        "./dist/client.d.ts"
+      ]
     }
   },
   "scripts": {

@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-lineage",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Experience lineage runtime for loom-ui: a head pointer per experience with compare-and-set advance, version walk, branch and revert as new versions, and the EXPERIENCE_COMPOSED/PROMOTED protocol with replay verification, over loom's ContentStore and an EventStore-shaped seam",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

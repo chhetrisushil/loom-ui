@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-learning",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The learning loop for loom-ui (U11), host side: validate and rate-limit untrusted interaction signals, re-check exposure, turn them into bounded rewards attributed to the planner decision that produced the surface, record them late through loom's recordOutcome, and compare planner variants off-policy with @loomwork/learning",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
