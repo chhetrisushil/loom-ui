@@ -366,6 +366,8 @@ export function publishChat(
   handle: string,
   onFinding?: (finding: Finding) => void
 ): (value: unknown, meta: { readonly streaming: boolean }) => void {
+  // It publishes Chat values; their contract is deferred in core.
+  useChatContracts();
   return (value, meta) => {
     const r = controller.publishValue(handle, value, {
       state: meta.streaming ? "pending" : "ready",

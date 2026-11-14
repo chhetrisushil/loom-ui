@@ -735,6 +735,9 @@ those kinds; renderer-lit's `defineChat` / `defineInputs` / `defineMedia` / `def
 `elements/*` and `register` entries) and hydration's `connectConversation` already do. Until then a value
 of such a kind is REFUSED with a fixed `value-contract` finding that names the call: a missing contract
 fails closed, never passes. The calls are idempotent. The main entry's zod `checkKindValue` needs none.
+The loaded set belongs to ONE copy of core: a bundle that resolves core's CommonJS build for one
+package and its ESM build for another (`require` vs `import`) holds two sets, and a call into one does
+not load the other, so values are refused. Resolve one build for the whole page.
 
 ### Document and messages entries
 

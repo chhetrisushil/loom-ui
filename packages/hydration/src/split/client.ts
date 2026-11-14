@@ -218,7 +218,10 @@ export class SplitHydrationController {
    * names (this side holds no catalogue). Refused = a finding and nothing written. NOTE: the inventory
    * does not say what KIND a listed handle feeds, so this cannot verify that `kind` is the handle's
    * widget: that is the page author's code naming its own handle, the viewer gate (listed or not) is
-   * the part that is enforced here.
+   * the part that is enforced here. The Chat/MultiSelectInput, media and Diagram contracts are
+   * DEFERRED in core: a value of those kinds is refused ("contract is not loaded") until
+   * `useChatContracts()` / `useMediaContracts()` / `useDiagramContracts()` has run in this page
+   * (renderer-lit's widgets, `connectConversation` and `publishChat` call them).
    */
   publishValue(
     handle: string,

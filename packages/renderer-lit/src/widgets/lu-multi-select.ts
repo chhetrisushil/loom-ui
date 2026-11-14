@@ -1,3 +1,4 @@
+import { useChatContracts } from "@loomwork/ui-core/browser";
 import {
   MAX_MULTI_SELECTED,
   type MultiSelectOption,
@@ -138,6 +139,12 @@ export class LuMultiSelectInput extends LuWidget {
     const to = e.relatedTarget as Node | null;
     if (to === null || !this.shadowRoot?.contains(to)) r.away = true;
   };
+  override connectedCallback(): void {
+    // The value contract is deferred in core: load it here too, so a host that registers this class
+    // under its own tag (not through defineX()) still checks values. Idempotent.
+    useChatContracts();
+    super.connectedCallback();
+  }
   override disconnectedCallback(): void {
     this.refocus = undefined;
     super.disconnectedCallback();

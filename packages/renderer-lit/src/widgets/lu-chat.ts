@@ -1,3 +1,4 @@
+import { useChatContracts } from "@loomwork/ui-core/browser";
 import {
   CHAT_REF_OPEN_ACTION,
   type ChatEntry,
@@ -387,6 +388,9 @@ export class LuChat extends LuWidget {
   }
 
   override connectedCallback(): void {
+    // The value contract is deferred in core: load it here too, so a host that registers this class
+    // under its own tag (not through defineX()) still checks values. Idempotent.
+    useChatContracts();
     super.connectedCallback();
     this.subscribeAccessories();
   }
