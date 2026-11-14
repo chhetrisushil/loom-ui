@@ -33,6 +33,11 @@ describe("deferred value contracts (zod-free checker)", () => {
       ["Chat", CHAT, "useChatContracts"],
       ["MultiSelectInput", { options: [], selected: [] }, "useChatContracts"],
       ["Image", IMAGE, "useMediaContracts"],
+      ["Audio", { ...IMAGE, mediaType: "audio/mpeg" }, "useMediaContracts"],
+      ["Video", { ...IMAGE, mediaType: "video/mp4" }, "useMediaContracts"],
+      ["File", IMAGE, "useMediaContracts"],
+      ["Chat", null, "useChatContracts"],
+      ["Diagram", 0, "useDiagramContracts"],
       ["Diagram", DIAGRAM, "useDiagramContracts"],
     ] as const) {
       expect(isFrameworkContractKind(kind), kind).toBe(true);
@@ -82,5 +87,8 @@ describe("deferred value contracts (zod-free checker)", () => {
     // Idempotent: loading twice changes nothing.
     useChatContracts();
     expect(checkKindValue("Chat", CHAT).ok).toBe(true);
+    // The first load wins: a later install cannot swap a loaded contract for a permissive one.
+    installDeferredContracts({ Chat: () => "valid" });
+    expect(checkKindValue("Chat", { entries: "nope" }).ok).toBe(false);
   });
 });

@@ -594,7 +594,8 @@ const loaded: Record<string, Contract> = Object.create(null);
 export function installDeferredContracts(contracts: Readonly<Record<string, Contract>>): void {
   for (const [kind, contract] of Object.entries(contracts)) {
     if (!Object.hasOwn(DEFERRED, kind)) throw new Error(`"${kind}" is not a deferred kind`);
-    loaded[kind] = contract;
+    // The first load wins: a loaded contract is never replaced.
+    if (loaded[kind] === undefined) loaded[kind] = contract;
   }
 }
 

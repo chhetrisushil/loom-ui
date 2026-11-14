@@ -4,6 +4,7 @@ import {
   type TimeFormat,
   diagramOutline,
   isTimeFormat,
+  useDiagramContracts,
 } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { diagramSummary } from "../a11y.js";
@@ -114,6 +115,9 @@ export class LuDiagram extends LuWidget {
   `;
 
   connectedCallback(): void {
+    // The value contract is deferred in core: load it here too, so a host that registers this class
+    // under its own tag (not through defineX()) still checks values. Idempotent.
+    useDiagramContracts();
     super.connectedCallback();
     // Pinned to `ltr` inside a mirrored page, like the charts: the plot's coordinates are its own (a
     // timeline reads left to right in every language); the frame around it mirrors normally.

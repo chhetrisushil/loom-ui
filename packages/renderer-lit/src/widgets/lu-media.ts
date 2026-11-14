@@ -1,3 +1,4 @@
+import { useMediaContracts } from "@loomwork/ui-core/browser";
 import {
   MEDIA_ATTACH_ACTION,
   type MediaKind,
@@ -150,6 +151,13 @@ abstract class LuMedia extends LuWidget {
     }
     this.resolved = { key, state: "resolving" };
     this.whenOnScreen(() => void this.resolve(ref, key));
+  }
+
+  override connectedCallback(): void {
+    // The value contract is deferred in core: load it here too, so a host that registers this class
+    // under its own tag (not through defineX()) still checks values. Idempotent.
+    useMediaContracts();
+    super.connectedCallback();
   }
 
   override disconnectedCallback(): void {
