@@ -1,5 +1,5 @@
-import type { MCPToolNode } from "@loom-ui/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import type { MCPToolNode } from "@loomwork/ui-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   applyParams,

@@ -1,4 +1,4 @@
-import { RendererRegistry } from "@loom/blueprint-runtime";
+import { RendererRegistry } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
 import { type CompileOptions, compile } from "./compile";

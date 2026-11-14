@@ -16,13 +16,13 @@ import {
   compile,
   compileFingerprint,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   HYDRATION_PROJECTION_ID,
   HYDRATION_PROJECTION_VERSION,
   handleInventory,
-} from "@loom-ui/hydration";
+} from "@loomwork/ui-hydration";
 ```
 
 ## The model
@@ -75,7 +75,7 @@ const build = (base: Experience): Experience => {
 Who may set `binding.sensitivity` is declared per catalogue entry (`sensitivity: "caller"`, the
 default, or `"model-may-set"` for a planner). You can also **declare a tool's class up front**
 instead of inferring it from nodes: pass `declaredToolClasses` (`Record<toolKey, DataClass>`, built
-with `declaredToolClassesFrom(capabilities)` from `@loom-ui/planner`) to every read path. It is a
+with `declaredToolClassesFrom(capabilities)` from `@loomwork/ui-planner`) to every read path. It is a
 floor that only ever raises a read, so a sibling bound before its tool was classified is gated as
 soon as the tool is. It is a table you pass, not stored state; set `undeclared: "deny"` to make a
 tool the table omits unreadable.
@@ -211,7 +211,7 @@ restricted node was edited" and "another was removed" look identical. See
 ## See also
 
 - Reference: [audience](../reference/audience.md), [composition](../reference/composition.md).
-- Package: [`@loom-ui/core`](../../packages/core/README.md) (sections "Opaque ids" and "Notable
+- Package: [`@loomwork/ui-core`](../../packages/core/README.md) (sections "Opaque ids" and "Notable
   behaviours").
 - Examples (in `loom-examples`): `experience-broadcast` (one experience on a personal screen and a
   lobby wallboard), `provenance-explain` (per-viewer "why is this here"), `media-gallery`.

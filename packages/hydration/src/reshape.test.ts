@@ -1,5 +1,5 @@
-import { TypedFailure } from "@loom/core";
-import { SANDBOX_TOOL_ID, shapeHash } from "@loom/plugin-sandbox";
+import { TypedFailure } from "@loomwork/core";
+import { SANDBOX_TOOL_ID, shapeHash } from "@loomwork/plugin-sandbox";
 import { describe, expect, it } from "vitest";
 import { jsonPathSelect, outputShapeHashOf, reshape } from "./reshape";
 import { FakeInvoker } from "./testing.test-support";

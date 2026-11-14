@@ -1,5 +1,5 @@
-import { chatTranscriptLines } from "@loom-ui/core";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import { chatTranscriptLines } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { createLoomUiTerminalRegistry } from "./registry";
 

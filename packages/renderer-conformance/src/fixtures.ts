@@ -1,5 +1,3 @@
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID } from "@loom-ui/hydration/client";
 import {
   type Blueprint,
   type DataBinding,
@@ -9,7 +7,9 @@ import {
   customWidget$,
   flex,
   stack,
-} from "@loom/blueprint-runtime";
+} from "@loomwork/blueprint-runtime";
+import { hydrationPath, hydrationStatusPath } from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID } from "@loomwork/ui-hydration/client";
 
 /** A hydration binding with its status channel, exactly as `compile` emits it. */
 export const bind = (handle: string): DataBinding => ({

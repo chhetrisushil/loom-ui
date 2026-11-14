@@ -1,10 +1,10 @@
-import { type BindingStatus, MetricCard } from "@loom/blueprint-runtime";
+import { type BindingStatus, MetricCard } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import "../register";
 
 // ── The status matrix, Lit side ───────────────────────────────────────────────
 // The SAME ten rows are asserted against the terminal surface in
-// `@loom-ui/renderer-terminal`'s `src/statusMatrix.test.ts`. The two tables are the contract
+// `@loomwork/ui-renderer-terminal`'s `src/statusMatrix.test.ts`. The two tables are the contract
 // that the two surfaces render one decision table; edit neither alone.
 
 interface MatrixRow {

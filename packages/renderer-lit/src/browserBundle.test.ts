@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 // A page that embeds the widgets bundles `dist/index.js` (or the narrower `dist/dom/index.js`).
 // It must carry no zod: zod's schemas are top-level objects a bundler cannot tree-shake, so ONE
 // import of the Experience/contract schemas costs ~60 kB minified (~140 kB unminified) in every
-// page. The renderer takes its value verdicts and number formatting from `@loom-ui/core/browser`
+// page. The renderer takes its value verdicts and number formatting from `@loomwork/ui-core/browser`
 // (zod-free) instead of the main entry. Needs `pnpm build` first, like every consumer does.
 //
 // Measured when this budget was set (minified, esm): index 140_343 bytes, of which zod was
@@ -94,7 +94,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // catalogue (`messages.js`, ~7 kB: every English string once, under its key) rides with the renderer.
     // U17 raised index by 6 kB (measured 175_259 -> 180_313): windowed rendering (`virtual.ts`, shared by lu-table,
     // lu-data-table and lu-chat), update coalescing and visibility reporting. `dom/index.js` stays under 180 kB (105_315).
-    // ESM packaging (F3): @loom-ui/core and /hydration now publish an ESM build (`dist/esm`, picked by the
+    // ESM packaging (F3): @loomwork/ui-core and /hydration now publish an ESM build (`dist/esm`, picked by the
     // `import` condition), so the bundler drops every module an entry does not reach. Every budget below was
     // lowered to ~4% over the new measurement (index 186 -> 177 kB, measured 170_171; dom/index 180 -> 84 kB,
     // 80_252; dom/containers 93 -> 66 kB, 63_081; media 187 -> 122 kB, 117_079; chat 203 -> 141 kB, 135_267).
@@ -107,7 +107,7 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // MultiSelectInput web slice: 136 -> 138 kB (measured 137_860). Cause: the MultiSelectInput value contract (core, PR #107), which rides in `checkKindValue` for every page (137_810 before this slice).
     // Prose kind (2026-10-24): 138 -> 139 kB (measured 138_470): the Prose value contract and its three fixed words ride in
     // `checkKindValue` and the catalogue for every page. `lu-prose` itself is NOT exported from the root (its drawer and the
-    // `@loom-ui/core/document` parsers would add 23 kB to every page): the element ships through `defineAll` and `elements/lu-prose`.
+    // `@loomwork/ui-core/document` parsers would add 23 kB to every page): the element ships through `defineAll` and `elements/lu-prose`.
     // TimeFormat (declared time-axis labels): 139 -> 142 kB (measured 138_670 -> 141_334): the TimeFormat contract in
     // `checkKindValue`, core's `formatTimeLabel` (`timeWords.js`), its three catalogue words and lu-timeseries' period ticks.
     // Diagram kind: 142 -> 146 kB (measured 141_334 -> 144_731): the DiagramValue contract and its structural rules
@@ -151,18 +151,20 @@ describe("renderer-lit's browser entries carry no zod", () => {
     // Follow-ups (176k): 114 -> 112 kB: the first number was looser than needed; 112 keeps about 2.5 kB over the measurement.
     // MultiSelectInput web slice: 112 -> 121 kB (measured 119_014; 113_675 before): lu-multi-select-input.
     // Prose kind (2026-10-24): 121 -> 123 kB (measured 120_995, 5 bytes under the old budget): the Prose value contract and its three fixed
-    // words. `chat.js` does not reach `lu-prose` or `@loom-ui/core/document`; 123 keeps about 2 kB over the measurement.
+    // words. `chat.js` does not reach `lu-prose` or `@loomwork/ui-core/document`; 123 keeps about 2 kB over the measurement.
     // TimeFormat: 123 -> 124 kB (measured 122_610 -> 123_295): the TimeFormat contract in `checkKindValue` and its three words.
     // Diagram kind: 124 -> 128 kB (measured 123_295 -> 126_671): the DiagramValue contract and the placeholder (as index.js).
     ["chat.js", 132 * 1000],
-    // The opt-in diagram widget (`@loom-ui/renderer-lit/diagram`): lu-diagram, the layout math and core's outline and graph
+    // The opt-in diagram widget (`@loomwork/ui-renderer-lit/diagram`): lu-diagram, the layout math and core's outline and graph
     // helpers, on top of the default registry it extends. Measured 76_859; budget = measured + ~10%.
     // Table token cells: 84 -> 85 kB (measured 83_341 -> 84_209), the same cause as index.js.
     ["diagram.js", 85 * 1000],
   ] as const) {
     it(`${entry}: no zod, only core's allowlisted browser modules, under ${budget} bytes`, async () => {
       const { inputs, bytes } = await bundle(entry);
-      console.info(`@loom-ui/renderer-lit/${entry} browser bundle (minified, esm): ${bytes} bytes`);
+      console.info(
+        `@loomwork/ui-renderer-lit/${entry} browser bundle (minified, esm): ${bytes} bytes`
+      );
       expect(inputs.filter((f) => /[\\/]zod[\\/]/.test(f))).toEqual([]);
       // Every core module in the graph is on the allowlist — and nothing else of core's is.
       const coreInGraph = inputs
@@ -184,7 +186,9 @@ describe("renderer-lit/signals", () => {
   // Re-baselined 2026-10-14 after the ESM build (loom-ui #82): 2_074 measured -> 2.5 kB.
   it("bundles with no zod and no core module, under 2500 bytes", async () => {
     const { inputs, bytes } = await bundle("signals.js");
-    console.info(`@loom-ui/renderer-lit/signals.js browser bundle (minified, esm): ${bytes} bytes`);
+    console.info(
+      `@loomwork/ui-renderer-lit/signals.js browser bundle (minified, esm): ${bytes} bytes`
+    );
     expect(inputs.filter((f) => /[\\/]zod[\\/]/.test(f))).toEqual([]);
     expect(inputs.filter((f) => f.startsWith(`${CORE_DIST}/`))).toEqual([]);
     expect(bytes).toBeLessThan(2.5 * 1000);

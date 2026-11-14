@@ -1,4 +1,4 @@
-import type { Widget } from "@loom/blueprint-runtime";
+import type { Widget } from "@loomwork/blueprint-runtime";
 
 // ── Visibility reporting (U17) ────────────────────────────────────────────────────────────────
 // Hydration's P2 handles are fetched when the surface says they are on screen
@@ -8,7 +8,7 @@ import type { Widget } from "@loom/blueprint-runtime";
 // every BOUND widget and tells the host (`DomRenderOptions.onVisible`) when one scrolls into view.
 //
 // The renderer stays free of hydration: it reports the WIDGET, and the host maps its binding to a
-// handle (`handleOfPath(widget.binding.path)` from `@loom-ui/hydration/client`) and calls
+// handle (`handleOfPath(widget.binding.path)` from `@loomwork/ui-hydration/client`) and calls
 // `markVisible`. `markVisible` is idempotent per question, so reporting every entry into view (not
 // just the first) is right: a handle whose question changed waits for its NEXT `markVisible`.
 //

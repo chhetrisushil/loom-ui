@@ -1,4 +1,4 @@
-import { canonicalJson } from "@loom/core";
+import { canonicalJson } from "@loomwork/core";
 import { describe, expect, it } from "vitest";
 import { toolsOf } from "./classes";
 import { Experience, type ProviderSpec, genesis } from "./experience";

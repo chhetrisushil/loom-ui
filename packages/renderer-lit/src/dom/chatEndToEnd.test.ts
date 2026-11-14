@@ -1,3 +1,4 @@
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   ChatFeed,
   type ContainerNode,
@@ -11,14 +12,13 @@ import {
   defineSemanticCatalog,
   genesis,
   inputSpecsOf,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import {
   HYDRATION_PROJECTION_ID,
   HydrationStore,
   SplitHydrationController,
   publishChat,
-} from "@loom-ui/hydration";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createChatLitRegistry } from "../chat";
 import { renderBlueprintDom } from "./index";

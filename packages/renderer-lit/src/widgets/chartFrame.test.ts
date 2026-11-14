@@ -1,4 +1,4 @@
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import { type CSSResultGroup, css as css_ } from "lit";
 import { describe, expect, it } from "vitest";
 import { chartHostStyles } from "../charts/frame";

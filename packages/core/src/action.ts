@@ -4,7 +4,7 @@
 // on. A renderer stamps every action it emits with `viewedVersion`; a host compares that stamp with
 // the CURRENT head before acting, and refuses an action taken on a view that has since moved
 // (recomposed, or whose bound data changed). No zod, no Experience schema: a browser renderer
-// imports this from `@loom-ui/core/browser`.
+// imports this from `@loomwork/ui-core/browser`.
 //
 // Threat model: the stamp is written by the RENDERER (trusted host code), never by a widget, an
 // A2UI tree or a sandbox frame — those produce only `type`-less payloads that the renderer wraps.

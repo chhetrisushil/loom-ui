@@ -1,3 +1,4 @@
+import type { DataClass } from "@loomwork/classify";
 import {
   type DeclaredToolClasses,
   type ProviderSpec,
@@ -5,8 +6,7 @@ import {
   strictestClass,
   toolKey,
   toolsOf,
-} from "@loom-ui/core";
-import type { DataClass } from "@loom/classify";
+} from "@loomwork/ui-core";
 import type { CapabilityRef } from "./spi";
 
 /**

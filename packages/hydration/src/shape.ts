@@ -1,6 +1,6 @@
-import { jsonSchemaHash } from "@loom/core";
+import { jsonSchemaHash } from "@loomwork/core";
 
-// The output-shape fingerprint, client-safe. This MIRRORS `shapeHash` in `@loom/plugin-sandbox`
+// The output-shape fingerprint, client-safe. This MIRRORS `shapeHash` in `@loomwork/plugin-sandbox`
 // (ADR 0064) because that package's entry pulls QuickJS; `shape.test.ts` asserts the two agree
 // on a corpus, so a drift in either fails the build. Same skeleton: primitives -> typeof, objects
 // -> sorted key/shape maps, arrays -> the deduplicated, canonically sorted element shapes.

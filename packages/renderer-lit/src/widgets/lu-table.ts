@@ -6,8 +6,8 @@ import {
   tableCellText,
   tableColumnFormat,
   tableColumnLabel,
-} from "@loom-ui/core/browser";
-import { pluralForms } from "@loom-ui/core/messages";
+} from "@loomwork/ui-core/browser";
+import { pluralForms } from "@loomwork/ui-core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";

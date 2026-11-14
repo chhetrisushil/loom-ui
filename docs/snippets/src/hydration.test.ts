@@ -6,8 +6,8 @@ import { boardExperience, catalog } from "./fixtures.test-support";
 import { expectDocMirrors } from "./mirror.test-support";
 // #region imports
 import { createHmac } from "node:crypto";
-import { type Experience, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+import { type Experience, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   DEFAULT_TIME_RANGE,
   type DriftReport,
@@ -19,14 +19,14 @@ import {
   handleInventory,
   remapOperation,
   serveHandles,
-} from "@loom-ui/hydration";
+} from "@loomwork/ui-hydration";
 import {
   type HandleLoader,
   HydrationStore,
   SplitHydrationController,
-} from "@loom-ui/hydration/client";
-import { TypedFailure } from "@loom/core";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration/client";
+import { TypedFailure } from "@loomwork/core";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 // #endregion imports
 
 /** The sealed board from the walkthrough, with its time window made overridable. */

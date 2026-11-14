@@ -1,6 +1,6 @@
-import { TypedFailure } from "@loom/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { TypedFailure } from "@loomwork/core";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
 import { describe, expect, it } from "vitest";
 import type { TransientInvoker } from "./invoker";
 import { limitInvoker, memoInvoker, signalInvoker } from "./invokers";

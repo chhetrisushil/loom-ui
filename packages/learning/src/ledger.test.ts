@@ -1,6 +1,6 @@
-import { eventStoreLineageStore } from "@loom-ui/lineage";
-import { UNIT_KEY } from "@loom-ui/planner";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import { eventStoreLineageStore } from "@loomwork/ui-lineage";
+import { UNIT_KEY } from "@loomwork/ui-planner";
 import { describe, expect, it, vi } from "vitest";
 import {
   InMemoryVoteLog,

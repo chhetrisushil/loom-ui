@@ -1,3 +1,5 @@
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type Experience,
@@ -6,9 +8,7 @@ import {
   defineSemanticCatalog,
   genesis,
   mediaCatalogEntries,
-} from "@loom-ui/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { HydrationController } from "./controller";
 import { HydrationStore } from "./projection";

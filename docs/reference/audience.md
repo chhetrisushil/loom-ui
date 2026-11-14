@@ -2,7 +2,7 @@
 
 `compile` decides what a surface shows from a node's `sensitivity` and WHO the surface is for.
 `audience` says who. See also the [composition reference](composition.md),
-[hydration reference](hydration.md) and [`@loom-ui/core`](../../packages/core/README.md).
+[hydration reference](hydration.md) and [`@loomwork/ui-core`](../../packages/core/README.md).
 
 ## Choosing an audience
 

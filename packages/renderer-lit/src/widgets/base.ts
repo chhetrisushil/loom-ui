@@ -1,11 +1,11 @@
+import type { BindingStatus, Widget, WidgetAction } from "@loomwork/blueprint-runtime";
 import {
   type ContractRegistry,
   REF_OPEN_ACTION,
   checkKindValue,
   hasKindContract,
   widgetRefsOf,
-} from "@loom-ui/core/browser";
-import type { BindingStatus, Widget, WidgetAction } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core/browser";
 import { LitElement, type PropertyValues, type TemplateResult, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import {
@@ -40,7 +40,7 @@ export interface WidgetVerdict {
 // ── The status matrix ─────────────────────────────────────────────────────────
 //
 // ONE decision table, over the `BindingStatus` loom resolves from the widget's binding, and the
-// terminal surface implements the SAME one in `@loom-ui/renderer-terminal`. Both are pinned by
+// terminal surface implements the SAME one in `@loomwork/ui-renderer-terminal`. Both are pinned by
 // an identical ten-row table-driven test (`statusMatrix.test.ts` in each package) so the two
 // surfaces cannot drift into disagreeing about what a binding's state means:
 //

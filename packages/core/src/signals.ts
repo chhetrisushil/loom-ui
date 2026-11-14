@@ -1,4 +1,4 @@
-// `@loom-ui/core/signals` — interaction signals (U11): the opt-in, privacy-preserving record of what a
+// `@loomwork/ui-core/signals` — interaction signals (U11): the opt-in, privacy-preserving record of what a
 // viewer did with a surface, so a reward can be attributed to the planner decision that produced it.
 //
 // WHAT A SIGNAL IS. A signal names a surface VERSION and (usually) a NODE id, and carries one of four
@@ -18,7 +18,7 @@
 //
 // This module is pure and isomorphic (no zod, no DOM, no Node), so a browser can import it. It does
 // not decide who the viewer is or whether to trust the batch: a signal is UNTRUSTED CLIENT INPUT, and
-// the host half (`@loom-ui/learning`) validates, dedupes, rate-limits and re-checks exposure before a
+// the host half (`@loomwork/ui-learning`) validates, dedupes, rate-limits and re-checks exposure before a
 // reward is derived from one. `validateSignalBatch` here is the shared, total, hand-written validator.
 
 export const SIGNAL_VERSION = 1;
@@ -175,7 +175,7 @@ const sessionPrefix = (): string => {
 /**
  * Accumulates signals for ONE surface version at a time and sends them in bounded batches.
  * Exposure is once per node and view; clicks and dwell are coalesced; feedback is the last rating
- * per node. Nothing here reads the DOM — `@loom-ui/renderer-lit/signals` drives it from one.
+ * per node. Nothing here reads the DOM — `@loomwork/ui-renderer-lit/signals` drives it from one.
  */
 export class SignalCollector {
   private state: ViewState | undefined;

@@ -749,7 +749,7 @@ export function cleanMessage(m: string): string {
 }
 
 /**
- * `@loom-ui/core`'s `checkKindValue`, without zod: `undefined` is "not hydrated yet" and passes,
+ * `@loomwork/ui-core`'s `checkKindValue`, without zod: `undefined` is "not hydrated yet" and passes,
  * an uncontracted kind (neither the framework's nor in the host's `contracts`) passes here — see
  * {@link hasKindContract} for the callers that must not — and a failure carries the same finding
  * (code and message) the zod-backed check produces — pinned by `kindValues.test.ts`. The

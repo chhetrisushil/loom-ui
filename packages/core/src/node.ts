@@ -1,5 +1,5 @@
-import { isLayoutRole } from "@loom/blueprint-runtime";
-import type { DataClass } from "@loom/classify";
+import { isLayoutRole } from "@loomwork/blueprint-runtime";
+import type { DataClass } from "@loomwork/classify";
 import { z } from "zod";
 
 // ── The Experience node tree ──────────────────────────────────────────────────
@@ -31,7 +31,7 @@ export const GRID_LINE_WARN_ABOVE = 1000;
 /** A start column, 1-based, inside the grid: the node occupies `column..column+span-1`. */
 export const GridColumn = z.number().int().min(1).max(GRID_COLUMNS);
 /**
- * A binding's confidentiality class, `@loom/classify`'s vocabulary. DECLARED here and carried onto
+ * A binding's confidentiality class, `@loomwork/classify`'s vocabulary. DECLARED here and carried onto
  * the compiled `DataBinding.sensitivity` (loom ADR 0097 D4). It IS enforced, at the two places
  * viewer-visible output is produced: `compile` redacts a node the `Viewer` may not see
  * (`CompileOptions.viewer`), and hydration refuses to fetch or serve its handle

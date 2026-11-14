@@ -4,8 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // ── Client-side packages must not reach the server hydration plane ───────────────
-// The root entry `@loom-ui/hydration` imports the sandbox (QuickJS WASM) and the MCP plugin; a
-// package that only needs a pure helper or a constant uses `@loom-ui/hydration/client`. Package
+// The root entry `@loomwork/ui-hydration` imports the sandbox (QuickJS WASM) and the MCP plugin; a
+// package that only needs a pure helper or a constant uses `@loomwork/ui-hydration/client`. Package
 // roles: `core` (compiler, no runtime deps on hydration), `planner` (authors/validates plans, no
 // execution), `renderer-terminal` and `renderer-lit` (render published state). None executes a
 // provider, so none may reach the server plane — by source import or by its built module graph.
@@ -16,16 +16,16 @@ const CLIENT_PACKAGES = ["core", "planner", "renderer-terminal", "renderer-lit"]
 const HYDRATION_DIST = resolve(PACKAGES, "hydration/dist");
 
 const FORBIDDEN_PACKAGES = new Set([
-  "@loom/plugin-sandbox",
+  "@loomwork/plugin-sandbox",
   // U6 — the lineage runtime is server-side (an event log + content store); never in a client graph.
-  "@loom-ui/lineage",
+  "@loomwork/ui-lineage",
   // U7 — change delivery sits on the lineage and content stores; server-side only.
-  "@loom-ui/changes",
+  "@loomwork/ui-changes",
   // U11 — reward ingestion/settlement runs on the host (recordOutcome, the event log); a client sends signals, never settles them.
-  "@loom-ui/learning",
-  "@loom/plugin-mcp",
-  "@loom/effect-runtime",
-  "@loom/agent",
+  "@loomwork/ui-learning",
+  "@loomwork/plugin-mcp",
+  "@loomwork/effect-runtime",
+  "@loomwork/agent",
 ]);
 const SERVER_FILES = new Set(
   [
@@ -63,7 +63,7 @@ describe("client-side packages stay off the server hydration entry", () => {
         const src = readFileSync(file, "utf8");
         for (const m of src.matchAll(/(?:from|import\()\s*["']([^"']+)["']/g)) {
           const spec = m[1] as string;
-          if (spec === "@loom-ui/hydration" || FORBIDDEN_PACKAGES.has(packageName(spec))) {
+          if (spec === "@loomwork/ui-hydration" || FORBIDDEN_PACKAGES.has(packageName(spec))) {
             offenders.push(`${file.slice(PACKAGES.length + 1)} imports "${spec}"`);
           }
         }

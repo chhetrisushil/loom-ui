@@ -1,10 +1,10 @@
-import type { UntrustedText } from "@loom-ui/core";
-import { type TaintedValue, tainted } from "@loom/classify";
+import { type TaintedValue, tainted } from "@loomwork/classify";
+import type { UntrustedText } from "@loomwork/ui-core";
 
 // ── The summary as loom's untrusted value ─────────────────────────────────────
 // A change summary is model text. `UntrustedText` marks it for DISPLAY; when a host feeds it to
 // another model (a digest, a notification writer) it must cross as loom's ADR 0085 taint
-// (`@loom/classify` `TaintedValue`), which `@loom/llm`'s `guardRequest` refuses in any instruction
+// (`@loomwork/classify` `TaintedValue`), which `@loomwork/llm`'s `guardRequest` refuses in any instruction
 // position and fences in a data position. This is a server-side helper: the taint package is a
 // loom kernel-side dependency and must not enter a client bundle.
 //

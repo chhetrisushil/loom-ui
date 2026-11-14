@@ -1,3 +1,5 @@
+import { type Layout, type Widget, validateBlueprint } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   compile,
   experienceHandles,
@@ -7,16 +9,14 @@ import {
   isContainer,
   loomCatalogFor,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   HYDRATION_PROJECTION_ID,
   HYDRATION_PROJECTION_VERSION,
   HydrationStore,
-} from "@loom-ui/hydration";
-import { renderExperience } from "@loom-ui/renderer-terminal";
-import { type Layout, type Widget, validateBlueprint } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-hydration";
+import { renderExperience } from "@loomwork/ui-renderer-terminal";
 import { describe, expect, it } from "vitest";
 import { ReferencePlanner } from "./reference";
 import {

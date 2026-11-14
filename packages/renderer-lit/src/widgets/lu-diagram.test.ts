@@ -1,5 +1,5 @@
-import { type DiagramValue, MAX_DIAGRAM_NODES, diagramOutline } from "@loom-ui/core/browser";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import { type DiagramValue, MAX_DIAGRAM_NODES, diagramOutline } from "@loomwork/ui-core/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { configureI18n, setLocale } from "../i18n";
 import { say } from "../say";

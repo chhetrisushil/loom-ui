@@ -1,3 +1,4 @@
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 import {
   type Operation,
   type ProviderSpec,
@@ -6,8 +7,7 @@ import {
   type SemanticNode,
   genesis,
   snapshotSeen,
-} from "@loom-ui/core";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { Lineage, type LineageResult } from "./lineage";
 import { SeenLog, type SeenResult } from "./seen";

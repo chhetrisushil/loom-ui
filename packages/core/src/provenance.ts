@@ -1,4 +1,4 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 import { type UntrustedText, boundSummary, inspectExperience, untrustedSummary } from "./change";
 import { type DeclaredToolClasses, type UndeclaredToolPolicy, toolsOf } from "./classes";
 import type { Experience } from "./experience";

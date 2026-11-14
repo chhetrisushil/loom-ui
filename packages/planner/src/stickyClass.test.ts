@@ -1,4 +1,4 @@
-import { apply, experienceHandles, genesis, replay } from "@loom-ui/core";
+import { apply, experienceHandles, genesis, replay } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./contract";
 import { materialize } from "./materialize";

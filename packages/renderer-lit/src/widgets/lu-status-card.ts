@@ -1,4 +1,4 @@
-import type { StatusCardValue } from "@loom-ui/core/browser";
+import type { StatusCardValue } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { describeValue } from "../a11y";
 

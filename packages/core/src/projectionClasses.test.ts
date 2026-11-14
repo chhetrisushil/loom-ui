@@ -1,4 +1,4 @@
-import type { Layout, Widget } from "@loom/blueprint-runtime";
+import type { Layout, Widget } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { compileFingerprint } from "./action";
 import { placeholderAlias } from "./alias";

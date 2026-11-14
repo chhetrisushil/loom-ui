@@ -1,18 +1,18 @@
-// `@loom-ui/renderer-lit/diagram` — the `Diagram` widget, opt-in.
+// `@loomwork/ui-renderer-lit/diagram` — the `Diagram` widget, opt-in.
 //
 // Creating a registry here (or `registerDiagramWidgets`) defines the `lu-diagram` element. It is its
 // own entry, like the media and chat widgets, so a page that draws no diagram does not pay for the
 // layout math and the drawer. The kind itself (and the `DiagramValue` contract, with its caps and
-// structural rules) is universal and lives in `@loom-ui/core`; this entry is only how the web
+// structural rules) is universal and lives in `@loomwork/ui-core`; this entry is only how the web
 // surface DRAWS it.
 //
-//   import { createDiagramLitRegistry } from "@loom-ui/renderer-lit/diagram";
+//   import { createDiagramLitRegistry } from "@loomwork/ui-renderer-lit/diagram";
 //   renderBlueprintDom(host, blueprint, { registry: createDiagramLitRegistry() });
 //
 // Compose with the other opt-in entries by registering on one registry:
 // `registerDiagramWidgets(registerChatWidgets(createLitRegistry()))`.
 
-import type { CatalogEntry } from "@loom/blueprint-runtime";
+import type { CatalogEntry } from "@loomwork/blueprint-runtime";
 import { defineDiagram } from "./define/lu-diagram";
 import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";
 import type { DomRegistry } from "./dom/registry";

@@ -20,8 +20,8 @@ export {
   onLocaleChange,
   setLocale,
 } from "./i18n";
-export { LU_MESSAGES, LU_MESSAGE_KEYS } from "@loom-ui/core/messages";
-export type { LuI18n, LuMessageKey } from "@loom-ui/core/messages";
+export { LU_MESSAGES, LU_MESSAGE_KEYS } from "@loomwork/ui-core/messages";
+export type { LuI18n, LuMessageKey } from "@loomwork/ui-core/messages";
 export {
   type FrameMessage,
   SANDBOX_ALLOW,

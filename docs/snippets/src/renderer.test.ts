@@ -2,15 +2,15 @@
 import { describe, expect, it } from "vitest";
 import { expectDocMirrors } from "./mirror.test-support";
 // #region imports
-import { HydrationStore } from "@loom-ui/hydration/client";
+import { HydrationStore } from "@loomwork/ui-hydration/client";
 import {
   type HandleEntry,
   type RendererAdapter,
   checkRendererConformance,
-} from "@loom-ui/renderer-conformance";
-import { describeRendererConformance } from "@loom-ui/renderer-conformance/vitest";
-import { renderExperience } from "@loom-ui/renderer-terminal";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-renderer-conformance";
+import { describeRendererConformance } from "@loomwork/ui-renderer-conformance/vitest";
+import { renderExperience } from "@loomwork/ui-renderer-terminal";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 // #endregion imports
 
 // #region adapter

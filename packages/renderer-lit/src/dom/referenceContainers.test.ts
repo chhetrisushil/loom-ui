@@ -1,14 +1,4 @@
 import {
-  type ContainerNode,
-  type ExperienceNode,
-  compile,
-  defineSemanticCatalog,
-  genesis,
-  hydrationPath,
-  hydrationStatusPath,
-} from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import {
   type Blueprint,
   type DataBinding,
   MetricCard,
@@ -18,8 +8,18 @@ import {
   flex,
   grid,
   stack,
-} from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import {
+  type ContainerNode,
+  type ExperienceNode,
+  compile,
+  defineSemanticCatalog,
+  genesis,
+  hydrationPath,
+  hydrationStatusPath,
+} from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import { referenceContainers } from "./containers";
 import { type DomWidgetRenderer, renderBlueprintDom } from "./index";

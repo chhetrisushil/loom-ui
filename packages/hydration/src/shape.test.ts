@@ -1,4 +1,4 @@
-import { shapeHash } from "@loom/plugin-sandbox";
+import { shapeHash } from "@loomwork/plugin-sandbox";
 import { describe, expect, it } from "vitest";
 import { outputShapeHashOf } from "./shape";
 

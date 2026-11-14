@@ -1,12 +1,12 @@
+import { InMemoryProjectionRuntime, type Projection } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type SemanticNode,
   compile,
   defineSemanticCatalog,
   genesis,
-} from "@loom-ui/core";
-import { HydrationStore } from "@loom-ui/hydration";
-import { InMemoryProjectionRuntime, type Projection } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
+import { HydrationStore } from "@loomwork/ui-hydration";
 import { afterEach, describe, expect, it } from "vitest";
 import "../register";
 import { litRegistry } from "./litRegistry";

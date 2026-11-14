@@ -1,4 +1,4 @@
-import { type MCPToolNode, providerGraphFindings } from "@loom-ui/core";
+import { type MCPToolNode, providerGraphFindings } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import {
   resolveArguments,

@@ -2,10 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { expectDocMirrors } from "./mirror.test-support";
 // #region imports
-import { defineSemanticCatalog, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { executeProvider } from "@loom-ui/hydration";
-import type { DriftRecord, TransientInvoker } from "@loom-ui/hydration";
+import { defineSemanticCatalog, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import { executeProvider } from "@loomwork/ui-hydration";
+import type { DriftRecord, TransientInvoker } from "@loomwork/ui-hydration";
 import {
   type CapabilityRef,
   type DecideContext,
@@ -15,7 +15,7 @@ import {
   declaredToolClassesFrom,
   plannerProvenance,
   reviseForDrift,
-} from "@loom-ui/planner";
+} from "@loomwork/ui-planner";
 // #endregion imports
 
 describe("docs/guides/planners-and-learning.md", () => {
@@ -102,7 +102,7 @@ describe("docs/guides/planners-and-learning.md", () => {
     const ctx = recording();
 
     // #region compose
-    // Any `@loom/llm` provider is a PlannerModel; `ctx` is your loom flow's ExecutionContext.
+    // Any `@loomwork/llm` provider is a PlannerModel; `ctx` is your loom flow's ExecutionContext.
     const planner = new ReferencePlanner({ model, modelId: "my-model" });
 
     const plan = await planner.compose({ intent, catalog, capabilities }, ctx);

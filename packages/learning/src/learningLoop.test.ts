@@ -1,19 +1,19 @@
-import { type SemanticCatalog, defineSemanticCatalog } from "@loom-ui/core";
-import { SIGNAL_VERSION } from "@loom-ui/core/signals";
-import { eventStoreLineageStore } from "@loom-ui/lineage";
-import { ReferencePlanner, stableBucketPolicy, ucbPolicy } from "@loom-ui/planner";
-import { recordOutcome } from "@loom/analytics";
-import { step$ } from "@loom/core";
-import { EffectRuntime } from "@loom/effect-runtime";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
-import { trajectories } from "@loom/learning";
-import { InMemoryAsyncSnapshotStore } from "@loom/snapshot-runtime";
+import { recordOutcome } from "@loomwork/analytics";
+import { step$ } from "@loomwork/core";
+import { EffectRuntime } from "@loomwork/effect-runtime";
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import { trajectories } from "@loomwork/learning";
+import { InMemoryAsyncSnapshotStore } from "@loomwork/snapshot-runtime";
+import { type SemanticCatalog, defineSemanticCatalog } from "@loomwork/ui-core";
+import { SIGNAL_VERSION } from "@loomwork/ui-core/signals";
+import { eventStoreLineageStore } from "@loomwork/ui-lineage";
+import { ReferencePlanner, stableBucketPolicy, ucbPolicy } from "@loomwork/ui-planner";
 import {
   type FlowRunner,
   type RegisteredFlow,
   WorkflowRuntime,
   executionAccessPolicy,
-} from "@loom/workflow-runtime";
+} from "@loomwork/workflow-runtime";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { VARIANT_DECISION_PREFIX, evaluateVariants } from "./evaluate";
@@ -26,7 +26,7 @@ import { defaultReward, settleRewards } from "./rewards";
 // `decideWithPolicy` inside a flow (recorded with propensity), the execution finishes, viewers'
 // signals are ingested into a DURABLE vote log, one pooled reward per decision is recorded LATE with
 // `runtime.recordOutcome` by a reward-pipeline principal, and the variants are compared off-policy
-// from the exported log with `@loom/learning`.
+// from the exported log with `@loomwork/learning`.
 
 const catalog: SemanticCatalog = defineSemanticCatalog({
   id: "learn.v1",

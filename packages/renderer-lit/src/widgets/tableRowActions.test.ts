@@ -1,5 +1,5 @@
-import { TABLE_ROW_ACTION } from "@loom-ui/core/browser";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import { TABLE_ROW_ACTION } from "@loomwork/ui-core/browser";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-table";
 

@@ -1,5 +1,5 @@
-import { LU_MESSAGE_KEYS } from "@loom-ui/core";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import { LU_MESSAGE_KEYS } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TERMINAL_LOCALE, createLoomUiTerminalRegistry } from "./registry";
 

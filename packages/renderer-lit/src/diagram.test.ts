@@ -1,5 +1,5 @@
-import { builtinCatalog, catalogCoverage } from "@loom/blueprint-runtime";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { builtinCatalog, catalogCoverage } from "@loomwork/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { createDiagramLitRegistry, diagramKindContracts, registerDiagramWidgets } from "./diagram";
 import { createLitRegistry, litRegistry } from "./dom/litRegistry";

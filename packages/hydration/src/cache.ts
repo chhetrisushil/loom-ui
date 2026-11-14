@@ -1,5 +1,5 @@
-import type { ContractRegistry, ProviderSpec } from "@loom-ui/core";
-import { canonicalJson, fnv1a64 } from "@loom/core";
+import { canonicalJson, fnv1a64 } from "@loomwork/core";
+import type { ContractRegistry, ProviderSpec } from "@loomwork/ui-core";
 import type { LoadParams } from "./params";
 
 // ── Result cache ──────────────────────────────────────────────────────────────

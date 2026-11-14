@@ -1,9 +1,9 @@
 import { EventEmitter } from "node:events";
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { blueprint$, customWidget$, stack } from "@loom/blueprint-runtime";
-import type { Blueprint, Widget } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { blueprint$, customWidget$, stack } from "@loomwork/blueprint-runtime";
+import type { Blueprint, Widget } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { hydrationPath, hydrationStatusPath } from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import { inert } from "./inert";
 import {

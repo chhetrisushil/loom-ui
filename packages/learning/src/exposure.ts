@@ -1,4 +1,4 @@
-import type { Audience } from "@loom-ui/core";
+import type { Audience } from "@loomwork/ui-core";
 
 // ── Exposure (U11) ────────────────────────────────────────────────────────────
 // A signal is client input; "the viewer saw it" is the fact a reward leans on, so it is checked, not
@@ -28,7 +28,7 @@ export interface ExposureCheck {
   saw(q: ExposureQuery): boolean | Promise<boolean>;
 }
 
-/** Structural slice of `@loom-ui/lineage`'s `SeenLog` this needs, so the packages stay unlinked. */
+/** Structural slice of `@loomwork/ui-lineage`'s `SeenLog` this needs, so the packages stay unlinked. */
 export interface SeenLogReader {
   read(input: {
     readonly experienceId: string;

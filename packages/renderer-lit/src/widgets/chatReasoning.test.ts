@@ -1,6 +1,6 @@
-import { ChatFeed, type ChatValue } from "@loom-ui/core/chat";
-import { LOAD_REASONING_ACTION } from "@loom-ui/core/chat";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import { ChatFeed, type ChatValue } from "@loomwork/ui-core/chat";
+import { LOAD_REASONING_ACTION } from "@loomwork/ui-core/chat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-chat";
 

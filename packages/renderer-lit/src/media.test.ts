@@ -1,3 +1,4 @@
+import { builtinCatalog, catalogCoverage } from "@loomwork/blueprint-runtime";
 import {
   type ContainerNode,
   type SemanticNode,
@@ -5,8 +6,7 @@ import {
   defineSemanticCatalog,
   genesis,
   mediaCatalogEntries,
-} from "@loom-ui/core";
-import { builtinCatalog, catalogCoverage } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { litRegistry } from "./dom/litRegistry";
 import { createMediaLitRegistry, mediaKindContracts, registerMediaWidgets } from "./media";

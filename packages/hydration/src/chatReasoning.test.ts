@@ -1,4 +1,4 @@
-import { ChatFeed } from "@loom-ui/core";
+import { ChatFeed } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import {
   type EventSourceLike,

@@ -9,7 +9,7 @@ import {
   type UndeclaredToolPolicy,
   describeChange,
   mergeReadPolicy,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import {
   EXPERIENCE_BRANCHED,
   EXPERIENCE_PROMOTED,
@@ -18,7 +18,7 @@ import {
   type Lineage,
   type LineageStore,
   foldLineage,
-} from "@loom-ui/lineage";
+} from "@loomwork/ui-lineage";
 
 // ── The change feed ───────────────────────────────────────────────────────────
 // A feed turns one experience's lineage log into a stream of CHANGE EVENTS a notifier can consume:

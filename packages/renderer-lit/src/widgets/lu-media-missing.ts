@@ -3,7 +3,7 @@ import { property } from "lit/decorators.js";
 import { say } from "../say";
 
 // The DEFAULT registry's stand-in for the media kinds (U9). The real widgets are the opt-in entry
-// `@loom-ui/renderer-lit/media`; a page that composed media without registering them sees ONE fixed
+// `@loomwork/ui-renderer-lit/media`; a page that composed media without registering them sees ONE fixed
 // placeholder (no value, no address, no title) instead of an empty hole, and a single console warning
 // that says how to fix it.
 
@@ -29,7 +29,7 @@ export class LuMediaMissing extends LitElement {
     if (warned) return;
     warned = true;
     console.warn(
-      "[loom-ui] a media widget was composed but the media renderers are not registered: use createMediaLitRegistry() from @loom-ui/renderer-lit/media"
+      "[loom-ui] a media widget was composed but the media renderers are not registered: use createMediaLitRegistry() from @loomwork/ui-renderer-lit/media"
     );
   }
   render() {

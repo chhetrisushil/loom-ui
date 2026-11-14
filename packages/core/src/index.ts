@@ -153,7 +153,7 @@ export type {
   MediaUploadResult,
   UploadCandidate,
 } from "./media";
-// U8: the chat and input vocabulary. The zod-free half rides `@loom-ui/core/chat` for a browser.
+// U8: the chat and input vocabulary. The zod-free half rides `@loomwork/ui-core/chat` for a browser.
 export * from "./chat";
 export { inputSpecFromProps, inputSpecsOf } from "./chatSpecs";
 export {

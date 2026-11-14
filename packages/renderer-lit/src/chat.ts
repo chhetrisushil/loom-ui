@@ -1,12 +1,12 @@
-// `@loom-ui/renderer-lit/chat` — the chat and input widgets (U8), opt-in.
+// `@loomwork/ui-renderer-lit/chat` — the chat and input widgets (U8), opt-in.
 //
 // Creating a registry here (or `registerChatWidgets`) defines the `lu-chat`, `lu-text-input`, `lu-form-input`, `lu-select-input` and `lu-multi-select-input`
 // elements. It is its own entry, like the media widgets, so a page that draws no conversation does
 // not pay for them. The kinds themselves (and the `ChatValue` contract) are universal and live in
-// `@loom-ui/core`; this entry is only how the web surface DRAWS them. File upload in a conversation
-// is the existing `MediaInput` (`@loom-ui/renderer-lit/media`).
+// `@loomwork/ui-core`; this entry is only how the web surface DRAWS them. File upload in a conversation
+// is the existing `MediaInput` (`@loomwork/ui-renderer-lit/media`).
 //
-//   import { createChatLitRegistry } from "@loom-ui/renderer-lit/chat";
+//   import { createChatLitRegistry } from "@loomwork/ui-renderer-lit/chat";
 //   renderBlueprintDom(host, blueprint, {
 //     registry: createChatLitRegistry({ media }),     // `media` is optional: it draws image/file parts of a transcript
 //     // `chatAccessories` (optional): host content under an entry, e.g. { render: (e) => nodes.get(e.id) ?? null }
@@ -16,8 +16,8 @@
 // The inputs wait for the host's answer to their action (`onAction` may return a promise of
 // `{ ok }`): the draft stays until it hears `ok: true`. See the README for the whole write-back model.
 
-import { CHAT_INPUT_KINDS, CHAT_KIND } from "@loom-ui/core/chat-ui";
-import type { CatalogEntry } from "@loom/blueprint-runtime";
+import type { CatalogEntry } from "@loomwork/blueprint-runtime";
+import { CHAT_INPUT_KINDS, CHAT_KIND } from "@loomwork/ui-core/chat-ui";
 import { defineChat } from "./define/lu-chat";
 import { defineInputs } from "./define/lu-inputs";
 import { type LitRegistryOptions, createLitRegistry, elementRenderer } from "./dom/litRegistry";

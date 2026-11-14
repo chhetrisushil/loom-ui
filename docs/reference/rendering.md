@@ -2,8 +2,8 @@
 
 How a compiled Blueprint is drawn on the web (React, Lit) and in a terminal, and how a live tree is
 recomposed in place. Package detail is in
-[`@loom-ui/renderer-lit`](../../packages/renderer-lit/README.md) and
-[`@loom-ui/renderer-terminal`](../../packages/renderer-terminal/README.md).
+[`@loomwork/ui-renderer-lit`](../../packages/renderer-lit/README.md) and
+[`@loomwork/ui-renderer-terminal`](../../packages/renderer-terminal/README.md).
 
 ## Draw a Blueprint
 
@@ -22,7 +22,7 @@ hydration.
 
 ```ts
 // Web, Lit: the same blueprint through the DOM adapter with the Lit registry.
-import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
+import { litRegistry, renderBlueprintDom } from "@loomwork/ui-renderer-lit/dom";
 
 const handle = renderBlueprintDom(document.getElementById("app"), blueprint, {
   projectionRuntime: runtime,
@@ -31,7 +31,7 @@ const handle = renderBlueprintDom(document.getElementById("app"), blueprint, {
 });
 
 // Terminal: loom's registry plus the framework kinds; status comes from the Blueprint.
-import { renderExperience, watch } from "@loom-ui/renderer-terminal";
+import { renderExperience, watch } from "@loomwork/ui-renderer-terminal";
 
 const stop = watch(blueprint, store, (frame) => process.stdout.write(`\x1Bc${frame}`));
 ```
@@ -56,7 +56,7 @@ The Lit widgets keep loom-ui's per-kind value contracts, and the terminal plugs 
 loom's `check` seam.
 
 On the web the framework kinds are drawn by loom-ui's Lit widgets only (`LIT_ONLY_KINDS` in
-`@loom-ui/renderer-lit` names the nine the default registry draws; the media, chat and diagram kinds are opt-in entries): loom's React renderer has no renderer registered for any of them and shows
+`@loomwork/ui-renderer-lit` names the nine the default registry draws; the media, chat and diagram kinds are opt-in entries): loom's React renderer has no renderer registered for any of them and shows
 its `[No renderer for …]` placeholder.
 
 Node placement, section titles and container roles are specified in the
@@ -186,7 +186,7 @@ the page heading, so give the mount point's region its accessible name from that
 
 ## Browser code only
 
-`@loom-ui/renderer-lit` is browser code: `node -e "import('@loom-ui/renderer-lit/dom')"` fails
+`@loomwork/ui-renderer-lit` is browser code: `node -e "import('@loomwork/ui-renderer-lit/dom')"` fails
 outside a bundler, on two counts. No other package here declares it as a dependency, so pnpm never
 links it into another package's `node_modules` for bare-specifier resolution to find. And even
 resolved directly (`node dist/dom/index.js`), its `moduleResolution: "Bundler"` build emits

@@ -1,3 +1,7 @@
+import { type TaintedValue, tainted } from "@loomwork/classify";
+import { TypedFailure } from "@loomwork/core";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
+import { type Shape, shapeOf } from "@loomwork/plugin-sandbox";
 import {
   type ContentRefTable,
   type ContractRegistry,
@@ -7,11 +11,7 @@ import {
   checkKindValue,
   hasKindContract,
   stepKind,
-} from "@loom-ui/core";
-import { type TaintedValue, tainted } from "@loom/classify";
-import { TypedFailure } from "@loom/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { type Shape, shapeOf } from "@loom/plugin-sandbox";
+} from "@loomwork/ui-core";
 import {
   type ContentRefParamGate,
   checkContentRefs,

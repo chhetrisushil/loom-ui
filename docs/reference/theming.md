@@ -2,7 +2,7 @@
 
 Every `lu-*` element reads `--lu-*` CSS custom properties. Set them on any ancestor of the mounted
 tree. The renderers ship dark defaults, so an unset token still draws. The Lit elements themselves
-are described in [`@loom-ui/renderer-lit`](../../packages/renderer-lit/README.md).
+are described in [`@loomwork/ui-renderer-lit`](../../packages/renderer-lit/README.md).
 
 ## Colour, surface and shape
 

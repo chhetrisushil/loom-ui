@@ -23,24 +23,24 @@ catalogs:
       version: 3.25.76
 
 overrides:
-  '@loom/agent': link:../loom/packages/agent
-  '@loom/analytics': link:../loom/packages/analytics
-  '@loom/blueprint-runtime': link:../loom/packages/blueprint-runtime
-  '@loom/classify': link:../loom/packages/classify
-  '@loom/core': link:../loom/packages/core
-  '@loom/effect-runtime': link:../loom/packages/effect-runtime
-  '@loom/event-runtime': link:../loom/packages/event-runtime
-  '@loom/learning': link:../loom/packages/learning
-  '@loom/plugin-content': link:../loom/plugins/content
-  '@loom/plugin-crypto': link:../loom/plugins/crypto
-  '@loom/plugin-mcp': link:../loom/plugins/mcp
-  '@loom/plugin-renderer-terminal': link:../loom/plugins/renderer-terminal
-  '@loom/plugin-sandbox': link:../loom/plugins/sandbox
-  '@loom/projection-runtime': link:../loom/packages/projection-runtime
-  '@loom/replay-vm': link:../loom/packages/replay-vm
-  '@loom/scheduler': link:../loom/packages/scheduler
-  '@loom/snapshot-runtime': link:../loom/packages/snapshot-runtime
-  '@loom/workflow-runtime': link:../loom/packages/workflow-runtime
+  '@loomwork/agent': link:../loom/packages/agent
+  '@loomwork/analytics': link:../loom/packages/analytics
+  '@loomwork/blueprint-runtime': link:../loom/packages/blueprint-runtime
+  '@loomwork/classify': link:../loom/packages/classify
+  '@loomwork/core': link:../loom/packages/core
+  '@loomwork/effect-runtime': link:../loom/packages/effect-runtime
+  '@loomwork/event-runtime': link:../loom/packages/event-runtime
+  '@loomwork/learning': link:../loom/packages/learning
+  '@loomwork/plugin-content': link:../loom/plugins/content
+  '@loomwork/plugin-crypto': link:../loom/plugins/crypto
+  '@loomwork/plugin-mcp': link:../loom/plugins/mcp
+  '@loomwork/plugin-renderer-terminal': link:../loom/plugins/renderer-terminal
+  '@loomwork/plugin-sandbox': link:../loom/plugins/sandbox
+  '@loomwork/projection-runtime': link:../loom/packages/projection-runtime
+  '@loomwork/replay-vm': link:../loom/packages/replay-vm
+  '@loomwork/scheduler': link:../loom/packages/scheduler
+  '@loomwork/snapshot-runtime': link:../loom/packages/snapshot-runtime
+  '@loomwork/workflow-runtime': link:../loom/packages/workflow-runtime
 
 importers:
 
@@ -55,45 +55,45 @@ importers:
 
   docs/snippets:
     dependencies:
-      '@loom-ui/changes':
-        specifier: workspace:*
-        version: link:../../packages/changes
-      '@loom-ui/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@loom-ui/hydration':
-        specifier: workspace:*
-        version: link:../../packages/hydration
-      '@loom-ui/learning':
-        specifier: workspace:*
-        version: link:../../packages/learning
-      '@loom-ui/lineage':
-        specifier: workspace:*
-        version: link:../../packages/lineage
-      '@loom-ui/planner':
-        specifier: workspace:*
-        version: link:../../packages/planner
-      '@loom-ui/renderer-conformance':
-        specifier: workspace:*
-        version: link:../../packages/renderer-conformance
-      '@loom-ui/renderer-lit':
-        specifier: workspace:*
-        version: link:../../packages/renderer-lit
-      '@loom-ui/renderer-terminal':
-        specifier: workspace:*
-        version: link:../../packages/renderer-terminal
-      '@loom/blueprint-runtime':
+      '@loomwork/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
-      '@loom/core':
+      '@loomwork/core':
         specifier: link:../../../loom/packages/core
         version: link:../../../loom/packages/core
-      '@loom/plugin-content':
+      '@loomwork/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
-      '@loom/projection-runtime':
+      '@loomwork/projection-runtime':
         specifier: link:../../../loom/packages/projection-runtime
         version: link:../../../loom/packages/projection-runtime
+      '@loomwork/ui-changes':
+        specifier: workspace:*
+        version: link:../../packages/changes
+      '@loomwork/ui-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@loomwork/ui-hydration':
+        specifier: workspace:*
+        version: link:../../packages/hydration
+      '@loomwork/ui-learning':
+        specifier: workspace:*
+        version: link:../../packages/learning
+      '@loomwork/ui-lineage':
+        specifier: workspace:*
+        version: link:../../packages/lineage
+      '@loomwork/ui-planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@loomwork/ui-renderer-conformance':
+        specifier: workspace:*
+        version: link:../../packages/renderer-conformance
+      '@loomwork/ui-renderer-lit':
+        specifier: workspace:*
+        version: link:../../packages/renderer-lit
+      '@loomwork/ui-renderer-terminal':
+        specifier: workspace:*
+        version: link:../../packages/renderer-terminal
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -116,23 +116,23 @@ importers:
 
   packages/changes:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom-ui/lineage':
-        specifier: workspace:^
-        version: link:../lineage
-      '@loom/classify':
+      '@loomwork/classify':
         specifier: link:../../../loom/packages/classify
         version: link:../../../loom/packages/classify
-      '@loom/event-runtime':
+      '@loomwork/event-runtime':
         specifier: link:../../../loom/packages/event-runtime
         version: link:../../../loom/packages/event-runtime
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
+      '@loomwork/ui-lineage':
+        specifier: workspace:^
+        version: link:../lineage
     devDependencies:
-      '@loom/plugin-content':
+      '@loomwork/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
-      '@loom/plugin-crypto':
+      '@loomwork/plugin-crypto':
         specifier: link:../../../loom/plugins/crypto
         version: link:../../../loom/plugins/crypto
       '@types/node':
@@ -147,16 +147,16 @@ importers:
 
   packages/core:
     dependencies:
-      '@loom/blueprint-runtime':
+      '@loomwork/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
-      '@loom/classify':
+      '@loomwork/classify':
         specifier: link:../../../loom/packages/classify
         version: link:../../../loom/packages/classify
-      '@loom/core':
+      '@loomwork/core':
         specifier: link:../../../loom/packages/core
         version: link:../../../loom/packages/core
-      '@loom/plugin-content':
+      '@loomwork/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
       zod:
@@ -175,30 +175,30 @@ importers:
 
   packages/hydration:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom/agent':
+      '@loomwork/agent':
         specifier: link:../../../loom/packages/agent
         version: link:../../../loom/packages/agent
-      '@loom/classify':
+      '@loomwork/classify':
         specifier: link:../../../loom/packages/classify
         version: link:../../../loom/packages/classify
-      '@loom/core':
+      '@loomwork/core':
         specifier: link:../../../loom/packages/core
         version: link:../../../loom/packages/core
-      '@loom/effect-runtime':
+      '@loomwork/effect-runtime':
         specifier: link:../../../loom/packages/effect-runtime
         version: link:../../../loom/packages/effect-runtime
-      '@loom/plugin-mcp':
+      '@loomwork/plugin-mcp':
         specifier: link:../../../loom/plugins/mcp
         version: link:../../../loom/plugins/mcp
-      '@loom/plugin-sandbox':
+      '@loomwork/plugin-sandbox':
         specifier: link:../../../loom/plugins/sandbox
         version: link:../../../loom/plugins/sandbox
-      '@loom/projection-runtime':
+      '@loomwork/projection-runtime':
         specifier: link:../../../loom/packages/projection-runtime
         version: link:../../../loom/packages/projection-runtime
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -218,38 +218,38 @@ importers:
 
   packages/learning:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom/analytics':
+      '@loomwork/analytics':
         specifier: link:../../../loom/packages/analytics
         version: link:../../../loom/packages/analytics
-      '@loom/core':
+      '@loomwork/core':
         specifier: link:../../../loom/packages/core
         version: link:../../../loom/packages/core
-      '@loom/learning':
+      '@loomwork/learning':
         specifier: link:../../../loom/packages/learning
         version: link:../../../loom/packages/learning
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
     devDependencies:
-      '@loom-ui/lineage':
-        specifier: workspace:^
-        version: link:../lineage
-      '@loom-ui/planner':
-        specifier: workspace:^
-        version: link:../planner
-      '@loom/effect-runtime':
+      '@loomwork/effect-runtime':
         specifier: link:../../../loom/packages/effect-runtime
         version: link:../../../loom/packages/effect-runtime
-      '@loom/event-runtime':
+      '@loomwork/event-runtime':
         specifier: link:../../../loom/packages/event-runtime
         version: link:../../../loom/packages/event-runtime
-      '@loom/plugin-content':
+      '@loomwork/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
-      '@loom/snapshot-runtime':
+      '@loomwork/snapshot-runtime':
         specifier: link:../../../loom/packages/snapshot-runtime
         version: link:../../../loom/packages/snapshot-runtime
-      '@loom/workflow-runtime':
+      '@loomwork/ui-lineage':
+        specifier: workspace:^
+        version: link:../lineage
+      '@loomwork/ui-planner':
+        specifier: workspace:^
+        version: link:../planner
+      '@loomwork/workflow-runtime':
         specifier: link:../../../loom/packages/workflow-runtime
         version: link:../../../loom/packages/workflow-runtime
       '@types/node':
@@ -267,25 +267,25 @@ importers:
 
   packages/lineage:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom/event-runtime':
+      '@loomwork/event-runtime':
         specifier: link:../../../loom/packages/event-runtime
         version: link:../../../loom/packages/event-runtime
-      '@loom/plugin-content':
+      '@loomwork/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
       zod:
         specifier: 'catalog:'
         version: 3.25.76
     devDependencies:
-      '@loom-ui/planner':
-        specifier: workspace:^
-        version: link:../planner
-      '@loom/plugin-crypto':
+      '@loomwork/plugin-crypto':
         specifier: link:../../../loom/plugins/crypto
         version: link:../../../loom/plugins/crypto
+      '@loomwork/ui-planner':
+        specifier: workspace:^
+        version: link:../planner
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.4
@@ -298,46 +298,46 @@ importers:
 
   packages/planner:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom-ui/hydration':
-        specifier: workspace:^
-        version: link:../hydration
-      '@loom/blueprint-runtime':
+      '@loomwork/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
-      '@loom/classify':
+      '@loomwork/classify':
         specifier: link:../../../loom/packages/classify
         version: link:../../../loom/packages/classify
-      '@loom/core':
+      '@loomwork/core':
         specifier: link:../../../loom/packages/core
         version: link:../../../loom/packages/core
-      '@loom/learning':
+      '@loomwork/learning':
         specifier: link:../../../loom/packages/learning
         version: link:../../../loom/packages/learning
-      '@loom/plugin-content':
+      '@loomwork/plugin-content':
         specifier: link:../../../loom/plugins/content
         version: link:../../../loom/plugins/content
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
+      '@loomwork/ui-hydration':
+        specifier: workspace:^
+        version: link:../hydration
       zod:
         specifier: 'catalog:'
         version: 3.25.76
     devDependencies:
-      '@loom-ui/renderer-terminal':
-        specifier: workspace:^
-        version: link:../renderer-terminal
-      '@loom/plugin-mcp':
+      '@loomwork/plugin-mcp':
         specifier: link:../../../loom/plugins/mcp
         version: link:../../../loom/plugins/mcp
-      '@loom/plugin-renderer-terminal':
+      '@loomwork/plugin-renderer-terminal':
         specifier: link:../../../loom/plugins/renderer-terminal
         version: link:../../../loom/plugins/renderer-terminal
-      '@loom/plugin-sandbox':
+      '@loomwork/plugin-sandbox':
         specifier: link:../../../loom/plugins/sandbox
         version: link:../../../loom/plugins/sandbox
-      '@loom/projection-runtime':
+      '@loomwork/projection-runtime':
         specifier: link:../../../loom/packages/projection-runtime
         version: link:../../../loom/packages/projection-runtime
+      '@loomwork/ui-renderer-terminal':
+        specifier: workspace:^
+        version: link:../renderer-terminal
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.4
@@ -350,15 +350,15 @@ importers:
 
   packages/renderer-conformance:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom-ui/hydration':
-        specifier: workspace:^
-        version: link:../hydration
-      '@loom/blueprint-runtime':
+      '@loomwork/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
+      '@loomwork/ui-hydration':
+        specifier: workspace:^
+        version: link:../hydration
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -372,23 +372,23 @@ importers:
 
   packages/renderer-lit:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom/blueprint-runtime':
+      '@loomwork/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
-      '@loom/projection-runtime':
+      '@loomwork/projection-runtime':
         specifier: link:../../../loom/packages/projection-runtime
         version: link:../../../loom/packages/projection-runtime
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
       lit:
         specifier: 'catalog:'
         version: 3.3.3
     devDependencies:
-      '@loom-ui/hydration':
+      '@loomwork/ui-hydration':
         specifier: workspace:^
         version: link:../hydration
-      '@loom-ui/renderer-conformance':
+      '@loomwork/ui-renderer-conformance':
         specifier: workspace:^
         version: link:../renderer-conformance
       '@types/node':
@@ -409,23 +409,23 @@ importers:
 
   packages/renderer-terminal:
     dependencies:
-      '@loom-ui/core':
-        specifier: workspace:^
-        version: link:../core
-      '@loom-ui/hydration':
-        specifier: workspace:^
-        version: link:../hydration
-      '@loom/blueprint-runtime':
+      '@loomwork/blueprint-runtime':
         specifier: link:../../../loom/packages/blueprint-runtime
         version: link:../../../loom/packages/blueprint-runtime
-      '@loom/plugin-renderer-terminal':
+      '@loomwork/plugin-renderer-terminal':
         specifier: link:../../../loom/plugins/renderer-terminal
         version: link:../../../loom/plugins/renderer-terminal
-      '@loom/projection-runtime':
+      '@loomwork/projection-runtime':
         specifier: link:../../../loom/packages/projection-runtime
         version: link:../../../loom/packages/projection-runtime
+      '@loomwork/ui-core':
+        specifier: workspace:^
+        version: link:../core
+      '@loomwork/ui-hydration':
+        specifier: workspace:^
+        version: link:../hydration
     devDependencies:
-      '@loom-ui/renderer-conformance':
+      '@loomwork/ui-renderer-conformance':
         specifier: workspace:^
         version: link:../renderer-conformance
       '@types/node':

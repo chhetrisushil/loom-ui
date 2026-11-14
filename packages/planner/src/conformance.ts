@@ -1,3 +1,4 @@
+import type { DataClass } from "@loomwork/classify";
 import {
   type ContainerRoleSpec,
   type Experience,
@@ -15,9 +16,8 @@ import {
   toolsOf,
   validateExperience,
   walk,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import type { DataClass } from "@loom/classify";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import { requiredClass } from "./capabilityClass";
 import { contentRefArgsFrom } from "./contentRefs";
 import { MAX_DRAFT_DEPTH, MAX_DRAFT_NODES } from "./contract";

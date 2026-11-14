@@ -1,14 +1,14 @@
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import { InMemoryContentStore } from "@loomwork/plugin-content";
 import {
   type Experience,
   type Provenance,
   type RecordedOperation,
   genesis,
   replay,
-} from "@loom-ui/core";
-import type { SemanticNode } from "@loom-ui/core";
-import { putExperience, seal } from "@loom-ui/core/log";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
-import { InMemoryContentStore } from "@loom/plugin-content";
+} from "@loomwork/ui-core";
+import type { SemanticNode } from "@loomwork/ui-core";
+import { putExperience, seal } from "@loomwork/ui-core/log";
 import { describe, expect, it } from "vitest";
 import { branchArtifact } from "./derive";
 import { EXPERIENCE_BRANCHED, EXPERIENCE_COMPOSED, EXPERIENCE_PROMOTED } from "./events";

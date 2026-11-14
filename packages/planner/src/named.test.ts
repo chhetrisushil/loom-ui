@@ -1,4 +1,4 @@
-import { type Experience, genesis } from "@loom-ui/core";
+import { type Experience, genesis } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { describeExperience } from "./prompt";
 import {

@@ -1,4 +1,4 @@
-import { builtinCatalog } from "@loom/blueprint-runtime";
+import { builtinCatalog } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { defineSemanticCatalog } from "./catalog";
 import { loomCatalogFor } from "./loomCatalog";

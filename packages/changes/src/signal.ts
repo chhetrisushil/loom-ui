@@ -1,12 +1,12 @@
-import type { HeadChange, HeadSignal } from "@loom-ui/core";
+import type { EventStore } from "@loomwork/event-runtime";
+import type { HeadChange, HeadSignal } from "@loomwork/ui-core";
 import {
   LineErasedError,
   type LineageStore,
   classifyLineFailure,
   foldLineage,
-} from "@loom-ui/lineage";
-import { LINEAGE_STREAM_PREFIX } from "@loom-ui/lineage";
-import type { EventStore } from "@loom/event-runtime";
+} from "@loomwork/ui-lineage";
+import { LINEAGE_STREAM_PREFIX } from "@loomwork/ui-lineage";
 
 // ── Head signals: how a reader learns "this experience moved" ─────────────────
 // Two implementations of core's `HeadSignal`, sharing one check: read the line, and if its tip is
@@ -19,7 +19,7 @@ import type { EventStore } from "@loom/event-runtime";
 //                           (`EventStore.subscribe`): the check runs when an event lands. A push
 //                           adapter for the store the lineage already writes to.
 //
-// loom's `@loom/live-query` was checked and does NOT fit: it folds an EXECUTION's `ExecutionState`
+// loom's `@loomwork/live-query` was checked and does NOT fit: it folds an EXECUTION's `ExecutionState`
 // (`loadState`), and a lineage stream is a reserved stream of lineage events, not an execution.
 // `EventStore.subscribe` is the push primitive underneath it, used here directly. A host with its
 // own transport (a websocket, SSE, a database notify) implements `HeadSignal` (one method).

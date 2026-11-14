@@ -1,4 +1,4 @@
-import type { Finding } from "@loom-ui/core";
+import type { Finding } from "@loomwork/ui-core";
 import type { LineageStore } from "./store";
 
 // ── The LineageStore conformance kit ──────────────────────────────────────────

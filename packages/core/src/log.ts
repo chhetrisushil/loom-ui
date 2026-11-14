@@ -1,4 +1,4 @@
-import { canonicalJson } from "@loom/core";
+import { canonicalJson } from "@loomwork/core";
 import {
   type ContentAccess,
   type ContentRef,
@@ -6,7 +6,7 @@ import {
   contentAddress,
   decodeValue,
   encodeValue,
-} from "@loom/plugin-content";
+} from "@loomwork/plugin-content";
 import { Experience, type Finding, experienceArtifact } from "./experience";
 import { MAX_TREE_DEPTH, treeDepth } from "./node";
 import type { RecordedOperation } from "./operations";
@@ -15,7 +15,7 @@ import type { RecordedOperation } from "./operations";
 // Composition is an event; rendering is a replay. The bytes go in loom's ContentStore under
 // their sha256 address; the APP emits `EXPERIENCE_COMPOSED { ref, parents, ops }` from inside a
 // loom execution (a userspace event the fold skips — no EVENT_SCHEMA change). This module is the
-// only part of @loom-ui/core that touches Node (the hash), which is why it is its own subpath.
+// only part of @loomwork/ui-core that touches Node (the hash), which is why it is its own subpath.
 
 export const EXPERIENCE_COMPOSED = "EXPERIENCE_COMPOSED";
 

@@ -5,7 +5,7 @@ import type { TimeFormat } from "./values";
 // One formatter for a declared `TimeFormat`, shared like `chatWords.ts`: a renderer passes its own
 // translating lookup as `words`, so the catalogue keys below are asked for HERE, once.
 
-/** The catalogue keys a time label may need (`@loom-ui/core/messages`), filled by the caller. */
+/** The catalogue keys a time label may need (`@loomwork/ui-core/messages`), filled by the caller. */
 export type TimeLabelKey = "lu.time.half" | "lu.time.quarter" | "lu.time.weekOf";
 export type TimeLabelWords = (
   key: TimeLabelKey,

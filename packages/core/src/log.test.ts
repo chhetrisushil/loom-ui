@@ -1,5 +1,5 @@
-import { canonicalJson } from "@loom/core";
-import { InMemoryContentStore, encodeValue } from "@loom/plugin-content";
+import { canonicalJson } from "@loomwork/core";
+import { InMemoryContentStore, encodeValue } from "@loomwork/plugin-content";
 import { describe, expect, it } from "vitest";
 import { type Experience, genesis } from "./experience";
 import { EXPERIENCE_COMPOSED, getExperience, mintVersionHash, putExperience, seal } from "./log";

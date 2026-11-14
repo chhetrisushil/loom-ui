@@ -1,5 +1,5 @@
 // The widget CLASSES, re-exported. Importing them registers nothing (U20): registration is
-// explicit, via `defineAll()` / `@loom-ui/renderer-lit/register` or a per-element entry.
+// explicit, via `defineAll()` / `@loomwork/ui-renderer-lit/register` or a per-element entry.
 export { LuA2UIView } from "./lu-a2ui-view";
 export { LuBarChart } from "./lu-bar-chart";
 export { LuDataTable } from "./lu-data-table";

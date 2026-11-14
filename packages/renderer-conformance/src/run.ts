@@ -25,7 +25,7 @@ export async function runCheck(check: Check, adapter: RendererAdapter): Promise<
 
 /**
  * Run the kit against an adapter. Framework-free: it returns a report; {@link
- * describeRendererConformance} (from `@loom-ui/renderer-conformance/vitest`) turns each check into a test.
+ * describeRendererConformance} (from `@loomwork/ui-renderer-conformance/vitest`) turns each check into a test.
  */
 export async function checkRendererConformance(
   adapter: RendererAdapter,

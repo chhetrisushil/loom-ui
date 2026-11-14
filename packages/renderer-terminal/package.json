@@ -1,5 +1,5 @@
 {
-  "name": "@loom-ui/renderer-terminal",
+  "name": "@loomwork/ui-renderer-terminal",
   "version": "0.1.0",
   "description": "Terminal renderers for the framework's kinds, merged over loom's kind-aware terminal registry, with hydration status",
   "main": "./dist/index.js",
@@ -22,14 +22,14 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:^",
-    "@loom-ui/hydration": "workspace:^",
-    "@loom/blueprint-runtime": "^0.1.0",
-    "@loom/plugin-renderer-terminal": "^0.1.0",
-    "@loom/projection-runtime": "^0.1.0"
+    "@loomwork/ui-core": "workspace:^",
+    "@loomwork/ui-hydration": "workspace:^",
+    "@loomwork/blueprint-runtime": "^0.1.0",
+    "@loomwork/plugin-renderer-terminal": "^0.1.0",
+    "@loomwork/projection-runtime": "^0.1.0"
   },
   "devDependencies": {
-    "@loom-ui/renderer-conformance": "workspace:^",
+    "@loomwork/ui-renderer-conformance": "workspace:^",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"

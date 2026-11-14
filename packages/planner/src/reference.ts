@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+import { unwrapTainted } from "@loomwork/classify";
+import {
+  type Policy,
+  type PolicyStamp,
+  decideWithPolicy,
+  decideWithRollout,
+} from "@loomwork/learning";
 import {
   type ContainerRoleSpec,
   type Experience,
@@ -16,9 +23,7 @@ import {
   strictestClass,
   validateExperience,
   walk,
-} from "@loom-ui/core";
-import { unwrapTainted } from "@loom/classify";
-import { type Policy, type PolicyStamp, decideWithPolicy, decideWithRollout } from "@loom/learning";
+} from "@loomwork/ui-core";
 import { declaredToolClassesFrom } from "./capabilityClass";
 import { contentRefArgsFrom } from "./contentRefs";
 import {
@@ -80,7 +85,7 @@ export interface ReferencePlannerOptions {
   /** Model calls per plan, parse and validation retries included. Default 2. */
   readonly maxAttempts?: number;
   /**
-   * What this planner's deciders reach, declared for `@loom/verify` (loom L32): the toolIds the
+   * What this planner's deciders reach, declared for `@loomwork/verify` (loom L32): the toolIds the
    * `model` factory calls through `scope.invokeTransient` (e.g. `{ transient: ["llm.complete"] }`).
    * Only the caller knows them — the model is user-supplied. Omitted means NO declaration, so
    * verify reports the hand-off as unresolved rather than trusting a partial claim.

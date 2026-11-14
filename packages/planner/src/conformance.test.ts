@@ -1,4 +1,4 @@
-import { isContainer } from "@loom-ui/core";
+import { isContainer } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { ReferencePlanner } from "./reference";

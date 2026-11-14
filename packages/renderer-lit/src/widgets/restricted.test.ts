@@ -1,11 +1,11 @@
+import type { Layout, Widget } from "@loomwork/blueprint-runtime";
 import {
   type ContainerNode,
   type SemanticNode,
   compile,
   defineSemanticCatalog,
   genesis,
-} from "@loom-ui/core";
-import type { Layout, Widget } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { frameworkKindContracts, litRegistry } from "../dom/litRegistry";
 import "../register";

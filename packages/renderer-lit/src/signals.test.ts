@@ -1,4 +1,4 @@
-import { type SignalBatch, SignalCollector } from "@loom-ui/core/signals";
+import { type SignalBatch, SignalCollector } from "@loomwork/ui-core/signals";
 import { describe, expect, it } from "vitest";
 import { observeSignals } from "./signals";
 

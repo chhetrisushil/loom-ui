@@ -1,29 +1,29 @@
-# @loom-ui/planner
+# @loomwork/ui-planner
 
 The Planner SPI — `compose`/`revise`: intent + semantic catalogue + capabilities → `Operation[]`
 — plus a reference planner, a conformance kit any planner must pass, and the machinery to
 re-author bindings when hydration reports drift. It is the layer that turns a request into edits
-of the Experience Model `@loom-ui/core` defines: a planner never touches a `Blueprint` or a
+of the Experience Model `@loomwork/ui-core` defines: a planner never touches a `Blueprint` or a
 projection directly, only `Operation`s that `apply`/`replay` fold onto an Experience — which
-`@loom-ui/core` then compiles and `@loom-ui/hydration` hydrates.
+`@loomwork/ui-core` then compiles and `@loomwork/ui-hydration` hydrates.
 
 ## Install / import
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/planner": "link:../loom-ui/packages/planner"
+"@loomwork/ui-planner": "link:../loom-ui/packages/planner"
 ```
 
 ```ts
-import { ReferencePlanner, interpretAction, checkPlannerConformance } from "@loom-ui/planner";
-import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/planner";
+import { ReferencePlanner, interpretAction, checkPlannerConformance } from "@loomwork/ui-planner";
+import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loomwork/ui-planner";
 ```
 
 ## Key concepts
 
 - **A planner returns operations, never an Experience.** `Planner.compose`/`.revise` both resolve to
   a `PlanResult { ops, findings, report, summary? }`; the caller folds `ops` onto its own lineage
-  with `replay`. `@loom-ui/planner` imports no invoker, effect runtime, projection runtime or LLM
+  with `replay`. `@loomwork/ui-planner` imports no invoker, effect runtime, projection runtime or LLM
   provider (enforced by `noLookups.test.ts`) — capabilities and context arrive resolved from the
   caller.
 - **Every model call is one `ctx.decide`.** A plan is recorded as a single decision keyed on every
@@ -52,7 +52,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   capability declares. The class is the strictest declared over EVERY step of the node's call graph
   and every capability of the same tool (`requiredClass`; `declaredToolClassesFrom(capabilities)` is
   the matching read-time table). The same declaration is the READ-time floor a host passes to core
-  as `declaredToolClasses` (see `@loom-ui/core`), which covers nodes this planner did not write.
+  as `declaredToolClasses` (see `@loomwork/ui-core`), which covers nodes this planner did not write.
   **`declaredToolClassesFrom(capabilities)` is THE way a host builds that table**, from the same
   `CapabilityRef`s it gives the planner, so host and planner derive it identically: `new Lineage({
   events, content, readPolicy: { declaredToolClasses: declaredToolClassesFrom(capabilities) } })`
@@ -63,13 +63,13 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
 - **Untrusted content stays fenced.** Anything tool- or caller-authored that reaches a model
   (samples, the current experience's node list, a capability's description/schema) is wrapped as
   DATA in the user message, never `system`; `ReferencePlanner` fences its own prompts rather than
-  going through `@loom/llm`'s `buildRequest`/`guardRequest`.
+  going through `@loomwork/llm`'s `buildRequest`/`guardRequest`.
 - **Two authorisation domains.** `interpretAction` is the one seam between a widget's click and the
   Experience: an `experience.op` action is admitted only if it parses as an `Operation`, is not
   `prompt`/`setRole`/a provider op, does not touch the root, and names a node that exists; everything else passes through to
   loom's ordinary business-action path untouched.
 - **Drift re-authoring.** `reviseForDrift` takes the `DriftRecord`s collected from one or more
-  `@loom-ui/hydration` `DriftReport`s (their `.drift` arrays) and turns them into a revision request
+  `@loomwork/ui-hydration` `DriftReport`s (their `.drift` arrays) and turns them into a revision request
   any `Planner` can serve, composing the same helpers (`driftRequest`, `driftContext`,
   `observedSamples`, `driftCapabilities`, `unsampledDrift`) the reference planner itself calls.
 
@@ -99,7 +99,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   planner that makes its model / MCP / sandbox calls through the scope is authorised and metered as
   the flow that asked, not as an anonymous runtime-level caller.
 - `scopeInvoker(scope): TransientInvoker` — adapts a `DecideScope` to the `TransientInvoker`
-  interface `@loom-ui/hydration` is written against, so its wrappers compose on top:
+  interface `@loomwork/ui-hydration` is written against, so its wrappers compose on top:
   `memoInvoker(limitInvoker(scopeInvoker(scope), 4))`. Only `signal` and `onDelta` are forwarded; `principal`, `as`
   and `resources` are refused (the scope IS the identity; a silent drop would run a call as someone it did
   not ask to be), `label` is ignored. `memoInvoker` keys on every option except `signal`, and the
@@ -108,7 +108,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   configure `principal` on hydration / reshape when their invoker is a `scopeInvoker` — the scope
   already carries the execution's principal, and the call is refused otherwise (refusing beats
   running as someone else).
-- `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loom/llm`'s
+- `PlannerModel`, `PlannerMessage`, `PlannerUsage` — the structural subset of `@loomwork/llm`'s
   `LlmProvider.complete` a model must satisfy, and its token-usage shape. `PlannerMessage.content`
   is text OR parts (`PlannerMessageContent`, mirroring loom R5's `LlmMessageContent`); the messages
   the planner itself writes are always text. A model that reads message content uses
@@ -135,7 +135,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   execution, e.g. `model: (scope) => { const inv = scopeInvoker(scope); return { complete: (req, o)
   => inv.invokeTransient("llm.complete", req, o) }; }` (forward `o`: it carries the signal and, for
   a streamed turn, the delta sink); a plain model ignores the scope.
-- `reach?: { run?, transient? }` — the planner's **declared reach** for `@loom/verify` (loom L32). A
+- `reach?: { run?, transient? }` — the planner's **declared reach** for `@loomwork/verify` (loom L32). A
   flow that calls `planner.compose(input, ctx)` hands its `ctx` to code the verifier cannot see
   into; the planner declares what that code runs, and the verifier counts those tools against the
   real grants and registry. The planner cannot know the model tool id (the `model` factory is
@@ -145,7 +145,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   toolIds run through `ctx.run` / `ctx.execute`. **No `reach` option means NO declaration**: verify
   then reports the hand-off as unresolved, which is honest; a partial guess would not be. The
   declaration is attached structurally under `Symbol.for("loom.verify.reach")` (non-enumerable, a
-  copy), with no dependency on `@loom/verify`.
+  copy), with no dependency on `@loomwork/verify`.
 - `decisionKey?: Uint8Array | string` — a host secret of 32 or more RANDOM bytes (for example
   `randomBytes(32)`, stored base64 and decoded to a `Uint8Array`) that keys every plan decision id
   with HMAC-SHA-256: `plan:<kind>:k:<32 hex>`. The length check (refused at construction below 32
@@ -172,7 +172,7 @@ import type { Planner, ComposeInput, ReviseInput, PlanResult } from "@loom-ui/pl
   **Still plaintext with a key** (this option does not cover them): the lineage's `experienceId`
   and its `versionHash`, `parents`, `revertedTo`, `carriedFrom` and `from` (`versionHash` is a
   plain SHA-256 of the artifact, so a guessed artifact can be confirmed against it; see the erasure
-  section of `@loom-ui/lineage`); the variant `unit` and the catalogue id in a variant decision's
+  section of `@loomwork/ui-lineage`); the variant `unit` and the catalogue id in a variant decision's
   recorded context; the planner `modelId`, the decision's source and policy labels; and any other
   event field the host or loom records outside the planner. Keep personal data out of those.
 - `declarePlannerReach(target, reach)` / `readPlannerReach(value)` / `REACH_DECLARATION` — the same
@@ -267,9 +267,9 @@ defineConfig({ checks: { verify: { reach: { planner } } } });
 ```
 
 A declaration is an upper bound: listing a tool that is never called is allowed (as
-`@loom/verify`'s `assertReachMatches` without `exact`); only an UNDER-declaration is a finding.
+`@loomwork/verify`'s `assertReachMatches` without `exact`); only an UNDER-declaration is a finding.
 `{ run: [], transient: [] }` declares "reaches nothing"; `{}` (or a malformed declaration) is
-undeclared — exactly as `@loom/verify` reads it. `checkReach` also reports `reach-unprobed` when
+undeclared — exactly as `@loomwork/verify` reads it. `checkReach` also reports `reach-unprobed` when
 the probe's calls carry no `toolId`, so it cannot pass without observing a tool.
 
 ### Drift repair
@@ -303,7 +303,7 @@ the model's text ever entering the op log through the provenance. It copies noth
 `new ReferencePlanner({ variants: { policy, variants } })` makes each turn two decisions. First a
 **variant choice** through `decideWithPolicy` (`plan-variant:<hash>`): recorded with its context (`{
 kind, unit, key, catalogId }`), the alternatives (the sorted variant ids) and the policy's
-**propensity**, so `@loom/learning` can evaluate it off-policy from the log. Then the plan, keyed
+**propensity**, so `@loomwork/learning` can evaluate it off-policy from the log. Then the plan, keyed
 additionally on the variant (a plan made under one variant is not a plan for another). A variant is
 `{ containers?, guidance? }`: the container roles offered for the turn, and a bounded, control-free
 line of application-authored layout guidance (at most `MAX_GUIDANCE`, 400, characters) appended to the system
@@ -311,7 +311,7 @@ prompt. Variant ids are `[A-Za-z0-9_.:-]{1,48}`.
 
 The turn needs `ComposeInput.unit` / `ReviseInput.unit`, an opaque `[A-Za-z0-9_.:-]{1,128}` id of
 the user, tenant or cohort (an email is refused). The host derives it SERVER-SIDE as a keyed HMAC
-alias (`unitAlias(key, userId)` in `@loom-ui/learning`), never from a client: it is a pseudonym
+alias (`unitAlias(key, userId)` in `@loomwork/ui-learning`), never from a client: it is a pseudonym
 recorded in the decision log, so destroying the key severs it from the person (the log still links
 one alias's decisions). The variant decision id is a SHA-256 of the plan key and unit (it keys what
 a reward attaches to). Without a valid unit the turn returns a `variant-unit-invalid` finding and
@@ -374,9 +374,9 @@ the turn simply completes without partials.
 Composing and revising with the reference planner (illustrative — not a compiling snippet):
 
 ```ts
-import { ReferencePlanner, interpretAction } from "@loom-ui/planner";
-import { AnthropicProvider } from "@loom/llm";
-import { genesis, replay } from "@loom-ui/core";
+import { ReferencePlanner, interpretAction } from "@loomwork/ui-planner";
+import { AnthropicProvider } from "@loomwork/llm";
+import { genesis, replay } from "@loomwork/ui-core";
 
 const planner = new ReferencePlanner({ model: new AnthropicProvider({ /* ... */ }), modelId: "claude-…" });
 
@@ -391,8 +391,8 @@ const revision = await planner.revise({ experience: current, request: { text }, 
 Repairing drift a hydration `onDrift` reported (illustrative):
 
 ```ts
-import { reviseForDrift } from "@loom-ui/planner";
-import type { DriftReport } from "@loom-ui/hydration";
+import { reviseForDrift } from "@loomwork/ui-planner";
+import type { DriftReport } from "@loomwork/ui-hydration";
 
 // Collected from one or more DriftReports' `.drift` (e.g. every report for this experience
 // since the last repair).
@@ -493,7 +493,7 @@ const repaired = await reviseForDrift(planner, {
 
 The reply stays a FLAT list; a group is an entry with `"container"` (`section`, `row`, `grid`, or a
 role the host offered through `ComposeInput.containers` — `REFERENCE_CONTAINER_ROLES` for the
-`tabs` / `stepper` that `@loom-ui/renderer-lit`'s `referenceContainers()` draws), and its members
+`tabs` / `stepper` that `@loomwork/ui-renderer-lit`'s `referenceContainers()` draws), and its members
 name it with `"parent"`, the id of an EARLIER container. Flat keeps streaming (U1) and the diff
 entry-by-entry; the bounds are counts the contract checks: at most `MAX_DRAFT_DEPTH` (4) levels,
 `MAX_DRAFT_CHILDREN` (24) entries per container, `MAX_DRAFT_NODES` (64) in all, no empty
@@ -509,7 +509,7 @@ base, so a revise can echo `tabs`/`stepper` without `containers`.
 Viewer-redaction note: the planner always reads the FULL experience (`describeExperience` takes no
 viewer; compose and revise run on the trusted side), so nothing there is collapsed. A container
 whose children are all restricted for a viewer collapses to a bare placeholder only in `compile(...,
-{ viewer })` and the viewer-facing readers (see `@loom-ui/core`, "A container is classified by what
+{ viewer })` and the viewer-facing readers (see `@loomwork/ui-core`, "A container is classified by what
 it would show"); a tabs / stepper panel that collapses is drawn like any restricted node, so the set
 keeps its panel count.
 

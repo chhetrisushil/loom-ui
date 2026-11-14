@@ -1,4 +1,4 @@
-import { Provenance } from "@loom-ui/core";
+import { Provenance } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { plannerProvenance } from "./provenance";
 import type { PlanReport } from "./spi";

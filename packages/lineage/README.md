@@ -1,7 +1,7 @@
-# @loom-ui/lineage
+# @loomwork/ui-lineage
 
 The Experience **lineage runtime**: what remembers which artifact of an experience is current, who
-won a race to change it, and how to go back. `@loom-ui/core` can fold ops onto an artifact and hash
+won a race to change it, and how to go back. `@loomwork/ui-core` can fold ops onto an artifact and hash
 it; it cannot say which artifact is the head, refuse a stale author, undo, or notice that a stored
 `ops` list disagrees with the artifact it claims to produce (ops are not in the content address).
 This package is that memory. It is **optional** (an app using only core keeps working) and
@@ -12,15 +12,15 @@ This package is that memory. It is **optional** (an app using only core keeps wo
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/lineage": "link:../loom-ui/packages/lineage"
+"@loomwork/ui-lineage": "link:../loom-ui/packages/lineage"
 ```
 
-Entry point: `@loom-ui/lineage` (server-side only; Node, CommonJS and ESM).
+Entry point: `@loomwork/ui-lineage` (server-side only; Node, CommonJS and ESM).
 
 ## Usage
 
 ```ts
-import { Lineage, InMemoryLineageStore, eventStoreLineageStore } from "@loom-ui/lineage";
+import { Lineage, InMemoryLineageStore, eventStoreLineageStore } from "@loomwork/ui-lineage";
 
 const lineage = new Lineage({
   events: eventStoreLineageStore(loomEventStore), // or new InMemoryLineageStore()
@@ -37,7 +37,7 @@ await lineage.verify(experienceId);                                      // Find
 (`{ declaredToolClasses, projections, hydrationProjectionId, undeclared }`); `explain` applies it
 with no per-call options (a per-call value may only ADD, never lower), and a `SeenLog` or
 `LineageChangeFeed` built over the lineage inherits it (`lineage.readPolicy`). Build the table with
-`declaredToolClassesFrom(capabilities)` from `@loom-ui/planner`, the same `CapabilityRef`s the
+`declaredToolClassesFrom(capabilities)` from `@loomwork/ui-planner`, the same `CapabilityRef`s the
 planner reads:
 
 ```ts
@@ -197,7 +197,7 @@ long-lived line grows without bound.
 A reserved stream is not an execution, so no default maps it to a person; the host does, and then
 erasing the owner makes the line unreadable:
 
-1. In the `subjectOf` you give loom's `EncryptingEventStore` (`@loom/plugin-crypto`), map the stream
+1. In the `subjectOf` you give loom's `EncryptingEventStore` (`@loomwork/plugin-crypto`), map the stream
    id (`__loom_ui_lineage__:<experienceId>`, or your `streamPrefix`) to the owner's subject.
 2. Call `registerLineageSensitivePaths(encryptingEventStore)` once at composition (the paths are
    `LINEAGE_SENSITIVE_PATHS`: `ops`, `summary`, `by` on a composed event, `by` on the others;
@@ -239,7 +239,7 @@ composed, or damaged bytes: `ContentUndecryptableError`) is `line-unreadable` wi
 finding code `artifact-unsealed`, and is never an erasure. A throwing hook counts as "not confirmed".
 Both outcomes are fail-closed, and writes are refused either way. `LineErasedError` (confirmed) and
 `LineUnreadableError` (`confirmed: false`, `reason`) are the two error classes of the plain-value reads.
-`@loom-ui/changes` inherits the hook for its `ChangeFeed` (it classifies through `lineage.block`); a
+`@loomwork/ui-changes` inherits the hook for its `ChangeFeed` (it classifies through `lineage.block`); a
 head signal is built over a store, so it takes its own `confirmErased` option.
 
 Afterwards a read of that line refuses with `{ kind: "refused", finding: { code: "line-erased" } }`
@@ -248,7 +248,7 @@ Afterwards a read of that line refuses with `{ kind: "refused", finding: { code:
 write (`start`, `advance`, `compose`, `revert`, `undo`, `promote`, `branch`) on such a line refuses
 with the same code; the owner's key is never re-minted. A key destroyed between the read and the
 append is re-checked on the append's failure and returns the typed refusal. Recognition is by
-`isKeyUnavailable` / `isPayloadShredded` (`@loom/event-runtime`), never by message text.
+`isKeyUnavailable` / `isPayloadShredded` (`@loomwork/event-runtime`), never by message text.
 
 **GC.** The plain-value reads (`forEachContentRef`, `pins`, so `rootsFor` and `collectSeenGarbage`)
 SKIP a line whose erasure is confirmed: it contributes no roots, so its sealed blobs become
@@ -297,7 +297,7 @@ Genericity: nothing here names a consumer.
 `PlanResult.summary`) on the `EXPERIENCE_COMPOSED` event: untrusted model text, bounded and stripped
 (`boundSummary`) on the way in and again when the fold reads it. It is not part of the content
 address. `VersionRecord.summary` carries it. The feed, the unread cursor and the head signals that
-consume the log live in [`@loom-ui/changes`](../changes/README.md).
+consume the log live in [`@loomwork/ui-changes`](../changes/README.md).
 
 ## Provenance and what a viewer saw (U12)
 
@@ -309,7 +309,7 @@ experienceId, nodeId, { viewer, audience?, versionHash?, projections? })` is cor
 ledger, plus the notes the line holds: the creating version's `summary` / `summaryClass`, with the
 creating version's own class floor added (a class can be lowered between versions; a version that
 cannot be read counts as `secret`). Stamp the planner's decision on the ops with
-`@loom-ui/planner`'s `plannerProvenance(result)` so a node links back to the recorded model call.
+`@loomwork/ui-planner`'s `plannerProvenance(result)` so a node links back to the recorded model call.
 
 Every `by` a write records (the write's own and each op's) is checked against core's `Provenance`
 before the append and refused `provenance-invalid` (any other payload the fold would refuse is
@@ -353,7 +353,7 @@ the manifest digest is an HMAC under that key, not a hash. The value bytes stay 
 `ContentStore` under their plain content address (identical values dedupe across viewers and with
 the lineage). The key lives in a host-supplied `SeenKeyStore` (`getOrCreate` / `get` / `destroy`;
 `InMemorySeenKeyStore` is the non-durable reference, `checkSeenKeyStoreConformance` the kit; a loom
-`@loom/plugin-crypto` `KeyStore` satisfies it structurally, so a KMS-backed one can be passed as
+`@loomwork/plugin-crypto` `KeyStore` satisfies it structurally, so a KMS-backed one can be passed as
 is). `eraseViewer({ experienceId, viewerId })` destroys the key and then appends a `VIEWER_ERASED`
 tombstone (idempotent; a rerun completes a half-done erasure): afterwards `read` returns `{ erased:
 true, views: [] }`, `record` refuses (`seen-viewer-erased`), and nothing left in the stream is

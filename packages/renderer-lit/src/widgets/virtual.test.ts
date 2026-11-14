@@ -1,4 +1,4 @@
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import { describe, expect, it, vi } from "vitest";
 import "../register";
 import { createLitRegistry } from "../dom/litRegistry";

@@ -2,14 +2,14 @@
 // doc check as `<!-- snippet: NAME in learning.test.ts -->`.
 import { describe, expect, it } from "vitest";
 // #region imports
-import { SIGNAL_VERSION } from "@loom-ui/core/signals";
+import { SIGNAL_VERSION } from "@loomwork/ui-core/signals";
 import {
   DecisionLinks,
   InMemoryVoteLog,
   SignalIngestor,
   VoteLedger,
   defaultReward,
-} from "@loom-ui/learning";
+} from "@loomwork/ui-learning";
 // #endregion imports
 
 describe("docs/guides/planners-and-learning.md, learning", () => {

@@ -1,5 +1,5 @@
-import { pluralForms } from "@loom-ui/core/messages";
-import type { Widget } from "@loom/blueprint-runtime";
+import type { Widget } from "@loomwork/blueprint-runtime";
+import { pluralForms } from "@loomwork/ui-core/messages";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { describeValue } from "../a11y";

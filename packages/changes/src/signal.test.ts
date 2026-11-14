@@ -1,6 +1,6 @@
-import type { HeadChange } from "@loom-ui/core";
-import { eventStoreLineageStore } from "@loom-ui/lineage";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import type { HeadChange } from "@loomwork/ui-core";
+import { eventStoreLineageStore } from "@loomwork/ui-lineage";
 import { describe, expect, it } from "vitest";
 import { makeLineage, manualTimer } from "./harness.test-support";
 import { eventStoreHeadSignal, pollingHeadSignal } from "./signal";

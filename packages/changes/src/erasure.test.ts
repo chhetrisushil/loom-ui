@@ -1,3 +1,10 @@
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import { InMemoryContentStore } from "@loomwork/plugin-content";
+import {
+  EncryptingContentStore,
+  EncryptingEventStore,
+  InMemoryKeyStore,
+} from "@loomwork/plugin-crypto";
 import {
   LINEAGE_STREAM_PREFIX,
   LineErasedError,
@@ -5,14 +12,7 @@ import {
   Lineage,
   eventStoreLineageStore,
   registerLineageSensitivePaths,
-} from "@loom-ui/lineage";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
-import { InMemoryContentStore } from "@loom/plugin-content";
-import {
-  EncryptingContentStore,
-  EncryptingEventStore,
-  InMemoryKeyStore,
-} from "@loom/plugin-crypto";
+} from "@loomwork/ui-lineage";
 import { describe, expect, it } from "vitest";
 import { LineageChangeFeed } from "./feed";
 import { by, g, ins, node } from "./harness.test-support";

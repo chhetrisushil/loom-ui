@@ -1,5 +1,5 @@
-import type { MediaRequest, MediaResolution, MediaResolver } from "@loom-ui/core/media";
-import { customWidget$ } from "@loom/blueprint-runtime";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
+import type { MediaRequest, MediaResolution, MediaResolver } from "@loomwork/ui-core/media";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-media";
 

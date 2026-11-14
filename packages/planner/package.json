@@ -1,5 +1,5 @@
 {
-  "name": "@loom-ui/planner",
+  "name": "@loomwork/ui-planner",
   "version": "0.1.0",
   "description": "Planner SPI for loom-ui: intent + semantic catalogue + capabilities → operations, through ctx.decide; reference planner and conformance kit",
   "main": "./dist/index.js",
@@ -22,21 +22,21 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@loom-ui/core": "workspace:^",
-    "@loom-ui/hydration": "workspace:^",
-    "@loom/blueprint-runtime": "^0.1.0",
-    "@loom/classify": "^0.1.0",
-    "@loom/core": "^0.1.0",
-    "@loom/learning": "^0.1.0",
-    "@loom/plugin-content": "^0.1.0",
+    "@loomwork/ui-core": "workspace:^",
+    "@loomwork/ui-hydration": "workspace:^",
+    "@loomwork/blueprint-runtime": "^0.1.0",
+    "@loomwork/classify": "^0.1.0",
+    "@loomwork/core": "^0.1.0",
+    "@loomwork/learning": "^0.1.0",
+    "@loomwork/plugin-content": "^0.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@loom-ui/renderer-terminal": "workspace:^",
-    "@loom/plugin-mcp": "^0.1.0",
-    "@loom/plugin-renderer-terminal": "^0.1.0",
-    "@loom/plugin-sandbox": "^0.1.0",
-    "@loom/projection-runtime": "^0.1.0",
+    "@loomwork/ui-renderer-terminal": "workspace:^",
+    "@loomwork/plugin-mcp": "^0.1.0",
+    "@loomwork/plugin-renderer-terminal": "^0.1.0",
+    "@loomwork/plugin-sandbox": "^0.1.0",
+    "@loomwork/projection-runtime": "^0.1.0",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"

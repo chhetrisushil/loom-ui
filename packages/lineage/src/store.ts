@@ -3,7 +3,7 @@ import {
   DuplicateSequenceError,
   type EventStore,
   headOf,
-} from "@loom/event-runtime";
+} from "@loomwork/event-runtime";
 
 // ── The store seam ────────────────────────────────────────────────────────────
 // What a lineage needs from storage is exactly one thing loom's event log already is: an

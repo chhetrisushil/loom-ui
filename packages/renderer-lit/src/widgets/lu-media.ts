@@ -15,7 +15,7 @@ import {
   isSameOriginMediaUrl,
   matchesAccept,
   maxBytesFor,
-} from "@loom-ui/core/media";
+} from "@loomwork/ui-core/media";
 import { type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 

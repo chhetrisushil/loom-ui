@@ -1,10 +1,10 @@
-# @loom-ui/hydration
+# @loomwork/ui-hydration
 
 Resolves an Experience's provider handles through loom's transient effects and publishes them as
 one loom projection, so a renderer can bind to `values.<handle>` / `status.<handle>` and redraw as
-they arrive. It is the provider plane of the pipeline: `@loom-ui/core` compiles an Experience to a
+they arrive. It is the provider plane of the pipeline: `@loomwork/ui-core` compiles an Experience to a
 `Blueprint`; this package answers what the Blueprint's bindings need, in-process or split across a
-trust boundary; `@loom-ui/renderer-lit` and `@loom-ui/renderer-terminal` read the resulting
+trust boundary; `@loomwork/ui-renderer-lit` and `@loomwork/ui-renderer-terminal` read the resulting
 projection state. Hydration is **read-only and log-free** — it never emits a durable event; drift
 repair is the app's own loom execution.
 
@@ -12,29 +12,29 @@ repair is the app's own loom execution.
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/hydration": "link:../loom-ui/packages/hydration"
+"@loomwork/ui-hydration": "link:../loom-ui/packages/hydration"
 ```
 
 ```ts
 // Node / server: executes providers — imports loom's sandbox (QuickJS WASM) and MCP plugin.
-import { HydrationController, handleInventory, serveHandles } from "@loom-ui/hydration";
+import { HydrationController, handleInventory, serveHandles } from "@loomwork/ui-hydration";
 
 // Browser: split hydration only. Never import the root entry from a browser bundle.
-import { SplitHydrationController, HydrationStore } from "@loom-ui/hydration/client";
+import { SplitHydrationController, HydrationStore } from "@loomwork/ui-hydration/client";
 ```
 
 ## Key concepts
 
-- **Two entries, one trust boundary.** The root entry (`@loom-ui/hydration`) is server-side: it
+- **Two entries, one trust boundary.** The root entry (`@loomwork/ui-hydration`) is server-side: it
   executes providers, so its module graph reaches loom's sandbox and MCP plugin. The client entry
-  (`@loom-ui/hydration/client`, `src/client.ts`) carries only what split hydration needs in a
+  (`@loomwork/ui-hydration/client`, `src/client.ts`) carries only what split hydration needs in a
   browser: the split controller, the loader contract, the store, and param checks — nothing that
-  imports the sandbox, MCP, `@loom/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
+  imports the sandbox, MCP, `@loomwork/effect-runtime` or a Node builtin. `clientEntry.test.ts` walks
   the *built* client bundle to enforce this, and keeps it under a 56 KiB size budget (the
   minified ESM bundle). The client entry also carries the pure helpers other client-side packages need
   (`terminalSteps`, `stepReferences`, `topoWaves`, `jsonPathSelect`, `outputShapeHashOf`, a
-  client-safe mirror of the sandbox's shape hash, parity-tested). `@loom-ui/planner`,
-  `renderer-terminal`, `renderer-lit` and `core` import ONLY `@loom-ui/hydration/client`;
+  client-safe mirror of the sandbox's shape hash, parity-tested). `@loomwork/ui-planner`,
+  `renderer-terminal`, `renderer-lit` and `core` import ONLY `@loomwork/ui-hydration/client`;
   `clientConsumers.test.ts` fails if any of them reaches the root entry, QuickJS or the MCP plugin,
   by source import or built module graph.
 - **The hydration projection.** Every handle publishes to one loom projection
@@ -215,7 +215,7 @@ tool.
 - `publicFinding(handle, finding)` — the public form of a finding a client may see (fixed code,
   handle name only — never a tool, argument, script or exception text).
 
-### Split hydration — client half (also on `@loom-ui/hydration/client`)
+### Split hydration — client half (also on `@loomwork/ui-hydration/client`)
 
 - `SplitHydrationController` — same scheduling as `HydrationController`, over a `HandleInventory`,
   loading through an injected `HandleLoader`. Methods: `load(inventory)`, `recompose(next)`,
@@ -226,7 +226,7 @@ tool.
 - `HandleInventory`, `HandleRef`, `HandleLoadRequest`, `SplitControllerOptions` — the wire shapes.
 - `handleOfPath(path): string | undefined`, `HYDRATION_VALUES_PREFIX` — client entry only. Maps a
   widget's binding path (`values.<handle>`) back to its hydration handle: the exact inverse of
-  `@loom-ui/core`'s `hydrationPath`. `undefined` unless the path is `values.` plus a non-empty
+  `@loomwork/ui-core`'s `hydrationPath`. `undefined` unless the path is `values.` plus a non-empty
   handle (the bare prefix, `status.<handle>` and near-misses like `valuesh` all give `undefined`);
   everything after the first `values.` is the handle, spelled exactly as `hydrationPath` spelled
   it (a handle containing `.` round-trips here but will not resolve at render time, because
@@ -240,7 +240,7 @@ tool.
 - `SCHEMA_REPAIRED`, `SchemaRepairedPayload` — the userspace event name and payload an app emits
   after applying a repair, from inside a loom execution.
 - `remapOperation(spec, drift)` — turns an INPUT drift record into the `Operation` that repairs it
-  (refuses output/reshape drift with `repair-needs-planner` — that needs `@loom-ui/planner`'s
+  (refuses output/reshape drift with `repair-needs-planner` — that needs `@loomwork/ui-planner`'s
   `reviseForDrift`).
 
 ## Examples
@@ -248,7 +248,7 @@ tool.
 In-process hydration (illustrative — not a compiling snippet):
 
 ```ts
-import { HydrationController, HydrationStore, SCHEMA_REPAIRED, remapOperation } from "@loom-ui/hydration";
+import { HydrationController, HydrationStore, SCHEMA_REPAIRED, remapOperation } from "@loomwork/ui-hydration";
 
 const store = new HydrationStore(projectionRuntime, {
   experienceId: experience.experienceId,
@@ -266,7 +266,7 @@ controller.load(experience); // P0 now, P1 in ~50ms, P2 on markVisible
 Split hydration, client side (illustrative):
 
 ```ts
-import { HydrationStore, SplitHydrationController } from "@loom-ui/hydration/client";
+import { HydrationStore, SplitHydrationController } from "@loomwork/ui-hydration/client";
 
 const split = new SplitHydrationController({
   store,
@@ -291,7 +291,7 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   NO `outputKinds`, so forgetting it fails closed (a `media-output-kinds-missing` warning says to
   pass it). The split server (`serveHandle`/`serveHandles`) applies the same rule, including its
   cache variant. Resolving a ref to a URL is NOT hydration's job: it is the host's `MediaResolver`,
-  called by the renderer (see `@loom-ui/core` "Media").
+  called by the renderer (see `@loomwork/ui-core` "Media").
 
 - **A handle that feeds a chat transcript is always contract-checked, and never a stream (U8).**
   Like media: a node of type `Chat` (or a kind that resolves to it) marks its handle, the provider
@@ -300,7 +300,7 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   rides the transcript VALUE (a `ChatFeed` republishes it), with `pending` status while it streams,
   rather than `appendChunk` on a string handle; the bounds of `appendChunk` still apply inside the
   feed.
-- **`connectConversation` (U8, `@loom-ui/hydration/client`)** is the browser's read half over loom's
+- **`connectConversation` (U8, `@loomwork/ui-hydration/client`)** is the browser's read half over loom's
   conversation routes (`GET {base}/history`, `GET {base}/events`, ADR 0122 D6). The transport is
   injected (`fetch`; `openStream(url)` so the host builds the `EventSource` with its credentials),
   it imports no loom package, and it folds history pages and SSE frames into a `ChatFeed`,
@@ -323,10 +323,10 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   (`history-unavailable`, `frame-invalid`, `frame-too-large`, `stream-error`, and
   `reasoning-unavailable` for the reasoning fetch): no status code,
   response body or exception text is carried, and an `error` event's body is not read. Sending is
-  NOT here: it is the host's authenticated write-back (`createWriteBack`, `@loom-ui/core` "Chat and
+  NOT here: it is the host's authenticated write-back (`createWriteBack`, `@loomwork/ui-core` "Chat and
   inputs").
 - **A host-declared tool class floors it too.** `declaredToolClasses` (on `HydrationController`,
-  `handleInventory` and `serveHandle(s)`; `@loom-ui/core`'s `DeclaredToolClasses`) makes a handle
+  `handleInventory` and `serveHandle(s)`; `@loomwork/ui-core`'s `DeclaredToolClasses`) makes a handle
   whose provider calls a declared tool at least that class, even when no stored node carries one.
   **Bind it once with `createServeSurface(policy)`**: it returns `handleInventory`, `serveHandle`
   and `serveHandles` with a core `ReadPolicy` (`{ declaredToolClasses, undeclared }`) applied to
@@ -340,7 +340,7 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
   `undeclared` options join it raise-only), so a host passes ONE policy to the controller and to
   `createServeSurface`.
 - **A classified handle is never fetched for a viewer who may not see it (fail-closed).** Pass
-  `viewer: { clearance }` (`@loom-ui/core`'s `Viewer`) to `HydrationController`, `handleInventory`
+  `viewer: { clearance }` (`@loomwork/ui-core`'s `Viewer`) to `HydrationController`, `handleInventory`
   and `serveHandle`/`serveHandles`. A handle bound by any node whose `sensitivity` is above the
   clearance is not planned, not cached and its provider is never invoked, and the controller writes
   NOTHING to the store for it: no value and no status, so a store projected to a client does not
@@ -374,7 +374,7 @@ split.load(inventory); // fetched from the server's handleInventory(exp, { revis
 - **Drift is reported, never repaired here.** `onDrift` fires with a `DriftReport`
   (`{ experienceId, versionHash, handle, spec, drift: readonly DriftRecord[], findings, proceeded
   }`) — one or more typed `DriftRecord`s for the handle, not a single record. Applying a fix
-  (`remapOperation` for input drift, `@loom-ui/planner`'s `reviseForDrift` for output drift) and
+  (`remapOperation` for input drift, `@loomwork/ui-planner`'s `reviseForDrift` for output drift) and
   emitting `SCHEMA_REPAIRED` is the app's job, inside its own durable execution. Nothing in this
   package dedupes or bounds repairs — an app must dedupe on `(versionHash, handle)` and cap
   attempts itself.

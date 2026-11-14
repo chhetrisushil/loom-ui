@@ -1,12 +1,12 @@
-import { HydrationStore } from "@loom-ui/hydration";
-import type { HandleEntry, RendererAdapter } from "@loom-ui/renderer-conformance";
-import type { Blueprint, Layout, Widget } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import type { Blueprint, Layout, Widget } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { HydrationStore } from "@loomwork/ui-hydration";
+import type { HandleEntry, RendererAdapter } from "@loomwork/ui-renderer-conformance";
 import { type InteractiveTerminal, interactiveTerminal } from "./interactive";
 
 /** The terminal renderer, driven through its interactive session, as the conformance kit sees it. */
 export const terminalAdapter: RendererAdapter = {
-  name: "@loom-ui/renderer-terminal",
+  name: "@loomwork/ui-renderer-terminal",
   surface: "terminal",
   kinds: [
     "MetricCard",

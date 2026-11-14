@@ -4,7 +4,7 @@ import {
   checkKindValue,
   parseChatMarkdown,
   resolveMdMarkers,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 
 // The reference example for markdown in a chat transcript: a support assistant that answers in markdown and cites

@@ -1,4 +1,4 @@
-import type { WidgetAction } from "@loom/blueprint-runtime";
+import type { WidgetAction } from "@loomwork/blueprint-runtime";
 import { LitElement, type TemplateResult, css, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { type A2UIRender, type A2UIView, type SelectMeta, planView } from "../a2ui/plan";

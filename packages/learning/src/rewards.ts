@@ -1,4 +1,4 @@
-import { attachOutcomes } from "@loom/analytics";
+import { attachOutcomes } from "@loomwork/analytics";
 import type { VoteLedger, VoteSummary } from "./ledger";
 import type { DecisionRef } from "./links";
 
@@ -64,7 +64,7 @@ export function defaultReward(weights: RewardWeights = {}): RewardFunction {
   };
 }
 
-/** The slice of `WorkflowRuntime` a settlement needs (`@loom/analytics` `OutcomeAttacher`). */
+/** The slice of `WorkflowRuntime` a settlement needs (`@loomwork/analytics` `OutcomeAttacher`). */
 export interface OutcomeRuntime {
   recordOutcome(
     executionId: string,

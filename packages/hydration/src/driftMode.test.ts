@@ -1,5 +1,5 @@
-import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { TypedFailure } from "@loomwork/core";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
 import { describe, expect, it } from "vitest";
 import { executeProvider } from "./provider";
 import { outputShapeHashOf } from "./reshape";

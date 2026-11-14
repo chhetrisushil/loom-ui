@@ -5,7 +5,7 @@ import {
   type RecordedOperation,
   boundSummary,
   treeDepth,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import {
   type BranchedPayload,
   type ComposedPayload,

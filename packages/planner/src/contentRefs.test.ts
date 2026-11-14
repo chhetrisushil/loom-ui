@@ -1,4 +1,4 @@
-import { CONTENT_REF_KEYWORD } from "@loom-ui/core";
+import { CONTENT_REF_KEYWORD } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { checkPlannerConformance } from "./conformance";
 import { contentRefArgsFrom } from "./contentRefs";
@@ -133,7 +133,7 @@ describe("contentRefArgsFrom", () => {
     expect(second.args["media.describe"]).toContainEqual(["extra"]);
   });
   it("the table is plain JSON and survives persistence", async () => {
-    const { parseContentRefTable } = await import("@loom-ui/core");
+    const { parseContentRefTable } = await import("@loomwork/ui-core");
     const t = contentRefArgsFrom(caps);
     expect(parseContentRefTable(JSON.parse(JSON.stringify(t)))).toEqual(t);
   });

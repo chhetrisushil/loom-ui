@@ -1,3 +1,4 @@
+import type { Blueprint, Layout, Widget } from "@loomwork/blueprint-runtime";
 import {
   HYDRATION_VALUES_PREFIX,
   type LuI18n,
@@ -6,8 +7,8 @@ import {
   oneLineChatText,
   optionsProblem,
   viewedVersionOf,
-} from "@loom-ui/core";
-import type { ActionOutcome } from "@loom-ui/core/browser";
+} from "@loomwork/ui-core";
+import type { ActionOutcome } from "@loomwork/ui-core/browser";
 import {
   MAX_MULTI_SELECTED,
   type MultiSelectValue,
@@ -19,9 +20,8 @@ import {
   stripUnsafeChars,
   validateSelectValue,
   validateTextValue,
-} from "@loom-ui/core/chat-ui";
-import type { HydrationStore } from "@loom-ui/hydration/client";
-import type { Blueprint, Layout, Widget } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core/chat-ui";
+import type { HydrationStore } from "@loomwork/ui-hydration/client";
 import { inert } from "./inert";
 import { type RenderExperienceOptions, renderExperience } from "./status";
 

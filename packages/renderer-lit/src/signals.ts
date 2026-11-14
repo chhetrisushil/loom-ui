@@ -1,9 +1,9 @@
-// `@loom-ui/renderer-lit/signals` — drive a `SignalCollector` from the DOM a `renderBlueprintDom`
+// `@loomwork/ui-renderer-lit/signals` — drive a `SignalCollector` from the DOM a `renderBlueprintDom`
 // handle owns (U11), opt-in like the reference containers and the media widgets: a page that collects
 // no interaction signals does not pay for a byte of it.
 //
-//   import { SignalCollector } from "@loom-ui/core/signals";
-//   import { observeSignals } from "@loom-ui/renderer-lit/signals";
+//   import { SignalCollector } from "@loomwork/ui-core/signals";
+//   import { observeSignals } from "@loomwork/ui-renderer-lit/signals";
 //   const collector = new SignalCollector({ sink: (batch) => fetch("/signals", { method: "POST", body: JSON.stringify(batch) }) });
 //   const signals = observeSignals(handle, collector, { placeholders: result.fingerprint.placeholderNodes });
 //   // after handle.update(next): signals.refresh();   // re-reads the version and the widgets
@@ -16,7 +16,7 @@
 // It reads node ids from `data-widget-id` and nothing else from the DOM — no text, no values.
 // A restricted node is reported under the alias it already has, flagged by the collector.
 
-import type { SignalCollector } from "@loom-ui/core/signals";
+import type { SignalCollector } from "@loomwork/ui-core/signals";
 
 export interface ObserveSignalsOptions {
   /** `CompileResult.fingerprint.placeholderNodes`: ids drawn as restricted placeholders. */

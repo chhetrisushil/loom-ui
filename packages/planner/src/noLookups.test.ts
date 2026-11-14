@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const FORBIDDEN = [
-  "@loom/plugin-mcp",
-  "@loom/plugin-sandbox",
-  "@loom/effect-runtime",
-  "@loom/projection-runtime",
-  "@loom/llm",
+  "@loomwork/plugin-mcp",
+  "@loomwork/plugin-sandbox",
+  "@loomwork/effect-runtime",
+  "@loomwork/projection-runtime",
+  "@loomwork/llm",
 ];
 
 describe("the planner's own sources import no invoker, runtime or LLM package", () => {

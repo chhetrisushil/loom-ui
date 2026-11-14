@@ -1,8 +1,8 @@
-import { toolInputJsonSchema } from "@loom/agent";
-import { TypedFailure, jsonSchemaHash } from "@loom/core";
-import type { EffectRuntime } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { toolInputJsonSchema } from "@loomwork/agent";
+import { TypedFailure, jsonSchemaHash } from "@loomwork/core";
+import type { EffectRuntime } from "@loomwork/effect-runtime";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { SANDBOX_TOOL_ID } from "@loomwork/plugin-sandbox";
 import type { DataProvider } from "./dataProvider";
 
 /** The kind id of a step whose target is a registered loom effect. */

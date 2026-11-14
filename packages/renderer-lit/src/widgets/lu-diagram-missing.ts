@@ -3,7 +3,7 @@ import { property } from "lit/decorators.js";
 import { say } from "../say";
 
 // The DEFAULT registry's stand-in for the `Diagram` kind. The real widget is the opt-in entry
-// `@loom-ui/renderer-lit/diagram`; a page that composed a diagram without registering it sees ONE
+// `@loomwork/ui-renderer-lit/diagram`; a page that composed a diagram without registering it sees ONE
 // fixed placeholder (no value, no title, no props) instead of an empty hole, and a single console
 // warning that says how to fix it.
 
@@ -29,7 +29,7 @@ export class LuDiagramMissing extends LitElement {
     if (warned) return;
     warned = true;
     console.warn(
-      "[loom-ui] a diagram was composed but the diagram renderer is not registered: use createDiagramLitRegistry() from @loom-ui/renderer-lit/diagram"
+      "[loom-ui] a diagram was composed but the diagram renderer is not registered: use createDiagramLitRegistry() from @loomwork/ui-renderer-lit/diagram"
     );
   }
   render() {

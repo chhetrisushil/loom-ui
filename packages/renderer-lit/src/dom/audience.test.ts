@@ -1,13 +1,13 @@
+import { RendererRegistry, type Widget } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
 import {
   type ContainerNode,
   type SemanticNode,
   compile,
   defineSemanticCatalog,
   genesis,
-} from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { RendererRegistry, type Widget } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import type { DomWidgetRenderer } from "./index";
 import { renderBlueprintDom } from "./index";

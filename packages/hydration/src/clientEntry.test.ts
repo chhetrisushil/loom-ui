@@ -5,7 +5,7 @@ import { build } from "esbuild";
 import { describe, expect, it } from "vitest";
 
 // ── The browser entry's module graph, as it is BUILT ─────────────────────────────
-// `@loom-ui/hydration/client` is what a browser bundles for split hydration. It must never reach
+// `@loomwork/ui-hydration/client` is what a browser bundles for split hydration. It must never reach
 // the server plane: the sandbox (QuickJS WASM, worker threads), the MCP plugin (an HTTP server),
 // the effect runtime, a node builtin, or hydration's own server-side modules. This walks the
 // `require` graph of the built `dist/client.js` — every file it can load, dependencies included —
@@ -27,18 +27,18 @@ const load = createRequire(__filename);
 
 /** Packages whose runtime is server-only: reaching any of them pulls the server plane in. */
 const FORBIDDEN_PACKAGES = new Set([
-  "@loom/plugin-sandbox",
-  "@loom/plugin-mcp",
-  "@loom/effect-runtime",
-  // U3 — `effectPin` needs `toolInputJsonSchema` from `@loom/agent` (llm, reasoning, workflow-runtime…):
+  "@loomwork/plugin-sandbox",
+  "@loomwork/plugin-mcp",
+  "@loomwork/effect-runtime",
+  // U3 — `effectPin` needs `toolInputJsonSchema` from `@loomwork/agent` (llm, reasoning, workflow-runtime…):
   // server-only, never in the client graph.
-  "@loom/agent",
+  "@loomwork/agent",
   // U6 — the lineage runtime is an event log + content store: server-side, never in a client graph.
-  "@loom-ui/lineage",
+  "@loomwork/ui-lineage",
   // U11 — reward ingestion/settlement is host-side (recordOutcome, the event log); a client only SENDS signals.
-  "@loom-ui/learning",
+  "@loomwork/ui-learning",
   // U7 — change delivery reads the lineage and content stores: server-side, never in a client graph.
-  "@loom-ui/changes",
+  "@loomwork/ui-changes",
 ]);
 
 /** Hydration's own server-side modules (relative to `dist/`). */
@@ -149,7 +149,11 @@ function forbiddenReach(entry: string): { violations: Reach[]; files: number } {
 
 /** The real directories of the forbidden packages, as a bundler sees them (links resolved). */
 /** Forbidden names that are not dependencies of hydration — refused BY NAME only (no directory). */
-const NOT_A_HYDRATION_DEP = new Set(["@loom-ui/lineage", "@loom-ui/changes", "@loom-ui/learning"]);
+const NOT_A_HYDRATION_DEP = new Set([
+  "@loomwork/ui-lineage",
+  "@loomwork/ui-changes",
+  "@loomwork/ui-learning",
+]);
 const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].flatMap((name) => {
   if (NOT_A_HYDRATION_DEP.has(name)) return [];
   // Any other forbidden name MUST resolve: a typo or a removed dependency fails here, loudly,
@@ -157,7 +161,7 @@ const FORBIDDEN_DIRS = [...FORBIDDEN_PACKAGES].flatMap((name) => {
   return [realpathSync(resolve(__dirname, "../node_modules", name))];
 });
 
-describe("@loom-ui/hydration/client is browser-safe", () => {
+describe("@loomwork/ui-hydration/client is browser-safe", () => {
   it("dist carries no stale split.js to shadow split/index.js", () => {
     // `split.ts` became `split/`; a dist built before that still holds `split.js`, which Node
     // resolves for "./split" ahead of `split/index.js`. `build` removes it; this checks it did.
@@ -175,8 +179,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     // If this ever passes vacuously (the walker finds nothing anywhere), the test above means nothing.
     const { violations } = forbiddenReach(resolve(DIST, "index.js"));
     const reached = new Set(violations.map((v) => packageName(v.specifier)));
-    expect(reached).toContain("@loom/plugin-sandbox");
-    expect(reached).toContain("@loom/plugin-mcp");
+    expect(reached).toContain("@loomwork/plugin-sandbox");
+    expect(reached).toContain("@loomwork/plugin-mcp");
     expect(violations.some((v) => v.specifier.startsWith("node:"))).toBe(true);
   });
 
@@ -191,8 +195,8 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
   it("the ESM walk is live: the ESM root entry DOES reach the server plane", () => {
     const { violations } = forbiddenReachEsm(resolve(ESM_DIST, "index.js"));
     const reached = new Set(violations.map((v) => packageName(v.specifier)));
-    expect(reached).toContain("@loom/plugin-sandbox");
-    expect(reached).toContain("@loom/plugin-mcp");
+    expect(reached).toContain("@loomwork/plugin-sandbox");
+    expect(reached).toContain("@loomwork/plugin-mcp");
   });
 
   it("exports exactly the client surface", () => {
@@ -271,7 +275,7 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
   });
 
   it("path.js reaches nothing at runtime: no core, no other module", () => {
-    // `@loom-ui/core` is CommonJS; a client that needs `handleOfPath` must not drag it in.
+    // `@loomwork/ui-core` is CommonJS; a client that needs `handleOfPath` must not drag it in.
     const src = readFileSync(resolve(DIST, "path.js"), "utf8");
     expect([...src.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)]).toEqual([]);
   });
@@ -304,14 +308,14 @@ describe("@loom-ui/hydration/client is browser-safe", () => {
     expect(out.outputFiles).toHaveLength(1);
     // Budget: the client is a scheduler, a projection and param checks — tens of KB, not megabytes.
     const bytes = out.outputFiles[0]?.contents.byteLength ?? Number.POSITIVE_INFINITY;
-    console.info(`@loom-ui/hydration/client browser bundle (minified, esm): ${bytes} bytes`);
+    console.info(`@loomwork/ui-hydration/client browser bundle (minified, esm): ${bytes} bytes`);
     // 64 -> 72 KiB for U8: the ChatValue contract (~6 kB) rides in `checkKindValue` exactly as the
     // MediaRef contract does, plus the ~2 kB conversation connection.
-    // 72 -> 74 KiB for loom 2704704 (#556): `@loom/core`'s `schedule$` gained the DST sub-hourly
+    // 72 -> 74 KiB for loom 2704704 (#556): `@loomwork/core`'s `schedule$` gained the DST sub-hourly
     // warning (~0.8 kB minified). The client takes the whole core barrel (CJS, not tree-shaken).
     // 74 -> 76 KiB for LU-2: `validateExperience` (in the client's core barrel) gained the
     // provider-graph checks (`providerGraph.ts`, ~1.4 kB minified).
-    // 76 -> 56 KiB for ESM packaging (F3): the bundle starts from `dist/esm/client.js`, and @loom-ui/core now
+    // 76 -> 56 KiB for ESM packaging (F3): the bundle starts from `dist/esm/client.js`, and @loomwork/ui-core now
     // publishes ESM too, so the client no longer carries core's whole barrel (measured 54_239).
     expect(bytes).toBeLessThan(56 * 1024);
   });

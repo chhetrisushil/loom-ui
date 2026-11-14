@@ -1,7 +1,7 @@
-import { DEFAULT_STEP_KIND, STEP_KIND_PATTERN } from "@loom-ui/core";
-import { TypedFailure } from "@loom/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
+import { TypedFailure } from "@loomwork/core";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { DEFAULT_STEP_KIND, STEP_KIND_PATTERN } from "@loomwork/ui-core";
 import type { TransientInvoker } from "./invoker";
 
 // ── The data plane: a step's KIND names the DataProvider that runs it (U3) ───────

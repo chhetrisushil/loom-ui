@@ -108,7 +108,7 @@ describe("declared reach (loom L32)", () => {
     expect(readPlannerReach(reviseForDrift)).toBeUndefined();
   });
 
-  it("an attached `{}` is UNDECLARED (as @loom/verify reads it), not 'reaches nothing'", () => {
+  it("an attached `{}` is UNDECLARED (as @loomwork/verify reads it), not 'reaches nothing'", () => {
     expect(readPlannerReach(declarePlannerReach({}, {}))).toBeUndefined();
     expect(readPlannerReach(declarePlannerReach({}, { run: [], transient: [] }))).toEqual({
       run: [],

@@ -1,7 +1,7 @@
-import type { Finding, ProviderSpec } from "@loom-ui/core";
-import { TypedFailure } from "@loom/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
-import { type SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
+import { TypedFailure } from "@loomwork/core";
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
+import { type SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loomwork/plugin-sandbox";
+import type { Finding, ProviderSpec } from "@loomwork/ui-core";
 import type { TransientInvoker } from "./invoker";
 import { type ReshapeFailureKind, type ReshapeResult, jsonPathSelect } from "./select";
 

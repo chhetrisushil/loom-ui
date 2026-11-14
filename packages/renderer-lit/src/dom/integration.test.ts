@@ -1,7 +1,7 @@
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, StatusBadge, blueprint$, grid } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { MetricCard, StatusBadge, blueprint$, grid } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { hydrationPath, hydrationStatusPath } from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { afterEach, describe, expect, it } from "vitest";
 import { litRegistry } from "./litRegistry";
 import { renderBlueprintDom } from "./renderBlueprintDom";

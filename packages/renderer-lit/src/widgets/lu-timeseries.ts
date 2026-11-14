@@ -4,7 +4,7 @@ import {
   type TimeSeriesValue,
   isTimeFormat,
   widgetRefsOf,
-} from "@loom-ui/core/browser";
+} from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing, svg } from "lit";
 import { state } from "lit/decorators.js";
 import { chartHostStyles } from "../charts/frame";

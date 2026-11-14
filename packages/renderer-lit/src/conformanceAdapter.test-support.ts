@@ -1,7 +1,7 @@
-import { HydrationStore } from "@loom-ui/hydration";
-import type { HandleEntry, InvokeIntent, RendererAdapter } from "@loom-ui/renderer-conformance";
-import type { Blueprint, Layout, Widget, WidgetAction } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import type { Blueprint, Layout, Widget, WidgetAction } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { HydrationStore } from "@loomwork/ui-hydration";
+import type { HandleEntry, InvokeIntent, RendererAdapter } from "@loomwork/ui-renderer-conformance";
 import { vi } from "vitest";
 import "./register";
 import { registerChatWidgets } from "./chat";
@@ -93,7 +93,7 @@ function blueprintWidget(bp: Blueprint, id: string): Widget | undefined {
 
 /** The Lit web renderer, with the chat and media entries registered, as the conformance kit sees it. */
 export const litAdapter: RendererAdapter = {
-  name: "@loom-ui/renderer-lit",
+  name: "@loomwork/ui-renderer-lit",
   surface: "web",
   kinds: [
     "MetricCard",

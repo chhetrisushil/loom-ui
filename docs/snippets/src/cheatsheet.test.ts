@@ -16,26 +16,26 @@ const card = readFileSync(resolve(ROOT, CARD), "utf8");
 
 /** Every entry point whose runtime exports the card may name. */
 const ENTRIES = [
-  "@loom-ui/core",
-  "@loom-ui/core/log",
-  "@loom-ui/core/browser",
-  "@loom-ui/core/media",
-  "@loom-ui/core/chat",
-  "@loom-ui/core/chat-ui",
-  "@loom-ui/core/document",
-  "@loom-ui/core/signals",
-  "@loom-ui/hydration",
-  "@loom-ui/hydration/client",
-  "@loom-ui/planner",
-  "@loom-ui/lineage",
-  "@loom-ui/changes",
-  "@loom-ui/learning",
-  "@loom-ui/renderer-lit",
-  "@loom-ui/renderer-lit/dom",
-  "@loom-ui/renderer-lit/containers",
-  "@loom-ui/renderer-terminal",
-  "@loom-ui/renderer-conformance",
-  "@loom-ui/renderer-conformance/vitest",
+  "@loomwork/ui-core",
+  "@loomwork/ui-core/log",
+  "@loomwork/ui-core/browser",
+  "@loomwork/ui-core/media",
+  "@loomwork/ui-core/chat",
+  "@loomwork/ui-core/chat-ui",
+  "@loomwork/ui-core/document",
+  "@loomwork/ui-core/signals",
+  "@loomwork/ui-hydration",
+  "@loomwork/ui-hydration/client",
+  "@loomwork/ui-planner",
+  "@loomwork/ui-lineage",
+  "@loomwork/ui-changes",
+  "@loomwork/ui-learning",
+  "@loomwork/ui-renderer-lit",
+  "@loomwork/ui-renderer-lit/dom",
+  "@loomwork/ui-renderer-lit/containers",
+  "@loomwork/ui-renderer-terminal",
+  "@loomwork/ui-renderer-conformance",
+  "@loomwork/ui-renderer-conformance/vitest",
 ] as const;
 
 async function exportedNames(): Promise<Set<string>> {
@@ -81,7 +81,7 @@ describe("docs/cheatsheet.md stays true to what it enumerates", () => {
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
     expect(pkgs.length, "the sweep itself must not match nothing").toBeGreaterThan(5);
-    const missing = pkgs.filter((p) => !card.includes(`\`@loom-ui/${p}\``));
+    const missing = pkgs.filter((p) => !card.includes(`\`@loomwork/ui-${p}\``));
     expect(missing, `${CARD} never names: ${missing.join(", ")}`).toEqual([]);
     expect(card, "the headline package count").toContain(`**${pkgs.length}** packages`);
   });
@@ -94,14 +94,14 @@ describe("docs/cheatsheet.md stays true to what it enumerates", () => {
   });
 
   it("lists every framework kind", async () => {
-    const { FRAMEWORK_KINDS } = await import("@loom-ui/core");
+    const { FRAMEWORK_KINDS } = await import("@loomwork/ui-core");
     expect(FRAMEWORK_KINDS.length).toBeGreaterThan(5);
     const missing = FRAMEWORK_KINDS.filter((k) => !card.includes(`\`${k}\``));
     expect(missing, `${CARD} omits framework kinds: ${missing.join(", ")}`).toEqual([]);
   });
 
   it("lists every reference container role", async () => {
-    const { REFERENCE_CONTAINER_ROLES } = await import("@loom-ui/core");
+    const { REFERENCE_CONTAINER_ROLES } = await import("@loomwork/ui-core");
     expect(REFERENCE_CONTAINER_ROLES.length).toBeGreaterThan(1);
     const missing = REFERENCE_CONTAINER_ROLES.filter((r) => !card.includes(`\`${r.role}\``));
     expect(
@@ -153,7 +153,7 @@ describe("the cheatsheet guard is not vacuous", () => {
   });
 
   it("flags a package the card no longer names", () => {
-    const planted = card.replace("`@loom-ui/changes`", "`@loom-ui/chang`");
-    expect(planted).not.toContain("`@loom-ui/changes`");
+    const planted = card.replace("`@loomwork/ui-changes`", "`@loomwork/ui-chang`");
+    expect(planted).not.toContain("`@loomwork/ui-changes`");
   });
 });

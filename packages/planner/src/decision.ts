@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
-import type { ContainerRoleSpec, Surface } from "@loom-ui/core";
-import { canonicalJson, fnv1a64 } from "@loom/core";
+import { canonicalJson, fnv1a64 } from "@loomwork/core";
+import type { ContainerRoleSpec, Surface } from "@loomwork/ui-core";
 import type { CapabilityRef, ComposeInput, ReviseInput } from "./spi";
 
 /**

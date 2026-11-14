@@ -3,7 +3,7 @@ import { ChatFeed, chatEntryFromWire, compareChatCursors } from "./chatFeed";
 import { MAX_CHAT_ENTRIES, isChatValue } from "./chatValue";
 import { MAX_STREAM_TEXT } from "./streamText";
 
-// A history entry exactly as @loom/conversation's `HistoryEntry` serialises it (ADR 0122 D3).
+// A history entry exactly as @loomwork/conversation's `HistoryEntry` serialises it (ADR 0122 D3).
 const wire = (turn: number, role: "user" | "assistant", over: Record<string, unknown> = {}) => ({
   turn,
   role,

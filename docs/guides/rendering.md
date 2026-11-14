@@ -17,9 +17,9 @@ renderers for its own framework kinds (`TimeSeries`, `BarChart`, `Kpi`, `Table`,
 
 | Renderer | Package | Use it for | Framework kinds |
 | --- | --- | --- | --- |
-| Terminal | `@loom-ui/renderer-terminal` | CLIs, TUIs, logs, tests | all (web-only kinds print an honest marker) |
-| Lit / DOM | `@loom-ui/renderer-lit` | web apps without React | all |
-| React | loom's `@loom/plugin-renderer-react` | React apps | none: draws `[No renderer for ...]` |
+| Terminal | `@loomwork/ui-renderer-terminal` | CLIs, TUIs, logs, tests | all (web-only kinds print an honest marker) |
+| Lit / DOM | `@loomwork/ui-renderer-lit` | web apps without React | all |
+| React | loom's `@loomwork/plugin-renderer-react` | React apps | none: draws `[No renderer for ...]` |
 
 The status of a widget (loading, empty, stale, error) is a **Blueprint** concern
 (`binding.status.path`), decided by loom's traversal, so all renderers agree. What a renderer adds
@@ -35,13 +35,16 @@ import {
   type SemanticNode,
   compile,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loom-ui/hydration/client";
-import { referenceContainers } from "@loom-ui/renderer-lit/containers";
-import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
-import "@loom-ui/renderer-lit/register";
-import { renderExperience, terminalRegistry } from "@loom-ui/renderer-terminal";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import {
+  HYDRATION_PROJECTION_ID,
+  HYDRATION_PROJECTION_VERSION,
+} from "@loomwork/ui-hydration/client";
+import { referenceContainers } from "@loomwork/ui-renderer-lit/containers";
+import { litRegistry, renderBlueprintDom } from "@loomwork/ui-renderer-lit/dom";
+import "@loomwork/ui-renderer-lit/register";
+import { renderExperience, terminalRegistry } from "@loomwork/ui-renderer-terminal";
 ```
 
 ## Terminal
@@ -74,17 +77,17 @@ word comes from the `LU_MESSAGES` catalogue and is overridable with the `i18n` o
 
 ## Web with the Lit adapter
 
-`@loom-ui/renderer-lit` is **ESM-only and meant for a bundler** (Vite, webpack, esbuild). It is not
+`@loomwork/ui-renderer-lit` is **ESM-only and meant for a bundler** (Vite, webpack, esbuild). It is not
 importable from plain Node: no other package here depends on it, and its build leaves
 extensionless relative specifiers that only a bundler resolves. The symptom of
-`node -e "import('@loom-ui/renderer-lit/dom')"` is a module-not-found error; that is expected, not
+`node -e "import('@loomwork/ui-renderer-lit/dom')"` is a module-not-found error; that is expected, not
 a bug in your setup. Tests run it under happy-dom.
 
 Two import rules:
 
 - **Registration is explicit.** Importing the package defines no custom element. Add
-  `import "@loom-ui/renderer-lit/register"` (every `lu-*` element) or import only the elements you
-  draw, e.g. `@loom-ui/renderer-lit/elements/lu-kpi`, so your bundle carries just those. A registry
+  `import "@loomwork/ui-renderer-lit/register"` (every `lu-*` element) or import only the elements you
+  draw, e.g. `@loomwork/ui-renderer-lit/elements/lu-kpi`, so your bundle carries just those. A registry
   that mounts an undefined tag logs one warning naming the fix and draws an inert element.
 - **Never `.register()` on a default registry** (`litRegistry`, `defaultTerminalRegistry`, React's
   `defaultRegistry`); they are shared singletons. Build your own registry and `.merge()`.
@@ -136,10 +139,10 @@ Every action a widget emits reaches `onAction` stamped with the view it came fro
 
 A container may carry a `role`: an open, app-defined key (never an ARIA role, never display text,
 never localised) under which a **container renderer** is registered. loom-ui ships two reference
-roles, `tabs` and `stepper`, and the renderers for them in `@loom-ui/renderer-lit/containers`
+roles, `tabs` and `stepper`, and the renderers for them in `@loomwork/ui-renderer-lit/containers`
 (`referenceContainers()`, or `tabsContainer()` / `stepperContainer()` singly). Each child of a
 `tabs` or `stepper` container is a **titled** container; its title is the tab or step label. The
-specs are `REFERENCE_CONTAINER_ROLES` in `@loom-ui/core`, which also run as findings on a built tree.
+specs are `REFERENCE_CONTAINER_ROLES` in `@loomwork/ui-core`, which also run as findings on a built tree.
 
 <!-- snippet: tabs -->
 
@@ -229,7 +232,7 @@ list, with defaults, is in the [theming reference](../reference/theming.md).
   renderer or register a widget for it.
 - `chrome: "host"` (terminal `terminalRegistry`, Lit `createLitRegistry`) drops the widget title
   for an app that draws its own frame; the accessible name keeps it.
-- Media, chat and input widgets are opt-in entries (`@loom-ui/renderer-lit/media`, `/chat`), and so is `Diagram` (`/diagram`); the
+- Media, chat and input widgets are opt-in entries (`@loomwork/ui-renderer-lit/media`, `/chat`), and so is `Diagram` (`/diagram`); the
   default registry draws a fixed "not loaded" placeholder for those kinds.
 - Fixed words are never inline literals; override with `configureI18n` (Lit) or `i18n` (terminal).
 - To check a renderer of your own, see [writing a renderer](writing-a-renderer.md).
@@ -237,7 +240,7 @@ list, with defaults, is in the [theming reference](../reference/theming.md).
 ## See also
 
 - Reference: [rendering](../reference/rendering.md), [theming](../reference/theming.md).
-- Packages: [`@loom-ui/renderer-lit`](../../packages/renderer-lit/README.md),
-  [`@loom-ui/renderer-terminal`](../../packages/renderer-terminal/README.md).
+- Packages: [`@loomwork/ui-renderer-lit`](../../packages/renderer-lit/README.md),
+  [`@loomwork/ui-renderer-terminal`](../../packages/renderer-terminal/README.md).
 - Examples (in `loom-examples`): `experience-layout`, `experience-stepped`, `experience-kinds`,
   `experience-tabs-planner` (tabs composed by the reference planner), `media-gallery`.

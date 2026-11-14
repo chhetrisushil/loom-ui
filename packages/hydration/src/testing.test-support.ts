@@ -1,5 +1,5 @@
-import type { MCPToolNode, ProviderSpec } from "@loom-ui/core";
-import type { EffectRuntime, TransientInvokeOptions } from "@loom/effect-runtime";
+import type { EffectRuntime, TransientInvokeOptions } from "@loomwork/effect-runtime";
+import type { MCPToolNode, ProviderSpec } from "@loomwork/ui-core";
 import type { TransientInvoker } from "./invoker";
 
 export type Handler = (

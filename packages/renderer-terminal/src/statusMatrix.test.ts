@@ -1,12 +1,12 @@
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, blueprint$, stack } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { MetricCard, blueprint$, stack } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { hydrationPath, hydrationStatusPath } from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import { renderExperience } from "./status";
 
 // ── The status matrix, terminal side ──────────────────────────────────────────
-// The SAME ten rows are asserted against the Lit surface in `@loom-ui/renderer-lit`'s
+// The SAME ten rows are asserted against the Lit surface in `@loomwork/ui-renderer-lit`'s
 // `src/widgets/statusMatrix.test.ts`. The two tables are the contract that the two surfaces
 // render one decision table; edit neither alone. Since IR 2.0.0 that decision table is LOOM's
 // (ADR 0097 D2) on both surfaces — these rows pin that the framework still gets it, through a

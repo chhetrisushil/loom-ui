@@ -1,5 +1,9 @@
-import type { ContractRegistry } from "@loom-ui/core/browser";
-import { type BindingStatus, type CatalogEntry, RendererRegistry } from "@loom/blueprint-runtime";
+import {
+  type BindingStatus,
+  type CatalogEntry,
+  RendererRegistry,
+} from "@loomwork/blueprint-runtime";
+import type { ContractRegistry } from "@loomwork/ui-core/browser";
 import type { TitleChrome } from "../widgets/base";
 import type { ChatEntryAccessories } from "../widgets/chatAccessory";
 import type { MediaHostOptions } from "../widgets/lu-media";
@@ -14,7 +18,7 @@ function warnUndefined(tag: string): void {
   if (warned.has(tag)) return;
   warned.add(tag);
   console.warn(
-    `[loom-ui] <${tag}> is not a defined custom element, so it draws nothing. Register it: import "@loom-ui/renderer-lit/register" (every element), or an "@loom-ui/renderer-lit/elements/<module>" entry for just the ones you draw.`
+    `[loom-ui] <${tag}> is not a defined custom element, so it draws nothing. Register it: import "@loomwork/ui-renderer-lit/register" (every element), or an "@loomwork/ui-renderer-lit/elements/<module>" entry for just the ones you draw.`
   );
 }
 
@@ -112,9 +116,9 @@ export const frameworkKindContracts: readonly CatalogEntry[] = [
 /**
  * The kinds the DEFAULT registry draws. The media kinds (`Image`…`MediaInput`) are framework kinds
  * with a universal value contract, but their Lit elements are an opt-in entry
- * (`@loom-ui/renderer-lit/media`, `createMediaLitRegistry`) so a page that draws no media does not
+ * (`@loomwork/ui-renderer-lit/media`, `createMediaLitRegistry`) so a page that draws no media does not
  * pay for them — the same arrangement as the reference containers. Likewise the chat kinds (`Chat`,
- * `TextInput`, `FormInput`, `SelectInput`, U8): `@loom-ui/renderer-lit/chat`, `createChatLitRegistry`.
+ * `TextInput`, `FormInput`, `SelectInput`, U8): `@loomwork/ui-renderer-lit/chat`, `createChatLitRegistry`.
  */
 export const LIT_ONLY_KINDS: ReadonlySet<string> = new Set(
   frameworkKindContracts.map((c) => c.kind)
@@ -181,19 +185,19 @@ export function createLitRegistry(opts: LitRegistryOptions = {}): DomRegistry {
       .register("Prose", el("lu-prose"))
       .register("A2UIView", el("lu-a2ui-widget"))
       .register("SandboxView", el("lu-sandbox-widget"))
-      // The media kinds draw one fixed placeholder here; `@loom-ui/renderer-lit/media` replaces them.
+      // The media kinds draw one fixed placeholder here; `@loomwork/ui-renderer-lit/media` replaces them.
       .register("Image", el("lu-media-missing"))
       .register("Audio", el("lu-media-missing"))
       .register("Video", el("lu-media-missing"))
       .register("File", el("lu-media-missing"))
       .register("MediaInput", el("lu-media-missing"))
-      // Likewise the chat kinds (U8): `@loom-ui/renderer-lit/chat` replaces them.
+      // Likewise the chat kinds (U8): `@loomwork/ui-renderer-lit/chat` replaces them.
       .register("Chat", el("lu-chat-missing"))
       .register("TextInput", el("lu-chat-missing"))
       .register("FormInput", el("lu-chat-missing"))
       .register("SelectInput", el("lu-chat-missing"))
       .register("MultiSelectInput", el("lu-chat-missing"))
-      // Likewise `Diagram`: `@loom-ui/renderer-lit/diagram` replaces it.
+      // Likewise `Diagram`: `@loomwork/ui-renderer-lit/diagram` replaces it.
       .register("Diagram", el("lu-diagram-missing"))
       .register("ProgressBar", el("lu-progress"))
       .register("AlertCard", el("lu-alert"))

@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import { RendererRegistry, type Widget } from "@loomwork/blueprint-runtime";
+import {
+  type TerminalWidgetRenderer,
+  defaultTerminalRegistry,
+} from "@loomwork/plugin-renderer-terminal";
 import {
   type BarChartValue,
   type ChatValue,
@@ -44,14 +49,13 @@ import {
   tableColumnLabel,
   unitSuffix,
   widgetRefsOf,
-} from "@loom-ui/core";
-import { type MultiSelectValue, multiSelectValueIssues } from "@loom-ui/core/chat-ui";
-import { MD_DOC_MAX_TEXT, parseMarkdownDocument, parseOrgDocument } from "@loom-ui/core/document";
-import { RendererRegistry, type Widget } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core";
+import { type MultiSelectValue, multiSelectValueIssues } from "@loomwork/ui-core/chat-ui";
 import {
-  type TerminalWidgetRenderer,
-  defaultTerminalRegistry,
-} from "@loom/plugin-renderer-terminal";
+  MD_DOC_MAX_TEXT,
+  parseMarkdownDocument,
+  parseOrgDocument,
+} from "@loomwork/ui-core/document";
 import { inert } from "./inert";
 
 const LEVEL_KEY = {
@@ -134,7 +138,7 @@ function envOf(i18n: LuI18n | undefined): Env {
  * A number exactly as the web's `measure()` would print it for the same value, format and unit —
  * full numeric parity, not merely the same shape: an explicit `format` (or, absent one, a legacy
  * `unit` read as semantics via `effectiveFormat`, the same "$"/"€"/"%"/ISO-4217 lookup the DOM
- * renderer uses) goes through `@loom-ui/core`'s `formatSemanticNumber`, so a `currency` prints
+ * renderer uses) goes through `@loomwork/ui-core`'s `formatSemanticNumber`, so a `currency` prints
  * the web's own symbol ("€1,234,567.89"), never an ISO-code suffix, and a plain number groups and
  * rounds exactly as `Intl.NumberFormat` does for the DOM renderer. The raw `unit` shows as a
  * literal suffix unless the format draws its own symbol (currency, percentage) — core's

@@ -1,3 +1,4 @@
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
 import {
   type ContentRefTable,
   type Finding,
@@ -10,12 +11,11 @@ import {
   provenIn,
   stripNullContentRefs,
   toolKey,
-} from "@loom-ui/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
+} from "@loomwork/ui-core";
 import { type LoadParams, applyParamsDetailed } from "./params";
 
 // U9b, the SERVER half: a module of its own so that the browser entry (which imports params.ts) never
-// reaches `@loom-ui/core`'s root, which pulls in node:crypto.
+// reaches `@loomwork/ui-core`'s root, which pulls in node:crypto.
 
 const bad = (code: string, message: string): Finding => ({ code, severity: "error", message });
 

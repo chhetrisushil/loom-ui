@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import {
   CHAT_REF_OPEN_ACTION,
   MD_MAX_DEPTH,
   MD_MAX_INLINE_DEPTH,
   MD_MAX_NODES,
   parseChatMarkdown,
-} from "@loom-ui/core/chat-ui";
-import { customWidget$ } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core/chat-ui";
 import { nothing, render } from "lit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-chat";

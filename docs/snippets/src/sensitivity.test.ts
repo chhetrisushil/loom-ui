@@ -9,13 +9,13 @@ import {
   compile,
   compileFingerprint,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
 import {
   HYDRATION_PROJECTION_ID,
   HYDRATION_PROJECTION_VERSION,
   handleInventory,
-} from "@loom-ui/hydration";
+} from "@loomwork/ui-hydration";
 // #endregion imports
 
 const spec = (handle: string): ProviderSpec => ({

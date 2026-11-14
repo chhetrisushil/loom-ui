@@ -1,7 +1,7 @@
-import { boundSummary, untrustedSummary } from "@loom-ui/core";
-import { eventStoreLineageStore } from "@loom-ui/lineage";
-import { isTainted } from "@loom/classify";
-import { InMemoryAsyncEventStore } from "@loom/event-runtime";
+import { isTainted } from "@loomwork/classify";
+import { InMemoryAsyncEventStore } from "@loomwork/event-runtime";
+import { boundSummary, untrustedSummary } from "@loomwork/ui-core";
+import { eventStoreLineageStore } from "@loomwork/ui-lineage";
 import { describe, expect, it } from "vitest";
 import { checkChangeFeedConformance } from "./conformance";
 import { type ChangeFeed, LineageChangeFeed } from "./feed";

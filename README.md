@@ -28,44 +28,44 @@ revised without losing node identity, and rendered with no model in the path.
 - **Compile to a Blueprint.** `compile` turns an experience into loom's `Blueprint` for one surface
   and viewer. Nodes the viewer may not see become redacted placeholders; the Blueprint carries
   layout, spans, status bindings and the semantic type each widget stands for.
-- **Hydration.** `@loom-ui/hydration` resolves the data handles an experience binds, through loom's
+- **Hydration.** `@loomwork/ui-hydration` resolves the data handles an experience binds, through loom's
   transient effects, and publishes them as one loom projection, in-process or split across a trust
   boundary. It is read-only: drift is reported, and repair is the app's durable job.
-- **Renderers.** The Blueprint is drawn by loom's React renderer, by `@loom-ui/renderer-lit` (a DOM
-  adapter and Lit elements) or by `@loom-ui/renderer-terminal`. A shared conformance kit holds every
+- **Renderers.** The Blueprint is drawn by loom's React renderer, by `@loomwork/ui-renderer-lit` (a DOM
+  adapter and Lit elements) or by `@loomwork/ui-renderer-terminal`. A shared conformance kit holds every
   renderer to the same contract.
-- **Lineage.** `@loom-ui/lineage` keeps a head per experience, advanced by compare-and-set, and
+- **Lineage.** `@loomwork/ui-lineage` keeps a head per experience, advanced by compare-and-set, and
   records revert, undo and branch as new versions, each verified by replay.
-- **Planner.** `@loom-ui/planner` turns an intent, a closed catalogue and the available tools into
+- **Planner.** `@loomwork/ui-planner` turns an intent, a closed catalogue and the available tools into
   operations through loom's `ctx.decide`, so a replay serves the recorded decision with no model call.
 
 ## Packages
 
 | Package | What it is | README |
 | --- | --- | --- |
-| `@loom-ui/core` | Experience Model, operations with deterministic replay, the semantic catalogue, and the compiler to a loom `Blueprint` | [packages/core](packages/core/README.md) |
-| `@loom-ui/hydration` | Resolves provider handles through loom's transient effects and publishes them as one projection, in-process or split | [packages/hydration](packages/hydration/README.md) |
-| `@loom-ui/planner` | Planner SPI (`compose` / `revise` to operations), a reference planner, drift re-authoring and a conformance kit | [packages/planner](packages/planner/README.md) |
-| `@loom-ui/renderer-lit` | A DOM renderer adapter plus Lit elements for loom's kinds and the framework's own | [packages/renderer-lit](packages/renderer-lit/README.md) |
-| `@loom-ui/renderer-terminal` | String renderers for every framework kind, merged over loom's terminal registry, with hydration status | [packages/renderer-terminal](packages/renderer-terminal/README.md) |
-| `@loom-ui/renderer-conformance` | One set of renderer contract checks, run through a small adapter by any renderer | [packages/renderer-conformance](packages/renderer-conformance/README.md) |
-| `@loom-ui/lineage` | Server-side, optional: head pointer with compare-and-set, version walk, revert / undo / branch as new versions, replay verification | [packages/lineage](packages/lineage/README.md) |
-| `@loom-ui/changes` | Server-side, optional: a `ChangeFeed` over lineage events, viewer-safe change descriptions, unread cursors, head signals | [packages/changes](packages/changes/README.md) |
-| `@loom-ui/learning` | Server-side, optional: untrusted interaction signals folded into one bounded vote per viewer, late rewards, planner-variant comparison | [packages/learning](packages/learning/README.md) |
+| `@loomwork/ui-core` | Experience Model, operations with deterministic replay, the semantic catalogue, and the compiler to a loom `Blueprint` | [packages/core](packages/core/README.md) |
+| `@loomwork/ui-hydration` | Resolves provider handles through loom's transient effects and publishes them as one projection, in-process or split | [packages/hydration](packages/hydration/README.md) |
+| `@loomwork/ui-planner` | Planner SPI (`compose` / `revise` to operations), a reference planner, drift re-authoring and a conformance kit | [packages/planner](packages/planner/README.md) |
+| `@loomwork/ui-renderer-lit` | A DOM renderer adapter plus Lit elements for loom's kinds and the framework's own | [packages/renderer-lit](packages/renderer-lit/README.md) |
+| `@loomwork/ui-renderer-terminal` | String renderers for every framework kind, merged over loom's terminal registry, with hydration status | [packages/renderer-terminal](packages/renderer-terminal/README.md) |
+| `@loomwork/ui-renderer-conformance` | One set of renderer contract checks, run through a small adapter by any renderer | [packages/renderer-conformance](packages/renderer-conformance/README.md) |
+| `@loomwork/ui-lineage` | Server-side, optional: head pointer with compare-and-set, version walk, revert / undo / branch as new versions, replay verification | [packages/lineage](packages/lineage/README.md) |
+| `@loomwork/ui-changes` | Server-side, optional: a `ChangeFeed` over lineage events, viewer-safe change descriptions, unread cursors, head signals | [packages/changes](packages/changes/README.md) |
+| `@loomwork/ui-learning` | Server-side, optional: untrusted interaction signals folded into one bounded vote per viewer, late rewards, planner-variant comparison | [packages/learning](packages/learning/README.md) |
 
 ## Requirements
 
 - **Node.js 22 or newer.** CI runs Node 22.
 - **pnpm 9.14.4**, pinned by `packageManager`; enable it with `corepack enable`.
 - **A sibling `../loom` checkout, installed and built.** loom is an unpublished monorepo. Every
-  `@loom/*` dependency here is redirected by `pnpm.overrides` in [package.json](package.json) to
+  `@loomwork/*` dependency here is redirected by `pnpm.overrides` in [package.json](package.json) to
   `link:../loom/...`, so nothing resolves until `../loom` has had `pnpm install && pnpm build`.
   Tests and typechecks read loom's built `dist`: after editing loom, rebuild it first.
 - CI pins loom to the commit in `LOOM_REF` ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
   Bump it in the same change that adapts to a loom change.
 
 The loom-ui packages are not published. A consumer checked out beside this repo depends on them with
-`link:` entries such as `"@loom-ui/core": "link:../loom-ui/packages/core"`.
+`link:` entries such as `"@loomwork/ui-core": "link:../loom-ui/packages/core"`.
 
 ## Install, build and test
 

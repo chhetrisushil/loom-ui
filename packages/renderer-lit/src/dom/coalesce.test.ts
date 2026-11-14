@@ -1,6 +1,6 @@
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { MetricCard, RendererRegistry, blueprint$, cell, grid } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { MetricCard, RendererRegistry, blueprint$, cell, grid } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { LitElement, html } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import { defineElement } from "../define";

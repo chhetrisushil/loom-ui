@@ -11,13 +11,16 @@ import {
   type SemanticNode,
   compile,
   replay,
-} from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loom-ui/hydration/client";
-import { referenceContainers } from "@loom-ui/renderer-lit/containers";
-import { litRegistry, renderBlueprintDom } from "@loom-ui/renderer-lit/dom";
-import "@loom-ui/renderer-lit/register";
-import { renderExperience, terminalRegistry } from "@loom-ui/renderer-terminal";
+} from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import {
+  HYDRATION_PROJECTION_ID,
+  HYDRATION_PROJECTION_VERSION,
+} from "@loomwork/ui-hydration/client";
+import { referenceContainers } from "@loomwork/ui-renderer-lit/containers";
+import { litRegistry, renderBlueprintDom } from "@loomwork/ui-renderer-lit/dom";
+import "@loomwork/ui-renderer-lit/register";
+import { renderExperience, terminalRegistry } from "@loomwork/ui-renderer-terminal";
 // #endregion imports
 
 const metric = (id: string, order: string, handle: string): SemanticNode => ({

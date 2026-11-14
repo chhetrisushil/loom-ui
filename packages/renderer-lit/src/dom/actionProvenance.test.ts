@@ -1,13 +1,13 @@
-import { hydrationPath, hydrationStatusPath } from "@loom-ui/core";
+import { type WidgetAction, blueprint$, customWidget$, flex } from "@loomwork/blueprint-runtime";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { hydrationPath, hydrationStatusPath } from "@loomwork/ui-core";
 import {
   type StampedAction,
   actionFreshness,
   compileFingerprint,
   isStaleAction,
-} from "@loom-ui/core/browser";
-import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loom-ui/hydration";
-import { type WidgetAction, blueprint$, customWidget$, flex } from "@loom/blueprint-runtime";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+} from "@loomwork/ui-core/browser";
+import { HYDRATION_PROJECTION_ID, HydrationStore } from "@loomwork/ui-hydration";
 import { describe, expect, it } from "vitest";
 import { frameMessage } from "../sandbox/protocol";
 import { createLitRegistry, renderBlueprintDom } from "./index";

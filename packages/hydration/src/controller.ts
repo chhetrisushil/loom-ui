@@ -1,3 +1,4 @@
+import type { TransientInvokeOptions } from "@loomwork/effect-runtime";
 import {
   type Audience,
   type ContentRefTable,
@@ -21,8 +22,7 @@ import {
   isMediaKind,
   mergeReadPolicy,
   treeDepth,
-} from "@loom-ui/core";
-import type { TransientInvokeOptions } from "@loom/effect-runtime";
+} from "@loomwork/ui-core";
 import { HydrationCache, normaliseKinds, specFingerprint } from "./cache";
 import {
   type ContentRefParamGate,
@@ -105,7 +105,7 @@ export interface ControllerOptions {
   };
   readonly cache?: HydrationCache;
   /**
-   * Who the data is for (`@loom-ui/core`'s `Viewer`). A handle bound by any node classified above
+   * Who the data is for (`@loomwork/ui-core`'s `Viewer`). A handle bound by any node classified above
    * the viewer's clearance is never loaded: its provider is not invoked, nothing is cached for it,
    * and NOTHING is written to the store for it (no value, no status: a store projected to a client
    * must not even name it). SNAPSHOT at construction: later mutation of this object changes
@@ -116,7 +116,7 @@ export interface ControllerOptions {
    */
   readonly viewer?: Viewer;
   /**
-   * Who the surface is for, the SAME value `compile` takes (`@loom-ui/core` `Audience`). `"broadcast"`
+   * Who the surface is for, the SAME value `compile` takes (`@loomwork/ui-core` `Audience`). `"broadcast"`
    * clamps the viewer to the audience's ceiling (unclassified data only): every handle `compile`
    * withheld for the audience is never loaded, cached or written to the store, and `appendStream`
    * and friends refuse it, whoever the `viewer` is. Absent / `"viewer"` = the viewer as given.
@@ -124,7 +124,7 @@ export interface ControllerOptions {
   readonly audience?: Audience;
   /**
    * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
-   * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
+   * that tool (`@loomwork/ui-core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;

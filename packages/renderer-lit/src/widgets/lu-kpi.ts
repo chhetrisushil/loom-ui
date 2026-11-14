@@ -1,4 +1,4 @@
-import { DELTA_FORMAT, type KpiValue, deltaDirection, unitSuffix } from "@loom-ui/core/browser";
+import { DELTA_FORMAT, type KpiValue, deltaDirection, unitSuffix } from "@loomwork/ui-core/browser";
 import { type TemplateResult, css, html, nothing } from "lit";
 import { type SemanticFormat, effectiveFormat, measure } from "../format";
 import { refStyles } from "../refStyles";

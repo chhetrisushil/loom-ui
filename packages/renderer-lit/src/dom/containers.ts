@@ -1,5 +1,5 @@
-import { STEPPER_ROLE, TABS_ROLE } from "@loom-ui/core/browser";
-import { RendererRegistry } from "@loom/blueprint-runtime";
+import { RendererRegistry } from "@loomwork/blueprint-runtime";
+import { STEPPER_ROLE, TABS_ROLE } from "@loomwork/ui-core/browser";
 
 import { say } from "../say";
 import type {
@@ -10,7 +10,7 @@ import type {
 } from "./registry";
 
 // ── Reference container renderers (U15) ───────────────────────────────────────────────────────
-// The two roles `@loom-ui/core`'s `REFERENCE_CONTAINER_ROLES` names, drawn through the container
+// The two roles `@loomwork/ui-core`'s `REFERENCE_CONTAINER_ROLES` names, drawn through the container
 // seam (Blueprint IR 2.2.0 `Layout.role`, loom ADR 0099): the adapter keeps `body` and every child
 // (mount, keyed reconcile, reorder, placement, focus pin); these own only chrome beside `body` and
 // which child is visible. Neither adds, removes, reorders or restyles a child — visibility is the
@@ -227,7 +227,7 @@ export function stepperContainer(): DomContainerRenderer {
   };
 }
 
-/** `tabs` and `stepper`, registered under the roles `@loom-ui/core` names (`REFERENCE_CONTAINER_ROLES`). */
+/** `tabs` and `stepper`, registered under the roles `@loomwork/ui-core` names (`REFERENCE_CONTAINER_ROLES`). */
 export function referenceContainers(): DomContainerRegistry {
   return new RendererRegistry<DomContainerRenderer>()
     .register(TABS_ROLE, tabsContainer())

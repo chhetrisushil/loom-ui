@@ -1,3 +1,4 @@
+import type { Blueprint, Widget, WidgetAction } from "@loomwork/blueprint-runtime";
 import {
   type ContainerNode,
   REF_OPEN_ACTION,
@@ -7,10 +8,9 @@ import {
   compile,
   defineSemanticCatalog,
   genesis,
-} from "@loom-ui/core";
-import { SELECT_ACTION, SELECT_MANY_ACTION, SUBMIT_TEXT_ACTION } from "@loom-ui/core/chat-ui";
-import { HYDRATION_PROJECTION_ID } from "@loom-ui/hydration/client";
-import type { Blueprint, Widget, WidgetAction } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core";
+import { SELECT_ACTION, SELECT_MANY_ACTION, SUBMIT_TEXT_ACTION } from "@loomwork/ui-core/chat-ui";
+import { HYDRATION_PROJECTION_ID } from "@loomwork/ui-hydration/client";
 import type {
   HandleEntry,
   InvokeIntent,
@@ -56,7 +56,7 @@ class Session {
   async mount(
     blueprint: Blueprint,
     values: Record<string, HandleEntry> = {},
-    i18n?: import("@loom-ui/core").LuI18n,
+    i18n?: import("@loomwork/ui-core").LuI18n,
     extra: Pick<MountOptions, "chatAccessory" | "unattended"> = {}
   ): Promise<MountedRenderer> {
     const m = await this.adapter.mount(blueprint, {
@@ -497,7 +497,7 @@ check(
         kinds: readonly string[],
         view: () => ReturnType<typeof viewOf>,
         values: Record<string, HandleEntry> = {},
-        i18n?: import("@loom-ui/core").LuI18n,
+        i18n?: import("@loomwork/ui-core").LuI18n,
         shown = true
       ): Promise<void> => {
         if (!kinds.every((k) => adapter.kinds.includes(k))) return;
@@ -970,7 +970,7 @@ check(
           points: timestamps.map((timestamp, i) => ({ timestamp, value: i })),
         },
       ];
-      const draw = async (value: unknown, i18n?: import("@loom-ui/core").LuI18n) =>
+      const draw = async (value: unknown, i18n?: import("@loomwork/ui-core").LuI18n) =>
         (
           await s.mount(
             viewOf([bound("TimeSeries", "ts", "Trend", "h-ts")]),

@@ -1,4 +1,4 @@
-import type { Finding, Operation, ProviderSpec } from "@loom-ui/core";
+import type { Finding, Operation, ProviderSpec } from "@loomwork/ui-core";
 import type { DriftRecord } from "./provider";
 
 // ── Crossing the determinism boundary ─────────────────────────────────────────

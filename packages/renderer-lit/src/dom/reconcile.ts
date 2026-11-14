@@ -6,7 +6,7 @@ import {
   isLayoutId,
   resolveWidgetStatus,
   resolveWidgetValue,
-} from "@loom/blueprint-runtime";
+} from "@loomwork/blueprint-runtime";
 import { deepEqual } from "./deepEqual";
 import type { RecomposeFinding } from "./registry";
 import {

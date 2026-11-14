@@ -1,4 +1,4 @@
-// Zod-free and import-free on purpose: the browser entry (`@loom-ui/core/browser`) re-exports this,
+// Zod-free and import-free on purpose: the browser entry (`@loomwork/ui-core/browser`) re-exports this,
 // and a browser bundle must not pay for the Experience schemas to spell a binding path.
 
 /**

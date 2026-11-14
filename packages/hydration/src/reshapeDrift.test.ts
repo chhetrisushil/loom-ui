@@ -1,9 +1,9 @@
-import { type ContainerNode, type Experience, type ProviderSpec, genesis } from "@loom-ui/core";
-import { isTainted, unwrapTainted } from "@loom/classify";
-import { TypedFailure } from "@loom/core";
-import { MCP_INVOKE_TOOL_ID } from "@loom/plugin-mcp";
-import { SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loom/plugin-sandbox";
-import { InMemoryProjectionRuntime } from "@loom/projection-runtime";
+import { isTainted, unwrapTainted } from "@loomwork/classify";
+import { TypedFailure } from "@loomwork/core";
+import { MCP_INVOKE_TOOL_ID } from "@loomwork/plugin-mcp";
+import { SANDBOX_ERRORS, SANDBOX_TOOL_ID } from "@loomwork/plugin-sandbox";
+import { InMemoryProjectionRuntime } from "@loomwork/projection-runtime";
+import { type ContainerNode, type Experience, type ProviderSpec, genesis } from "@loomwork/ui-core";
 import { describe, expect, it } from "vitest";
 import { type DriftReport, HydrationController } from "./controller";
 import { HydrationStore } from "./projection";

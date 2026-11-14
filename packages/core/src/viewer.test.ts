@@ -1,4 +1,4 @@
-import type { GridLayout, Layout, Widget } from "@loom/blueprint-runtime";
+import type { GridLayout, Layout, Widget } from "@loomwork/blueprint-runtime";
 import { describe, expect, it } from "vitest";
 import { placeholderAlias } from "./alias";
 import { defineSemanticCatalog } from "./catalog";

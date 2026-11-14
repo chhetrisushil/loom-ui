@@ -1,3 +1,5 @@
+import { MCP_INVOKE_ERRORS } from "@loomwork/plugin-mcp";
+import { SANDBOX_ERRORS } from "@loomwork/plugin-sandbox";
 import {
   type Audience,
   type ContentRefTable,
@@ -18,9 +20,7 @@ import {
   isMediaKind,
   mergeReadPolicy,
   treeDepth,
-} from "@loom-ui/core";
-import { MCP_INVOKE_ERRORS } from "@loom/plugin-mcp";
-import { SANDBOX_ERRORS } from "@loom/plugin-sandbox";
+} from "@loomwork/ui-core";
 import { type HydrationCache, specFingerprint } from "../cache";
 import {
   assertContentRefConfig,
@@ -64,13 +64,13 @@ export interface InventoryOptions {
    */
   readonly viewer?: Viewer;
   /**
-   * Who the surface is for (`@loom-ui/core` `Audience`, the value `compile` took). `"broadcast"`
+   * Who the surface is for (`@loomwork/ui-core` `Audience`, the value `compile` took). `"broadcast"`
    * lists only unclassified handles, whoever the `viewer` is. Pass the same to `serveHandles`.
    */
   readonly audience?: Audience;
   /**
    * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
-   * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
+   * that tool (`@loomwork/ui-core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;
@@ -190,7 +190,7 @@ export interface ServeOptions extends Omit<ExecuteOptions, "params" | "kinds" | 
   readonly audience?: Audience;
   /**
    * The host's DECLARED class per tool (`toolKey`), a read-time floor under every handle calling
-   * that tool (`@loom-ui/core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
+   * that tool (`@loomwork/ui-core` `DeclaredToolClasses`): a handle whose stored nodes carry no class
    * is still gated as strictly as its tool is declared. Absent = only the experience's own classes.
    */
   readonly declaredToolClasses?: DeclaredToolClasses;

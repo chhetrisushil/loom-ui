@@ -1,4 +1,4 @@
-import { type LuI18n, lookupMessage } from "@loom-ui/core/messages";
+import { type LuI18n, lookupMessage } from "@loomwork/ui-core/messages";
 
 // ── Locale shim ───────────────────────────────────────────────────────────────
 // Loading message catalogs and manifests is app infrastructure and stays with the host.
@@ -24,7 +24,7 @@ function notify(): void {
  * answer for the key; anything they do not answer stays English. `fallback` is the English text of a
  * structured key (`lu.plural.row.one`), so such a key never leaks as the spoken/visible string.
  * Widgets do not call this with literal text: they ask `say(key)` (see `say.ts`), whose English comes
- * from the one catalogue in `@loom-ui/core`.
+ * from the one catalogue in `@loomwork/ui-core`.
  */
 export function t(key: string, fallback?: string): string {
   return lookupMessage(override, key, fallback ?? key);

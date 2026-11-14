@@ -3,7 +3,7 @@ import { property } from "lit/decorators.js";
 import { say } from "../say";
 
 // The DEFAULT registry's stand-in for the chat kinds (U8). The real widgets are the opt-in entry
-// `@loom-ui/renderer-lit/chat`; a page that composed a transcript or an input without registering
+// `@loomwork/ui-renderer-lit/chat`; a page that composed a transcript or an input without registering
 // them sees ONE fixed placeholder (no value, no title, no props) instead of an empty hole, and a
 // single console warning that says how to fix it.
 
@@ -29,7 +29,7 @@ export class LuChatMissing extends LitElement {
     if (warned) return;
     warned = true;
     console.warn(
-      "[loom-ui] a chat or input widget was composed but the chat renderers are not registered: use createChatLitRegistry() from @loom-ui/renderer-lit/chat"
+      "[loom-ui] a chat or input widget was composed but the chat renderers are not registered: use createChatLitRegistry() from @loomwork/ui-renderer-lit/chat"
     );
   }
   render() {

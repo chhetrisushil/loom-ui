@@ -1,11 +1,11 @@
-# @loom-ui/changes
+# @loomwork/ui-changes
 
 **Ambient change delivery.** When an experience changes while nobody is looking, the people it
 concerns should hear about it at the right volume, and never about content they may not see.
 This package is the server-side half: a feed over the lineage log, a per-viewer unread cursor, and
 signals that say "this experience has a new head". It is **optional** and **server-side** (it reads
 the lineage and content stores; `hydration`'s client guards name it among the packages a client
-graph must not reach). The pure half is in `@loom-ui/core`: `describeChange`, `boundSummary`,
+graph must not reach). The pure half is in `@loomwork/ui-core`: `describeChange`, `boundSummary`,
 the attention vocabulary and the `HeadSignal` types (types only, so a browser can implement one
 with a `fetch` loop).
 
@@ -13,16 +13,16 @@ with a `fetch` loop).
 
 ```jsonc
 // package.json of a consumer checked out beside this repo (the packages are not published)
-"@loom-ui/changes": "link:../loom-ui/packages/changes"
+"@loomwork/ui-changes": "link:../loom-ui/packages/changes"
 ```
 
-Entry point: `@loom-ui/changes` (server-side only; Node, CommonJS and ESM).
+Entry point: `@loomwork/ui-changes` (server-side only; Node, CommonJS and ESM).
 
 ## Usage
 
 ```ts
-import { describeChange } from "@loom-ui/core";
-import { LineageChangeFeed, pollingHeadSignal, InMemoryUnreadStore, unreadChanges, markRead } from "@loom-ui/changes";
+import { describeChange } from "@loomwork/ui-core";
+import { LineageChangeFeed, pollingHeadSignal, InMemoryUnreadStore, unreadChanges, markRead } from "@loomwork/ui-changes";
 
 const feed = new LineageChangeFeed({ lineage, events, signal: pollingHeadSignal(events) });
 // The feed inherits `lineage.readPolicy`; pass `readPolicy` here to bind more. `describe`'s per-call
@@ -109,7 +109,7 @@ idempotency key; the first call reports the current state of a non-empty line).
 - `pollingHeadSignal(store, { intervalMs })`: a timer, one read per tick per watcher. Works over any
   `LineageStore`. A missed beat is only latency.
 - `eventStoreHeadSignal(eventStore, store, { fallbackIntervalMs? })`: push (plus an optional
-  safety-net poll), via `EventStore.subscribe` on the line's stream. `@loom/live-query` was checked
+  safety-net poll), via `EventStore.subscribe` on the line's stream. `@loomwork/live-query` was checked
   and does not fit (it folds an *execution's* state, not a lineage stream); the push primitive
   underneath it is used directly. A host with its own transport (websocket, SSE, a database notify)
   implements `HeadSignal`, one method.

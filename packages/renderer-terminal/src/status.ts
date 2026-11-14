@@ -1,11 +1,11 @@
-import { type ContractRegistry, checkKindValue } from "@loom-ui/core";
-import { HYDRATION_PROJECTION_ID, type HydrationStore } from "@loom-ui/hydration/client";
-import type { Blueprint, RendererRegistry } from "@loom/blueprint-runtime";
+import type { Blueprint, RendererRegistry } from "@loomwork/blueprint-runtime";
 import {
   type TerminalWidgetRenderer,
   type WidgetValueCheck,
   renderBlueprintToString,
-} from "@loom/plugin-renderer-terminal";
+} from "@loomwork/plugin-renderer-terminal";
+import { type ContractRegistry, checkKindValue } from "@loomwork/ui-core";
+import { HYDRATION_PROJECTION_ID, type HydrationStore } from "@loomwork/ui-hydration/client";
 import { inert } from "./inert";
 import { type TerminalRegistryOptions, terminalRegistry } from "./registry";
 

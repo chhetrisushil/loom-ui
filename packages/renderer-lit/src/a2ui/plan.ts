@@ -4,7 +4,7 @@
  * A view is an adjacency-list component tree (relationships by id reference, never
  * nesting; exactly one node has `id: "root"`) drawn from a catalog vocabulary and
  * bound to a data model by JSON Pointer. A host renders it generically — the same
- * shape the server-side `@loom/plugin-a2ui` catalog describes — so a component
+ * shape the server-side `@loomwork/plugin-a2ui` catalog describes — so a component
  * type with no bespoke renderer (e.g. a user-registered one) can still be drawn
  * from primitives. This module is the PURE core (types + binding resolution); the
  * Lit element in `widgets/lu-a2ui-view.ts` walks the tree with it.

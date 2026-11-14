@@ -6,14 +6,14 @@ import {
   effectiveViewer,
   isBroadcast,
   mayView,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 
 // ── Viewer enforcement at the data boundary ───────────────────────────────────
 // Hydration is where data actually flows, so it is the second place a binding's `sensitivity`
 // is enforced (the first is `compile`, which redacts the node). A handle whose strictest class the
 // viewer may not see is never planned, never invoked, never cached, never served: its provider
 // is not called at all. FAIL-CLOSED: no viewer is a viewer with no clearance; unclassified handles
-// are unaffected either way. See `@loom-ui/core`'s `viewer.ts`.
+// are unaffected either way. See `@loomwork/ui-core`'s `viewer.ts`.
 
 /**
  * What the store (and so the viewer) is told about a refused handle. A fixed text: it names no

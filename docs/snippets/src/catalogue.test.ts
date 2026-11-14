@@ -11,8 +11,8 @@ import {
   genesis,
   resolveSurface,
   validateExperience,
-} from "@loom-ui/core";
-import { frameworkKindContracts } from "@loom-ui/renderer-lit/dom";
+} from "@loomwork/ui-core";
+import { frameworkKindContracts } from "@loomwork/ui-renderer-lit/dom";
 // #endregion imports
 
 // #region catalogue

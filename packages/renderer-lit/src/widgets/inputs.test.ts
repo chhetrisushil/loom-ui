@@ -1,10 +1,10 @@
+import { customWidget$ } from "@loomwork/blueprint-runtime";
 import {
   SELECT_ACTION,
   SUBMIT_FORM_ACTION,
   SUBMIT_TEXT_ACTION,
   isSubmitKey,
-} from "@loom-ui/core/chat-ui";
-import { customWidget$ } from "@loom/blueprint-runtime";
+} from "@loomwork/ui-core/chat-ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../elements/lu-inputs";
 

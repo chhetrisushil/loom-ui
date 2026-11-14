@@ -1,4 +1,4 @@
-// `@loom-ui/core/browser` — the part of core a BROWSER renderer needs, with no zod and no
+// `@loomwork/ui-core/browser` — the part of core a BROWSER renderer needs, with no zod and no
 // Experience schemas behind it. Nothing here may import (at runtime) a module that imports zod:
 // `browserEntry.test.ts` bundles this the way a browser bundler does and fails on a byte of it.
 //
@@ -47,7 +47,7 @@ export {
   tableColumnFormat,
   tableColumnLabel,
 } from "./kindValues";
-// The media surface (U9) is its own subpath, `@loom-ui/core/media`: only the CONTRACT rides here (inside
+// The media surface (U9) is its own subpath, `@loomwork/ui-core/media`: only the CONTRACT rides here (inside
 // `checkKindValue`), so a page that draws no media does not carry the rest.
 export type { ContractRegistry, ValueContract } from "./kindValues";
 export {
@@ -112,5 +112,5 @@ export {
   roleChildProblems,
 } from "./containerRoles";
 export type { ContainerRoleSpec, RoleChild, RoleChildren } from "./containerRoles";
-// The fixed-words catalogue (U14) is its own subpath, `@loom-ui/core/messages`: a page that draws no fixed
+// The fixed-words catalogue (U14) is its own subpath, `@loomwork/ui-core/messages`: a page that draws no fixed
 // words (the hydration client) must not carry the ~8 kB catalogue.

@@ -1,4 +1,4 @@
-import type { DataClass } from "@loom/classify";
+import type { DataClass } from "@loomwork/classify";
 import type { Finding } from "./experience";
 import type { Experience } from "./experience";
 import { ProjectionBinding, type SemanticNode, walk } from "./node";

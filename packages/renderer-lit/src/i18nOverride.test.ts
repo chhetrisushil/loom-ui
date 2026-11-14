@@ -1,4 +1,4 @@
-import { LU_MESSAGES, LU_MESSAGE_KEYS } from "@loom-ui/core/messages";
+import { LU_MESSAGES, LU_MESSAGE_KEYS } from "@loomwork/ui-core/messages";
 import { afterEach, describe, expect, it } from "vitest";
 import { describeValue, emptyStateText } from "./a11y";
 import { placeholderFor } from "./dom/registry";

@@ -5,7 +5,7 @@ import {
   contentRefPaths,
   mergeContentRefEntries,
   toolKey,
-} from "@loom-ui/core";
+} from "@loomwork/ui-core";
 import type { CapabilityRef } from "./spi";
 
 /**

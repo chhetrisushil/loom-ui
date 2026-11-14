@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import { catalog, meta } from "./fixtures.test-support";
 import { expectDocMirrors } from "./mirror.test-support";
 // #region imports
-import { type Operation, compile, genesis, replay } from "@loom-ui/core";
-import { seal } from "@loom-ui/core/log";
-import { HYDRATION_PROJECTION_ID, HYDRATION_PROJECTION_VERSION } from "@loom-ui/hydration/client";
+import { type Operation, compile, genesis, replay } from "@loomwork/ui-core";
+import { seal } from "@loomwork/ui-core/log";
+import {
+  HYDRATION_PROJECTION_ID,
+  HYDRATION_PROJECTION_VERSION,
+} from "@loomwork/ui-hydration/client";
 // #endregion imports
 
 describe("docs/user-guide.md", () => {
