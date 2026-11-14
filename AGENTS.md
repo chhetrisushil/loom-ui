@@ -174,7 +174,8 @@ loom is a pnpm monorepo published to npm as `@loomwork/*` (dist-tag `next`). For
   Chat/MultiSelectInput, Image/Audio/Video/File and Diagram contracts (`contractsChat.ts` / `contractsMedia.ts` /
   `contractsDiagram.ts`) so a page that draws none of them does not carry them. They load through `useChatContracts()` /
   `useMediaContracts()` / `useDiagramContracts()`, which renderer-lit's `defineChat`/`defineInputs`/`defineMedia`/
-  `defineDiagram`, those widget classes' `connectedCallback` (a host may register a class under its own tag) and
+  `defineDiagram`, those widget classes' `connectedCallback` (a host may register a class under its own tag),
+  renderer-terminal's `createLoomUiTerminalRegistry`/`renderExperience` (all three: a terminal is not bundle-bound) and
   hydration's `connectConversation`/`publishChat` call; the first load wins. An UNLOADED deferred kind FAILS CLOSED (a fixed
   `value-contract` finding naming the call), never passes; it stays a framework kind (`hasKindContract`), so a host
   contract cannot stand in, and `installDeferredContracts` refuses any non-deferred kind. A new heavy contract is

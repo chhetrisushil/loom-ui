@@ -103,6 +103,11 @@ const myRegistry = defaultTerminalRegistry.merge(loomUiTerminalRegistry).merge(m
 
 ## Notable behaviours and guarantees
 
+- **Deferred value contracts are loaded for you.** core's zod-free checker (what the split hydration
+  client's `publishValue` runs) defers the Chat/MultiSelectInput, media and Diagram contracts.
+  `createLoomUiTerminalRegistry` (so `terminalRegistry` and the module's `loomUiTerminalRegistry`) and
+  `renderExperience` load all three, so a terminal host never has to call `use*Contracts()` itself.
+
 - **Chat and inputs (U8).** `Chat` prints under its title as the SAME lines the web speaks
   (`chatTranscriptLines`): `You: ...`, `Assistant (interrupted): ...`, `You (edit of turn 1): ...`,
   a failure as its fixed sentence plus `(ref <id>)`, a restricted entry as `[restricted assistant

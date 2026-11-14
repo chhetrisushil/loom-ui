@@ -7,7 +7,7 @@ import {
 import { type ContractRegistry, checkKindValue } from "@loomwork/ui-core";
 import { HYDRATION_PROJECTION_ID, type HydrationStore } from "@loomwork/ui-hydration/client";
 import { inert } from "./inert";
-import { type TerminalRegistryOptions, terminalRegistry } from "./registry";
+import { type TerminalRegistryOptions, loadTerminalContracts, terminalRegistry } from "./registry";
 
 // ── The status matrix is loom's ───────────────────────────────────────────────
 // Since Blueprint IR 2.0.0 (ADR 0097 D2) the eight-row decision table lives in loom's own
@@ -76,6 +76,8 @@ export function renderExperience(
     throw new Error(
       "renderExperience: `chrome` configures the default registry and would be ignored next to `registry` — pass one, or build your registry with terminalRegistry({ chrome })"
     );
+  // A host-supplied registry skips `createLoomUiTerminalRegistry`; load the deferred contracts anyway.
+  loadTerminalContracts();
   const state = store.state();
   const stateMap = new Map<string, unknown>();
   // `HydrationStore` publishes under one well-known projection id; every other projection the

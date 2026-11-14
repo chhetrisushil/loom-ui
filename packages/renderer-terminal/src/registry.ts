@@ -48,6 +48,9 @@ import {
   tableColumnFormat,
   tableColumnLabel,
   unitSuffix,
+  useChatContracts,
+  useDiagramContracts,
+  useMediaContracts,
   widgetRefsOf,
 } from "@loomwork/ui-core";
 import { type MultiSelectValue, multiSelectValueIssues } from "@loomwork/ui-core/chat-ui";
@@ -586,10 +589,23 @@ const multiPrompt =
     return [host ? head : `${title(w)}: ${head}`, ...rows].join("\n");
   };
 
+/**
+ * Load core's DEFERRED value contracts for every deferred kind this renderer draws (Chat,
+ * MultiSelectInput, the media kinds, Diagram), as renderer-lit's `define*` do. Without this a host
+ * that pairs the terminal with the split hydration client has every such `publishValue` fail closed.
+ * A terminal is not bundle-size-bound, so it loads all three. Idempotent.
+ */
+export function loadTerminalContracts(): void {
+  useChatContracts();
+  useMediaContracts();
+  useDiagramContracts();
+}
+
 /** The framework kinds' renderers. A NEW registry each call — never mutate a shared one. */
 export function createLoomUiTerminalRegistry(
   opts: TerminalRegistryOptions = {}
 ): RendererRegistry<TerminalWidgetRenderer> {
+  loadTerminalContracts();
   const host = opts.chrome === "host";
   const x = envOf(opts.i18n);
   return new RendererRegistry<TerminalWidgetRenderer>()
