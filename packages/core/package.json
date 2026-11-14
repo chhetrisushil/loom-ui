@@ -64,30 +64,14 @@
   },
   "typesVersions": {
     "*": {
-      "browser": [
-        "./dist/browser.d.ts"
-      ],
-      "log": [
-        "./dist/log.d.ts"
-      ],
-      "media": [
-        "./dist/media.d.ts"
-      ],
-      "chat": [
-        "./dist/chat.d.ts"
-      ],
-      "chat-ui": [
-        "./dist/chatUi.d.ts"
-      ],
-      "document": [
-        "./dist/document.d.ts"
-      ],
-      "signals": [
-        "./dist/signals.d.ts"
-      ],
-      "messages": [
-        "./dist/messages.d.ts"
-      ]
+      "browser": ["./dist/browser.d.ts"],
+      "log": ["./dist/log.d.ts"],
+      "media": ["./dist/media.d.ts"],
+      "chat": ["./dist/chat.d.ts"],
+      "chat-ui": ["./dist/chatUi.d.ts"],
+      "document": ["./dist/document.d.ts"],
+      "signals": ["./dist/signals.d.ts"],
+      "messages": ["./dist/messages.d.ts"]
     }
   },
   "scripts": {
