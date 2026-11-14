@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-renderer-conformance",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Renderer conformance kit for loom-ui: one set of contract checks any renderer (Lit, terminal, a third party's React / native / voice) runs through a small adapter",
   "type": "module",
   "main": "./dist/index.js",
