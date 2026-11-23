@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-renderer-lit",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "loom DOM renderer adapter + Lit widgets registered under loom kinds; the framework's web surface beside loom's React renderer",
   "type": "module",
   "main": "./dist/index.js",
@@ -53,8 +53,8 @@
   },
   "dependencies": {
     "@loomwork/ui-core": "workspace:^",
-    "@loomwork/blueprint-runtime": "^0.1.0",
-    "@loomwork/projection-runtime": "^0.1.0",
+    "@loomwork/blueprint-runtime": "^0.1.5",
+    "@loomwork/projection-runtime": "^0.1.5",
     "lit": "catalog:"
   },
   "devDependencies": {
