@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-learning",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "The learning loop for loom-ui (U11), host side: validate and rate-limit untrusted interaction signals, re-check exposure, turn them into bounded rewards attributed to the planner decision that produced the surface, record them late through loom's recordOutcome, and compare planner variants off-policy with @loomwork/learning",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,18 +23,18 @@
   },
   "dependencies": {
     "@loomwork/ui-core": "workspace:^",
-    "@loomwork/analytics": "^0.1.0",
-    "@loomwork/core": "^0.1.0",
-    "@loomwork/learning": "^0.1.0"
+    "@loomwork/analytics": "^0.1.5",
+    "@loomwork/core": "^0.1.5",
+    "@loomwork/learning": "^0.1.5"
   },
   "devDependencies": {
     "@loomwork/ui-lineage": "workspace:^",
     "@loomwork/ui-planner": "workspace:^",
-    "@loomwork/effect-runtime": "^0.1.0",
-    "@loomwork/event-runtime": "^0.1.0",
-    "@loomwork/plugin-content": "^0.1.0",
-    "@loomwork/snapshot-runtime": "^0.1.0",
-    "@loomwork/workflow-runtime": "^0.1.0",
+    "@loomwork/effect-runtime": "^0.1.5",
+    "@loomwork/event-runtime": "^0.1.5",
+    "@loomwork/plugin-content": "^0.1.5",
+    "@loomwork/snapshot-runtime": "^0.1.5",
+    "@loomwork/workflow-runtime": "^0.1.5",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:",
