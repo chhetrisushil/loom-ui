@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-changes",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Ambient change delivery for loom-ui: a ChangeFeed over lineage events (resume from a cursor, at-least-once, idempotent ids), viewer-safe change descriptions, a per-viewer unread cursor seam, and polling / push head signals",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,12 +24,12 @@
   "dependencies": {
     "@loomwork/ui-core": "workspace:^",
     "@loomwork/ui-lineage": "workspace:^",
-    "@loomwork/classify": "^0.1.5",
-    "@loomwork/event-runtime": "^0.1.5"
+    "@loomwork/classify": "^0.1.6",
+    "@loomwork/event-runtime": "^0.1.6"
   },
   "devDependencies": {
-    "@loomwork/plugin-content": "^0.1.5",
-    "@loomwork/plugin-crypto": "^0.1.5",
+    "@loomwork/plugin-content": "^0.1.6",
+    "@loomwork/plugin-crypto": "^0.1.6",
     "@types/node": "catalog:",
     "typescript": "^5.6.3",
     "vitest": "catalog:"
