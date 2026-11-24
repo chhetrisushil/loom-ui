@@ -1,6 +1,6 @@
 {
   "name": "@loomwork/ui-hydration",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Provider-plane execution for loom-ui: resolves an Experience's handles through loom's transient effects and publishes them as one loom projection",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -34,13 +34,13 @@
   },
   "dependencies": {
     "@loomwork/ui-core": "workspace:^",
-    "@loomwork/agent": "^0.1.6",
-    "@loomwork/classify": "^0.1.6",
-    "@loomwork/core": "^0.1.6",
-    "@loomwork/effect-runtime": "^0.1.6",
-    "@loomwork/plugin-mcp": "^0.1.6",
-    "@loomwork/plugin-sandbox": "^0.1.6",
-    "@loomwork/projection-runtime": "^0.1.6"
+    "@loomwork/agent": "^0.1.7",
+    "@loomwork/classify": "^0.1.7",
+    "@loomwork/core": "^0.1.7",
+    "@loomwork/effect-runtime": "^0.1.7",
+    "@loomwork/plugin-mcp": "^0.1.7",
+    "@loomwork/plugin-sandbox": "^0.1.7",
+    "@loomwork/projection-runtime": "^0.1.7"
   },
   "devDependencies": {
     "@types/node": "catalog:",

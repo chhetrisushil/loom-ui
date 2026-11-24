@@ -20,11 +20,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The release version every public package carries. Bump here, re-run, commit. */
-export const RELEASE_VERSION = "0.1.6";
+export const RELEASE_VERSION = "0.1.7";
 export const DIST_TAG = "next";
 export const REPOSITORY_URL = "git+https://github.com/chhetrisushil/loom-ui.git";
 /** The published loom release these packages are built against. */
-export const LOOM_RANGE = "^0.1.6";
+export const LOOM_RANGE = "^0.1.7";
 
 const DEP_FIELDS = ["dependencies", "peerDependencies", "optionalDependencies", "devDependencies"];
 
